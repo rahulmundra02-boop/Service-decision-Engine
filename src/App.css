@@ -1,0 +1,125 @@
+* { box-sizing: border-box; }
+body { margin: 0; font-family: Inter, Segoe UI, Roboto, Arial, sans-serif; background: #f4f6f8; color: #17202a; }
+button, textarea { font: inherit; }
+.app-shell { min-height: 100vh; }
+.topbar { height: 72px; background: #17202a; color: white; display:flex; align-items:center; justify-content:space-between; padding: 0 34px; }
+.brand { font-weight: 800; letter-spacing: .5px; font-size: 20px; }
+.brand-sub { color:#aeb9c4; font-size:12px; margin-top:3px; }
+.top-status { border:1px solid #5e6b76; color:#dce3e9; border-radius:20px; padding:7px 12px; font-size:10px; font-weight:800; letter-spacing:.5px; }
+.container { width:min(1120px, calc(100% - 36px)); margin:auto; padding:38px 0 60px; }
+.intro { margin-bottom:22px; }
+.intro h1 { margin:0; font-size:30px; }
+.intro p { margin:8px 0 0; color:#697680; font-size:14px; }
+.card { background:#fff; border:1px solid #dfe5e9; border-radius:12px; padding:22px; margin-bottom:18px; box-shadow:0 2px 8px rgba(0,0,0,.035); }
+.section-head { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:16px; }
+h2 { margin:0; font-size:18px; }
+.section-head p { margin:5px 0 0; color:#74808b; font-size:13px; }
+.badge, .success-badge { font-size:10px; font-weight:800; padding:6px 9px; border-radius:14px; white-space:nowrap; }
+.badge { color:#1769aa; background:#eaf4fc; }
+.success-badge { color:#1e7a3b; background:#e9f7ee; }
+textarea { width:100%; min-height:290px; resize:vertical; border:2px dashed #c9d2d9; border-radius:9px; padding:17px; background:#fafbfc; outline:none; font-family:Consolas, monospace; font-size:12px; line-height:1.55; }
+textarea:focus { border-color:#1769aa; background:#fff; }
+.actions { display:flex; justify-content:flex-end; gap:10px; margin-top:14px; }
+button { border-radius:7px; padding:10px 20px; cursor:pointer; font-weight:700; }
+.primary { border:0; background:#1769aa; color:#fff; }
+.primary:disabled { opacity:.45; cursor:not-allowed; }
+.secondary { border:1px solid #ccd4da; background:#fff; color:#53616c; }
+.error-box { margin-top:12px; padding:12px 14px; border-radius:7px; background:#fff0f0; border:1px solid #efc5c5; color:#a33a3a; font-size:13px; }
+.vehicle-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+.info-box { border:1px solid #e2e7ea; border-radius:8px; padding:12px 14px; background:#fbfcfd; }
+.info-box span, .history-item span { display:block; color:#7a8791; font-size:11px; margin-bottom:5px; }
+.info-box strong { font-size:14px; word-break:break-word; }
+.reading-panel { display:flex; align-items:center; gap:20px; padding:18px; background:#f7fafc; border:1px solid #e0e7eb; border-radius:9px; }
+.reading-main { font-size:32px; font-weight:800; color:#1769aa; }
+.reading-title { font-weight:700; }
+.muted { color:#7b8790; font-size:12px; }
+.mode { margin-top:6px; color:#1769aa; font-size:12px; font-weight:700; }
+.decision-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
+.decision-item { display:flex; justify-content:space-between; padding:12px 14px; border:1px solid #e1e6ea; border-radius:7px; font-size:13px; }
+.decision-item strong { color:#8a969f; }
+.special-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:16px; }
+.special-grid > div { display:flex; justify-content:space-between; border-top:1px solid #e6eaed; padding:13px 4px 4px; font-size:13px; }
+.special-grid strong { color:#8a969f; }
+.engine-note { margin-top:14px; padding:10px 12px; background:#f8fafb; color:#697680; font-size:12px; border-radius:7px; }
+.history-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+.history-item { border:1px solid #e0e6ea; border-radius:8px; padding:14px; }
+.history-item h3 { margin:0 0 12px; font-size:14px; }
+.history-item > div:not(.muted) { margin-top:7px; }
+.history-item strong { font-size:12px; }
+.table-wrap { overflow:auto; border:1px solid #e1e6ea; border-radius:8px; }
+table { width:100%; border-collapse:collapse; font-size:12px; }
+th, td { text-align:left; padding:10px 12px; border-bottom:1px solid #edf0f2; vertical-align:top; }
+th { background:#f7f9fa; font-size:11px; color:#65727d; }
+tr:last-child td { border-bottom:0; }
+@media (max-width: 800px) { .vehicle-grid, .history-grid, .special-grid { grid-template-columns:1fr 1fr; } }
+@media (max-width: 560px) { .topbar { padding:0 16px; } .container { width:min(100% - 20px, 1120px); padding-top:24px; } .vehicle-grid, .history-grid, .special-grid, .decision-grid { grid-template-columns:1fr; } .reading-panel { align-items:flex-start; flex-direction:column; gap:8px; } }
+
+/* Excel-style Bulk Service filter dropdown */
+.bulk-filter-arrow {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid rgba(255,255,255,.5);
+  border-radius: 2px;
+  background: rgba(255,255,255,.08);
+  color: #fff;
+  cursor: pointer;
+  font-size: 10px;
+}
+.bulk-filter-arrow:hover,
+.bulk-filter-arrow.active {
+  background: #fff;
+  color: #1f4e78;
+  border-color: #fff;
+}
+.bulk-filter-status.active {
+  background: #e2f0d9;
+  color: #006100;
+  border-color: #70ad47;
+  font-weight: 700;
+}
+
+
+/* Service Summary: keep filter text flat and S.No./Due button transparent */
+.bulk-sort-btn {
+  border: 0 !important;
+  background: transparent !important;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 1px 3px !important;
+  border-radius: 0 !important;
+  appearance: none;
+  -webkit-appearance: none;
+  box-shadow: none !important;
+}
+.bulk-sort-btn:hover,
+.bulk-sort-btn:focus,
+.bulk-sort-btn:active {
+  border: 0 !important;
+  background: transparent !important;
+  color: inherit;
+  box-shadow: none !important;
+  outline: none;
+}
+
+.bulk-filter-status {
+  min-height: 16px;
+  padding: 2px 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: #d9e5f5;
+  font-size: 10px;
+  font-weight: 400;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bulk-filter-status.active {
+  background: transparent !important;
+  color: #fff;
+  border: 0 !important;
+  font-weight: 700;
+}

@@ -3263,7 +3263,7 @@ function App() {
                 <div className="pre-analysis-title">Upload Excel to start</div>
                 <div className="pre-analysis-text">Vehicle analysis, profile and service history will appear here after the Excel file is uploaded and analysed.</div>
               </div>
-            ) : mode === "bulk" ? (
+            ) ) : mode === "bulk" ? (
               <>
                 <div className="sheet-heading">BULK VEHICLE SERVICE DECISION</div>
                 <div className="sheet-subheading">Multiple Excel files supported · Vehicle separation by VIN · Cross-file duplicate protection only.</div>

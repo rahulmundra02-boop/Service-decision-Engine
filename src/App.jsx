@@ -1234,15 +1234,13 @@ function isCalculationEligibleLine(record, visit, vehicle, decision) {
   const sameJob = visit.filter(r => !jobCard || String(r?.jobCard || "").trim() === jobCard);
   const sameDate = visit;
 
-  // Free-service history is eligible when the same free service is part of
-  // the current decision result.
-  const freeService = String(decision?.freeService || "").toUpperCase();
-  if (text.includes("FREE SERVICE") && freeService && text.includes(freeService.replace(/1ST|2ND|3RD/g, "").trim())) {
+  // A recognized free-service history line is a service-calculation
+  // record in its own right. Highlight the recorded free service regardless
+  // of whether that same free service is currently due.
+  const code = normalizePartCode(record?.partCode);
+  if (code === "FS0501" || code === "FS0502" || code === "FS0503" || text.includes("1ST FREE SERVICE") || text.includes("2ND FREE SERVICE") || text.includes("3RD FREE SERVICE")) {
     return true;
   }
-  if (text.includes("1ST FREE SERVICE") && freeService.includes("1ST")) return true;
-  if (text.includes("2ND FREE SERVICE") && freeService.includes("2ND")) return true;
-  if (text.includes("3RD FREE SERVICE") && freeService.includes("3RD")) return true;
 
   if (text.includes("ENGINE OIL") && !text.includes("FILTER")) {
     return qty >= 12 && sameJob.some(r => String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase().includes("ENGINE OIL FILTER"));
@@ -1298,10 +1296,40 @@ function isCalculationEligibleLine(record, visit, vehicle, decision) {
 }
 
 function getVisitParts(visit, vehicle, decision) {
-  return visit.map(record => {
+  // History summary: if the same part appears multiple times in the same
+  // Job Card, show it once and total its quantity.
+  const grouped = new Map();
+
+  for (const record of visit) {
+    const code = normalizePartCode(record?.partCode);
+    const mappedName = code ? PART_STANDARDIZATION[code] : "";
+    const name = mappedName || String(record?.standardizedPart || record?.partDescription || record?.part || "").trim();
+    if (!name) continue;
+
+    const key = code
+      ? `CODE:${code}`
+      : `NAME:${name.toUpperCase()}`;
+
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        ...record,
+        partCode: code || record?.partCode || "",
+        standardizedPart: mappedName || record?.standardizedPart || name,
+        qty: Number(record?.qty || 0),
+      });
+    } else {
+      const existing = grouped.get(key);
+      existing.qty = Number(existing.qty || 0) + Number(record?.qty || 0);
+    }
+  }
+
+  return [...grouped.values()].map(record => {
     const text = recordDisplayText(record);
     if (!text) return null;
-    return { text, eligible: isCalculationEligibleLine(record, visit, vehicle, decision) };
+    return {
+      text,
+      eligible: isCalculationEligibleLine(record, visit, vehicle, decision),
+    };
   }).filter(Boolean);
 }
 
@@ -1367,15 +1395,19 @@ function serviceBase(records, names, minQty = 0, requireOilFilter = false, vehic
     if ((r.qty || 0) <= 0 && minQty > 0) continue;
 
     const key = formatDate(r.date);
-    const same = records.filter(x => formatDate(x.date) === key);
+    const jobCard = String(r.jobCard || '').trim();
+    // When a Job Card exists, quantity and companion-part checks are scoped
+    // to that Job Card. This makes duplicate lines within the same Job Card
+    // total correctly without mixing separate Job Cards from the same date.
+    const same = jobCard
+      ? records.filter(x => String(x.jobCard || '').trim() === jobCard)
+      : records.filter(x => formatDate(x.date) === key);
     const qty = same
       .filter(x => names.some(n => matchesServicePart(x.standardizedPart, n)))
       .reduce((a, x) => a + (x.qty || 0), 0);
 
     if (qty < minQty) continue;
-    const companions = filterMustMatchJobCard
-      ? (String(r.jobCard || '').trim() ? records.filter(x => String(x.jobCard || '').trim() === String(r.jobCard || '').trim()) : [])
-      : same;
+    const companions = same;
     if (requireOilFilter && !companions.some(x => String(x.standardizedPart || '').toUpperCase().includes(requiredFilterName))) continue;
 
     return { ...r, serviceQty: qty, relevantReading: vehicle ? getRelevantReading(r, vehicle) : (r.reading || 0) };

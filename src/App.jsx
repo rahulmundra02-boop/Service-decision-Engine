@@ -2192,6 +2192,77 @@ function App() {
   const todayDisplay = new Date().toLocaleDateString("en-GB");
 
 
+
+  // ============================================================
+  // BACKGROUND DATABASE SYNC
+  // Excel parsing/decision calculation must NOT wait for DB.
+  // Localhost uses the existing Express backend.
+  // Production uses the same-origin Vercel /api/save-history function.
+  // ============================================================
+  const API_BASE_URL =
+    import.meta.env.VITE_API_BASE_URL ||
+    (window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1"
+      ? "http://localhost:3001"
+      : "");
+
+  async function saveHistoryToBackend({ records, vehicle }) {
+    const response = await fetch(`${API_BASE_URL}/api/save-history`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        records,
+        vehicle: {
+          ...vehicle,
+          sale: vehicle?.sale instanceof Date
+            ? vehicle.sale.toISOString()
+            : vehicle?.sale || null,
+        },
+      }),
+    });
+
+    let payload = null;
+    try { payload = await response.json(); } catch { payload = null; }
+
+    if (!response.ok || !payload?.success) {
+      throw new Error(payload?.error || `History save failed (${response.status})`);
+    }
+    return payload;
+  }
+
+  async function saveHistoryInBackground(records) {
+    const groups = new Map();
+    for (const record of records || []) {
+      const vin = String(record?.vin || "").trim().toUpperCase();
+      if (!vin) continue;
+      if (!groups.has(vin)) groups.set(vin, []);
+      groups.get(vin).push(record);
+    }
+
+    const jobs = [...groups.entries()];
+    if (!jobs.length) return;
+
+    const concurrency = Math.min(4, jobs.length);
+    let nextIndex = 0;
+
+    async function worker() {
+      while (nextIndex < jobs.length) {
+        const index = nextIndex++;
+        const [, vehicleRecords] = jobs[index];
+        try {
+          const vehicle = deriveVehicle(vehicleRecords);
+          await saveHistoryToBackend({ records: vehicleRecords, vehicle });
+        } catch (error) {
+          console.error("Background history save failed:", error);
+        }
+      }
+    }
+
+    await Promise.all(
+      Array.from({ length: concurrency }, () => worker())
+    );
+  }
+
   const handleExcelUpload = async (event) => {
     const files = Array.from(event.target.files || []);
     if (!files.length) return;
@@ -2201,6 +2272,7 @@ function App() {
 
     try {
       const result = await parseExcelFiles(files);
+      const parsedRows = result.records || [];
 
       setExcelData("");
       setUploadedFiles(files);
@@ -2208,30 +2280,22 @@ function App() {
         files: result.files,
         rowsBefore: result.totalRowsBeforeDedup,
         duplicates: result.duplicateRowsIgnored,
-        rowsAfter: result.records.length
+        rowsAfter: parsedRows.length,
       });
 
-      // Keep uploaded/merged data in the same state used by the existing
-      // single and bulk analysis workflows.
       setAnalysis(null);
       setBulkResults([]);
       setBulkMeta(null);
       setCustomerGroups([]);
       setSelectedCustomers([]);
+      setUploadParsedRecords(parsedRows);
 
-      // Store merged records as TSV so the existing Analyze buttons can use
-      // the same parser/decision path without duplicating business logic.
-      const parsedRows = result.records;
-      if (parsedRows.length) {
-        // Build a simple internal tab-delimited representation from the
-        // parsed records. Analysis below uses the already parsed records
-        // directly through a temporary state object instead of re-parsing.
-        setExcelData("");
-        setUploadParsedRecords(parsedRows);
-      }
+      // Do not await DB persistence. Analysis remains immediately available.
+      if (parsedRows.length) void saveHistoryInBackground(parsedRows);
     } catch (err) {
       setUploadMeta(null);
       setUploadedFiles([]);
+      setUploadParsedRecords([]);
       setError(err?.message || "Excel file read nahi ho payi.");
     } finally {
       setUploadBusy(false);

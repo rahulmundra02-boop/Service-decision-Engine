@@ -539,6 +539,33 @@ function formatDateShort(date) {
   return `${dd}-${mm}-${yy}`;
 }
 
+function formatVehicleAge(saleDate, asOfDate = new Date()) {
+  if (!saleDate) return "";
+  const start = new Date(saleDate);
+  const end = new Date(asOfDate);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return "0 Years, 0 Months, 0 Days";
+
+  let years = end.getFullYear() - start.getFullYear();
+  let anniversary = new Date(start);
+  anniversary.setFullYear(start.getFullYear() + years);
+
+  if (anniversary > end) {
+    years -= 1;
+    anniversary = new Date(start);
+    anniversary.setFullYear(start.getFullYear() + years);
+  }
+
+  let months = end.getMonth() - anniversary.getMonth();
+  if (end.getDate() < anniversary.getDate()) months -= 1;
+  if (months < 0) months += 12;
+
+  const monthAnchor = new Date(anniversary);
+  monthAnchor.setMonth(monthAnchor.getMonth() + months);
+  const days = Math.max(0, Math.floor((end - monthAnchor) / 86400000));
+
+  return `${years} Year${years === 1 ? "" : "s"}, ${months} Month${months === 1 ? "" : "s"}, ${days} Day${days === 1 ? "" : "s"}`;
+}
+
 function formatNumber(value) {
   return Number(value || 0).toLocaleString("en-IN", {
     maximumFractionDigits: 0,
@@ -1116,10 +1143,8 @@ function deriveRunningReading(records, vehicle) {
 }
 
 function aggregateHistory(records) {
-  // SERVICE SUMMARY ONLY:
-  // Keep the complete visit rows for reading/date/job-card, but expose a visit
-  // only when at least one line item has a PART CODE present in the master
-  // PART_STANDARDIZATION list supplied by the user.
+  // SERVICE SUMMARY: keep the complete imported history, including unrelated
+  // DMS lines that are not present in the service-decision master list.
   const groups = new Map();
 
   for (const r of records) {
@@ -1133,7 +1158,6 @@ function aggregateHistory(records) {
 
   return [...groups.values()]
     .map(rows => rows.sort((a, b) => (a.rowNumber || 0) - (b.rowNumber || 0)))
-    .filter(rows => rows.some(r => isMappedServiceLine(r)))
     .sort((a, b) => {
       const da = getVisitDate(a)?.getTime() || 0;
       const db = getVisitDate(b)?.getTime() || 0;
@@ -1194,19 +1218,67 @@ function formatQty(value) {
   return Number.isInteger(n) ? String(n) : String(n).replace(/\.0+$/, '');
 }
 
-function getVisitParts(visit) {
-  // Only mapped PART/ROT line items are shown.
-  // Format: PARTCODE-Standard Name-QTY
-  return visit
-    .filter(isMappedServiceLine)
-    .map(r => {
-      const code = normalizePartCode(r.partCode);
-      const name = PART_STANDARDIZATION[code];
-      const qty = formatQty(r.qty);
-      return `${code}-${name}-${qty}`;
-    })
-    .filter(Boolean)
-    .join(' | ');
+function recordDisplayText(record) {
+  const code = normalizePartCode(record?.partCode);
+  const mappedName = code ? PART_STANDARDIZATION[code] : "";
+  const name = mappedName || String(record?.standardizedPart || record?.partDescription || record?.part || "").trim();
+  const qty = formatQty(record?.qty);
+  const codePrefix = code ? `${code}-` : "";
+  return name ? `${codePrefix}${name}-${qty}` : "";
+}
+
+function isCalculationEligibleLine(record, visit, vehicle) {
+  const text = String(record?.standardizedPart || record?.partDescription || record?.part || "").toUpperCase();
+  const qty = Number(record?.qty || 0);
+  const jobCard = String(record?.jobCard || "").trim();
+  const sameJob = visit.filter(r => !jobCard || String(r?.jobCard || "").trim() === jobCard);
+  const sameDate = visit;
+
+  if (text.includes("ENGINE OIL") && !text.includes("FILTER")) {
+    return qty >= 12 && sameJob.some(r => String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase().includes("ENGINE OIL FILTER"));
+  }
+  if (text.includes("STEERING OIL") && !text.includes("FILTER")) {
+    return qty >= 1 && sameJob.some(r => String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase().includes("STEERING OIL FILTER"));
+  }
+  if (text.includes("COOLANT")) return qty >= 15;
+  if (text.includes("GEAR OIL")) return qty >= 6;
+  if (text.includes("HUB GREASE")) return qty >= 3;
+  if (text.includes("AXLE OIL")) return qty >= 12;
+  if (text.includes("CLUTCH OIL")) return qty >= 0.5;
+  if (text.includes("APDA FILTER")) return qty >= 1;
+  if (text.includes("DEF INLINE FILTER")) return qty >= 1;
+
+  if (text.includes("AIR FILTER")) {
+    if (text.includes("KIT")) return qty >= 1;
+    return sameDate.filter(r => {
+      const t = String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase();
+      return t.includes("AIR FILTER") && !t.includes("KIT");
+    }).reduce((sum, r) => sum + Number(r?.qty || 0), 0) >= 2;
+  }
+
+  if (text.includes("FUEL FILTER")) {
+    if (text.includes("KIT")) return qty >= 1;
+    return sameJob.filter(r => {
+      const t = String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase();
+      return t.includes("FUEL FILTER") && !t.includes("KIT");
+    }).reduce((sum, r) => sum + Number(r?.qty || 0), 0) >= 2;
+  }
+
+  if (text.includes("DEF FILTER")) {
+    if (text.includes("KIT")) return qty >= 1;
+    return sameDate.some(r => String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase().includes("DEF FILTER SUCTION"))
+      && sameDate.some(r => String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase().includes("DEF FILTER AIR"));
+  }
+
+  return false;
+}
+
+function getVisitParts(visit, vehicle) {
+  return visit.map(record => {
+    const text = recordDisplayText(record);
+    if (!text) return null;
+    return { text, eligible: isCalculationEligibleLine(record, visit, vehicle) };
+  }).filter(Boolean);
 }
 
 function getLastMatching(records, keywords) {
@@ -2647,9 +2719,9 @@ function App() {
         body { margin: 0; background: #d9e2f3; font-family: Calibri, Arial, sans-serif; color: #1f1f1f; }
         .excel-app { min-height: 100vh; background: #d9e2f3; }
         .excel-window { width: min(1500px, 100%); margin: 0 auto; background: #fff; min-height: 100vh; box-shadow: 0 0 0 1px #9e9e9e; }
-        .excel-titlebar { height: 34px; background: #217346; color: #fff; display:flex; align-items:center; justify-content:space-between; padding:0 12px; font-size:14px; }
-        .excel-title { font-weight:700; }
-        .excel-title-right { font-size:12px; }
+        .excel-titlebar { height: 34px; background: #217346; color: #fff; display:flex; align-items:center; justify-content:center; padding:0 12px; font-size:14px; }
+        .excel-title { font-weight:700; text-align:center; flex:1; }
+        .excel-title-right { display:none; }
         .excel-ribbon { background:#f3f3f3; border-bottom:1px solid #b7b7b7; }
         .excel-tabs { height:36px; display:flex; align-items:flex-end; gap:2px; padding:0 10px; border-bottom:1px solid #c8c8c8; }
         .excel-tab { padding:8px 15px 7px; font-size:13px; cursor:pointer; border:1px solid transparent; border-bottom:0; }
@@ -2999,6 +3071,12 @@ function App() {
         .single-service-summary th:nth-child(1), .single-service-summary td:nth-child(1) { width:100px; min-width:100px; white-space:nowrap; }
         .single-service-summary th:nth-child(2), .single-service-summary td:nth-child(2) { width:130px; min-width:130px; white-space:nowrap; }
         .single-service-summary th:nth-child(3), .single-service-summary td:nth-child(3) { width:130px; min-width:130px; white-space:nowrap; }
+        .service-summary-note { padding:5px 8px; margin-top:4px; }
+        .history-part { display:inline-block; margin:2px 4px 2px 0; padding:3px 6px; border:1px solid transparent; }
+        .history-part.eligible { background:#e2f0d9; color:#006100; border-color:#70ad47; font-weight:700; border-radius:2px; }
+        .pre-analysis-empty { min-height:420px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; border:1px dashed #9fbad0; background:#eef4fa; color:#5b6770; padding:30px 20px; }
+        .pre-analysis-title { font-size:20px; font-weight:700; color:#1f4e78; margin-bottom:8px; }
+        .pre-analysis-text { max-width:560px; font-size:13px; line-height:1.5; }
         .excel-input { width:100%; border:1px solid #a6a6a6; min-height:29px; padding:5px 7px; font-family:Calibri,Arial,sans-serif; font-size:13px; }
         .excel-input:focus { outline:2px solid #70ad47; outline-offset:-2px; }
         .upload-area { border:1px dashed #70ad47; background:#f4fbef; padding:10px; }
@@ -3025,6 +3103,23 @@ function App() {
         @media (max-width: 900px) {
           .sheet-grid { grid-template-columns: 105px minmax(100px,1fr) 105px minmax(100px,1fr); }
           .wide-hide { display:none; }
+        }
+        @media (max-width: 600px) {
+          .excel-tabs { overflow-x:auto; justify-content:flex-start; align-items:stretch; padding:0 4px; scrollbar-width:none; }
+          .excel-tabs::-webkit-scrollbar { display:none; }
+          .excel-tab { flex:0 0 auto; white-space:nowrap; padding:9px 13px 8px; font-size:12px; }
+          .excel-toolbar { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; align-items:stretch; }
+          .excel-toolbar .excel-button { width:100%; min-width:0; min-height:40px; padding:6px 8px; line-height:1.15; }
+          .excel-toolbar .status-pill { width:100%; text-align:center; min-width:0; }
+          .excel-toolbar .status-pill:first-of-type { grid-column:1 / -1; }
+          .reading-override-grid { grid-template-columns:100px minmax(0,1fr); }
+          .reading-override-grid .cell:nth-child(3),
+          .reading-override-grid .cell:nth-child(4) { grid-column:2; }
+          .reading-override-grid .cell:nth-child(5),
+          .reading-override-grid .cell:nth-child(6) { grid-column:1 / -1; }
+          .recalculate-button { width:100%; min-width:0; }
+          .sheet-heading { font-size:15px; line-height:1.25; }
+          .vehicle-profile-panel .sheet-grid { grid-template-columns:110px minmax(0,1fr); }
         }
         @media (prefers-color-scheme: dark) {
           body, .excel-app { background:#111827; color:#e5e7eb; color-scheme:dark; }
@@ -3092,7 +3187,7 @@ function App() {
           <input id="excel-file-input" className="no-print" type="file" accept=".xlsx,.xls,.xlsm,.csv" multiple style={{display:"none"}} onChange={handleExcelUpload} disabled={uploadBusy} />
 
           <main className="excel-sheet">
-            {mode === "single" ? (
+            {mode === "single" ? (analysis ? (
               <>
                 <div className="section-title no-print">Reading Override</div>
                 <div className="sheet-grid reading-override-grid no-print">
@@ -3113,7 +3208,7 @@ function App() {
                       <div className="cell label">Reg No</div><div className="cell value">{analysis?.vehicle?.reg || ""}</div>
                       <div className="cell label">Engine No</div><div className="cell value">{analysis?.vehicle?.engine || ""}</div>
                       <div className="cell label">Sale Date</div><div className="cell value">{analysis ? formatDate(analysis.vehicle.sale) : ""}</div>
-                      <div className="cell label">Vehicle Age</div><div className="cell value">{analysis?.vehicle?.sale ? `${Math.floor((Date.now()-analysis.vehicle.sale.getTime())/31557600000)} Years` : ""}</div>
+                      <div className="cell label">Vehicle Age</div><div className="cell value">{analysis?.vehicle?.sale ? formatVehicleAge(analysis.vehicle.sale) : ""}</div>
                       <div className="cell label">Model</div><div className="cell value">{analysis?.vehicle?.model || ""}</div>
                       <div className="cell label">Last Odometer recorded/date</div><div className="cell value">{analysis?.running?.last ? `${formatNumber(getRelevantReading(analysis.running.last, analysis.vehicle))} / ${formatDate(analysis.running.last.date)}` : ""}</div>
                       <div className="cell label">Current Reading</div><div className="cell value">{analysis?.running?.current ? `${formatNumber(analysis.running.current)} ${analysis.running.unit || "KM"}` : ""}</div>
@@ -3138,19 +3233,36 @@ function App() {
 
                 {error && <div className="error-line no-print">{error}</div>}
 
-                <div className="section-title">Service Summary</div>
+                <div className="section-title">Service Summary — Complete Vehicle History</div>
+                <div className="small-note service-summary-note">Complete imported service history is shown below. Highlighted lines are service-related records that meet the quantity/companion conditions used by the current service calculation.</div>
                 <div className="history-wrap">
                   <table className="history-table single-service-summary">
                     <thead><tr><th>Date</th><th>Job Card</th><th>Reading</th><th>Part No. / Service / Qty</th></tr></thead>
                     <tbody>
                       {analysis?.visits?.length ? analysis.visits.map((visit,i) => {
-                        const visitDate=getVisitDate(visit), jobCard=getVisitJobCard(visit), visitReading=getVisitReading(visit,analysis.vehicle), parts=getVisitParts(visit);
-                        return <tr key={i}><td>{formatDateShort(visitDate)}</td><td>{jobCard}</td><td>{visitReading ? `${formatNumber(visitReading)} ${getTargetUnit(analysis.vehicle)}` : "-"}</td><td>{parts || "-"}</td></tr>;
+                        const visitDate=getVisitDate(visit), jobCard=getVisitJobCard(visit), visitReading=getVisitReading(visit,analysis.vehicle), parts=getVisitParts(visit,analysis.vehicle);
+                        return <tr key={i}>
+                          <td>{formatDateShort(visitDate)}</td>
+                          <td>{jobCard}</td>
+                          <td>{visitReading ? `${formatNumber(visitReading)} ${getTargetUnit(analysis.vehicle)}` : "-"}</td>
+                          <td>
+                            {parts.length ? parts.map((part,index) => (
+                              <span key={index} className={part.eligible ? "history-part eligible" : "history-part"} title={part.eligible ? "Eligible service-calculation record" : "History record"}>
+                                {part.text}
+                              </span>
+                            )) : "-"}
+                          </td>
+                        </tr>;
                       }) : <tr><td colSpan="4" className="small-note">No service history loaded.</td></tr>}
                     </tbody>
                   </table>
                 </div>
               </>
+            ) : (
+              <div className="pre-analysis-empty">
+                <div className="pre-analysis-title">Upload Excel to start</div>
+                <div className="pre-analysis-text">Vehicle analysis, profile and service history will appear here after the Excel file is uploaded and analysed.</div>
+              </div>
             ) : mode === "bulk" ? (
               <>
                 <div className="sheet-heading">BULK VEHICLE SERVICE DECISION</div>

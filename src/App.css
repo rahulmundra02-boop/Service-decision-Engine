@@ -142,3 +142,5 @@ tr:last-child td { border-bottom:0; }
 .single-service-summary td:nth-child(4) {
   overflow-wrap: anywhere;
 }
+
+/* Trigger preview redeploy after environment variable update. */

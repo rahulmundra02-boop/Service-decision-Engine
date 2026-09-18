@@ -168,6 +168,7 @@ const PART_STANDARDIZATION = {
   'FS0500': 'Body Building Checkup',
   'FL100290': 'Cluster Meter',
   'FL100390': 'Cluster Meter',
+  'CF000001': 'Clutch Oil',
   'CFD99991': 'Clutch Oil',
   'CLA99994': 'Clutch Oil',
   'U9999995': 'Clutch Oil',
@@ -1239,6 +1240,16 @@ function isCalculationEligibleLine(record, visit, vehicle, decision) {
   // of whether that same free service is currently due.
   const code = normalizePartCode(record?.partCode);
   if (code === "FS0501" || code === "FS0502" || code === "FS0503" || text.includes("1ST FREE SERVICE") || text.includes("2ND FREE SERVICE") || text.includes("3RD FREE SERVICE")) {
+    return true;
+  }
+
+  // These are service items in the vehicle history and must always be
+  // highlighted when they are present, irrespective of current due status.
+  if (
+    text.includes("WHEEL ALIGNMENT") ||
+    text.includes("BODY BUILDING CHECK") ||
+    text.includes("PDI SERVICE")
+  ) {
     return true;
   }
 

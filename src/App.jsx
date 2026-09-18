@@ -1227,19 +1227,43 @@ function recordDisplayText(record) {
   return name ? `${codePrefix}${name}-${qty}` : "";
 }
 
-function isCalculationEligibleLine(record, visit, vehicle) {
+function isCalculationEligibleLine(record, visit, vehicle, decision) {
   const text = String(record?.standardizedPart || record?.partDescription || record?.part || "").toUpperCase();
   const qty = Number(record?.qty || 0);
   const jobCard = String(record?.jobCard || "").trim();
   const sameJob = visit.filter(r => !jobCard || String(r?.jobCard || "").trim() === jobCard);
   const sameDate = visit;
 
+  // Free-service history is eligible when the same free service is part of
+  // the current decision result.
+  const freeService = String(decision?.freeService || "").toUpperCase();
+  if (text.includes("FREE SERVICE") && freeService && text.includes(freeService.replace(/1ST|2ND|3RD/g, "").trim())) {
+    return true;
+  }
+  if (text.includes("1ST FREE SERVICE") && freeService.includes("1ST")) return true;
+  if (text.includes("2ND FREE SERVICE") && freeService.includes("2ND")) return true;
+  if (text.includes("3RD FREE SERVICE") && freeService.includes("3RD")) return true;
+
   if (text.includes("ENGINE OIL") && !text.includes("FILTER")) {
     return qty >= 12 && sameJob.some(r => String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase().includes("ENGINE OIL FILTER"));
   }
+  if (text.includes("ENGINE OIL FILTER")) {
+    return sameJob.some(r => {
+      const t = String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase();
+      return t.includes("ENGINE OIL") && !t.includes("FILTER") && Number(r?.qty || 0) >= 12;
+    });
+  }
+
   if (text.includes("STEERING OIL") && !text.includes("FILTER")) {
     return qty >= 1 && sameJob.some(r => String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase().includes("STEERING OIL FILTER"));
   }
+  if (text.includes("STEERING OIL FILTER")) {
+    return sameJob.some(r => {
+      const t = String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase();
+      return t.includes("STEERING OIL") && !t.includes("FILTER") && Number(r?.qty || 0) >= 1;
+    });
+  }
+
   if (text.includes("COOLANT")) return qty >= 15;
   if (text.includes("GEAR OIL")) return qty >= 6;
   if (text.includes("HUB GREASE")) return qty >= 3;
@@ -1273,11 +1297,11 @@ function isCalculationEligibleLine(record, visit, vehicle) {
   return false;
 }
 
-function getVisitParts(visit, vehicle) {
+function getVisitParts(visit, vehicle, decision) {
   return visit.map(record => {
     const text = recordDisplayText(record);
     if (!text) return null;
-    return { text, eligible: isCalculationEligibleLine(record, visit, vehicle) };
+    return { text, eligible: isCalculationEligibleLine(record, visit, vehicle, decision) };
   }).filter(Boolean);
 }
 
@@ -3240,7 +3264,7 @@ function App() {
                     <thead><tr><th>Date</th><th>Job Card</th><th>Reading</th><th>Part No. / Service / Qty</th></tr></thead>
                     <tbody>
                       {analysis?.visits?.length ? analysis.visits.map((visit,i) => {
-                        const visitDate=getVisitDate(visit), jobCard=getVisitJobCard(visit), visitReading=getVisitReading(visit,analysis.vehicle), parts=getVisitParts(visit,analysis.vehicle);
+                        const visitDate=getVisitDate(visit), jobCard=getVisitJobCard(visit), visitReading=getVisitReading(visit,analysis.vehicle), parts=getVisitParts(visit,analysis.vehicle,analysis.decision);
                         return <tr key={i}>
                           <td>{formatDateShort(visitDate)}</td>
                           <td>{jobCard}</td>

@@ -25,6 +25,7 @@ export default function AuthGate({ children }) {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [showAccountHelp, setShowAccountHelp] = useState(false);
+  const [showForgotHelp, setShowForgotHelp] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [passwordForm, setPasswordForm] = useState({ currentPassword:"", newPassword:"", confirmPassword:"" });
   const [adminOpen, setAdminOpen] = useState(false);
@@ -162,26 +163,28 @@ export default function AuthGate({ children }) {
           <button className="auth-primary" onClick={login} disabled={loading}>Login</button>
 
           <button className="auth-secondary" onClick={() => setShowAccountHelp(v => !v)}>
-            {showAccountHelp ? "Hide Account Help" : "Sign Up / Request Account"}
+            {showAccountHelp ? "Hide Account Creation" : "Sign Up / Request Account"}
           </button>
 
           {showAccountHelp && (
             <div className="auth-account-help">
               <div className="auth-help-title">Account Creation</div>
-              <div className="auth-help-text">Self sign-up is not enabled. Your account will be created by the Service Decision administrator.</div>
+              <div className="auth-help-text">Need a Service Decision account? Contact the administrator. Account creation is free and quick.</div>
               <div className="auth-contact-row"><strong>Email:</strong> {ADMIN_CONTACT_EMAIL}</div>
               <div className="auth-contact-row"><strong>Contact:</strong> {ADMIN_CONTACT_MOBILE}</div>
             </div>
           )}
 
-          <button className="auth-secondary" onClick={() => setShowAccountHelp(true)}>
-            Forgot Password?
+          <button className="auth-secondary" onClick={() => setShowForgotHelp(v => !v)}>
+            {showForgotHelp ? "Hide Password Help" : "Forgot Password?"}
           </button>
 
-          {showAccountHelp && (
+          {showForgotHelp && (
             <div className="auth-help-panel">
               <strong>Forgot Password</strong>
-              <p>Please contact the administrator. Password recovery is handled manually; no OTP or third-party service is used.</p>
+              <p>Please contact the administrator to reset your password. Password reset is handled manually.</p>
+              <div className="auth-contact-row"><strong>Email:</strong> {ADMIN_CONTACT_EMAIL}</div>
+              <div className="auth-contact-row"><strong>Contact:</strong> {ADMIN_CONTACT_MOBILE}</div>
             </div>
           )}
         </div>

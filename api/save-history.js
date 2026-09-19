@@ -30,40 +30,20 @@ function normalizeVehicle(vehicle = {}) {
   return { ...vehicle, registration: vehicle.registration || vehicle.reg || "", sale: normalizeDate(vehicle.sale) };
 }
 
-function normalizeAmount(record = {}) {
-  const direct = record?.amount;
-  if (direct !== undefined && direct !== null && String(direct).trim() !== "") {
-    const n = Number(String(direct).replace(/,/g, "").replace(/[^0-9.-]/g, ""));
-    return Number.isFinite(n) ? n : null;
-  }
+function normalizeRate(record = {}) {
+  const qty = Number(record?.qty ?? record?.quantity ?? 0);
+  const netValue = record?.netValue;
 
-  // Backend fallback for future/import variants where the amount header is
-  // preserved inside rawFields but the normalized field was not populated.
-  const raw = record?.rawFields || {};
-  const keys = Object.keys(raw);
-  const preferred = [
-    "amount",
-    "net amount",
-    "line amount",
-    "item amount",
-    "labour amount",
-    "part amount",
-    "net value",
-    "line value",
-  ];
+  if (!Number.isFinite(qty) || qty <= 0) return null;
+  if (netValue === undefined || netValue === null || String(netValue).trim() === "") return null;
 
-  for (const wanted of preferred) {
-    const key = keys.find((candidate) =>
-      candidate === wanted || candidate.startsWith(wanted + "__")
-    );
-    if (!key) continue;
-    const value = String(raw[key] ?? "").trim();
-    if (!value) continue;
-    const n = Number(value.replace(/,/g, "").replace(/[^0-9.-]/g, ""));
-    if (Number.isFinite(n)) return n;
-  }
+  const total = Number(String(netValue).replace(/,/g, "").replace(/[^0-9.-]/g, ""));
+  if (!Number.isFinite(total)) return null;
 
-  return null;
+  // DMS Net Value is the total pre-tax value for the line.
+  // DB stores only the derived per-unit rate.
+  const rate = total / qty;
+  return Number.isFinite(rate) ? rate : null;
 }
 
 export default async function handler(req, res) {
@@ -85,10 +65,38 @@ export default async function handler(req, res) {
   try {
     await client.query("BEGIN");
 
-    // Add the new line-level amount field automatically for the existing
-    // production table. Existing history remains valid with NULL amounts.
+    // Store only the per-unit rate for future estimates.
+    // If the earlier temporary amount column already exists, convert its
+    // historical line totals to rate using quantity before removing it.
     await client.query(
-      "ALTER TABLE service_history ADD COLUMN IF NOT EXISTS amount NUMERIC"
+      "ALTER TABLE service_history ADD COLUMN IF NOT EXISTS rate NUMERIC"
+    );
+    await client.query(
+      "UPDATE service_history SET rate = CASE " +
+      "WHEN quantity IS NOT NULL AND quantity <> 0 AND amount IS NOT NULL " +
+      "THEN amount / quantity ELSE rate END " +
+      "WHERE rate IS NULL AND amount IS NOT NULL"
+    );
+    await client.query(
+      "ALTER TABLE service_history DROP COLUMN IF EXISTS amount"
+    );
+
+    // These job-card fields are not needed for Service Decision / Estimate
+    // storage. Keep them out of the DB to reduce unnecessary table size.
+    await client.query(
+      "ALTER TABLE job_cards " +
+      "DROP COLUMN IF EXISTS invoice_no, " +
+      "DROP COLUMN IF EXISTS reading, " +
+      "DROP COLUMN IF EXISTS reading_unit, " +
+      "DROP COLUMN IF EXISTS secondary_reading, " +
+      "DROP COLUMN IF EXISTS secondary_unit, " +
+      "DROP COLUMN IF EXISTS inward_date, " +
+      "DROP COLUMN IF EXISTS check_in_date, " +
+      "DROP COLUMN IF EXISTS start_date, " +
+      "DROP COLUMN IF EXISTS end_date"
+    );
+    await client.query(
+      "ALTER TABLE service_history DROP COLUMN IF EXISTS service_type"
     );
 
     const vehicleResult = await client.query(
@@ -133,13 +141,9 @@ export default async function handler(req, res) {
       const first = lines[0];
       newJobCardRows.push([
         vehicleId, jobCardNo,
-        clean(first.invoice || first.invoiceNo || first.billingDocument),
-        clean(first.date), clean(first.reading), clean(first.readingUnit || first.unit),
+        clean(first.date),
         clean(first.cumulative), clean(first.cumulativeUnit),
-        clean(first.secondaryReading), clean(first.secondaryUnit),
-        clean(first.secondaryCumulative), clean(first.secondaryCumulativeUnit),
-        clean(first.inwardDate || first.inward), clean(first.checkInDate),
-        clean(first.startDate), clean(first.endDate)
+        clean(first.secondaryCumulative), clean(first.secondaryCumulativeUnit)
       ]);
     }
 
@@ -158,8 +162,8 @@ export default async function handler(req, res) {
 
       const result = await client.query(
         "INSERT INTO job_cards " +
-        "(vehicle_id,job_card_no,invoice_no,job_date,reading,reading_unit,cumulative_reading,cumulative_unit," +
-        "secondary_reading,secondary_unit,secondary_cumulative_reading,secondary_cumulative_unit,inward_date,check_in_date,start_date,end_date) " +
+        "(vehicle_id,job_card_no,job_date,cumulative_reading,cumulative_unit," +
+        "secondary_cumulative_reading,secondary_cumulative_unit) " +
         "VALUES " + finalPlaceholders.join(",") +
         " ON CONFLICT (vehicle_id,job_card_no) DO NOTHING RETURNING id,job_card_no",
         values
@@ -175,9 +179,9 @@ export default async function handler(req, res) {
       if (!jobCardId) continue;
       for (const record of lines) {
         serviceRows.push([
-          jobCardId, clean(record.serviceType), clean(record.itemCategory), clean(record.partCode),
+          jobCardId, clean(record.itemCategory), clean(record.partCode),
           clean(record.part || record.partDescription), clean(record.standardizedPart),
-          clean(record.qty || record.quantity), normalizeAmount(record), clean(record.customerVoice),
+          clean(record.qty || record.quantity), normalizeRate(record), clean(record.customerVoice),
           clean(record.codifiedCustomerVoice), clean(record.repairTypeLine),
           clean(record.faultCode || record.complaintCode), clean(record.repairType)
         ]);
@@ -193,7 +197,7 @@ export default async function handler(req, res) {
       );
       const result = await client.query(
         "INSERT INTO service_history " +
-        "(job_card_id,service_type,item_category,part_code,part_description,standardized_part,quantity,amount," +
+        "(job_card_id,item_category,part_code,part_description,standardized_part,quantity,rate," +
         "customer_voice,codified_customer_voice,repair_line_item_type,complaint_code,repair_type) " +
         "VALUES " + placeholders.join(",") + " RETURNING id",
         values

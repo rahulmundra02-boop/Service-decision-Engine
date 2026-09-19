@@ -1,9 +1,24 @@
-import { useEffect, useRef, useState } from "react";
+import { cloneElement, useEffect, useRef, useState } from "react";
 import "./AuthGate.css";
 
 const TOKEN_KEY = "serviceDecisionAuthToken";
 const ADMIN_CONTACT_EMAIL = "rahul.mundra02@gmail.com";
 const ADMIN_CONTACT_MOBILE = "9461768278";
+const ADMIN_DEALER_FALLBACK = "Kandla Motors";
+
+function normalizeLoggedInUser(account) {
+  if (!account) return account;
+  // The original admin account was created before dealer names were made
+  // account-specific. Keep that legacy placeholder from leaking into the
+  // customer-facing WhatsApp workflow.
+  if (
+    account.role === "admin" &&
+    String(account.dealerName || "").trim().toLowerCase() === "service decision admin"
+  ) {
+    return { ...account, dealerName: ADMIN_DEALER_FALLBACK };
+  }
+  return account;
+}
 
 async function api(action, payload = {}, token = "") {
   const response = await fetch("/api/auth", {
@@ -41,7 +56,7 @@ export default function AuthGate({ children }) {
     const token = localStorage.getItem(TOKEN_KEY);
     if (!token) { setLoading(false); return; }
     api("me", {}, token)
-      .then(data => setUser(data.user))
+      .then(data => setUser(normalizeLoggedInUser(data.user)))
       .catch(() => localStorage.removeItem(TOKEN_KEY))
       .finally(() => setLoading(false));
   }, []);
@@ -60,7 +75,7 @@ export default function AuthGate({ children }) {
     const password = document.getElementById("auth-password")?.value || "";
     const data = await api("login", { identifier, password });
     localStorage.setItem(TOKEN_KEY, data.token);
-    setUser(data.user);
+    setUser(normalizeLoggedInUser(data.user));
   });
 
   const logout = async () => {
@@ -242,7 +257,7 @@ export default function AuthGate({ children }) {
           analyticsLoading={analyticsLoading}
           onAnalytics={loadAdminAnalytics}
         />
-      ) : children}
+      ) : cloneElement(children, { user })}
     </div>
   );
 }
@@ -264,6 +279,16 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onRefresh, onRese
   const summary = analytics.summary || [];
   const periods = analytics.periods || [];
   const breakdown = analytics.breakdown || [];
+
+  const displayDealerName = (u) => {
+    if (
+      u?.role === "admin" &&
+      String(u?.dealerName || "").trim().toLowerCase() === "service decision admin"
+    ) {
+      return "Kandla Motors";
+    }
+    return u?.dealerName || "";
+  };
 
   const totals = summary.reduce((acc,u)=>({
     users:acc.users+1,
@@ -383,7 +408,7 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onRefresh, onRese
                 <div className="admin-panel-card-title">Recent Users</div>
                 <div className="admin-mini-list">
                   {recentUsers.map(u=><button key={u.id} onClick={()=>onAnalytics(Number(u.id),analyticsRange)}>
-                    <span><strong>{u.personName}</strong><small>{u.dealerName}</small></span>
+                    <span><strong>{u.personName}</strong><small>{displayDealerName(u)}</small></span>
                     <em>{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "—"}</em>
                   </button>)}
                 </div>
@@ -503,7 +528,7 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onRefresh, onRese
                     <thead><tr><th>ID</th><th>Name</th><th>Dealer</th><th>Email</th><th>Status</th><th>Last Login</th><th>Last Activity</th><th>Analytics</th><th>Action</th></tr></thead>
                     <tbody>
                       {users.map(u=><tr key={u.id}>
-                        <td>{u.id}</td><td>{u.personName}</td><td>{u.dealerName}</td><td>{u.email}</td>
+                        <td>{u.id}</td><td>{u.personName}</td><td>{displayDealerName(u)}</td><td>{u.email}</td>
                         <td>{u.role === "admin" ? "ADMIN" : u.status}</td>
                         <td>{u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : "Never"}</td>
                         <td>{u.lastActivityAt ? new Date(u.lastActivityAt).toLocaleString() : "—"}</td>

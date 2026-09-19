@@ -6,6 +6,7 @@ import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { autoTable } from "jspdf-autotable";
 import "./App.css";
+import AuthGate from "./AuthGate.jsx";
 
 const PART_STANDARDIZATION = {
   'FS0501': '1st Free service',
@@ -2326,7 +2327,7 @@ function ExcelFilterDropdown({
   );
 }
 
-function App() {
+function ServiceDecisionApp() {
   const [excelData, setExcelData] = useState("");
   const [analysis, setAnalysis] = useState(null);
   const [error, setError] = useState("");
@@ -3579,5 +3580,9 @@ function Info({ label, value }) {
   return <div className="info-box"><span>{label}</span><strong>{value}</strong></div>;
 }
 
+
+function App() {
+  return <AuthGate><ServiceDecisionApp /></AuthGate>;
+}
 
 export default App;

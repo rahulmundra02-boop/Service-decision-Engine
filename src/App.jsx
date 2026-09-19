@@ -2351,7 +2351,11 @@ function App() {
     if (!excelData.trim()) return [];
     return excelData.trim().split(/\r?\n/).slice(0, 6);
   }, [excelData]);
-  const todayDisplay = new Date().toLocaleDateString("en-GB");
+  const todayDisplay = (() => {
+    const d = new Date();
+    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    return `${String(d.getDate()).padStart(2,"0")}-${months[d.getMonth()]}-${d.getFullYear()}`;
+  })();
 
 
 

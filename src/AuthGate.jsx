@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import "./AuthGate.css";
 
 const TOKEN_KEY = "serviceDecisionAuthToken";
+const ADMIN_CONTACT_EMAIL = "rahul.mundra02@gmail.com";
+const ADMIN_CONTACT_MOBILE = "9461768278";
 
 async function api(action, payload = {}, token = "") {
   const response = await fetch("/api/auth", {
@@ -18,139 +20,249 @@ async function api(action, payload = {}, token = "") {
 }
 
 export default function AuthGate({ children }) {
-  const [screen, setScreen] = useState("login");
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const [registration, setRegistration] = useState({userId:null, email:"", mobile:""});
-  const [form, setForm] = useState({personName:"",dealerName:"",email:"",mobile:"",password:"",confirmPassword:""});
-  const [identifier, setIdentifier] = useState("");
-  const [recovery, setRecovery] = useState({userId:null,channel:"email",otp:"",newPassword:"",confirmPassword:""});
+  const [showPassword, setShowPassword] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ currentPassword:"", newPassword:"", confirmPassword:"" });
+  const [adminOpen, setAdminOpen] = useState(false);
+  const [adminUsers, setAdminUsers] = useState([]);
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [adminForm, setAdminForm] = useState({ personName:"", dealerName:"", email:"", mobile:"", password:"" });
 
   useEffect(() => {
     const token = localStorage.getItem(TOKEN_KEY);
     if (!token) { setLoading(false); return; }
-    api("me",{},token).then(data=>setUser(data.user)).catch(()=>localStorage.removeItem(TOKEN_KEY)).finally(()=>setLoading(false));
+    api("me", {}, token)
+      .then(data => setUser(data.user))
+      .catch(() => localStorage.removeItem(TOKEN_KEY))
+      .finally(() => setLoading(false));
   }, []);
 
-  const submit = async (fn) => {
-    setError(""); setMessage(""); setLoading(true);
-    try { await fn(); } catch(e) { setError(e.message || "Something went wrong."); } finally { setLoading(false); }
+  const run = async (fn) => {
+    setError("");
+    setMessage("");
+    setLoading(true);
+    try { await fn(); }
+    catch (e) { setError(e.message || "Something went wrong."); }
+    finally { setLoading(false); }
   };
 
-  const login = () => submit(async()=>{
-    const data=await api("login",{identifier,password:form.password});
-    localStorage.setItem(TOKEN_KEY,data.token); setUser(data.user);
+  const login = () => run(async () => {
+    const identifier = document.getElementById("auth-identifier")?.value || "";
+    const password = document.getElementById("auth-password")?.value || "";
+    const data = await api("login", { identifier, password });
+    localStorage.setItem(TOKEN_KEY, data.token);
+    setUser(data.user);
   });
 
-  const register = () => submit(async()=>{
-    if(form.password!==form.confirmPassword) throw new Error("Passwords do not match.");
-    const data=await api("register",form);
-    setRegistration({userId:data.userId,email:form.email,mobile:form.mobile});
-    setScreen("verify");
-    setMessage("Account created. Verify both email and mobile OTP.");
+  const logout = async () => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    try { await api("logout", {}, token); } catch {}
+    localStorage.removeItem(TOKEN_KEY);
+    setUser(null);
+    setAdminOpen(false);
+  };
+
+  const changePassword = () => run(async () => {
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) throw new Error("New passwords do not match.");
+    if (passwordForm.newPassword.length < 8) throw new Error("New password must be at least 8 characters.");
+    await api("change-password", {
+      currentPassword: passwordForm.currentPassword,
+      newPassword: passwordForm.newPassword,
+    }, localStorage.getItem(TOKEN_KEY));
+    setPasswordForm({ currentPassword:"", newPassword:"", confirmPassword:"" });
+    setShowPassword(false);
+    setMessage("Password changed successfully.");
   });
 
-  const verify = (channel,otp) => submit(async()=>{
-    const data=await api("verify-registration",{userId:registration.userId,channel,otp});
-    if(data.active) { setMessage("Account verified successfully. You can now login."); setScreen("login"); }
-    else setMessage(`${channel==="email"?"Email":"Mobile"} verified. Please verify the other OTP.`);
+  const loadAdminUsers = async () => {
+    setAdminLoading(true);
+    try {
+      const data = await api("admin-list-users", {}, localStorage.getItem(TOKEN_KEY));
+      setAdminUsers(data.users || []);
+    } catch (e) {
+      setError(e.message || "Unable to load users.");
+    } finally {
+      setAdminLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user?.role === "admin" && adminOpen) loadAdminUsers();
+  }, [user?.role, adminOpen]);
+
+  const createUser = () => run(async () => {
+    if (adminForm.password.length < 8) throw new Error("Password must be at least 8 characters.");
+    const data = await api("admin-create-user", adminForm, localStorage.getItem(TOKEN_KEY));
+    setAdminForm({ personName:"", dealerName:"", email:"", mobile:"", password:"" });
+    setMessage(data.message || "User account created successfully.");
+    await loadAdminUsers();
   });
 
-  const startRecovery = () => submit(async()=>{
-    const channel=recovery.channel;
-    const data=await api("request-reset",{identifier,channel});
-    setRecovery(r=>({...r,userId:data.userId||null}));
-    setScreen("reset");
-    setMessage("If the account exists, a recovery OTP has been sent.");
-  });
+  const resetUserPassword = (target) => {
+    const newPassword = window.prompt(`Enter new password for ${target.personName} (minimum 8 characters):`);
+    if (!newPassword) return;
+    run(async () => {
+      await api("admin-reset-password", { userId:target.id, newPassword }, localStorage.getItem(TOKEN_KEY));
+      setMessage(`Password reset for ${target.personName}.`);
+      await loadAdminUsers();
+    });
+  };
 
-  const resetPassword = () => submit(async()=>{
-    if(recovery.newPassword!==recovery.confirmPassword) throw new Error("Passwords do not match.");
-    if(!recovery.userId) throw new Error("Please request a recovery OTP first.");
-    await api("reset-password",{userId:recovery.userId,channel:recovery.channel,otp:recovery.otp,newPassword:recovery.newPassword});
-    setScreen("login"); setMessage("Password reset successfully. Please login.");
-  });
-
-  const logout = async()=>{
-    const token=localStorage.getItem(TOKEN_KEY);
-    try { await api("logout",{},token); } catch {}
-    localStorage.removeItem(TOKEN_KEY); setUser(null); setScreen("login");
+  const toggleUserStatus = (target) => {
+    const next = target.status === "active" ? "inactive" : "active";
+    run(async () => {
+      await api("admin-set-status", { userId:target.id, status:next }, localStorage.getItem(TOKEN_KEY));
+      setMessage(`${target.personName} is now ${next}.`);
+      await loadAdminUsers();
+    });
   };
 
   if (loading && !user) return <div className="auth-loading">Loading Service Decision...</div>;
-  if (user) return (
+
+  if (!user) {
+    return (
+      <div className="auth-page">
+        <div className="auth-card">
+          <div className="auth-brand">Service Decision</div>
+          <div className="auth-subtitle">Vehicle Service Decision & Maintenance Portal</div>
+          {error && <div className="auth-error">{error}</div>}
+          {message && <div className="auth-message">{message}</div>}
+
+          <h2>Sign In</h2>
+          <label>Email / User ID</label>
+          <input id="auth-identifier" placeholder="Enter your registered email" />
+          <label>Password</label>
+          <input id="auth-password" type="password" placeholder="Enter your password" onKeyDown={e => e.key === "Enter" && login()} />
+          <button className="auth-primary" onClick={login} disabled={loading}>Login</button>
+
+          <div className="auth-account-help">
+            <div className="auth-help-title">Need a Service Decision account?</div>
+            <div className="auth-help-text">New accounts are created by the administrator. Please contact:</div>
+            <div className="auth-contact-row"><strong>Email:</strong> {ADMIN_CONTACT_EMAIL}</div>
+            <div className="auth-contact-row"><strong>Contact:</strong> {ADMIN_CONTACT_MOBILE}</div>
+          </div>
+
+          <div className="auth-help-panel">
+            <strong>Forgot Password?</strong>
+            <p>Please contact the Service Decision administrator. Password recovery is handled manually.</p>
+            <div>{ADMIN_CONTACT_EMAIL}</div>
+            <div>{ADMIN_CONTACT_MOBILE}</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
     <div className="app-auth-shell">
       <div className="auth-userbar">
         <span><strong>{user.personName}</strong> · {user.dealerName}</span>
-        <button onClick={logout}>Logout</button>
+        <div className="auth-user-actions">
+          {user.role === "admin" && <button onClick={() => { setAdminOpen(true); setError(""); setMessage(""); }}>Admin</button>}
+          <button onClick={() => { setShowPassword(true); setError(""); setMessage(""); }}>Change Password</button>
+          <button className="logout-btn" onClick={logout}>Logout</button>
+        </div>
       </div>
-      {children}
-    </div>
-  );
 
-  return (
-    <div className="auth-page">
-      <div className="auth-card">
-        <div className="auth-brand">Service Decision</div>
-        <div className="auth-subtitle">Vehicle Service Decision & Maintenance Portal</div>
+      {error && <div className="auth-inline-error">{error}</div>}
+      {message && <div className="auth-inline-message">{message}</div>}
 
-        {error && <div className="auth-error">{error}</div>}
-        {message && <div className="auth-message">{message}</div>}
+      {showPassword && (
+        <div className="auth-modal-backdrop">
+          <div className="auth-modal">
+            <h2>Change Password</h2>
+            <p className="auth-hint">Enter your current password, then set a new password.</p>
+            <label>Current Password</label>
+            <input type="password" value={passwordForm.currentPassword} onChange={e=>setPasswordForm({...passwordForm,currentPassword:e.target.value})} />
+            <label>New Password</label>
+            <input type="password" value={passwordForm.newPassword} onChange={e=>setPasswordForm({...passwordForm,newPassword:e.target.value})} placeholder="Minimum 8 characters" />
+            <label>Confirm New Password</label>
+            <input type="password" value={passwordForm.confirmPassword} onChange={e=>setPasswordForm({...passwordForm,confirmPassword:e.target.value})} />
+            <div className="auth-modal-actions">
+              <button className="auth-secondary" onClick={()=>setShowPassword(false)}>Cancel</button>
+              <button className="auth-primary" onClick={changePassword} disabled={loading}>Change Password</button>
+            </div>
+          </div>
+        </div>
+      )}
 
-        {screen==="login" && <>
-          <h2>Sign In</h2>
-          <label>Email / Mobile</label>
-          <input value={identifier} onChange={e=>setIdentifier(e.target.value)} placeholder="Email or mobile number" />
-          <label>Password</label>
-          <input type="password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder="Password" onKeyDown={e=>e.key==="Enter"&&login()} />
-          <button className="auth-primary" onClick={login} disabled={loading}>Login</button>
-          <div className="auth-links"><button onClick={()=>{setScreen("register");setError("");setMessage("")}}>Create account</button><button onClick={()=>{setScreen("forgot");setError("");setMessage("")}}>Forgot password?</button></div>
-        </>}
-
-        {screen==="register" && <>
-          <h2>Create Account</h2>
-          <label>Person Name *</label><input value={form.personName} onChange={e=>setForm({...form,personName:e.target.value})} />
-          <label>Dealer Name *</label><input value={form.dealerName} onChange={e=>setForm({...form,dealerName:e.target.value})} />
-          <label>Email *</label><input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} />
-          <label>Mobile *</label><input value={form.mobile} onChange={e=>setForm({...form,mobile:e.target.value})} placeholder="+91XXXXXXXXXX" />
-          <label>Password *</label><input type="password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder="Minimum 8 characters" />
-          <label>Confirm Password *</label><input type="password" value={form.confirmPassword} onChange={e=>setForm({...form,confirmPassword:e.target.value})} />
-          <button className="auth-primary" onClick={register} disabled={loading}>Create Account</button>
-          <button className="auth-secondary" onClick={()=>setScreen("login")}>Back to Login</button>
-        </>}
-
-        {screen==="verify" && <>
-          <h2>Verify Account</h2>
-          <p className="auth-hint">Email OTP: {registration.email}</p>
-          <OtpBox label="Email OTP" onVerify={(otp)=>verify("email",otp)} />
-          <p className="auth-hint">Mobile OTP: {registration.mobile}</p>
-          <OtpBox label="Mobile OTP" onVerify={(otp)=>verify("mobile",otp)} />
-          <button className="auth-secondary" onClick={()=>setScreen("login")}>Back to Login</button>
-        </>}
-
-        {screen==="forgot" && <>
-          <h2>Recover Password</h2>
-          <label>Email or Mobile</label><input value={identifier} onChange={e=>setIdentifier(e.target.value)} placeholder="Registered email or mobile" />
-          <div className="auth-choice"><button className={recovery.channel==="email"?"selected":""} onClick={()=>setRecovery({...recovery,channel:"email"})}>Email OTP</button><button className={recovery.channel==="mobile"?"selected":""} onClick={()=>setRecovery({...recovery,channel:"mobile"})}>Mobile OTP</button></div>
-          <button className="auth-primary" onClick={startRecovery} disabled={loading}>Send Recovery OTP</button>
-          <button className="auth-secondary" onClick={()=>setScreen("login")}>Back to Login</button>
-        </>}
-
-        {screen==="reset" && <>
-          <h2>Set New Password</h2>
-          <label>OTP</label><input value={recovery.otp} onChange={e=>setRecovery({...recovery,otp:e.target.value})} placeholder="6-digit OTP" inputMode="numeric" />
-          <label>New Password</label><input type="password" value={recovery.newPassword} onChange={e=>setRecovery({...recovery,newPassword:e.target.value})} />
-          <label>Confirm New Password</label><input type="password" value={recovery.confirmPassword} onChange={e=>setRecovery({...recovery,confirmPassword:e.target.value})} />
-          <button className="auth-primary" onClick={resetPassword} disabled={loading}>Reset Password</button>
-        </>}
-      </div>
+      {adminOpen && user.role === "admin" ? (
+        <AdminPanel
+          users={adminUsers}
+          form={adminForm}
+          setForm={setAdminForm}
+          loading={adminLoading || loading}
+          onCreate={createUser}
+          onRefresh={loadAdminUsers}
+          onReset={resetUserPassword}
+          onToggleStatus={toggleUserStatus}
+          onBack={()=>{setAdminOpen(false);setError("");setMessage("");}}
+        />
+      ) : children}
     </div>
   );
 }
 
-function OtpBox({label,onVerify}) {
-  const [otp,setOtp]=useState("");
-  return <div className="otp-box"><label>{label}</label><div className="otp-row"><input value={otp} onChange={e=>setOtp(e.target.value.replace(/\D/g,"").slice(0,6))} placeholder="6-digit OTP" inputMode="numeric" /><button onClick={()=>onVerify(otp)}>Verify</button></div></div>;
+function AdminPanel({ users, form, setForm, loading, onCreate, onRefresh, onReset, onToggleStatus, onBack }) {
+  return (
+    <div className="admin-page">
+      <div className="admin-card">
+        <div className="admin-header">
+          <div>
+            <div className="admin-title">Admin Panel</div>
+            <div className="admin-subtitle">Create and manage Service Decision user accounts</div>
+          </div>
+          <button className="auth-secondary admin-back" onClick={onBack}>Back to Dashboard</button>
+        </div>
+
+        <div className="admin-grid">
+          <div className="admin-form-card">
+            <h3>Create / Update User</h3>
+            <label>Person Name *</label>
+            <input value={form.personName} onChange={e=>setForm({...form,personName:e.target.value})} />
+            <label>Dealer Name *</label>
+            <input value={form.dealerName} onChange={e=>setForm({...form,dealerName:e.target.value})} />
+            <label>Email / User ID *</label>
+            <input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} />
+            <label>Mobile (optional)</label>
+            <input value={form.mobile} onChange={e=>setForm({...form,mobile:e.target.value})} placeholder="10 digit mobile" />
+            <label>Password *</label>
+            <input type="password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder="Minimum 8 characters" />
+            <button className="auth-primary" onClick={onCreate} disabled={loading}>Create / Update User</button>
+          </div>
+
+          <div className="admin-users-card">
+            <div className="admin-users-header">
+              <h3>Users</h3>
+              <button className="auth-secondary admin-refresh" onClick={onRefresh} disabled={loading}>Refresh</button>
+            </div>
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead><tr><th>ID</th><th>Name</th><th>Dealer</th><th>Email</th><th>Mobile</th><th>Status</th><th>Last Login</th><th>Action</th></tr></thead>
+                <tbody>
+                  {users.map(u => (
+                    <tr key={u.id}>
+                      <td>{u.id}</td><td>{u.personName}</td><td>{u.dealerName}</td><td>{u.email}</td><td>{u.mobile || "-"}</td>
+                      <td>{u.role === "admin" ? "ADMIN" : u.status}</td>
+                      <td>{u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : "Never"}</td>
+                      <td>{u.role !== "admin" && <div className="admin-row-actions">
+                        <button onClick={()=>onReset(u)}>Reset Password</button>
+                        <button onClick={()=>onToggleStatus(u)}>{u.status === "active" ? "Deactivate" : "Activate"}</button>
+                      </div>}</td>
+                    </tr>
+                  ))}
+                  {!users.length && <tr><td colSpan="8" className="admin-empty">No users found.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div className="admin-note">Passwords are stored as secure hashes. The administrator cannot view an existing password, but can set or reset a new password and provide it to the user.</div>
+      </div>
+    </div>
+  );
 }

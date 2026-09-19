@@ -907,6 +907,10 @@ function parseExcelPaste(text) {
     salesOrgName: headerIndex(headers,
       ["sales organization name"], ["sales organization name"]),
 
+    plantName: headerIndex(headers,
+      ["plant name", "plant", "service center name", "workshop name", "dealer name"],
+      ["plant name", "plant", "service center name", "workshop name", "dealer name"]),
+
     secondaryReading: headerIndex(headers,
       ["secondary counter reading"], ["secondary counter reading"]),
 
@@ -1042,6 +1046,7 @@ function parseExcelPaste(text) {
       serviceQuote: cell(col.serviceQuote),
       itemNumber: cell(col.itemNumber),
       salesOrgName: cell(col.salesOrgName),
+      plantName: cell(col.plantName),
       faultCode: cell(col.faultCode),
       repairType: cell(col.repairType),
       billingDocument: cell(col.billingDocument),
@@ -1929,7 +1934,7 @@ function mergeCustomerGroups(groups, selectedIds, mergedName) {
   const others = groups.filter(g => !selected.has(g.id));
   const cleanName = String(mergedName || '').trim();
   const visibleNames = [...new Set(selectedGroups.map(group => String(group.name || '').trim()).filter(Boolean))];
-  const resolvedName = cleanName || (visibleNames.length === 1 ? visibleNames[0] : 'Merged Customer Group');
+  const resolvedName = cleanName || visibleNames.join(", ");
   const merged = {
     id: selectedGroups.map(g => g.id).sort().join('||'),
     name: resolvedName,
@@ -3375,7 +3380,7 @@ function App() {
                 <div className="section-title service-summary-title">Service Summary — Complete Vehicle History</div>
                 <div className="history-wrap">
                   <table className="history-table single-service-summary">
-                    <thead><tr><th>Date</th><th>Job Card</th><th>Reading</th><th>Part No. / Service / Qty</th></tr></thead>
+                    <thead><tr><th>Date</th><th>Job Card</th><th>Reading</th><th>Plant</th><th>Part No. / Service / Qty</th></tr></thead>
                     <tbody>
                       {analysis?.visits?.length ? analysis.visits.map((visit,i) => {
                         const visitDate=getVisitDate(visit), jobCard=getVisitJobCard(visit), visitReading=getVisitReading(visit,analysis.vehicle), parts=getVisitParts(visit,analysis.vehicle,analysis.decision);
@@ -3383,6 +3388,7 @@ function App() {
                           <td>{formatDateShort(visitDate)}</td>
                           <td>{jobCard}</td>
                           <td>{visitReading ? `${formatNumber(visitReading)} ${getTargetUnit(analysis.vehicle)}` : "-"}</td>
+                          <td>{[...new Set(visit.map(r => String(r?.plantName || r?.salesOrgName || "").trim()).filter(Boolean))].join(", ") || "-"}</td>
                           <td>
                             {parts.length ? parts.map((part,index) => (
                               <span key={index} className={part.eligible ? "history-part eligible" : "history-part"} title={part.eligible ? "Eligible service-calculation record" : "History record"}>
@@ -3391,7 +3397,7 @@ function App() {
                             )) : "-"}
                           </td>
                         </tr>;
-                      }) : <tr><td colSpan="4" className="small-note">No service history loaded.</td></tr>}
+                      }) : <tr><td colSpan="5" className="small-note">No service history loaded.</td></tr>}
                     </tbody>
                   </table>
                 </div>

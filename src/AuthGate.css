@@ -86,3 +86,30 @@
   .admin-form-card > input{font-size:14px}
   .admin-table-wrap{overflow-x:auto}
 }
+
+/* Admin analytics dashboard */
+.admin-section-title{margin:22px 0 10px;padding-bottom:7px;border-bottom:2px solid #d8e3ec;color:#17324d;font-size:16px;font-weight:800}
+.admin-stat-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.admin-stat{background:#f4f8fb;border:1px solid #d5e0ea;border-radius:8px;padding:12px;min-width:0}
+.admin-stat span{display:block;font-size:11px;color:#60758a;font-weight:700}
+.admin-stat strong{display:block;margin-top:5px;font-size:22px;color:#17324d}
+.admin-management-grid{grid-template-columns:minmax(320px,380px) minmax(0,1fr)}
+.admin-analytics-btn{border:0;border-radius:5px;background:#238a58;color:#fff;padding:6px 10px;font-weight:700;cursor:pointer}
+.admin-analytics-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.admin-analytics-toolbar button{border:1px solid #9db2c5;background:#eef4f8;color:#17324d;border-radius:6px;padding:7px 12px;font-weight:700;cursor:pointer}
+.admin-analytics-toolbar button.active{background:#315d82;color:#fff}
+.admin-analytics-toolbar span{font-size:12px;color:#60758a}
+.admin-selected-user{font-weight:800;color:#17324d;background:#eef4f8;border-radius:6px;padding:7px 12px}
+.admin-user-analytics{margin-bottom:10px}
+.admin-stat-grid.user-stats{grid-template-columns:repeat(7,minmax(0,1fr))}
+.admin-activity-wrap{max-height:420px}
+@media(max-width:1100px){
+  .admin-stat-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .admin-stat-grid.user-stats{grid-template-columns:repeat(4,minmax(0,1fr))}
+}
+@media(max-width:700px){
+  .admin-stat-grid,.admin-stat-grid.user-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .admin-stat strong{font-size:19px}
+  .admin-management-grid{grid-template-columns:1fr}
+  .admin-section-title{font-size:14px}
+}

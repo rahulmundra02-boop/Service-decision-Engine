@@ -1828,8 +1828,14 @@ const BULK_SERVICE_LABELS = [
 ];
 
 function getDueServiceNames(decision) {
-  const names=BULK_SERVICE_LABELS.filter(([, key]) => decision?.result?.[key]).map(([name]) => name);
-  if(decision?.freeService) names.push(decision.freeService.replace(/^1st free service$/i,'1st Free Service').replace(/^2nd free service$/i,'2nd Free Service').replace(/^3rd free service$/i,'3rd Free Service'));
+  const aggregateNames=BULK_SERVICE_LABELS.filter(([, key]) => decision?.result?.[key]).map(([name]) => name);
+  const names=[...aggregateNames];
+  // Free Service is shown to the customer only when at least one aggregate
+  // service is also due. If there is no aggregate service, do not show the
+  // free-service label by itself in Customer Output / Bulk Customer Output.
+  if(decision?.freeService && aggregateNames.length){
+    names.push(decision.freeService.replace(/^1st free service$/i,'1st Free Service').replace(/^2nd free service$/i,'2nd Free Service').replace(/^3rd free service$/i,'3rd Free Service'));
+  }
   if(Array.isArray(decision?.additionalServices)) names.push(...decision.additionalServices);
   return names;
 }
@@ -3287,9 +3293,14 @@ function App() {
                     <div className="section-title">Customer Output — Service To Be Completed</div>
                     <div className="due-box">
                       {analysis ? (() => {
+                        const aggregateNames = BULK_SERVICE_LABELS
+                          .filter(([,key]) => analysis.decision.result[key])
+                          .map(([name]) => name);
                         const names = [
-                          ...BULK_SERVICE_LABELS.filter(([,key]) => analysis.decision.result[key]).map(([name]) => name),
-                          ...(analysis.decision.freeService ? [analysis.decision.freeService.replace(/^1st free service$/i,'1st Free Service').replace(/^2nd free service$/i,'2nd Free Service').replace(/^3rd free service$/i,'3rd Free Service')] : []),
+                          ...aggregateNames,
+                          ...(analysis.decision.freeService && aggregateNames.length
+                            ? [analysis.decision.freeService.replace(/^1st free service$/i,'1st Free Service').replace(/^2nd free service$/i,'2nd Free Service').replace(/^3rd free service$/i,'3rd Free Service')]
+                            : []),
                           ...(analysis.decision.additionalServices || []).filter(name => !String(name).toLowerCase().includes('free service'))
                         ];
                         return names.length ? names.map(name => <span className="due-chip" key={name}>{name}</span>) : <div className="no-due">No service to be completed at the current reading.</div>;

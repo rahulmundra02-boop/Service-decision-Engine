@@ -39,3 +39,50 @@
   .admin-row-actions{flex-wrap:wrap}
   .admin-row-actions button{white-space:nowrap}
 }
+
+/* Final Admin Panel layout: explicit block fields and fixed form column to prevent label/input overlap. */
+.admin-grid{
+  display:grid;
+  grid-template-columns:minmax(360px,380px) minmax(0,1fr);
+  gap:18px;
+  align-items:start;
+}
+.admin-form-card{
+  width:100%;
+  min-width:0;
+  box-sizing:border-box;
+}
+.admin-form-card > label{
+  display:block !important;
+  width:100% !important;
+  box-sizing:border-box;
+  margin:12px 0 6px !important;
+  text-align:left !important;
+}
+.admin-form-card > input{
+  display:block !important;
+  width:100% !important;
+  max-width:none !important;
+  min-width:0 !important;
+  box-sizing:border-box !important;
+  margin:0 !important;
+  padding:10px 11px !important;
+}
+.admin-form-card > .auth-primary{
+  display:block !important;
+  width:100% !important;
+  margin-top:18px !important;
+  box-sizing:border-box;
+}
+@media(max-width:900px){
+  .admin-grid{grid-template-columns:1fr;}
+}
+@media(max-width:600px){
+  .admin-page{padding:10px;overflow-x:hidden}
+  .admin-card{padding:12px;width:100%;max-width:100%;overflow:hidden}
+  .admin-grid{width:100%;gap:12px}
+  .admin-form-card,.admin-users-card{width:100%;max-width:100%;overflow:hidden}
+  .admin-form-card > label{font-size:12px}
+  .admin-form-card > input{font-size:14px}
+  .admin-table-wrap{overflow-x:auto}
+}

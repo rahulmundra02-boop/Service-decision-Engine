@@ -1979,9 +1979,10 @@ function buildCustomerWhatsAppText(group) {
   return `${intro}\n\n${lines.join('\\n')}`.replace(/\\n/g, '\n');
 }
 
-async function copyCustomerSummary(group) {
+async function copyCustomerSummary(group, dealerName = "") {
   try {
-    const text = buildCustomerWhatsAppText(group);
+    const effectiveGroup = group?.dealerName ? group : { ...group, dealerName: String(dealerName || "").trim() };
+    const text = buildCustomerWhatsAppText(effectiveGroup);
     if (!text.trim()) throw new Error('Copy karne ke liye summary available nahi hai.');
 
     if (navigator.clipboard && window.isSecureContext) {
@@ -2614,7 +2615,7 @@ function ServiceDecisionApp({ user }) {
       const parsed = getAnalysisRecords();
       const results = buildBulkAnalysis(parsed.records);
       setBulkResults(results);
-      const groups = buildCustomerGroups(results);
+      const groups = buildCustomerGroups(results, user?.dealerName);
       setCustomerGroups(groups);
       setSelectedCustomers([]);
       setBulkTableSort({ key: "dueCount", direction: "desc" });
@@ -3525,7 +3526,7 @@ function ServiceDecisionApp({ user }) {
                   </div></div>
 
                   <div className="section-title">Customer-wise Output</div>
-                  {customerGroups.map(group=>{const dueVehicles=group.vehicles.filter(v=>v.services.length>0);return <div className="bulk-card" key={group.id}><div className="bulk-card-head"><div className="action-row"><strong>{group.name}</strong><span className="small-note">{group.vehicles.length} vehicles · {dueVehicles.length} due</span><span className="spacer"/><button className="excel-button no-print" onClick={()=>copyCustomerSummary(group)}>Copy WhatsApp Summary</button><button className="excel-button no-print" onClick={()=>printCustomerReport(group,true)}>Print Detailed PDF</button></div></div></div>})}
+                  {customerGroups.map(group=>{const dueVehicles=group.vehicles.filter(v=>v.services.length>0);return <div className="bulk-card" key={group.id}><div className="bulk-card-head"><div className="action-row"><strong>{group.name}</strong><span className="small-note">{group.vehicles.length} vehicles · {dueVehicles.length} due</span><span className="spacer"/><button className="excel-button no-print" onClick={()=>copyCustomerSummary(group, user?.dealerName)}>Copy WhatsApp Summary</button><button className="excel-button no-print" onClick={()=>printCustomerReport(group,true)}>Print Detailed PDF</button></div></div></div>})}
 
                   <div className="section-title">Service Summary</div>
                   <div className="action-row no-print" style={{margin:"6px 0"}}>

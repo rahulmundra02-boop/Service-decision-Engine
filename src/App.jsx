@@ -769,7 +769,7 @@ async function parseExcelFiles(files) {
     } else {
       failedFiles.push({
         name: file.name,
-        reason: "Valid DMS service-history data ya required headers nahi mile."
+        reason: "Valid DMS service-history data ya required headers not found."
       });
     }
   }
@@ -986,7 +986,7 @@ function parseExcelPaste(text) {
   ].filter(([, index]) => index < 0);
 
   if (missing.length) {
-    throw new Error(`Required header nahi mila: ${missing.map(([name]) => name).join(", ")}`);
+    throw new Error(`Required header not found: ${missing.map(([name]) => name).join(", ")}`);
   }
 
   const records = lines.slice(1).map((line, rowIndex) => {

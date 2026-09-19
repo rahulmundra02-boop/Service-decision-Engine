@@ -430,14 +430,28 @@ export default async function handler(req, res) {
                 COUNT(*) FILTER (WHERE a.activity_type='Login')::int AS logins,
                 COALESCE(SUM(a.vehicle_count),0)::int AS vehicles
            FROM user_activity a
-          ${targetUserId ? "WHERE a.user_id=$1" : ""}
-             AND a.activity_time >= NOW() - INTERVAL '30 days'
+          ${targetUserId ? "WHERE a.user_id=$1 AND a.activity_time >= NOW() - INTERVAL '30 days'" : "WHERE a.activity_time >= NOW() - INTERVAL '30 days'"}
           GROUP BY 1 ORDER BY 1`,
         params
       );
 
       await client.query("COMMIT");
-      return res.json({success:true,summary:summary.rows.map(userPayload),recent:recent.rows,periods:periods.rows});
+      return res.json({
+        success:true,
+        summary:summary.rows.map(row => ({
+          ...userPayload(row),
+          totalActivities:Number(row.total_activities||0),
+          totalLogins:Number(row.total_logins||0),
+          activeDays:Number(row.active_days||0),
+          vehiclesAnalyzed:Number(row.vehicles_analyzed||0),
+          filesProcessed:Number(row.files_processed||0),
+          singleAnalyses:Number(row.single_analyses||0),
+          bulkAnalyses:Number(row.bulk_analyses||0),
+          scheduleViews:Number(row.schedule_views||0),
+        })),
+        recent:recent.rows,
+        periods:periods.rows
+      });
     }
 
     if (action === "admin-list-users") {

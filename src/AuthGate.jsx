@@ -4,6 +4,21 @@ import "./AuthGate.css";
 const TOKEN_KEY = "serviceDecisionAuthToken";
 const ADMIN_CONTACT_EMAIL = "rahul.mundra02@gmail.com";
 const ADMIN_CONTACT_MOBILE = "9461768278";
+const ADMIN_DEALER_FALLBACK = "Kandla Motors";
+
+function normalizeLoggedInUser(account) {
+  if (!account) return account;
+  // The original admin account was created before dealer names were made
+  // account-specific. Keep that legacy placeholder from leaking into the
+  // customer-facing WhatsApp workflow.
+  if (
+    account.role === "admin" &&
+    String(account.dealerName || "").trim().toLowerCase() === "service decision admin"
+  ) {
+    return { ...account, dealerName: ADMIN_DEALER_FALLBACK };
+  }
+  return account;
+}
 
 async function api(action, payload = {}, token = "") {
   const response = await fetch("/api/auth", {
@@ -41,7 +56,7 @@ export default function AuthGate({ children }) {
     const token = localStorage.getItem(TOKEN_KEY);
     if (!token) { setLoading(false); return; }
     api("me", {}, token)
-      .then(data => setUser(data.user))
+      .then(data => setUser(normalizeLoggedInUser(data.user)))
       .catch(() => localStorage.removeItem(TOKEN_KEY))
       .finally(() => setLoading(false));
   }, []);
@@ -60,7 +75,7 @@ export default function AuthGate({ children }) {
     const password = document.getElementById("auth-password")?.value || "";
     const data = await api("login", { identifier, password });
     localStorage.setItem(TOKEN_KEY, data.token);
-    setUser(data.user);
+    setUser(normalizeLoggedInUser(data.user));
   });
 
   const logout = async () => {

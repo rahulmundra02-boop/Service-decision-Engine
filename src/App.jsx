@@ -1261,7 +1261,18 @@ function isCalculationEligibleLine(record, visit, vehicle, decision) {
   // record in its own right. Highlight the recorded free service regardless
   // of whether that same free service is currently due.
   const code = normalizePartCode(record?.partCode);
-  if (code === "FS0501" || code === "FS0502" || code === "FS0503" || text.includes("1ST FREE SERVICE") || text.includes("2ND FREE SERVICE") || text.includes("3RD FREE SERVICE")) {
+  if (
+    code === "FS0501" ||
+    code === "FS0502" ||
+    code === "FS0503" ||
+    code === "FS0H1A" ||
+    code === "FS0H1B" ||
+    code === "FS0H1C" ||
+    code === "FS0H1D" ||
+    text.includes("1ST FREE SERVICE") ||
+    text.includes("2ND FREE SERVICE") ||
+    text.includes("3RD FREE SERVICE")
+  ) {
     return true;
   }
 

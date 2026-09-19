@@ -774,17 +774,9 @@ async function parseExcelFiles(files) {
     }
   }
 
-  if (!fileRecordSets.length) {
-    const details = failedFiles
-      .map(item => `${item.name}: ${item.reason}`)
-      .join(" | ");
-    throw new Error(
-      details
-        ? `Kisi bhi Excel file me valid DMS service-history data nahi mila. ${details}`
-        : "Selected Excel files me valid DMS service-history data nahi mila."
-    );
-  }
-
+  // Do not abort the whole upload when every file is invalid.
+  // Return the failed-file details so the UI can clearly tell the user which
+  // file was ignored and which required headers were missing.
   const allRecords = fileRecordSets.flat();
   const deduped = deduplicateAcrossFiles(fileRecordSets);
 
@@ -2462,8 +2454,16 @@ function App() {
       setSelectedCustomers([]);
       setUploadParsedRecords(parsedRows);
 
-      // Do not await DB persistence. Analysis remains immediately available.
-      if (parsedRows.length) void saveHistoryInBackground(parsedRows);
+      if (!parsedRows.length && result.failedFiles?.length) {
+        setError(
+          result.failedFiles
+            .map(item => `${item.name} — This file was ignored because required header was not found. ${item.reason}`)
+            .join(" | ")
+        );
+      } else {
+        // Do not await DB persistence. Analysis remains immediately available.
+        if (parsedRows.length) void saveHistoryInBackground(parsedRows);
+      }
     } catch (err) {
       setUploadMeta(null);
       setUploadedFiles([]);

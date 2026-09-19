@@ -3177,10 +3177,12 @@ function App() {
           font-size:10px;
           font-weight:700;
         }
-        .single-service-summary { min-width:0; table-layout:auto; }
-        .single-service-summary th:nth-child(1), .single-service-summary td:nth-child(1) { width:100px; min-width:100px; white-space:nowrap; }
-        .single-service-summary th:nth-child(2), .single-service-summary td:nth-child(2) { width:130px; min-width:130px; white-space:nowrap; }
-        .single-service-summary th:nth-child(3), .single-service-summary td:nth-child(3) { width:130px; min-width:130px; white-space:nowrap; }
+        .single-service-summary { min-width:760px; width:100%; table-layout:fixed; }
+        .single-service-summary th:nth-child(1), .single-service-summary td:nth-child(1) { width:4% !important; min-width:0; white-space:normal; overflow-wrap:anywhere; }
+        .single-service-summary th:nth-child(2), .single-service-summary td:nth-child(2) { width:6% !important; min-width:0; white-space:normal; overflow-wrap:anywhere; }
+        .single-service-summary th:nth-child(3), .single-service-summary td:nth-child(3) { width:6% !important; min-width:0; white-space:normal; overflow-wrap:anywhere; }
+        .single-service-summary th:nth-child(4), .single-service-summary td:nth-child(4) { width:13% !important; min-width:0; white-space:normal; overflow-wrap:anywhere; }
+        .single-service-summary th:nth-child(5), .single-service-summary td:nth-child(5) { width:71% !important; min-width:0; }
         .service-summary-note { padding:5px 8px; margin-top:4px; }
         .service-summary-title {
           background:#2f75b5;

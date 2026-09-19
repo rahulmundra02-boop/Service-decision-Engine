@@ -110,6 +110,21 @@ async function ensureSchema(client) {
     );
 
     CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id);
+
+    CREATE TABLE IF NOT EXISTS user_activity (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+      activity_type TEXT NOT NULL,
+      activity_time TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      mode TEXT,
+      vehicle_count INTEGER NOT NULL DEFAULT 0,
+      file_count INTEGER NOT NULL DEFAULT 0,
+      vin TEXT,
+      details JSONB NOT NULL DEFAULT '{}'::jsonb
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_user_activity_user_time ON user_activity(user_id, activity_time DESC);
+    CREATE INDEX IF NOT EXISTS idx_user_activity_type ON user_activity(activity_type);
   `);
 }
 
@@ -164,6 +179,25 @@ async function getUserByToken(client, token) {
   await client.query("UPDATE auth_sessions SET last_seen_at=NOW() WHERE token_hash=$1", [tokenHash]);
   await client.query("UPDATE app_users SET last_activity_at=NOW() WHERE id=$1", [result.rows[0].id]);
   return result.rows[0];
+}
+
+
+async function logActivity(client, userId, activityType, payload = {}) {
+  if (!userId) return;
+  await client.query(
+    `INSERT INTO user_activity
+      (user_id,activity_type,mode,vehicle_count,file_count,vin,details)
+     VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb)`,
+    [
+      userId,
+      clean(activityType) || "Activity",
+      clean(payload.mode) || null,
+      Number(payload.vehicleCount || 0),
+      Number(payload.fileCount || 0),
+      clean(payload.vin) || null,
+      JSON.stringify(payload.details || {}),
+    ]
+  );
 }
 
 function userPayload(user) {
@@ -277,6 +311,7 @@ export default async function handler(req, res) {
         "UPDATE app_users SET last_login_at=NOW(),last_activity_at=NOW() WHERE id=$1",
         [user.id]
       );
+      await logActivity(client, user.id, "Login", { details: { identifierType: email === identifier.toLowerCase() ? "email" : "mobile" } });
       await client.query("COMMIT");
       return res.json({ success:true, token, user:userPayload(user) });
     }
@@ -292,7 +327,30 @@ export default async function handler(req, res) {
     }
 
     if (action === "logout") {
-      await client.query("DELETE FROM auth_sessions WHERE token_hash=$1", [hashValue(authToken(req))]);
+      const currentUser = await getUserByToken(client, authToken(req));
+      if (currentUser) {
+        await logActivity(client, currentUser.id, "Logout");
+        await client.query("DELETE FROM auth_sessions WHERE token_hash=$1", [hashValue(authToken(req))]);
+      }
+      await client.query("COMMIT");
+      return res.json({ success:true });
+    }
+
+    if (action === "log-activity") {
+      const currentUser = await getUserByToken(client, authToken(req));
+      if (!currentUser) {
+        await client.query("ROLLBACK");
+        return res.status(401).json({ success:false, error:"Session expired." });
+      }
+      const allowed = new Set([
+        "Excel Upload","Single Vehicle Analysis","Bulk Vehicle Analysis",
+        "Service Schedule Viewed","Clear","Reading Override","PDF Export"
+      ]);
+      if (!allowed.has(clean(body.activityType))) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ success:false, error:"Invalid activity type." });
+      }
+      await logActivity(client, currentUser.id, body.activityType, body);
       await client.query("COMMIT");
       return res.json({ success:true });
     }
@@ -324,6 +382,64 @@ export default async function handler(req, res) {
       return res.json({success:true,message:"Password changed successfully."});
     }
 
+
+    if (action === "admin-analytics") {
+      const admin = await requireAdmin(client, req);
+      if (admin.error) {
+        await client.query("ROLLBACK");
+        return res.status(admin.status).json({success:false,error:admin.error});
+      }
+
+      const targetUserId = body.userId ? Number(body.userId) : null;
+      const userWhere = Number.isInteger(targetUserId) && targetUserId > 0 ? "WHERE u.id=$1" : "";
+      const params = userWhere ? [targetUserId] : [];
+
+      const summary = await client.query(
+        `SELECT
+           u.id,u.person_name,u.dealer_name,u.email,u.mobile,u.role,u.status,u.created_at,u.last_login_at,u.last_activity_at,
+           COUNT(a.id)::int AS total_activities,
+           COUNT(*) FILTER (WHERE a.activity_type='Login')::int AS total_logins,
+           COUNT(DISTINCT (a.activity_time AT TIME ZONE 'Asia/Kolkata')::date) FILTER (WHERE a.activity_type <> 'Logout')::int AS active_days,
+           COALESCE(SUM(a.vehicle_count),0)::int AS vehicles_analyzed,
+           COALESCE(SUM(a.file_count),0)::int AS files_processed,
+           COUNT(*) FILTER (WHERE a.activity_type='Single Vehicle Analysis')::int AS single_analyses,
+           COUNT(*) FILTER (WHERE a.activity_type='Bulk Vehicle Analysis')::int AS bulk_analyses,
+           COUNT(*) FILTER (WHERE a.activity_type='Service Schedule Viewed')::int AS schedule_views
+         FROM app_users u
+         LEFT JOIN user_activity a ON a.user_id=u.id
+         ${userWhere}
+         GROUP BY u.id
+         ORDER BY u.role DESC,u.created_at DESC`,
+        params
+      );
+
+      const recent = await client.query(
+        `SELECT a.id,a.user_id,u.person_name,u.dealer_name,a.activity_type,a.activity_time,
+                a.mode,a.vehicle_count,a.file_count,a.vin,a.details
+           FROM user_activity a
+           JOIN app_users u ON u.id=a.user_id
+          ${targetUserId ? "WHERE a.user_id=$1" : ""}
+          ORDER BY a.activity_time DESC
+          LIMIT 200`,
+        params
+      );
+
+      const periods = await client.query(
+        `SELECT (a.activity_time AT TIME ZONE 'Asia/Kolkata')::date AS activity_date,
+                COUNT(*)::int AS activities,
+                COUNT(*) FILTER (WHERE a.activity_type='Login')::int AS logins,
+                COALESCE(SUM(a.vehicle_count),0)::int AS vehicles
+           FROM user_activity a
+          ${targetUserId ? "WHERE a.user_id=$1" : ""}
+             AND a.activity_time >= NOW() - INTERVAL '30 days'
+          GROUP BY 1 ORDER BY 1`,
+        params
+      );
+
+      await client.query("COMMIT");
+      return res.json({success:true,summary:summary.rows.map(userPayload),recent:recent.rows,periods:periods.rows});
+    }
+
     if (action === "admin-list-users") {
       const admin = await requireAdmin(client, req);
       if (admin.error) {
@@ -347,6 +463,7 @@ export default async function handler(req, res) {
       }
 
       const user = await createOrUpdateUser(client, body);
+      await logActivity(client, admin.user.id, "Admin User Saved", { details: { targetUserId: user.id, targetEmail: user.email } });
       await client.query("COMMIT");
       return res.json({success:true,user:userPayload(user),message:"User account created/updated successfully."});
     }
@@ -376,6 +493,7 @@ export default async function handler(req, res) {
       }
 
       await client.query("DELETE FROM auth_sessions WHERE user_id=$1",[userId]);
+      await logActivity(client, admin.user.id, "Admin Password Reset", { details: { targetUserId: userId } });
       await client.query("COMMIT");
       return res.json({success:true,message:"Password reset successfully."});
     }
@@ -401,6 +519,7 @@ export default async function handler(req, res) {
       }
 
       if (status === "inactive") await client.query("DELETE FROM auth_sessions WHERE user_id=$1",[userId]);
+      await logActivity(client, admin.user.id, "Admin Status Changed", { details: { targetUserId: userId, status } });
       await client.query("COMMIT");
       return res.json({success:true,user:userPayload(updated.rows[0])});
     }

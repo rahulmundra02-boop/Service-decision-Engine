@@ -241,9 +241,16 @@ export default function AuthGate({ children }) {
 }
 
 function AdminPanel({ users, form, setForm, loading, onCreate, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsLoading, onAnalytics }) {
+  const analyticsDetailRef = useRef(null);
   const selected = analyticsUserId
     ? analytics.summary.find(u => Number(u.id) === Number(analyticsUserId))
     : null;
+  useEffect(() => {
+    if (analyticsUserId && analyticsDetailRef.current) {
+      setTimeout(() => analyticsDetailRef.current?.scrollIntoView({ behavior:"smooth", block:"start" }), 80);
+    }
+  }, [analyticsUserId]);
+
   const totals = analytics.summary.reduce((acc,u)=>({
     users:acc.users+1,
     active:acc.active+(u.status==="active"?1:0),
@@ -303,7 +310,9 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onRefresh, onRese
                       <td>{u.role === "admin" ? "ADMIN" : u.status}</td>
                       <td>{u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : "Never"}</td>
                       <td>{u.lastActivityAt ? new Date(u.lastActivityAt).toLocaleString() : "—"}</td>
-                      <td><button className="admin-analytics-btn" onClick={()=>onAnalytics(u.id)}>View</button></td>
+                      <td><button className="admin-analytics-btn" onClick={()=>onAnalytics(Number(u.id))}>
+                          View
+                        </button></td>
                       <td>{u.role !== "admin" && <div className="admin-row-actions">
                         <button onClick={()=>onReset(u)}>Reset Password</button>
                         <button onClick={()=>onToggleStatus(u)}>{u.status === "active" ? "Deactivate" : "Activate"}</button>
@@ -317,7 +326,7 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onRefresh, onRese
           </div>
         </div>
 
-        <div className="admin-section-title">Usage Analytics</div>
+        <div ref={analyticsDetailRef} className="admin-section-title admin-analytics-section-title">Usage Analytics</div>
         <div className="admin-analytics-toolbar">
           <button className={!analyticsUserId ? "active" : ""} onClick={()=>onAnalytics(null)}>All Users</button>
           {selected && <div className="admin-selected-user">{selected.personName} · {selected.dealerName}</div>}

@@ -2343,43 +2343,153 @@ function ExcelFilterDropdown({
   );
 }
 
-function estimateServiceKeyFromText(value = "") {
-  const t = String(value).toUpperCase();
-  if (t.includes("ENGINE OIL")) return "engineOil";
-  if (t.includes("COOLANT")) return "coolant";
-  if (t.includes("GEAR OIL")) return "gearOil";
-  if (t.includes("HUB GREASE")) return "hubGrease";
-  if (t.includes("AXLE OIL")) return "axleOil";
-  if (t.includes("FUEL FILTER")) return "fuelFilter";
-  if (t.includes("STEERING OIL")) return "steeringOil";
-  if (t.includes("AIR FILTER")) return "airFilter";
-  if (t.includes("CLUTCH OIL")) return "clutchOil";
-  if (t.includes("DEF FILTER")) return "defFilter";
-  if (t.includes("APDA FILTER")) return "apdaFilter";
+// Estimate source-of-truth mapping.
+// Parts are selected from the standardised DMS part master first; historical
+// vehicle data is then used to decide which applicable part/kit, quantity and
+// rate belongs to the vehicle. Do not infer an aggregate only from free text.
+const ESTIMATE_STANDARD_PARTS = {
+  engineOil: new Set(["ENGINE OIL", "ENGINE OIL FILTER", "FUEL FILTER & ENGINE OIL FILTER KIT"]),
+  coolant: new Set(["COOLANT"]),
+  gearOil: new Set(["GEAR OIL"]),
+  hubGrease: new Set([
+    "HUB GREASE",
+    "HUB GREASE KIT",
+    "HUB GREASE 10 HUB",
+    "HUB GREASE 4 HUB",
+    "HUB GREASE 6 HUB",
+    "HUB GREASE 8 HUB",
+  ]),
+  axleOil: new Set(["AXLE OIL"]),
+  fuelFilter: new Set(["FUEL FILTER", "FUEL FILTER KIT", "FUEL FILTER & ENGINE OIL FILTER KIT"]),
+  steeringOil: new Set(["STEERING OIL"]),
+  airFilter: new Set(["AIR FILTER", "AIR FILTER ASSY", "AIR FILTER KIT"]),
+  clutchOil: new Set(["CLUTCH OIL"]),
+  defFilter: new Set(["DEF FILTER AIR", "DEF FILTER BREATHER", "DEF FILTER NACK", "DEF FILTER SUCTION", "DEF FILTER KIT"]),
+  defInline: new Set(["DEF INLINE FILTER"]),
+  apdaFilter: new Set(["APDA FILTER", "APDA FILTER (ASSY)"]),
+};
+
+// Hub Grease has a fixed standard part list. S9999997 is mandatory in the
+// standard list, while F1771990 is conditional on previous history.
+const HUB_GREASE_STANDARD_CODES = new Set([
+  "S9999997",
+  "FJ607400",
+  "F1721500",
+  "F1771990",
+  "H5001220",
+]);
+
+const ESTIMATE_LABOUR_RULES = [
+  { key:"engineOil", patterns:[/DRAIN\s*(AND|&)?\s*REFILL.*ENGINE OIL.*OIL FILTER/i] },
+  { key:"gearOil", patterns:[/DRAIN\s*(AND|&)?\s*REFILL.*GEARBOX OIL/i] },
+  { key:"axleOil", patterns:[/DRAIN\s*(AND|&)?\s*REFILL.*REAR AXLE OIL/i] },
+  { key:"steeringOil", patterns:[/DRAIN\s*(AND|&)?\s*REFILL.*STEERING OIL/i] },
+  { key:"clutchOil", patterns:[/DRAIN\s*(AND|&)?\s*REFILL.*CLUTCH OIL/i] },
+  { key:"coolant", patterns:[/DRAI[N]?\s*(AND|&)?\s*REFILL.*COOLANT/i] },
+  { key:"fuelFilter", patterns:[/R\s*(AND|&)\s*R.*FUEL FILTER/i] },
+  { key:"hubGrease", patterns:[/HUB\s*GREASING.*HUB/i] },
+  { key:"airFilter", patterns:[/R\s*(AND|&)\s*R.*AIR FILTER ELEMENT/i] },
+  { key:"defFilter", patterns:[/R\s*(AND|&)\s*R.*DEF SUCTION FILTER/i] },
+  { key:"apdaFilter", patterns:[/R\s*(AND|&)\s*R.*APDA.*DESICANT.*FILTER/i] },
+];
+
+function estimateCategory(row = "") {
+  const category = String(row?.item_category || "").trim().toUpperCase();
+  if (category === "P001") return "labour";
+  if (category === "P002") return "part";
   return "";
 }
-function estimateIsLabour(row = {}) {
-  // DMS item category is the source of truth:
-  // P001 = Labour, P002 = Parts.
-  const category = String(row.item_category || "").trim().toUpperCase();
-  if (category === "P001") return true;
-  if (category === "P002") return false;
-  return false;
+
+function estimateStandardPartName(row = {}) {
+  const code = normalizePartCode(row.part_code);
+  if (code && PART_STANDARDIZATION[code]) return String(PART_STANDARDIZATION[code]).trim().toUpperCase();
+  return String(row.standardized_part || "").trim().toUpperCase();
 }
+
+function estimatePartMatchesService(row = {}, serviceKey = "") {
+  if (estimateCategory(row) !== "part") return false;
+  const code = normalizePartCode(row.part_code);
+
+  // Hub Grease uses an explicit standard code list.
+  if (serviceKey === "hubGrease") {
+    if (HUB_GREASE_STANDARD_CODES.has(code)) return true;
+    const standardName = estimateStandardPartName(row);
+    return ESTIMATE_STANDARD_PARTS.hubGrease.has(standardName);
+  }
+
+  const standardName = estimateStandardPartName(row);
+  return !!standardName && !!ESTIMATE_STANDARD_PARTS[serviceKey]?.has(standardName);
+}
+
+function estimateLabourMatchesService(row = {}, serviceKey = "") {
+  if (estimateCategory(row) !== "labour") return false;
+  const text = [
+    row.part_description,
+    row.standardized_part,
+    row.repair_line_item_type,
+    row.repair_type,
+    row.part_code,
+  ].join(" ").replace(/\s+/g, " ").trim();
+
+  const rule = ESTIMATE_LABOUR_RULES.find(item => item.key === serviceKey);
+  return !!rule && rule.patterns.some(pattern => pattern.test(text));
+}
+
+function estimateServiceKeyFromText(value = "") {
+  const t = String(value).toUpperCase();
+  for (const [serviceKey, labels] of Object.entries(ESTIMATE_STANDARD_PARTS)) {
+    if ([...labels].some(label => t.includes(label))) return serviceKey;
+  }
+  return "";
+}
+
+function estimateIsLabour(row = {}) {
+  return estimateCategory(row) === "labour";
+}
+
 function estimateHistoryToItems(rows = [], selectedKeys = []) {
-  const selected = new Set(selectedKeys), map = new Map();
+  const selected = new Set(selectedKeys);
+  const map = new Map();
+
   for (const row of rows) {
-    const serviceKey = estimateServiceKeyFromText([row.standardized_part, row.part_description, row.part_code, row.item_category].join(" "));
+    const category = estimateCategory(row);
+    if (!category) continue;
+
+    let serviceKey = "";
+    if (category === "part") {
+      serviceKey = Object.keys(ESTIMATE_STANDARD_PARTS)
+        .find(key => estimatePartMatchesService(row, key)) || "";
+    } else {
+      serviceKey = ESTIMATE_LABOUR_RULES
+        .find(rule => estimateLabourMatchesService(row, rule.key))?.key || "";
+    }
+
     if (!serviceKey || !selected.has(serviceKey)) continue;
-    const qty = Number(row.quantity || 0), rate = Number(row.rate);
+
+    const qty = Number(row.quantity || 0);
+    const rate = Number(row.rate);
     if (!Number.isFinite(qty) || qty <= 0) continue;
-    const labour = estimateIsLabour(row);
+
     const code = String(row.part_code || "").trim();
     const desc = String(row.part_description || row.standardized_part || "").trim();
-    const key = (labour ? "L" : "P") + "|" + code + "|" + desc.toUpperCase() + "|" + rate;
-    if (!map.has(key)) map.set(key, { id: (labour ? "labour" : "part") + "-" + map.size + "-" + Date.now(), type: labour ? "labour" : "part", partNo: code, description: desc, qty, rate: Number.isFinite(rate) ? rate : 0, source: Number.isFinite(rate) && rate > 0 ? "Historical DB" : "Manual" });
-    else map.get(key).qty += qty;
+    const key = category.toUpperCase() + "|" + serviceKey + "|" + code + "|" + desc.toUpperCase() + "|" + (Number.isFinite(rate) ? rate : 0);
+
+    if (!map.has(key)) {
+      map.set(key, {
+        id: category + "-" + map.size + "-" + Date.now(),
+        type: category,
+        serviceKey,
+        partNo: code,
+        description: desc,
+        qty,
+        rate: Number.isFinite(rate) ? rate : 0,
+        source: Number.isFinite(rate) && rate > 0 ? "Historical DB" : "Manual",
+      });
+    } else {
+      map.get(key).qty += qty;
+    }
   }
+
   return [...map.values()];
 }
 function emptyEstimateItem(type = "part") {

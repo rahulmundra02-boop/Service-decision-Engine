@@ -31,6 +31,9 @@ export default function AuthGate({ children }) {
   const [adminUsers, setAdminUsers] = useState([]);
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminForm, setAdminForm] = useState({ personName:"", dealerName:"", email:"", mobile:"", password:"" });
+  const [adminAnalytics, setAdminAnalytics] = useState({ summary:[], recent:[], periods:[] });
+  const [analyticsUserId, setAnalyticsUserId] = useState(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem(TOKEN_KEY);
@@ -78,11 +81,27 @@ export default function AuthGate({ children }) {
     setMessage("Password changed successfully.");
   });
 
+
+  const loadAdminAnalytics = async (userId = null) => {
+    setAnalyticsLoading(true);
+    try {
+      const payload = userId ? { userId } : {};
+      const data = await api("admin-analytics", payload, localStorage.getItem(TOKEN_KEY));
+      setAdminAnalytics(data || { summary:[], recent:[], periods:[] });
+      setAnalyticsUserId(userId);
+    } catch (e) {
+      setError(e.message || "Unable to load analytics.");
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  };
+
   const loadAdminUsers = async () => {
     setAdminLoading(true);
     try {
       const data = await api("admin-list-users", {}, localStorage.getItem(TOKEN_KEY));
       setAdminUsers(data.users || []);
+      await loadAdminAnalytics(analyticsUserId);
     } catch (e) {
       setError(e.message || "Unable to load users.");
     } finally {
@@ -211,27 +230,51 @@ export default function AuthGate({ children }) {
           onReset={resetUserPassword}
           onToggleStatus={toggleUserStatus}
           onBack={()=>{setAdminOpen(false);setError("");setMessage("");}}
+          analytics={adminAnalytics}
+          analyticsUserId={analyticsUserId}
+          analyticsLoading={analyticsLoading}
+          onAnalytics={loadAdminAnalytics}
         />
       ) : children}
     </div>
   );
 }
 
-function AdminPanel({ users, form, setForm, loading, onCreate, onRefresh, onReset, onToggleStatus, onBack }) {
+function AdminPanel({ users, form, setForm, loading, onCreate, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsLoading, onAnalytics }) {
+  const selected = analyticsUserId
+    ? analytics.summary.find(u => Number(u.id) === Number(analyticsUserId))
+    : null;
+  const totals = analytics.summary.reduce((acc,u)=>({
+    users:acc.users+1,
+    active:acc.active+(u.status==="active"?1:0),
+    logins:acc.logins+(u.totalLogins||0),
+    vehicles:acc.vehicles+(u.vehiclesAnalyzed||0),
+    files:acc.files+(u.filesProcessed||0),
+  }),{users:0,active:0,logins:0,vehicles:0,files:0});
+
   return (
     <div className="admin-page">
       <div className="admin-card">
         <div className="admin-header">
           <div>
-            <div className="admin-title">Admin Panel</div>
-            <div className="admin-subtitle">Create and manage Service Decision user accounts</div>
+            <div className="admin-title">Admin Dashboard</div>
+            <div className="admin-subtitle">User management, usage analytics and activity history</div>
           </div>
           <button className="auth-secondary admin-back" onClick={onBack}>Back to Dashboard</button>
         </div>
 
-        <div className="admin-grid">
+        <div className="admin-stat-grid">
+          <div className="admin-stat"><span>Total Users</span><strong>{totals.users}</strong></div>
+          <div className="admin-stat"><span>Active Users</span><strong>{totals.active}</strong></div>
+          <div className="admin-stat"><span>Total Logins</span><strong>{totals.logins}</strong></div>
+          <div className="admin-stat"><span>Vehicles Analysed</span><strong>{totals.vehicles}</strong></div>
+          <div className="admin-stat"><span>Excel Files</span><strong>{totals.files}</strong></div>
+        </div>
+
+        <div className="admin-section-title">Create / Update User</div>
+        <div className="admin-grid admin-management-grid">
           <div className="admin-form-card">
-            <h3>Create / Update User</h3>
+            <h3>User Account</h3>
             <label>Person Name *</label>
             <input value={form.personName} onChange={e=>setForm({...form,personName:e.target.value})} />
             <label>Dealer Name *</label>
@@ -252,28 +295,92 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onRefresh, onRese
             </div>
             <div className="admin-table-wrap">
               <table className="admin-table">
-                <thead><tr><th>ID</th><th>Name</th><th>Dealer</th><th>Email</th><th>Mobile</th><th>Status</th><th>Last Login</th><th>Action</th></tr></thead>
+                <thead><tr><th>ID</th><th>Name</th><th>Dealer</th><th>Email</th><th>Status</th><th>Last Login</th><th>Last Activity</th><th>Analytics</th><th>Action</th></tr></thead>
                 <tbody>
                   {users.map(u => (
                     <tr key={u.id}>
-                      <td>{u.id}</td><td>{u.personName}</td><td>{u.dealerName}</td><td>{u.email}</td><td>{u.mobile || "-"}</td>
+                      <td>{u.id}</td><td>{u.personName}</td><td>{u.dealerName}</td><td>{u.email}</td>
                       <td>{u.role === "admin" ? "ADMIN" : u.status}</td>
                       <td>{u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : "Never"}</td>
+                      <td>{u.lastActivityAt ? new Date(u.lastActivityAt).toLocaleString() : "—"}</td>
+                      <td><button className="admin-analytics-btn" onClick={()=>onAnalytics(u.id)}>View</button></td>
                       <td>{u.role !== "admin" && <div className="admin-row-actions">
                         <button onClick={()=>onReset(u)}>Reset Password</button>
                         <button onClick={()=>onToggleStatus(u)}>{u.status === "active" ? "Deactivate" : "Activate"}</button>
                       </div>}</td>
                     </tr>
                   ))}
-                  {!users.length && <tr><td colSpan="8" className="admin-empty">No users found.</td></tr>}
+                  {!users.length && <tr><td colSpan="9" className="admin-empty">No users found.</td></tr>}
                 </tbody>
               </table>
             </div>
           </div>
         </div>
 
-        <div className="admin-note">Passwords are stored as secure hashes. The administrator cannot view an existing password, but can set or reset a new password and provide it to the user.</div>
+        <div className="admin-section-title">Usage Analytics</div>
+        <div className="admin-analytics-toolbar">
+          <button className={!analyticsUserId ? "active" : ""} onClick={()=>onAnalytics(null)}>All Users</button>
+          {selected && <div className="admin-selected-user">{selected.personName} · {selected.dealerName}</div>}
+          {analyticsLoading && <span>Loading...</span>}
+        </div>
+
+        {selected ? (
+          <div className="admin-user-analytics">
+            <div className="admin-stat-grid user-stats">
+              <div className="admin-stat"><span>Total Logins</span><strong>{selected.totalLogins}</strong></div>
+              <div className="admin-stat"><span>Active Days</span><strong>{selected.activeDays}</strong></div>
+              <div className="admin-stat"><span>Excel Files</span><strong>{selected.filesProcessed}</strong></div>
+              <div className="admin-stat"><span>Vehicles Analysed</span><strong>{selected.vehiclesAnalyzed}</strong></div>
+              <div className="admin-stat"><span>Single Analyses</span><strong>{selected.singleAnalyses}</strong></div>
+              <div className="admin-stat"><span>Bulk Analyses</span><strong>{selected.bulkAnalyses}</strong></div>
+              <div className="admin-stat"><span>Schedule Views</span><strong>{selected.scheduleViews}</strong></div>
+            </div>
+          </div>
+        ) : (
+          <div className="admin-user-analytics">
+            <div className="admin-stat-grid user-stats">
+              <div className="admin-stat"><span>Registered Users</span><strong>{totals.users}</strong></div>
+              <div className="admin-stat"><span>Active Users</span><strong>{totals.active}</strong></div>
+              <div className="admin-stat"><span>Logins</span><strong>{totals.logins}</strong></div>
+              <div className="admin-stat"><span>Vehicles Analysed</span><strong>{totals.vehicles}</strong></div>
+              <div className="admin-stat"><span>Files Processed</span><strong>{totals.files}</strong></div>
+            </div>
+          </div>
+        )}
+
+        <div className="admin-section-title">Recent Activity</div>
+        <div className="admin-table-wrap admin-activity-wrap">
+          <table className="admin-table">
+            <thead><tr><th>Date / Time</th><th>User</th><th>Dealer</th><th>Activity</th><th>Mode</th><th>Vehicles</th><th>Files</th><th>VIN</th></tr></thead>
+            <tbody>
+              {analytics.recent.map(a=>(
+                <tr key={a.id}>
+                  <td>{new Date(a.activity_time).toLocaleString()}</td>
+                  <td>{a.person_name}</td><td>{a.dealer_name}</td><td>{a.activity_type}</td>
+                  <td>{a.mode || "—"}</td><td>{a.vehicle_count || 0}</td><td>{a.file_count || 0}</td><td>{a.vin || "—"}</td>
+                </tr>
+              ))}
+              {!analytics.recent.length && <tr><td colSpan="8" className="admin-empty">No activity recorded yet.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="admin-section-title">Last 30 Days</div>
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead><tr><th>Date</th><th>Activities</th><th>Logins</th><th>Vehicles Analysed</th></tr></thead>
+            <tbody>
+              {analytics.periods.map(p=>(
+                <tr key={p.activity_date}><td>{new Date(p.activity_date).toLocaleDateString()}</td><td>{p.activities}</td><td>{p.logins}</td><td>{p.vehicles}</td></tr>
+              ))}
+              {!analytics.periods.length && <tr><td colSpan="4" className="admin-empty">No activity in the last 30 days.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="admin-note">Passwords are stored as secure hashes. Analytics record account activity and usage events; passwords are never stored in activity logs.</div>
       </div>
     </div>
   );
 }
+

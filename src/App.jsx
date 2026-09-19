@@ -1922,7 +1922,8 @@ function buildBulkAnalysis(records) {
 }
 
 
-function buildCustomerGroups(results) {
+function buildCustomerGroups(results, dealerName = "") {
+  const cleanDealerName = String(dealerName || "").trim();
   const map = new Map();
   for (const item of results) {
     const customerNumber = String(item.vehicle.customerNumber || '').trim();
@@ -1932,7 +1933,7 @@ function buildCustomerGroups(results) {
     // with the same displayed customer name belong in one customer group.
     // Customer number remains on each parsed vehicle for traceability.
     const key = `NAME:${name.toUpperCase()}`;
-    if (!map.has(key)) map.set(key, { id:key, name, customerKeys:[key], vehicles:[] });
+    if (!map.has(key)) map.set(key, { id:key, name, customerKeys:[key], vehicles:[], dealerName:cleanDealerName });
     map.get(key).vehicles.push(item);
   }
   return Array.from(map.values());
@@ -1950,7 +1951,8 @@ function mergeCustomerGroups(groups, selectedIds, mergedName) {
     id: selectedGroups.map(g => g.id).sort().join('||'),
     name: resolvedName,
     customerKeys: selectedGroups.flatMap(g => g.customerKeys),
-    vehicles: selectedGroups.flatMap(g => g.vehicles)
+    vehicles: selectedGroups.flatMap(g => g.vehicles),
+    dealerName: String(selectedGroups.find(g => String(g?.dealerName || "").trim())?.dealerName || "").trim()
   };
   return [...others, merged].sort((a,b) => a.name.localeCompare(b.name));
 }
@@ -1969,7 +1971,11 @@ function buildCustomerWhatsAppText(group) {
     return `${i + 1}. ${reg} - ${v.services.join(', ')}`;
   });
 
-  const intro = `Dear Sir, ${count} vehicles have service due. Kindly send below the due vehicles to Kandla Motors Workshop for the required service. If any of your vehicles are not available in this list, please provide the vehicle number for regular updates on the service schedule. Please refer to the Detailed Service History PDF for vehicle-wise details.`;
+  const dealerName = String(group?.dealerName || "").trim();
+  const workshopName = dealerName
+    ? (dealerName.toLowerCase().includes("workshop") ? dealerName : `${dealerName} Workshop`)
+    : "your workshop";
+  const intro = `Dear Sir, ${count} vehicles have service due. Kindly send below the due vehicles to ${workshopName} for the required service. If any of your vehicles are not available in this list, please provide the vehicle number for regular updates on the service schedule. Please refer to the Detailed Service History PDF for vehicle-wise details.`;
   return `${intro}\n\n${lines.join('\\n')}`.replace(/\\n/g, '\n');
 }
 
@@ -2093,7 +2099,10 @@ async function printCustomerReport(group, detailed=false) {
         const date = getVisitDate(visit);
         const jc = getVisitJobCard(visit);
         const reading = getVisitReading(visit, vehicle);
-        const parts = getVisitParts(visit);
+        const parts = getVisitParts(visit.filter(isMappedServiceLine), vehicle, v.decision)
+          .map(part => part.text)
+          .filter(Boolean)
+          .join(', ');
         if (!parts) return null;
         return [
           formatDateShort(date),
@@ -2326,7 +2335,7 @@ function ExcelFilterDropdown({
   );
 }
 
-function ServiceDecisionApp() {
+function ServiceDecisionApp({ user }) {
   const [excelData, setExcelData] = useState("");
   const [analysis, setAnalysis] = useState(null);
   const [error, setError] = useState("");
@@ -2540,7 +2549,7 @@ function ServiceDecisionApp() {
       // contains more than one VIN. No second upload/paste is required.
       if(uniqueVins.length > 1){
         const results = buildBulkAnalysis(parsed.records);
-        const groups = buildCustomerGroups(results);
+        const groups = buildCustomerGroups(results, user?.dealerName);
         setAnalysis(null);
         setOverrideReading("");
         setAppliedOverride(null);
@@ -3512,7 +3521,7 @@ function ServiceDecisionApp() {
                     <table className="history-table" style={{minWidth:500}}><thead><tr><th><label style={{display:"inline-flex",alignItems:"center",gap:6,cursor:"pointer"}}><input type="checkbox" checked={customerGroups.length>0 && selectedCustomers.length===customerGroups.length} onChange={(event)=>setSelectedCustomers(event.target.checked ? customerGroups.map(group=>group.id) : [])}/> <span>Select All</span></label></th><th>Customer Group</th><th>Vehicles</th></tr></thead><tbody>
                       {customerGroups.map(group=><tr key={group.id}><td><input type="checkbox" checked={selectedCustomers.includes(group.id)} onChange={()=>setSelectedCustomers(prev=>prev.includes(group.id)?prev.filter(x=>x!==group.id):[...prev,group.id])}/></td><td><strong>{group.name}</strong>{group.customerKeys.length>1&&<div className="small-note">Merged group</div>}</td><td>{group.vehicles.length}</td></tr>)}
                     </tbody></table>
-                    <div className="action-row" style={{marginTop:8}}><input className="excel-input" style={{maxWidth:280}} value={mergedCustomerName} onChange={(event)=>setMergedCustomerName(event.target.value)} placeholder="Optional merged customer name" /><button className="excel-button" disabled={selectedCustomers.length<2} onClick={()=>{setCustomerGroups(prev=>mergeCustomerGroups(prev,selectedCustomers,mergedCustomerName));setSelectedCustomers([]);setMergedCustomerName("")}}>Merge Selected Customers</button><button className="excel-button" onClick={()=>{const fresh=buildCustomerGroups(bulkResults);setCustomerGroups(fresh);setSelectedCustomers([]);setMergedCustomerName("")}}>Reset Grouping</button></div>
+                    <div className="action-row" style={{marginTop:8}}><input className="excel-input" style={{maxWidth:280}} value={mergedCustomerName} onChange={(event)=>setMergedCustomerName(event.target.value)} placeholder="Optional merged customer name" /><button className="excel-button" disabled={selectedCustomers.length<2} onClick={()=>{setCustomerGroups(prev=>mergeCustomerGroups(prev,selectedCustomers,mergedCustomerName));setSelectedCustomers([]);setMergedCustomerName("")}}>Merge Selected Customers</button><button className="excel-button" onClick={()=>{const fresh=buildCustomerGroups(bulkResults,user?.dealerName);setCustomerGroups(fresh);setSelectedCustomers([]);setMergedCustomerName("")}}>Reset Grouping</button></div>
                   </div></div>
 
                   <div className="section-title">Customer-wise Output</div>

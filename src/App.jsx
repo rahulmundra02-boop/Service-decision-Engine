@@ -6,6 +6,7 @@ import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { autoTable } from "jspdf-autotable";
 import "./App.css";
+import AuthGate from "./AuthGate.jsx";
 
 const PART_STANDARDIZATION = {
   'FS0501': '1st Free service',
@@ -907,6 +908,10 @@ function parseExcelPaste(text) {
     salesOrgName: headerIndex(headers,
       ["sales organization name"], ["sales organization name"]),
 
+    plantName: headerIndex(headers,
+      ["plant name", "plant", "service center name", "workshop name", "dealer name"],
+      ["plant name", "plant", "service center name", "workshop name", "dealer name"]),
+
     secondaryReading: headerIndex(headers,
       ["secondary counter reading"], ["secondary counter reading"]),
 
@@ -1042,6 +1047,7 @@ function parseExcelPaste(text) {
       serviceQuote: cell(col.serviceQuote),
       itemNumber: cell(col.itemNumber),
       salesOrgName: cell(col.salesOrgName),
+      plantName: cell(col.plantName),
       faultCode: cell(col.faultCode),
       repairType: cell(col.repairType),
       billingDocument: cell(col.billingDocument),
@@ -1256,7 +1262,18 @@ function isCalculationEligibleLine(record, visit, vehicle, decision) {
   // record in its own right. Highlight the recorded free service regardless
   // of whether that same free service is currently due.
   const code = normalizePartCode(record?.partCode);
-  if (code === "FS0501" || code === "FS0502" || code === "FS0503" || text.includes("1ST FREE SERVICE") || text.includes("2ND FREE SERVICE") || text.includes("3RD FREE SERVICE")) {
+  if (
+    code === "FS0501" ||
+    code === "FS0502" ||
+    code === "FS0503" ||
+    code === "FS0H1A" ||
+    code === "FS0H1B" ||
+    code === "FS0H1C" ||
+    code === "FS0H1D" ||
+    text.includes("1ST FREE SERVICE") ||
+    text.includes("2ND FREE SERVICE") ||
+    text.includes("3RD FREE SERVICE")
+  ) {
     return true;
   }
 
@@ -1274,10 +1291,9 @@ function isCalculationEligibleLine(record, visit, vehicle, decision) {
     return qty >= 12 && sameJob.some(r => String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase().includes("ENGINE OIL FILTER"));
   }
   if (text.includes("ENGINE OIL FILTER")) {
-    return sameJob.some(r => {
-      const t = String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase();
-      return t.includes("ENGINE OIL") && !t.includes("FILTER") && Number(r?.qty || 0) >= 12;
-    });
+    // Engine Oil Filter is a service-history item and must be highlighted
+    // whenever it is present in the history.
+    return true;
   }
 
   if (text.includes("STEERING OIL") && !text.includes("FILTER")) {
@@ -1929,7 +1945,7 @@ function mergeCustomerGroups(groups, selectedIds, mergedName) {
   const others = groups.filter(g => !selected.has(g.id));
   const cleanName = String(mergedName || '').trim();
   const visibleNames = [...new Set(selectedGroups.map(group => String(group.name || '').trim()).filter(Boolean))];
-  const resolvedName = cleanName || (visibleNames.length === 1 ? visibleNames[0] : 'Merged Customer Group');
+  const resolvedName = cleanName || visibleNames.join(", ");
   const merged = {
     id: selectedGroups.map(g => g.id).sort().join('||'),
     name: resolvedName,
@@ -2310,7 +2326,7 @@ function ExcelFilterDropdown({
   );
 }
 
-function App() {
+function ServiceDecisionApp() {
   const [excelData, setExcelData] = useState("");
   const [analysis, setAnalysis] = useState(null);
   const [error, setError] = useState("");
@@ -2346,6 +2362,19 @@ function App() {
     services: [],
   });
   const [openBulkFilter, setOpenBulkFilter] = useState(null);
+
+  const logUsage = (activityType, payload = {}) => {
+    const token = localStorage.getItem("serviceDecisionAuthToken");
+    if (!token) return;
+    void fetch("/api/auth", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ action:"log-activity", activityType, ...payload }),
+    }).catch(() => {});
+  };
 
   const previewRows = useMemo(() => {
     if (!excelData.trim()) return [];
@@ -2457,6 +2486,13 @@ function App() {
       setCustomerGroups([]);
       setSelectedCustomers([]);
       setUploadParsedRecords(parsedRows);
+      if (parsedRows.length) {
+        logUsage("Excel Upload", {
+          fileCount: acceptedFiles.length,
+          vehicleCount: new Set(parsedRows.map(r=>String(r.vin||"").trim().toUpperCase()).filter(Boolean)).size,
+          details: { rows: parsedRows.length, files: acceptedFiles.map(f=>f.name) }
+        });
+      }
 
       if (!parsedRows.length && result.failedFiles?.length) {
         setError(
@@ -2533,6 +2569,12 @@ function App() {
         setOpenBulkFilter(null);
         setBulkMeta({ records: parsed.records.length, vehicles: results.length, customers: groups.length });
         setMode("bulk");
+        logUsage("Bulk Vehicle Analysis", {
+          mode:"bulk",
+          vehicleCount:results.length,
+          fileCount:uploadedFiles.length,
+          details:{ rows:parsed.records.length, customers:groups.length, automatic:true }
+        });
         setError(`Multiple Vehicle Detected: ${uniqueVins.length} unique VINs found. Automatically switched to Bulk Service.`);
         return;
       }
@@ -2544,6 +2586,13 @@ function App() {
       setOverrideReading("");
       setAppliedOverride(null);
       setAnalysis({ ...parsed, vehicle, running, visits, decision });
+      logUsage("Single Vehicle Analysis", {
+        mode:"single",
+        vehicleCount:1,
+        fileCount:uploadedFiles.length,
+        vin:String(vehicle?.vin || parsed.records?.[0]?.vin || "").trim().toUpperCase(),
+        details:{ serviceCount:(decision?.services || []).length }
+      });
     } catch (e) {
       setAnalysis(null);
       setError(e.message || "Excel data read nahi ho paya.");
@@ -2580,6 +2629,12 @@ function App() {
       });
       setOpenBulkFilter(null);
       setBulkMeta({ records: parsed.records.length, vehicles: results.length, customers: groups.length });
+      logUsage("Bulk Vehicle Analysis", {
+        mode:"bulk",
+        vehicleCount:results.length,
+        fileCount:uploadedFiles.length,
+        details:{ rows:parsed.records.length, customers:groups.length }
+      });
     } catch (e) {
       setBulkResults([]);
       setBulkMeta(null);
@@ -2589,6 +2644,12 @@ function App() {
 
   const recalculateWithOverride = () => {
     if (!analysis) return;
+    logUsage("Reading Override", {
+      mode:"single",
+      vehicleCount:1,
+      vin:String(analysis?.vehicle?.vin || "").trim().toUpperCase(),
+      details:{ value:overrideReading || "", unit:analysis?.running?.unit || "KM" }
+    });
 
     const raw = String(overrideReading || "").replace(/,/g, "").trim();
 
@@ -2780,6 +2841,7 @@ function App() {
   };
 
   const clear = () => {
+    logUsage("Clear", { mode, details:{ hadAnalysis:Boolean(analysis), uploadedFiles:uploadedFiles.length } });
     setExcelData("");
     setAnalysis(null);
     setError("");
@@ -2815,6 +2877,42 @@ function App() {
     });
     setOpenBulkFilter(null);
   };
+
+  // App-style Escape navigation:
+  // 1. Close an open Excel filter first.
+  // 2. From Service Schedule / Bulk Vehicle, go back to Single Vehicle.
+  // 3. From a loaded Single Vehicle screen, perform the same action as Clear.
+  // 4. On the empty Single Vehicle home screen, Escape safely behaves like Clear.
+  useEffect(() => {
+    const handleEscapeNavigation = (event) => {
+      if (event.key !== "Escape") return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (openBulkFilter) {
+        setOpenBulkFilter(null);
+        return;
+      }
+
+      if (mode === "schedule") {
+        setMode("single");
+        setError("");
+        return;
+      }
+
+      if (mode === "bulk") {
+        setMode("single");
+        setError("");
+        return;
+      }
+
+      clear();
+    };
+
+    window.addEventListener("keydown", handleEscapeNavigation, true);
+    return () => window.removeEventListener("keydown", handleEscapeNavigation, true);
+  }, [mode, openBulkFilter, analysis, uploadParsedRecords.length]);
 
   return (
     <>
@@ -3172,10 +3270,12 @@ function App() {
           font-size:10px;
           font-weight:700;
         }
-        .single-service-summary { min-width:0; table-layout:auto; }
-        .single-service-summary th:nth-child(1), .single-service-summary td:nth-child(1) { width:100px; min-width:100px; white-space:nowrap; }
-        .single-service-summary th:nth-child(2), .single-service-summary td:nth-child(2) { width:130px; min-width:130px; white-space:nowrap; }
-        .single-service-summary th:nth-child(3), .single-service-summary td:nth-child(3) { width:130px; min-width:130px; white-space:nowrap; }
+        .single-service-summary { min-width:760px; width:100%; table-layout:fixed; }
+        .single-service-summary th:nth-child(1), .single-service-summary td:nth-child(1) { width:7% !important; min-width:0; white-space:normal; overflow-wrap:anywhere; }
+        .single-service-summary th:nth-child(2), .single-service-summary td:nth-child(2) { width:8% !important; min-width:0; white-space:normal; overflow-wrap:anywhere; }
+        .single-service-summary th:nth-child(3), .single-service-summary td:nth-child(3) { width:6% !important; min-width:0; white-space:normal; overflow-wrap:anywhere; }
+        .single-service-summary th:nth-child(4), .single-service-summary td:nth-child(4) { width:10% !important; min-width:0; white-space:normal; overflow-wrap:anywhere; }
+        .single-service-summary th:nth-child(5), .single-service-summary td:nth-child(5) { width:69% !important; min-width:0; }
         .service-summary-note { padding:5px 8px; margin-top:4px; }
         .service-summary-title {
           background:#2f75b5;
@@ -3284,7 +3384,7 @@ function App() {
             <div className="excel-tabs">
               <div className={`excel-tab ${mode === "single" ? "active" : ""}`} onClick={() => { setMode("single"); setError(""); setBulkResults([]); setBulkMeta(null); }}>Single Vehicle</div>
               <div className={`excel-tab ${mode === "bulk" ? "active" : ""}`} onClick={() => { setMode("bulk"); setError(""); setAnalysis(null); }}>Bulk Vehicle</div>
-              <div className={`excel-tab ${mode === "schedule" ? "active" : ""}`} onClick={() => { setMode("schedule"); setError(""); }}>Service Schedule Chart</div>
+              <div className={`excel-tab ${mode === "schedule" ? "active" : ""}`} onClick={() => { setMode("schedule"); setError(""); logUsage("Service Schedule Viewed", { mode:"schedule" }); }}>Service Schedule Chart</div>
             </div>
             <div className="excel-toolbar">
               {mode !== "schedule" && <>
@@ -3375,7 +3475,7 @@ function App() {
                 <div className="section-title service-summary-title">Service Summary — Complete Vehicle History</div>
                 <div className="history-wrap">
                   <table className="history-table single-service-summary">
-                    <thead><tr><th>Date</th><th>Job Card</th><th>Reading</th><th>Part No. / Service / Qty</th></tr></thead>
+                    <thead><tr><th>Date</th><th>Job Card</th><th>Reading</th><th>Plant</th><th>Part No. / Service / Qty</th></tr></thead>
                     <tbody>
                       {analysis?.visits?.length ? analysis.visits.map((visit,i) => {
                         const visitDate=getVisitDate(visit), jobCard=getVisitJobCard(visit), visitReading=getVisitReading(visit,analysis.vehicle), parts=getVisitParts(visit,analysis.vehicle,analysis.decision);
@@ -3383,6 +3483,7 @@ function App() {
                           <td>{formatDateShort(visitDate)}</td>
                           <td>{jobCard}</td>
                           <td>{visitReading ? `${formatNumber(visitReading)} ${getTargetUnit(analysis.vehicle)}` : "-"}</td>
+                          <td>{[...new Set(visit.map(r => String(r?.plantName || r?.salesOrgName || "").trim()).filter(Boolean))].join(", ") || "-"}</td>
                           <td>
                             {parts.length ? parts.map((part,index) => (
                               <span key={index} className={part.eligible ? "history-part eligible" : "history-part"} title={part.eligible ? "Eligible service-calculation record" : "History record"}>
@@ -3391,7 +3492,7 @@ function App() {
                             )) : "-"}
                           </td>
                         </tr>;
-                      }) : <tr><td colSpan="4" className="small-note">No service history loaded.</td></tr>}
+                      }) : <tr><td colSpan="5" className="small-note">No service history loaded.</td></tr>}
                     </tbody>
                   </table>
                 </div>
@@ -3560,5 +3661,9 @@ function Info({ label, value }) {
   return <div className="info-box"><span>{label}</span><strong>{value}</strong></div>;
 }
 
+
+function App() {
+  return <AuthGate><ServiceDecisionApp /></AuthGate>;
+}
 
 export default App;

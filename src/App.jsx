@@ -2833,6 +2833,42 @@ function ServiceDecisionApp() {
     setOpenBulkFilter(null);
   };
 
+  // App-style Escape navigation:
+  // 1. Close an open Excel filter first.
+  // 2. From Service Schedule / Bulk Vehicle, go back to Single Vehicle.
+  // 3. From a loaded Single Vehicle screen, perform the same action as Clear.
+  // 4. On the empty Single Vehicle home screen, Escape safely behaves like Clear.
+  useEffect(() => {
+    const handleEscapeNavigation = (event) => {
+      if (event.key !== "Escape") return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (openBulkFilter) {
+        setOpenBulkFilter(null);
+        return;
+      }
+
+      if (mode === "schedule") {
+        setMode("single");
+        setError("");
+        return;
+      }
+
+      if (mode === "bulk") {
+        setMode("single");
+        setError("");
+        return;
+      }
+
+      clear();
+    };
+
+    window.addEventListener("keydown", handleEscapeNavigation, true);
+    return () => window.removeEventListener("keydown", handleEscapeNavigation, true);
+  }, [mode, openBulkFilter, analysis, uploadParsedRecords.length]);
+
   return (
     <>
       <style>{`

@@ -66,8 +66,11 @@ export default async function handler(req, res) {
     await client.query("BEGIN");
 
     // Store only the per-unit rate for future estimates.
-    // If the earlier temporary amount column already exists, convert its
-    // historical line totals to rate using quantity before removing it.
+    // Ensure the temporary amount column exists so this migration is safe
+    // even if no upload happened after the earlier amount-field change.
+    await client.query(
+      "ALTER TABLE service_history ADD COLUMN IF NOT EXISTS amount NUMERIC"
+    );
     await client.query(
       "ALTER TABLE service_history ADD COLUMN IF NOT EXISTS rate NUMERIC"
     );

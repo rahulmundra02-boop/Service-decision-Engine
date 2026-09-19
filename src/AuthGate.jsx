@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./AuthGate.css";
 
 const TOKEN_KEY = "serviceDecisionAuthToken";

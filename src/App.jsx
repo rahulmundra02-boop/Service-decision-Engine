@@ -689,76 +689,100 @@ async function parseExcelFiles(files) {
 
   const fileRecordSets = [];
   const fileNames = [];
+  const failedFiles = [];
 
   for (const file of files) {
-    const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer, {
-      type: "array",
-      cellDates: true,
-      raw: false
-    });
-
     let fileRecords = [];
+    let fileFailed = false;
+    let fileError = "";
 
-    for (const sheetName of workbook.SheetNames) {
-      const sheet = workbook.Sheets[sheetName];
-      if (!sheet) continue;
-
-      // Read the worksheet as a raw 2D array and build TSV ourselves.
-      // Do NOT use sheet_to_csv() here: it can alter/rename duplicate headers
-      // and can format Excel values differently from an Excel copy/paste.
-      // The goal is that uploaded Excel data reaches parseExcelPaste() in the
-      // same field/value form as normal Ctrl+C -> Ctrl+V.
-      const rows = XLSX.utils.sheet_to_json(sheet, {
-        header: 1,
-        raw: true,
-        defval: "",
-        blankrows: false
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, {
+        type: "array",
+        cellDates: true,
+        raw: false
       });
 
-      if (!rows.length) continue;
+      for (const sheetName of workbook.SheetNames) {
+        const sheet = workbook.Sheets[sheetName];
+        if (!sheet) continue;
 
-      const cellToText = (value) => {
-        if (value instanceof Date && !Number.isNaN(value.getTime())) {
-          const dd = String(value.getDate()).padStart(2, "0");
-          const mm = String(value.getMonth() + 1).padStart(2, "0");
-          const yyyy = value.getFullYear();
-          return `${dd}-${mm}-${yyyy}`;
+        const rows = XLSX.utils.sheet_to_json(sheet, {
+          header: 1,
+          raw: true,
+          defval: "",
+          blankrows: false
+        });
+
+        if (!rows.length) continue;
+
+        const cellToText = (value) => {
+          if (value instanceof Date && !Number.isNaN(value.getTime())) {
+            const dd = String(value.getDate()).padStart(2, "0");
+            const mm = String(value.getMonth() + 1).padStart(2, "0");
+            const yyyy = value.getFullYear();
+            return `${dd}-${mm}-${yyyy}`;
+          }
+          return String(value ?? "").replace(/[\\r\\n\\t]+/g, " ").trim();
+        };
+
+        const tsv = rows
+          .map(row => row.map(cellToText).join("\t"))
+          .join("\n");
+
+        if (!tsv.trim()) continue;
+
+        try {
+          const parsed = parseExcelPaste(tsv);
+          fileRecords.push(...parsed.records);
+        } catch (err) {
+          const rowCount = tsv.trim().split(/\\r?\\n/).length;
+
+          // A sheet with only a header/one row can be an empty or irrelevant
+          // worksheet, so keep the existing ignore behavior for that case.
+          if (rowCount > 1) {
+            fileFailed = true;
+            fileError = err?.message || "Required headers nahi mile.";
+            break;
+          }
         }
-        // A DMS text field (commonly Customer Voice) may contain a line break
-        // or tab.  This data is converted to TSV below, so retaining those
-        // delimiters would split one Excel record into multiple malformed rows
-        // and shift every later field (Name, Reg No., VIN, Model, etc.).
-        return String(value ?? "").replace(/[\r\n\t]+/g, " ").trim();
-      };
-
-      const tsv = rows
-        .map(row => row.map(cellToText).join("\t"))
-        .join("\n");
-
-      if (!tsv.trim()) continue;
-
-      try {
-        const parsed = parseExcelPaste(tsv);
-        fileRecords.push(...parsed.records);
-      } catch (err) {
-        // Ignore completely empty/non-DMS sheets, but do not hide a real
-        // parsing error if the sheet contains data.
-        const rows = tsv.trim().split(/\r?\n/);
-        if (rows.length > 1) throw err;
       }
+    } catch (err) {
+      fileFailed = true;
+      fileError = err?.message || "Excel file read nahi ho payi.";
+    }
+
+    // If any real data sheet in this file has invalid/missing required
+    // headers, ignore the COMPLETE file rather than silently using partial data.
+    if (fileFailed) {
+      failedFiles.push({
+        name: file.name,
+        reason: fileError
+      });
+      continue;
     }
 
     if (fileRecords.length) {
-      // Keep each file's rows separate until duplicate protection is applied.
-      // This is essential: duplicates inside this same file must NOT be removed.
       fileRecordSets.push(fileRecords);
       fileNames.push(file.name);
+    } else {
+      failedFiles.push({
+        name: file.name,
+        reason: "Valid DMS service-history data ya required headers nahi mile."
+      });
     }
   }
 
   if (!fileRecordSets.length) {
-    throw new Error("Selected Excel files me valid DMS service-history data nahi mila.");
+    const details = failedFiles
+      .map(item => `${item.name}: ${item.reason}`)
+      .join(" | ");
+    throw new Error(
+      details
+        ? `Kisi bhi Excel file me valid DMS service-history data nahi mila. ${details}`
+        : "Selected Excel files me valid DMS service-history data nahi mila."
+    );
   }
 
   const allRecords = fileRecordSets.flat();
@@ -767,6 +791,7 @@ async function parseExcelFiles(files) {
   return {
     records: deduped.records,
     files: fileNames,
+    failedFiles,
     totalRowsBeforeDedup: allRecords.length,
     duplicateRowsIgnored: deduped.duplicateCount
   };
@@ -2420,9 +2445,11 @@ function App() {
       const parsedRows = result.records || [];
 
       setExcelData("");
-      setUploadedFiles(files);
+      const acceptedFiles = files.filter(file => result.files.includes(file.name));
+      setUploadedFiles(acceptedFiles);
       setUploadMeta({
         files: result.files,
+        failedFiles: result.failedFiles || [],
         rowsBefore: result.totalRowsBeforeDedup,
         duplicates: result.duplicateRowsIgnored,
         rowsAfter: parsedRows.length,
@@ -3254,6 +3281,15 @@ function App() {
               </>}
               {mode === "bulk" && bulkMeta && <span className="status-pill green">{bulkMeta.vehicles} Vehicles · {bulkMeta.records} Rows</span>}
               {uploadedFiles.length > 0 && <span className="status-pill blue">{uploadedFiles.length} Excel file{uploadedFiles.length > 1 ? "s" : ""}</span>}
+              {uploadMeta?.failedFiles?.length > 0 && (
+                <div className="upload-warning no-print" style={{color:"#ff4d4f",fontWeight:700,marginTop:6}}>
+                  {uploadMeta.failedFiles.map((item,index) => (
+                    <div key={index}>
+                      ⚠ {item.name} — This file was ignored because required header was not found. {item.reason}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 

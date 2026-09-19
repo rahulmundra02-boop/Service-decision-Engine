@@ -30,6 +30,42 @@ function normalizeVehicle(vehicle = {}) {
   return { ...vehicle, registration: vehicle.registration || vehicle.reg || "", sale: normalizeDate(vehicle.sale) };
 }
 
+function normalizeAmount(record = {}) {
+  const direct = record?.amount;
+  if (direct !== undefined && direct !== null && String(direct).trim() !== "") {
+    const n = Number(String(direct).replace(/,/g, "").replace(/[^0-9.-]/g, ""));
+    return Number.isFinite(n) ? n : null;
+  }
+
+  // Backend fallback for future/import variants where the amount header is
+  // preserved inside rawFields but the normalized field was not populated.
+  const raw = record?.rawFields || {};
+  const keys = Object.keys(raw);
+  const preferred = [
+    "amount",
+    "net amount",
+    "line amount",
+    "item amount",
+    "labour amount",
+    "part amount",
+    "net value",
+    "line value",
+  ];
+
+  for (const wanted of preferred) {
+    const key = keys.find((candidate) =>
+      candidate === wanted || candidate.startsWith(wanted + "__")
+    );
+    if (!key) continue;
+    const value = String(raw[key] ?? "").trim();
+    if (!value) continue;
+    const n = Number(value.replace(/,/g, "").replace(/[^0-9.-]/g, ""));
+    if (Number.isFinite(n)) return n;
+  }
+
+  return null;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -48,6 +84,12 @@ export default async function handler(req, res) {
 
   try {
     await client.query("BEGIN");
+
+    // Add the new line-level amount field automatically for the existing
+    // production table. Existing history remains valid with NULL amounts.
+    await client.query(
+      "ALTER TABLE service_history ADD COLUMN IF NOT EXISTS amount NUMERIC"
+    );
 
     const vehicleResult = await client.query(
       "INSERT INTO vehicles (vin,registration,customer_number,customer_name,engine,model,sale_date,last_refreshed_at) " +
@@ -135,7 +177,7 @@ export default async function handler(req, res) {
         serviceRows.push([
           jobCardId, clean(record.serviceType), clean(record.itemCategory), clean(record.partCode),
           clean(record.part || record.partDescription), clean(record.standardizedPart),
-          clean(record.qty || record.quantity), clean(record.customerVoice),
+          clean(record.qty || record.quantity), normalizeAmount(record), clean(record.customerVoice),
           clean(record.codifiedCustomerVoice), clean(record.repairTypeLine),
           clean(record.faultCode || record.complaintCode), clean(record.repairType)
         ]);
@@ -151,7 +193,7 @@ export default async function handler(req, res) {
       );
       const result = await client.query(
         "INSERT INTO service_history " +
-        "(job_card_id,service_type,item_category,part_code,part_description,standardized_part,quantity," +
+        "(job_card_id,service_type,item_category,part_code,part_description,standardized_part,quantity,amount," +
         "customer_voice,codified_customer_voice,repair_line_item_type,complaint_code,repair_type) " +
         "VALUES " + placeholders.join(",") + " RETURNING id",
         values

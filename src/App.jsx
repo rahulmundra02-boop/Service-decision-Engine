@@ -851,30 +851,10 @@ function parseExcelPaste(text) {
     qty: headerIndex(headers,
       ["quantity"], ["quantity"]),
 
-    // Line-level amount used by the future Service Estimate engine.
-    // Keep this optional so older DMS exports without an amount column
-    // continue to import normally.
-    amount: headerIndex(headers,
-      [
-        "amount",
-        "net amount",
-        "line amount",
-        "item amount",
-        "labour amount",
-        "part amount",
-        "net value",
-        "line value"
-      ],
-      [
-        "amount",
-        "net amount",
-        "line amount",
-        "item amount",
-        "labour amount",
-        "part amount",
-        "net value",
-        "line value"
-      ]),
+    // DMS Net Value is the total line value before tax.
+    // Store only the derived per-unit rate in DB: Net Value / Quantity.
+    netValue: headerIndex(headers,
+      ["net value"]),
 
     inward: headerIndex(headers,
       ["inward date"], ["inward date"]),
@@ -1051,8 +1031,8 @@ function parseExcelPaste(text) {
       part: cell(col.part),
       standardizedPart: standardizePart(cell(col.partCode), cell(col.part)),
       qty: parseNumber(cell(col.qty)),
-      // Preserve the imported line amount for the Service Estimate engine.
-      amount: col.amount >= 0 ? parseNumber(cell(col.amount)) : null,
+      // Net Value is retained only for rate calculation before DB storage.
+      netValue: col.netValue >= 0 ? parseNumber(cell(col.netValue)) : null,
       inward: parseDate(cell(col.inward)),
 
       reg: cell(col.reg),

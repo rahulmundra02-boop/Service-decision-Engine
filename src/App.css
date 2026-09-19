@@ -131,13 +131,15 @@ tr:last-child td { border-bottom:0; }
   min-width: 760px;
 }
 .single-service-summary th:nth-child(1),
-.single-service-summary td:nth-child(1) { width: 10%; }
+.single-service-summary td:nth-child(1) { width: 8%; }
 .single-service-summary th:nth-child(2),
-.single-service-summary td:nth-child(2) { width: 15%; }
+.single-service-summary td:nth-child(2) { width: 12%; }
 .single-service-summary th:nth-child(3),
-.single-service-summary td:nth-child(3) { width: 14%; }
+.single-service-summary td:nth-child(3) { width: 12%; }
 .single-service-summary th:nth-child(4),
-.single-service-summary td:nth-child(4) { width: 61%; }
+.single-service-summary td:nth-child(4) { width: 18%; }
+.single-service-summary th:nth-child(5),
+.single-service-summary td:nth-child(5) { width: 50%; }
 
 .single-service-summary td:nth-child(4) {
   overflow-wrap: anywhere;

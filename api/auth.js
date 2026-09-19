@@ -391,6 +391,7 @@ export default async function handler(req, res) {
       }
 
       const targetUserId = body.userId ? Number(body.userId) : null;
+      const rangeDays = [7,30,90].includes(Number(body.rangeDays)) ? Number(body.rangeDays) : 30;
       const userWhere = Number.isInteger(targetUserId) && targetUserId > 0 ? "WHERE u.id=$1" : "";
       const params = userWhere ? [targetUserId] : [];
 
@@ -428,16 +429,29 @@ export default async function handler(req, res) {
         `SELECT (a.activity_time AT TIME ZONE 'Asia/Kolkata')::date AS activity_date,
                 COUNT(*)::int AS activities,
                 COUNT(*) FILTER (WHERE a.activity_type='Login')::int AS logins,
-                COALESCE(SUM(a.vehicle_count),0)::int AS vehicles
+                COALESCE(SUM(a.vehicle_count),0)::int AS vehicles,
+                COALESCE(SUM(a.file_count),0)::int AS files
            FROM user_activity a
-          ${targetUserId ? "WHERE a.user_id=$1 AND a.activity_time >= NOW() - INTERVAL '30 days'" : "WHERE a.activity_time >= NOW() - INTERVAL '30 days'"}
+          ${targetUserId ? "WHERE a.user_id=$1 AND a.activity_time >= NOW() - ($2 * INTERVAL '1 day')" : "WHERE a.activity_time >= NOW() - ($1 * INTERVAL '1 day')"}
           GROUP BY 1 ORDER BY 1`,
-        params
+        targetUserId ? [targetUserId, rangeDays] : [rangeDays]
+      );
+
+      const breakdown = await client.query(
+        `SELECT a.activity_type, COUNT(*)::int AS count,
+                COALESCE(SUM(a.vehicle_count),0)::int AS vehicles,
+                COALESCE(SUM(a.file_count),0)::int AS files
+           FROM user_activity a
+          ${targetUserId ? "WHERE a.user_id=$1 AND a.activity_time >= NOW() - ($2 * INTERVAL '1 day')" : "WHERE a.activity_time >= NOW() - ($1 * INTERVAL '1 day')"}
+          GROUP BY a.activity_type
+          ORDER BY count DESC, a.activity_type`,
+        targetUserId ? [targetUserId, rangeDays] : [rangeDays]
       );
 
       await client.query("COMMIT");
       return res.json({
         success:true,
+        rangeDays,
         summary:summary.rows.map(row => ({
           ...userPayload(row),
           totalActivities:Number(row.total_activities||0),
@@ -450,7 +464,8 @@ export default async function handler(req, res) {
           scheduleViews:Number(row.schedule_views||0),
         })),
         recent:recent.rows,
-        periods:periods.rows
+        periods:periods.rows,
+        breakdown:breakdown.rows
       });
     }
 

@@ -2836,9 +2836,10 @@ function App() {
         .sheet-heading { background:#1f4e78; color:#fff; border:1px solid #17365d; font-size:18px; font-weight:700; padding:9px 12px; text-align:center; }
         .sheet-subheading { background:#d9eaf7; border:1px solid #9fbad0; border-top:0; padding:5px 10px; font-size:12px; color:#404040; }
         .sheet-grid { display:grid; grid-template-columns: 125px minmax(110px,1fr) 95px minmax(110px,1fr) 95px minmax(110px,1fr); border-left:1px solid #b7b7b7; border-top:1px solid #b7b7b7; }
-        .reading-override-grid { grid-template-columns: 125px minmax(150px,0.82fr) 125px minmax(110px,1fr) 95px minmax(110px,1fr); }
-        .override-reading-input { width:88%; }
-        .recalculate-button { width:112px; min-width:112px; padding:5px 4px; font-size:11px; line-height:1.15; white-space:normal; }
+        .compact-override-control { display:flex; align-items:center; gap:5px; }
+        .compact-override-input { width:88px; min-width:88px; height:30px; padding:5px 7px; }
+        .compact-recalculate-button { min-height:30px; height:30px; padding:4px 8px; font-size:11px; }
+
         .vehicle-output-layout { display:grid; grid-template-columns:minmax(0, 1fr) minmax(300px, 360px); gap:10px; align-items:stretch; }
         .vehicle-profile-panel, .customer-output-panel {
           min-width:0;
@@ -3277,10 +3278,30 @@ function App() {
                 <button className="excel-button green" onClick={() => document.getElementById("excel-file-input")?.click()} disabled={uploadBusy}>Upload Excel</button>
                 <button className="excel-button" onClick={clear}>Clear</button>
                 <button className="excel-button green" onClick={mode === "bulk" ? analyzeBulk : analyze} disabled={uploadBusy || (!excelData.trim() && !uploadParsedRecords.length)}>{mode === "bulk" ? "Analyze All Vehicles" : "Analyze Vehicle"}</button>
-                {mode === "single" && analysis && <button className="excel-button" onClick={recalculateWithOverride}>Recalculate</button>}
+
               </>}
               {mode === "bulk" && bulkMeta && <span className="status-pill green">{bulkMeta.vehicles} Vehicles · {bulkMeta.records} Rows</span>}
               {uploadedFiles.length > 0 && <span className="status-pill blue">{uploadedFiles.length} Excel file{uploadedFiles.length > 1 ? "s" : ""}</span>}
+              {mode === "single" && analysis && (
+                <div className="compact-override-control no-print">
+                  <input
+                    className="excel-input compact-override-input"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={overrideReading}
+                    onChange={(e)=>{setOverrideReading(e.target.value);setError("")}}
+                    placeholder={analysis?.running?.unit || "KM"}
+                    aria-label={`Enter ${analysis?.running?.unit || "KM"}`}
+                  />
+                  <button
+                    className="excel-button green compact-recalculate-button"
+                    onClick={recalculateWithOverride}
+                  >
+                    Recalculate
+                  </button>
+                </div>
+              )}
               {uploadMeta?.failedFiles?.length > 0 && (
                 <div className="upload-warning no-print" style={{color:"#ff4d4f",fontWeight:700,marginTop:6}}>
                   {uploadMeta.failedFiles.map((item,index) => (
@@ -3298,15 +3319,6 @@ function App() {
           <main className="excel-sheet">
             {mode === "single" ? (analysis ? (
               <>
-                <div className="section-title no-print">Reading Override</div>
-                <div className="sheet-grid reading-override-grid no-print">
-                  <div className="cell label">Override {analysis?.running?.unit || "KM"}</div>
-                  <div className="cell"><input className="excel-input override-reading-input" type="number" min="1" step="1" value={overrideReading} onChange={(e)=>{setOverrideReading(e.target.value);setError("")}} placeholder={`Enter ${analysis?.running?.unit || "KM"}`} /></div>
-                  <div className="cell"><button className="excel-button green recalculate-button" onClick={recalculateWithOverride} disabled={!analysis}>RECALCULATE DECISION</button></div>
-                  <div className="cell value">{analysis?.running?.current ? `${formatNumber(analysis.running.current)} ${analysis.running.unit || "KM"}` : ""}</div>
-                  <div className="cell label">Source</div><div className="cell value">{appliedOverride !== null ? "User entered reading" : analysis ? "DMS / automatic calculation" : ""}</div>
-                </div>
-
                 <div className="sheet-heading" style={{marginTop:10}}>VEHICLE SCHEDULE SERVICE HISTORY FROM LAST 3 YEARS AS ON DATE - {todayDisplay}</div>
 
                 <div className="vehicle-output-layout" style={{marginTop:10}}>
@@ -3320,7 +3332,7 @@ function App() {
                       <div className="cell label">Vehicle Age</div><div className="cell value">{analysis?.vehicle?.sale ? formatVehicleAge(analysis.vehicle.sale) : ""}</div>
                       <div className="cell label">Model</div><div className="cell value">{analysis?.vehicle?.model || ""}</div>
                       <div className="cell label">Last Odometer recorded/date</div><div className="cell value">{analysis?.running?.last ? `${formatNumber(getRelevantReading(analysis.running.last, analysis.vehicle))} / ${formatDate(analysis.running.last.date)}` : ""}</div>
-                      <div className="cell label">Current Reading</div><div className="cell value">{analysis?.running?.current ? `${formatNumber(analysis.running.current)} ${analysis.running.unit || "KM"}` : ""}</div>
+                      <div className="cell label">Current Reading</div><div className="cell value">{analysis?.running?.current ? `${formatNumber(analysis.running.current)} ${analysis.running.unit || "KM"}${appliedOverride === null ? " (Approx.)" : ""}` : ""}</div>
                       <div className="cell label">VIN</div><div className="cell value">{analysis?.vehicle?.vin || ""}</div>
                     </div>
                   </div>

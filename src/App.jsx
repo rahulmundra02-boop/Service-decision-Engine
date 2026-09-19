@@ -2512,6 +2512,7 @@ function ServiceDecisionApp({ user }) {
   const [uploadMeta, setUploadMeta] = useState(null);
   const [uploadParsedRecords, setUploadParsedRecords] = useState([]);
   const [estimateOpen, setEstimateOpen] = useState(false);
+  const [estimateStage, setEstimateStage] = useState("select");
   const [estimateHistory, setEstimateHistory] = useState([]);
   const [estimateLoading, setEstimateLoading] = useState(false);
   const [estimateSelectedServices, setEstimateSelectedServices] = useState([]);
@@ -3094,23 +3095,32 @@ function ServiceDecisionApp({ user }) {
   async function openEstimate() {
     if (!analysis?.vehicle?.vin) return;
     const dueKeys = BULK_SERVICE_LABELS.filter(([, key]) => analysis?.decision?.result?.[key]).map(([, key]) => key);
-    setEstimateSelectedServices(dueKeys); setEstimateParts([]); setEstimateLabour([]); setEstimateNotice(""); setEstimateOpen(true); setEstimateLoading(true);
+    setEstimateSelectedServices(dueKeys);
+    setEstimateParts([]);
+    setEstimateLabour([]);
+    setEstimateNotice("");
+    setEstimateStage("select");
+    setEstimateOpen(true);
+    setEstimateLoading(true);
     try {
       const response = await fetch("/api/save-history?vin=" + encodeURIComponent(analysis.vehicle.vin));
       const data = await response.json();
       const rows = Array.isArray(data?.rows) ? data.rows : [];
       setEstimateHistory(rows);
-      const items = estimateHistoryToItems(rows, dueKeys);
-      setEstimateParts(items.filter(item => item.type === "part")); setEstimateLabour(items.filter(item => item.type === "labour"));
-      setEstimateNotice(rows.length ? "Historical data loaded. You can edit every line or add missing items manually." : "No historical estimate data found for this vehicle. Please enter items manually.");
+      setEstimateNotice(rows.length ? "Historical service data is available for the selected vehicle." : "No historical service data found. Estimate items can be entered manually.");
     } catch {
-      setEstimateHistory([]); setEstimateNotice("Historical data could not be loaded. Manual estimate entry is available.");
+      setEstimateHistory([]);
+      setEstimateNotice("Historical data could not be loaded. Manual estimate entry is available.");
     } finally { setEstimateLoading(false); }
   }
-  function rebuildEstimateFromServices(keys) {
-    const items = estimateHistoryToItems(estimateHistory, keys);
-    setEstimateParts(items.filter(item => item.type === "part")); setEstimateLabour(items.filter(item => item.type === "labour"));
+  function prepareEstimate() {
+    const items = estimateHistoryToItems(estimateHistory, estimateSelectedServices);
+    setEstimateParts(items.filter(item => item.type === "part"));
+    setEstimateLabour(items.filter(item => item.type === "labour"));
+    setEstimateNotice(estimateHistory.length ? "Estimate prepared from vehicle history. You can edit every line or add missing items manually." : "No historical estimate items found. Please add the required items manually.");
+    setEstimateStage("estimate");
   }
+  function reviseEstimateServices() { setEstimateStage("select"); }
   function updateEstimateItem(type, id, field, value) {
     const setter = type === "labour" ? setEstimateLabour : setEstimateParts;
     setter(prev => prev.map(item => item.id === id ? { ...item, [field]: field === "qty" || field === "rate" ? Number(value) || 0 : value, source:"Manual" } : item));
@@ -3122,6 +3132,29 @@ function ServiceDecisionApp({ user }) {
   const estimateLabourGst = estimateLabourBase*0.18;
   const estimateLabourTotal = estimateLabourBase+estimateLabourGst;
   const estimateGrandTotal = estimatePartsTotal+estimateLabourTotal;
+  function buildEstimatePdf(autoPrint = false) {
+    const pdf = new jsPDF({ unit:"mm", format:"a4", orientation:"portrait", compress:true });
+    const margin = 10, width = 190, vehicle = analysis?.vehicle || {}, workshop = String(user?.dealerName || "Workshop").trim();
+    pdf.setFont("helvetica","bold"); pdf.setFontSize(17); pdf.text("SERVICE ESTIMATE",105,14,{align:"center"});
+    pdf.setFontSize(10); pdf.text(workshop,105,21,{align:"center"});
+    pdf.setFont("helvetica","normal"); pdf.setFontSize(8.5); pdf.text("Estimate only - subject to actual inspection and applicable rates.",105,27,{align:"center"});
+    autoTable(pdf,{startY:32,margin:{left:margin,right:margin},tableWidth:width,theme:"grid",styles:{font:"helvetica",fontSize:8.5,cellPadding:3,lineColor:[150,150,150],lineWidth:0.2},body:[
+      ["Customer\n"+(vehicle.customerName||"-"),"Reg. No.\n"+(vehicle.reg||"-"),"VIN\n"+(vehicle.vin||"-")],
+      ["Model\n"+(vehicle.model||"-"),"Current Reading\n"+(analysis?.running?.current ? formatNumber(analysis.running.current)+" "+(analysis.running.unit||getTargetUnit(vehicle)) : "-"),"Date\n"+formatDate(new Date())]
+    ]});
+    let y=(pdf.lastAutoTable?.finalY||58)+7;
+    pdf.setFont("helvetica","bold"); pdf.setFontSize(10); pdf.text("Selected Aggregate Services",margin,y); y+=4;
+    const selectedNames=BULK_SERVICE_LABELS.filter(([,key])=>estimateSelectedServices.includes(key)).map(([name])=>name);
+    pdf.setFont("helvetica","normal"); pdf.setFontSize(8.5); pdf.text(selectedNames.length?selectedNames.join(", "):"No aggregate service selected",margin,y+3,{maxWidth:width}); y+=selectedNames.length?9:7;
+    autoTable(pdf,{startY:y,margin:{left:margin,right:margin},tableWidth:width,theme:"grid",styles:{font:"helvetica",fontSize:8,cellPadding:2.5,lineColor:[150,150,150],lineWidth:0.2,overflow:"linebreak"},head:[["Part No.","Description","Qty","Rate","Amount"]],body:estimateParts.length?estimateParts.map(item=>[item.partNo||"-",item.description||"-",String(item.qty||0),"₹ "+formatNumber(item.rate),"₹ "+formatNumber(item.qty*item.rate)]):[["-","No parts added","-","-","₹ 0"]],columnStyles:{0:{cellWidth:28},1:{cellWidth:82},2:{cellWidth:18},3:{cellWidth:27},4:{cellWidth:35}}});
+    y=(pdf.lastAutoTable?.finalY||y+20)+7; pdf.setFont("helvetica","bold"); pdf.text("Labour",margin,y); y+=4;
+    autoTable(pdf,{startY:y,margin:{left:margin,right:margin},tableWidth:width,theme:"grid",styles:{font:"helvetica",fontSize:8,cellPadding:2.5,lineColor:[150,150,150],lineWidth:0.2,overflow:"linebreak"},head:[["Description","Qty","Rate","Amount"]],body:estimateLabour.length?estimateLabour.map(item=>[item.description||"-",String(item.qty||0),"₹ "+formatNumber(item.rate),"₹ "+formatNumber(item.qty*item.rate)]):[["No labour added","-","-","₹ 0"]],columnStyles:{0:{cellWidth:110},1:{cellWidth:20},2:{cellWidth:25},3:{cellWidth:35}}});
+    y=(pdf.lastAutoTable?.finalY||y+20)+7;
+    autoTable(pdf,{startY:y,margin:{left:120,right:margin},tableWidth:80,theme:"grid",styles:{font:"helvetica",fontSize:8.5,cellPadding:3,lineColor:[150,150,150],lineWidth:0.2},body:[["Parts Total","₹ "+formatNumber(estimatePartsTotal)],["Labour Subtotal","₹ "+formatNumber(estimateLabourBase)],["GST on Labour (18%)","₹ "+formatNumber(estimateLabourGst)],["Grand Total","₹ "+formatNumber(estimateGrandTotal)]],columnStyles:{0:{cellWidth:45,fontStyle:"bold"},1:{cellWidth:35,halign:"right"}}});
+    y=(pdf.lastAutoTable?.finalY||y+25)+12; pdf.setFont("helvetica","normal"); pdf.setFontSize(8); pdf.line(140,y-2,190,y-2); pdf.text("Authorized Signatory",165,y,{align:"center"});
+    if(autoPrint){ pdf.autoPrint(); window.open(pdf.output("bloburl"),"_blank"); }
+    else { const fileName=("Service_Estimate_"+(vehicle.reg||vehicle.vin||"Vehicle")+".pdf").replace(/[^a-z0-9_.-]+/gi,"_"); pdf.save(fileName); }
+  }
 
   return (
     <>
@@ -3863,19 +3896,57 @@ function ServiceDecisionApp({ user }) {
 
         {estimateOpen && (
           <div className="no-print" style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-            <div style={{background:"#fff",color:"#111",width:"min(1100px,96vw)",maxHeight:"92vh",overflow:"auto",borderRadius:10,padding:18}}>
-              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}><div style={{fontSize:22,fontWeight:800}}>SERVICE ESTIMATE</div><span style={{fontSize:12,color:"#666"}}>Single Vehicle Only</span><span style={{marginLeft:"auto"}}>{user?.dealerName || "Workshop"}</span><button className="excel-button" onClick={()=>setEstimateOpen(false)}>Close</button></div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:8,marginBottom:12}}><div><b>Customer</b><br/>{analysis?.vehicle?.customerName || "-"}</div><div><b>Reg. No.</b><br/>{analysis?.vehicle?.reg || "-"}</div><div><b>VIN</b><br/>{analysis?.vehicle?.vin || "-"}</div><div><b>Model</b><br/>{analysis?.vehicle?.model || "-"}</div></div>
-              <div style={{border:"1px solid #ddd",borderRadius:8,padding:12,marginBottom:14}}><div style={{fontWeight:800,marginBottom:8}}>Select Services for Estimate</div><div style={{display:"flex",flexWrap:"wrap",gap:8}}>{BULK_SERVICE_LABELS.map(([label,key])=>{const due=!!analysis?.decision?.result?.[key],checked=estimateSelectedServices.includes(key);return <label key={key} style={{border:"1px solid #ddd",padding:"7px 10px",borderRadius:6,cursor:"pointer"}}><input type="checkbox" checked={checked} onChange={e=>{const next=e.target.checked?[...estimateSelectedServices,key]:estimateSelectedServices.filter(x=>x!==key);setEstimateSelectedServices(next);rebuildEstimateFromServices(next);}}/> {label} <small>({due?"Due":"Not Due"})</small></label>})}</div></div>
-              {estimateNotice && <div style={{padding:"8px 10px",background:"#f5f5f5",marginBottom:12,borderRadius:6}}>{estimateNotice}</div>}
-              {estimateLoading?<div>Loading historical data...</div>:<>
-                <div style={{fontWeight:800,margin:"10px 0 6px"}}>Parts</div>
-                <table className="history-table"><thead><tr><th>Part No.</th><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th><th></th></tr></thead><tbody>{estimateParts.map(item=><tr key={item.id}><td><input value={item.partNo} onChange={e=>updateEstimateItem("part",item.id,"partNo",e.target.value)}/></td><td><input value={item.description} onChange={e=>updateEstimateItem("part",item.id,"description",e.target.value)}/></td><td><input type="number" min="0" step="0.01" value={item.qty} onChange={e=>updateEstimateItem("part",item.id,"qty",e.target.value)} style={{width:80}}/></td><td><input type="number" min="0" step="0.01" value={item.rate} onChange={e=>updateEstimateItem("part",item.id,"rate",e.target.value)} style={{width:110}}/></td><td>{formatNumber(item.qty*item.rate)}</td><td><button className="excel-button" onClick={()=>removeEstimateItem("part",item.id)}>Delete</button></td></tr>)}{!estimateParts.length&&<tr><td colSpan="6">No historical part found. Add manually.</td></tr>}</tbody></table><div style={{margin:"8px 0"}}><button className="excel-button" onClick={()=>addEstimateItem("part")}>+ Add Part</button></div>
-                <div style={{fontWeight:800,margin:"14px 0 6px"}}>Labour</div>
-                <table className="history-table"><thead><tr><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th><th></th></tr></thead><tbody>{estimateLabour.map(item=><tr key={item.id}><td><input value={item.description} onChange={e=>updateEstimateItem("labour",item.id,"description",e.target.value)}/></td><td><input type="number" min="0" step="0.01" value={item.qty} onChange={e=>updateEstimateItem("labour",item.id,"qty",e.target.value)} style={{width:80}}/></td><td><input type="number" min="0" step="0.01" value={item.rate} onChange={e=>updateEstimateItem("labour",item.id,"rate",e.target.value)} style={{width:110}}/></td><td>{formatNumber(item.qty*item.rate)}</td><td><button className="excel-button" onClick={()=>removeEstimateItem("labour",item.id)}>Delete</button></td></tr>)}{!estimateLabour.length&&<tr><td colSpan="5">No historical labour found. Add manually.</td></tr>}</tbody></table><div style={{margin:"8px 0"}}><button className="excel-button" onClick={()=>addEstimateItem("labour")}>+ Add Labour</button></div>
-                <div style={{marginTop:16,marginLeft:"auto",maxWidth:380,borderTop:"2px solid #222",paddingTop:10}}><div style={{display:"flex",justifyContent:"space-between"}}><span>Parts Total</span><b>₹ {formatNumber(estimatePartsTotal)}</b></div><div style={{display:"flex",justifyContent:"space-between"}}><span>Labour Subtotal</span><b>₹ {formatNumber(estimateLabourBase)}</b></div><div style={{display:"flex",justifyContent:"space-between"}}><span>GST on Labour (18%)</span><b>₹ {formatNumber(estimateLabourGst)}</b></div><div style={{display:"flex",justifyContent:"space-between",fontSize:18,marginTop:6}}><span>Grand Total</span><b>₹ {formatNumber(estimateGrandTotal)}</b></div></div>
-                <div style={{marginTop:12,fontSize:12,color:"#666"}}>Estimate only. Historical rates are used where available; missing items/rates can be entered manually.</div>
-              </>}
+            <div style={{background:"#fff",color:"#111",width:"min(1100px,96vw)",maxHeight:"94vh",overflow:"auto",borderRadius:10,padding:18}}>
+              {estimateStage === "select" ? (
+                <>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
+                    <div style={{fontSize:22,fontWeight:800}}>SELECT AGGREGATE SERVICES</div>
+                    <span style={{fontSize:12,color:"#666"}}>Single Vehicle Estimate</span>
+                    <button className="excel-button" style={{marginLeft:"auto"}} onClick={()=>setEstimateOpen(false)}>Cancel</button>
+                  </div>
+                  <div style={{border:"1px solid #d5d5d5",borderRadius:8,padding:14}}>
+                    <div style={{fontWeight:800,fontSize:16,marginBottom:10}}>Which services should be included in the estimate?</div>
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8}}>
+                      {BULK_SERVICE_LABELS.map(([label,key])=>{
+                        const due=!!analysis?.decision?.result?.[key], checked=estimateSelectedServices.includes(key);
+                        return <label key={key} style={{display:"flex",alignItems:"center",gap:9,border:"1px solid #ddd",padding:"10px 12px",borderRadius:7,cursor:"pointer",fontSize:15}}>
+                          <input type="checkbox" checked={checked} onChange={e=>setEstimateSelectedServices(e.target.checked?[...estimateSelectedServices,key]:estimateSelectedServices.filter(x=>x!==key))}/>
+                          <span>{label}</span><small style={{marginLeft:"auto",color:due?"#217346":"#777"}}>{due?"Due":"Not Due"}</small>
+                        </label>;
+                      })}
+                    </div>
+                  </div>
+                  {estimateLoading && <div style={{marginTop:12,padding:10,textAlign:"center",background:"#f5f5f5",borderRadius:7}}>Loading vehicle history...</div>}
+                  {!estimateLoading && estimateNotice && <div style={{marginTop:12,padding:10,background:"#f5f5f5",borderRadius:7}}>{estimateNotice}</div>}
+                  <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:16}}>
+                    <button className="excel-button" onClick={()=>setEstimateOpen(false)}>Cancel</button>
+                    <button className="excel-button green" disabled={estimateLoading} onClick={prepareEstimate}>OK / Prepare Estimate</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,borderBottom:"1px solid #ddd",paddingBottom:10}}>
+                    <div style={{fontSize:22,fontWeight:800}}>SERVICE ESTIMATE</div>
+                    <span style={{fontSize:12,color:"#666"}}>Single Vehicle Only</span>
+                    <span style={{marginLeft:"auto",fontWeight:700}}>{user?.dealerName || "Workshop"}</span>
+                    <button className="excel-button no-print" onClick={()=>setEstimateOpen(false)}>Close</button>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:8,marginBottom:12}}>
+                    <div><b>Customer</b><br/>{analysis?.vehicle?.customerName || "-"}</div><div><b>Reg. No.</b><br/>{analysis?.vehicle?.reg || "-"}</div><div><b>VIN</b><br/>{analysis?.vehicle?.vin || "-"}</div><div><b>Model</b><br/>{analysis?.vehicle?.model || "-"}</div>
+                  </div>
+                  <div style={{fontWeight:800,margin:"10px 0 6px"}}>Selected Aggregate Services</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>{BULK_SERVICE_LABELS.filter(([,key])=>estimateSelectedServices.includes(key)).map(([label])=><span key={label} style={{border:"1px solid #bbb",padding:"5px 8px",borderRadius:5,fontSize:12,background:"#f7f7f7"}}>{label}</span>)}</div>
+                  <div style={{fontWeight:800,margin:"10px 0 6px"}}>Parts</div>
+                  <table className="history-table"><thead><tr><th>Part No.</th><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th><th></th></tr></thead><tbody>{estimateParts.map(item=><tr key={item.id}><td><input value={item.partNo} onChange={e=>updateEstimateItem("part",item.id,"partNo",e.target.value)}/></td><td><input value={item.description} onChange={e=>updateEstimateItem("part",item.id,"description",e.target.value)}/></td><td><input type="number" min="0" step="0.01" value={item.qty} onChange={e=>updateEstimateItem("part",item.id,"qty",e.target.value)} style={{width:80}}/></td><td><input type="number" min="0" step="0.01" value={item.rate} onChange={e=>updateEstimateItem("part",item.id,"rate",e.target.value)} style={{width:110}}/></td><td>{formatNumber(item.qty*item.rate)}</td><td><button className="excel-button no-print" onClick={()=>removeEstimateItem("part",item.id)}>Delete</button></td></tr>)}{!estimateParts.length&&<tr><td colSpan="6">No historical part found. Add manually.</td></tr>}</tbody></table>
+                  <div style={{margin:"8px 0"}}><button className="excel-button no-print" onClick={()=>addEstimateItem("part")}>+ Add Part</button></div>
+                  <div style={{fontWeight:800,margin:"14px 0 6px"}}>Labour</div>
+                  <table className="history-table"><thead><tr><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th><th></th></tr></thead><tbody>{estimateLabour.map(item=><tr key={item.id}><td><input value={item.description} onChange={e=>updateEstimateItem("labour",item.id,"description",e.target.value)}/></td><td><input type="number" min="0" step="0.01" value={item.qty} onChange={e=>updateEstimateItem("labour",item.id,"qty",e.target.value)} style={{width:80}}/></td><td><input type="number" min="0" step="0.01" value={item.rate} onChange={e=>updateEstimateItem("labour",item.id,"rate",e.target.value)} style={{width:110}}/></td><td>{formatNumber(item.qty*item.rate)}</td><td><button className="excel-button no-print" onClick={()=>removeEstimateItem("labour",item.id)}>Delete</button></td></tr>)}{!estimateLabour.length&&<tr><td colSpan="5">No historical labour found. Add manually.</td></tr>}</tbody></table>
+                  <div style={{margin:"8px 0"}}><button className="excel-button no-print" onClick={()=>addEstimateItem("labour")}>+ Add Labour</button></div>
+                  <div style={{marginTop:16,marginLeft:"auto",maxWidth:380,borderTop:"2px solid #222",paddingTop:10}}><div style={{display:"flex",justifyContent:"space-between"}}><span>Parts Total</span><b>₹ {formatNumber(estimatePartsTotal)}</b></div><div style={{display:"flex",justifyContent:"space-between"}}><span>Labour Subtotal</span><b>₹ {formatNumber(estimateLabourBase)}</b></div><div style={{display:"flex",justifyContent:"space-between"}}><span>GST on Labour (18%)</span><b>₹ {formatNumber(estimateLabourGst)}</b></div><div style={{display:"flex",justifyContent:"space-between",fontSize:18,marginTop:6}}><span>Grand Total</span><b>₹ {formatNumber(estimateGrandTotal)}</b></div></div>
+                  <div className="no-print" style={{display:"flex",flexWrap:"wrap",justifyContent:"flex-end",gap:8,marginTop:18,paddingTop:12,borderTop:"1px solid #ddd"}}><button className="excel-button" onClick={reviseEstimateServices}>Revise Aggregate Service</button><button className="excel-button" onClick={()=>buildEstimatePdf(true)}>Print A4</button><button className="excel-button green" onClick={()=>buildEstimatePdf(false)}>Download PDF</button></div>
+                  <div style={{marginTop:8,fontSize:12,color:"#666"}}>Estimate only. Historical rates are used where available; missing items/rates can be entered manually.</div>
+                </>
+              )}
             </div>
           </div>
         )}

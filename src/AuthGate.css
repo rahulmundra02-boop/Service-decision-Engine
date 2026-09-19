@@ -113,3 +113,131 @@
   .admin-management-grid{grid-template-columns:1fr}
   .admin-section-title{font-size:14px}
 }
+
+/* FINAL MOBILE ADMIN FIX
+   Prevent any desktop grid width, table width, or form control from pushing
+   the Admin page outside the phone viewport. */
+@media (max-width: 700px) {
+  html, body, #root, .app-auth-shell, .admin-page {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow-x: hidden !important;
+  }
+
+  .admin-page {
+    padding: 8px !important;
+    box-sizing: border-box !important;
+  }
+
+  .admin-card {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 12px !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+  }
+
+  .admin-header,
+  .admin-grid,
+  .admin-grid.admin-management-grid {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  .admin-grid,
+  .admin-grid.admin-management-grid {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 12px !important;
+  }
+
+  .admin-form-card,
+  .admin-users-card {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+  }
+
+  .admin-form-card h3 {
+    text-align: center;
+    margin-bottom: 12px;
+  }
+
+  .admin-form-card > label,
+  .admin-form-card > input,
+  .admin-form-card > .auth-primary {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    float: none !important;
+    position: static !important;
+  }
+
+  .admin-form-card > label {
+    margin: 10px 0 5px !important;
+    text-align: left !important;
+  }
+
+  .admin-form-card > input {
+    margin: 0 !important;
+  }
+
+  .admin-form-card > .auth-primary {
+    margin-top: 15px !important;
+  }
+
+  .admin-users-header {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .admin-table-wrap {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .admin-table {
+    width: max-content !important;
+    min-width: 720px !important;
+  }
+
+  .admin-stat-grid,
+  .admin-stat-grid.user-stats {
+    width: 100% !important;
+    min-width: 0 !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .admin-stat {
+    min-width: 0 !important;
+  }
+
+  .admin-analytics-toolbar {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .admin-activity-wrap {
+    max-height: 360px !important;
+  }
+
+  .admin-note {
+    width: 100% !important;
+    box-sizing: border-box !important;
+    overflow-wrap: anywhere !important;
+  }
+}

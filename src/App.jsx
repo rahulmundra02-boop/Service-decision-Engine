@@ -3235,8 +3235,8 @@ function App() {
 
           <div className="excel-ribbon no-print">
             <div className="excel-tabs">
-              <div className={`excel-tab ${mode === "single" ? "active" : ""}`} onClick={() => { setMode("single"); setError(""); setBulkResults([]); setBulkMeta(null); }}>Service Dashboard</div>
-              <div className={`excel-tab ${mode === "bulk" ? "active" : ""}`} onClick={() => { setMode("bulk"); setError(""); setAnalysis(null); }}>Bulk Service</div>
+              <div className={`excel-tab ${mode === "single" ? "active" : ""}`} onClick={() => { setMode("single"); setError(""); setBulkResults([]); setBulkMeta(null); }}>Single Vehicle</div>
+              <div className={`excel-tab ${mode === "bulk" ? "active" : ""}`} onClick={() => { setMode("bulk"); setError(""); setAnalysis(null); }}>Bulk Vehicle</div>
               <div className={`excel-tab ${mode === "schedule" ? "active" : ""}`} onClick={() => { setMode("schedule"); setError(""); }}>Service Schedule Chart</div>
             </div>
             <div className="excel-toolbar">
@@ -3337,7 +3337,7 @@ function App() {
                 {bulkMeta && <>
                   <div className="section-title">Customer Grouping</div>
                   <div className="bulk-card"><div className="bulk-card-head">Customer groups — {customerGroups.length}</div><div className="bulk-card-body">
-                    <table className="history-table" style={{minWidth:500}}><thead><tr><th>Select</th><th>Customer Group</th><th>Vehicles</th></tr></thead><tbody>
+                    <table className="history-table" style={{minWidth:500}}><thead><tr><th><label style={{display:"inline-flex",alignItems:"center",gap:6,cursor:"pointer"}}><input type="checkbox" checked={customerGroups.length>0 && selectedCustomers.length===customerGroups.length} onChange={(event)=>setSelectedCustomers(event.target.checked ? customerGroups.map(group=>group.id) : [])}/> <span>Select All</span></label></th><th>Customer Group</th><th>Vehicles</th></tr></thead><tbody>
                       {customerGroups.map(group=><tr key={group.id}><td><input type="checkbox" checked={selectedCustomers.includes(group.id)} onChange={()=>setSelectedCustomers(prev=>prev.includes(group.id)?prev.filter(x=>x!==group.id):[...prev,group.id])}/></td><td><strong>{group.name}</strong>{group.customerKeys.length>1&&<div className="small-note">Merged group</div>}</td><td>{group.vehicles.length}</td></tr>)}
                     </tbody></table>
                     <div className="action-row" style={{marginTop:8}}><input className="excel-input" style={{maxWidth:280}} value={mergedCustomerName} onChange={(event)=>setMergedCustomerName(event.target.value)} placeholder="Optional merged customer name" /><button className="excel-button" disabled={selectedCustomers.length<2} onClick={()=>{setCustomerGroups(prev=>mergeCustomerGroups(prev,selectedCustomers,mergedCustomerName));setSelectedCustomers([]);setMergedCustomerName("")}}>Merge Selected Customers</button><button className="excel-button" onClick={()=>{const fresh=buildCustomerGroups(bulkResults);setCustomerGroups(fresh);setSelectedCustomers([]);setMergedCustomerName("")}}>Reset Grouping</button></div>

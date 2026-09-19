@@ -986,7 +986,7 @@ function parseExcelPaste(text) {
   ].filter(([, index]) => index < 0);
 
   if (missing.length) {
-    throw new Error(`Required header not found: ${missing.map(([name]) => name).join(", ")}`);
+    throw new Error(`Below are required headers in file: ${missing.map(([name]) => name).join(", ")}`);
   }
 
   const records = lines.slice(1).map((line, rowIndex) => {
@@ -3285,7 +3285,7 @@ function App() {
                 <div className="upload-warning no-print" style={{color:"#ff4d4f",fontWeight:700,marginTop:6}}>
                   {uploadMeta.failedFiles.map((item,index) => (
                     <div key={index}>
-                      ⚠ {item.name} — This file was ignored because required header was not found. {item.reason}
+                      ⚠ {item.name} — This file was ignored because required header was not found. Below are required headers in file: {item.reason}
                     </div>
                   ))}
                 </div>

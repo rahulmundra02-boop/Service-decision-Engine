@@ -1951,7 +1951,8 @@ function mergeCustomerGroups(groups, selectedIds, mergedName) {
     id: selectedGroups.map(g => g.id).sort().join('||'),
     name: resolvedName,
     customerKeys: selectedGroups.flatMap(g => g.customerKeys),
-    vehicles: selectedGroups.flatMap(g => g.vehicles)
+    vehicles: selectedGroups.flatMap(g => g.vehicles),
+    dealerName: String(selectedGroups.find(g => String(g?.dealerName || "").trim())?.dealerName || "").trim()
   };
   return [...others, merged].sort((a,b) => a.name.localeCompare(b.name));
 }

@@ -168,6 +168,7 @@ const PART_STANDARDIZATION = {
   'FS0500': 'Body Building Checkup',
   'FL100290': 'Cluster Meter',
   'FL100390': 'Cluster Meter',
+  'CF000001': 'Clutch Oil',
   'CFD99991': 'Clutch Oil',
   'CLA99994': 'Clutch Oil',
   'U9999995': 'Clutch Oil',
@@ -539,6 +540,33 @@ function formatDateShort(date) {
   return `${dd}-${mm}-${yy}`;
 }
 
+function formatVehicleAge(saleDate, asOfDate = new Date()) {
+  if (!saleDate) return "";
+  const start = new Date(saleDate);
+  const end = new Date(asOfDate);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return "0 Years, 0 Months, 0 Days";
+
+  let years = end.getFullYear() - start.getFullYear();
+  let anniversary = new Date(start);
+  anniversary.setFullYear(start.getFullYear() + years);
+
+  if (anniversary > end) {
+    years -= 1;
+    anniversary = new Date(start);
+    anniversary.setFullYear(start.getFullYear() + years);
+  }
+
+  let months = end.getMonth() - anniversary.getMonth();
+  if (end.getDate() < anniversary.getDate()) months -= 1;
+  if (months < 0) months += 12;
+
+  const monthAnchor = new Date(anniversary);
+  monthAnchor.setMonth(monthAnchor.getMonth() + months);
+  const days = Math.max(0, Math.floor((end - monthAnchor) / 86400000));
+
+  return `${years} Year${years === 1 ? "" : "s"}, ${months} Month${months === 1 ? "" : "s"}, ${days} Day${days === 1 ? "" : "s"}`;
+}
+
 function formatNumber(value) {
   return Number(value || 0).toLocaleString("en-IN", {
     maximumFractionDigits: 0,
@@ -661,84 +689,101 @@ async function parseExcelFiles(files) {
 
   const fileRecordSets = [];
   const fileNames = [];
+  const failedFiles = [];
 
   for (const file of files) {
-    const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer, {
-      type: "array",
-      cellDates: true,
-      raw: false
-    });
-
     let fileRecords = [];
+    let fileFailed = false;
+    let fileError = "";
 
-    for (const sheetName of workbook.SheetNames) {
-      const sheet = workbook.Sheets[sheetName];
-      if (!sheet) continue;
-
-      // Read the worksheet as a raw 2D array and build TSV ourselves.
-      // Do NOT use sheet_to_csv() here: it can alter/rename duplicate headers
-      // and can format Excel values differently from an Excel copy/paste.
-      // The goal is that uploaded Excel data reaches parseExcelPaste() in the
-      // same field/value form as normal Ctrl+C -> Ctrl+V.
-      const rows = XLSX.utils.sheet_to_json(sheet, {
-        header: 1,
-        raw: true,
-        defval: "",
-        blankrows: false
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, {
+        type: "array",
+        cellDates: true,
+        raw: false
       });
 
-      if (!rows.length) continue;
+      for (const sheetName of workbook.SheetNames) {
+        const sheet = workbook.Sheets[sheetName];
+        if (!sheet) continue;
 
-      const cellToText = (value) => {
-        if (value instanceof Date && !Number.isNaN(value.getTime())) {
-          const dd = String(value.getDate()).padStart(2, "0");
-          const mm = String(value.getMonth() + 1).padStart(2, "0");
-          const yyyy = value.getFullYear();
-          return `${dd}-${mm}-${yyyy}`;
+        const rows = XLSX.utils.sheet_to_json(sheet, {
+          header: 1,
+          raw: true,
+          defval: "",
+          blankrows: false
+        });
+
+        if (!rows.length) continue;
+
+        const cellToText = (value) => {
+          if (value instanceof Date && !Number.isNaN(value.getTime())) {
+            const dd = String(value.getDate()).padStart(2, "0");
+            const mm = String(value.getMonth() + 1).padStart(2, "0");
+            const yyyy = value.getFullYear();
+            return `${dd}-${mm}-${yyyy}`;
+          }
+          return String(value ?? "").replace(/[\r\n\t]+/g, " ").trim();
+        };
+
+        const tsv = rows
+          .map(row => row.map(cellToText).join("\t"))
+          .join("\n");
+
+        if (!tsv.trim()) continue;
+
+        try {
+          const parsed = parseExcelPaste(tsv);
+          fileRecords.push(...parsed.records);
+        } catch (err) {
+          const rowCount = tsv.trim().split(/\r?\n/).length;
+
+          // A sheet with only a header/one row can be an empty or irrelevant
+          // worksheet, so keep the existing ignore behavior for that case.
+          if (rowCount > 1) {
+            fileFailed = true;
+            fileError = err?.message || "Required headers nahi mile.";
+            break;
+          }
         }
-        // A DMS text field (commonly Customer Voice) may contain a line break
-        // or tab.  This data is converted to TSV below, so retaining those
-        // delimiters would split one Excel record into multiple malformed rows
-        // and shift every later field (Name, Reg No., VIN, Model, etc.).
-        return String(value ?? "").replace(/[\r\n\t]+/g, " ").trim();
-      };
-
-      const tsv = rows
-        .map(row => row.map(cellToText).join("\t"))
-        .join("\n");
-
-      if (!tsv.trim()) continue;
-
-      try {
-        const parsed = parseExcelPaste(tsv);
-        fileRecords.push(...parsed.records);
-      } catch (err) {
-        // Ignore completely empty/non-DMS sheets, but do not hide a real
-        // parsing error if the sheet contains data.
-        const rows = tsv.trim().split(/\r?\n/);
-        if (rows.length > 1) throw err;
       }
+    } catch (err) {
+      fileFailed = true;
+      fileError = err?.message || "Excel file read nahi ho payi.";
+    }
+
+    // If any real data sheet in this file has invalid/missing required
+    // headers, ignore the COMPLETE file rather than silently using partial data.
+    if (fileFailed) {
+      failedFiles.push({
+        name: file.name,
+        reason: fileError
+      });
+      continue;
     }
 
     if (fileRecords.length) {
-      // Keep each file's rows separate until duplicate protection is applied.
-      // This is essential: duplicates inside this same file must NOT be removed.
       fileRecordSets.push(fileRecords);
       fileNames.push(file.name);
+    } else {
+      failedFiles.push({
+        name: file.name,
+        reason: "Valid DMS service-history data ya required headers not found."
+      });
     }
   }
 
-  if (!fileRecordSets.length) {
-    throw new Error("Selected Excel files me valid DMS service-history data nahi mila.");
-  }
-
+  // Do not abort the whole upload when every file is invalid.
+  // Return the failed-file details so the UI can clearly tell the user which
+  // file was ignored and which required headers were missing.
   const allRecords = fileRecordSets.flat();
   const deduped = deduplicateAcrossFiles(fileRecordSets);
 
   return {
     records: deduped.records,
     files: fileNames,
+    failedFiles,
     totalRowsBeforeDedup: allRecords.length,
     duplicateRowsIgnored: deduped.duplicateCount
   };
@@ -933,7 +978,7 @@ function parseExcelPaste(text) {
   ].filter(([, index]) => index < 0);
 
   if (missing.length) {
-    throw new Error(`Required header nahi mila: ${missing.map(([name]) => name).join(", ")}`);
+    throw new Error(`Below are required headers in file: ${missing.map(([name]) => name).join(", ")}`);
   }
 
   const records = lines.slice(1).map((line, rowIndex) => {
@@ -1116,10 +1161,8 @@ function deriveRunningReading(records, vehicle) {
 }
 
 function aggregateHistory(records) {
-  // SERVICE SUMMARY ONLY:
-  // Keep the complete visit rows for reading/date/job-card, but expose a visit
-  // only when at least one line item has a PART CODE present in the master
-  // PART_STANDARDIZATION list supplied by the user.
+  // SERVICE SUMMARY: keep the complete imported history, including unrelated
+  // DMS lines that are not present in the service-decision master list.
   const groups = new Map();
 
   for (const r of records) {
@@ -1133,7 +1176,6 @@ function aggregateHistory(records) {
 
   return [...groups.values()]
     .map(rows => rows.sort((a, b) => (a.rowNumber || 0) - (b.rowNumber || 0)))
-    .filter(rows => rows.some(r => isMappedServiceLine(r)))
     .sort((a, b) => {
       const da = getVisitDate(a)?.getTime() || 0;
       const db = getVisitDate(b)?.getTime() || 0;
@@ -1194,19 +1236,129 @@ function formatQty(value) {
   return Number.isInteger(n) ? String(n) : String(n).replace(/\.0+$/, '');
 }
 
-function getVisitParts(visit) {
-  // Only mapped PART/ROT line items are shown.
-  // Format: PARTCODE-Standard Name-QTY
-  return visit
-    .filter(isMappedServiceLine)
-    .map(r => {
-      const code = normalizePartCode(r.partCode);
-      const name = PART_STANDARDIZATION[code];
-      const qty = formatQty(r.qty);
-      return `${code}-${name}-${qty}`;
-    })
-    .filter(Boolean)
-    .join(' | ');
+function recordDisplayText(record) {
+  const code = normalizePartCode(record?.partCode);
+  const mappedName = code ? PART_STANDARDIZATION[code] : "";
+  const name = mappedName || String(record?.standardizedPart || record?.partDescription || record?.part || "").trim();
+  const qty = formatQty(record?.qty);
+  const codePrefix = code ? `${code}-` : "";
+  return name ? `${codePrefix}${name}-${qty}` : "";
+}
+
+function isCalculationEligibleLine(record, visit, vehicle, decision) {
+  const text = String(record?.standardizedPart || record?.partDescription || record?.part || "").toUpperCase();
+  const qty = Number(record?.qty || 0);
+  const jobCard = String(record?.jobCard || "").trim();
+  const sameJob = visit.filter(r => !jobCard || String(r?.jobCard || "").trim() === jobCard);
+  const sameDate = visit;
+
+  // A recognized free-service history line is a service-calculation
+  // record in its own right. Highlight the recorded free service regardless
+  // of whether that same free service is currently due.
+  const code = normalizePartCode(record?.partCode);
+  if (code === "FS0501" || code === "FS0502" || code === "FS0503" || text.includes("1ST FREE SERVICE") || text.includes("2ND FREE SERVICE") || text.includes("3RD FREE SERVICE")) {
+    return true;
+  }
+
+  // These are service items in the vehicle history and must always be
+  // highlighted when they are present, irrespective of current due status.
+  if (
+    text.includes("WHEEL ALIGNMENT") ||
+    text.includes("BODY BUILDING CHECK") ||
+    text.includes("PDI SERVICE")
+  ) {
+    return true;
+  }
+
+  if (text.includes("ENGINE OIL") && !text.includes("FILTER")) {
+    return qty >= 12 && sameJob.some(r => String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase().includes("ENGINE OIL FILTER"));
+  }
+  if (text.includes("ENGINE OIL FILTER")) {
+    return sameJob.some(r => {
+      const t = String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase();
+      return t.includes("ENGINE OIL") && !t.includes("FILTER") && Number(r?.qty || 0) >= 12;
+    });
+  }
+
+  if (text.includes("STEERING OIL") && !text.includes("FILTER")) {
+    return qty >= 1 && sameJob.some(r => String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase().includes("STEERING OIL FILTER"));
+  }
+  if (text.includes("STEERING OIL FILTER")) {
+    return sameJob.some(r => {
+      const t = String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase();
+      return t.includes("STEERING OIL") && !t.includes("FILTER") && Number(r?.qty || 0) >= 1;
+    });
+  }
+
+  if (text.includes("COOLANT")) return qty >= 15;
+  if (text.includes("GEAR OIL")) return qty >= 6;
+  if (text.includes("HUB GREASE")) return qty >= 3;
+  if (text.includes("AXLE OIL")) return qty >= 12;
+  if (text.includes("CLUTCH OIL")) return qty >= 0.5;
+  if (text.includes("APDA FILTER")) return qty >= 1;
+  if (text.includes("DEF INLINE FILTER")) return qty >= 1;
+
+  if (text.includes("AIR FILTER")) {
+    if (text.includes("KIT")) return qty >= 1;
+    return sameDate.filter(r => {
+      const t = String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase();
+      return t.includes("AIR FILTER") && !t.includes("KIT");
+    }).reduce((sum, r) => sum + Number(r?.qty || 0), 0) >= 2;
+  }
+
+  if (text.includes("FUEL FILTER")) {
+    if (text.includes("KIT")) return qty >= 1;
+    return sameJob.filter(r => {
+      const t = String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase();
+      return t.includes("FUEL FILTER") && !t.includes("KIT");
+    }).reduce((sum, r) => sum + Number(r?.qty || 0), 0) >= 2;
+  }
+
+  if (text.includes("DEF FILTER")) {
+    if (text.includes("KIT")) return qty >= 1;
+    return sameDate.some(r => String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase().includes("DEF FILTER SUCTION"))
+      && sameDate.some(r => String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase().includes("DEF FILTER AIR"));
+  }
+
+  return false;
+}
+
+function getVisitParts(visit, vehicle, decision) {
+  // History summary: if the same part appears multiple times in the same
+  // Job Card, show it once and total its quantity.
+  const grouped = new Map();
+
+  for (const record of visit) {
+    const code = normalizePartCode(record?.partCode);
+    const mappedName = code ? PART_STANDARDIZATION[code] : "";
+    const name = mappedName || String(record?.standardizedPart || record?.partDescription || record?.part || "").trim();
+    if (!name) continue;
+
+    const key = code
+      ? `CODE:${code}`
+      : `NAME:${name.toUpperCase()}`;
+
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        ...record,
+        partCode: code || record?.partCode || "",
+        standardizedPart: mappedName || record?.standardizedPart || name,
+        qty: Number(record?.qty || 0),
+      });
+    } else {
+      const existing = grouped.get(key);
+      existing.qty = Number(existing.qty || 0) + Number(record?.qty || 0);
+    }
+  }
+
+  return [...grouped.values()].map(record => {
+    const text = recordDisplayText(record);
+    if (!text) return null;
+    return {
+      text,
+      eligible: isCalculationEligibleLine(record, visit, vehicle, decision),
+    };
+  }).filter(Boolean);
 }
 
 function getLastMatching(records, keywords) {
@@ -1271,15 +1423,19 @@ function serviceBase(records, names, minQty = 0, requireOilFilter = false, vehic
     if ((r.qty || 0) <= 0 && minQty > 0) continue;
 
     const key = formatDate(r.date);
-    const same = records.filter(x => formatDate(x.date) === key);
+    const jobCard = String(r.jobCard || '').trim();
+    // When a Job Card exists, quantity and companion-part checks are scoped
+    // to that Job Card. This makes duplicate lines within the same Job Card
+    // total correctly without mixing separate Job Cards from the same date.
+    const same = jobCard
+      ? records.filter(x => String(x.jobCard || '').trim() === jobCard)
+      : records.filter(x => formatDate(x.date) === key);
     const qty = same
       .filter(x => names.some(n => matchesServicePart(x.standardizedPart, n)))
       .reduce((a, x) => a + (x.qty || 0), 0);
 
     if (qty < minQty) continue;
-    const companions = filterMustMatchJobCard
-      ? (String(r.jobCard || '').trim() ? records.filter(x => String(x.jobCard || '').trim() === String(r.jobCard || '').trim()) : [])
-      : same;
+    const companions = same;
     if (requireOilFilter && !companions.some(x => String(x.standardizedPart || '').toUpperCase().includes(requiredFilterName))) continue;
 
     return { ...r, serviceQty: qty, relevantReading: vehicle ? getRelevantReading(r, vehicle) : (r.reading || 0) };
@@ -1689,8 +1845,14 @@ const BULK_SERVICE_LABELS = [
 ];
 
 function getDueServiceNames(decision) {
-  const names=BULK_SERVICE_LABELS.filter(([, key]) => decision?.result?.[key]).map(([name]) => name);
-  if(decision?.freeService) names.push(decision.freeService.replace(/^1st free service$/i,'1st Free Service').replace(/^2nd free service$/i,'2nd Free Service').replace(/^3rd free service$/i,'3rd Free Service'));
+  const aggregateNames=BULK_SERVICE_LABELS.filter(([, key]) => decision?.result?.[key]).map(([name]) => name);
+  const names=[...aggregateNames];
+  // Free Service is shown to the customer only when at least one aggregate
+  // service is also due. If there is no aggregate service, do not show the
+  // free-service label by itself in Customer Output / Bulk Customer Output.
+  if(decision?.freeService && aggregateNames.length){
+    names.push(decision.freeService.replace(/^1st free service$/i,'1st Free Service').replace(/^2nd free service$/i,'2nd Free Service').replace(/^3rd free service$/i,'3rd Free Service'));
+  }
   if(Array.isArray(decision?.additionalServices)) names.push(...decision.additionalServices);
   return names;
 }
@@ -2189,7 +2351,11 @@ function App() {
     if (!excelData.trim()) return [];
     return excelData.trim().split(/\r?\n/).slice(0, 6);
   }, [excelData]);
-  const todayDisplay = new Date().toLocaleDateString("en-GB");
+  const todayDisplay = (() => {
+    const d = new Date();
+    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    return `${String(d.getDate()).padStart(2,"0")}-${months[d.getMonth()]}-${d.getFullYear()}`;
+  })();
 
 
 
@@ -2275,9 +2441,11 @@ function App() {
       const parsedRows = result.records || [];
 
       setExcelData("");
-      setUploadedFiles(files);
+      const acceptedFiles = files.filter(file => result.files.includes(file.name));
+      setUploadedFiles(acceptedFiles);
       setUploadMeta({
         files: result.files,
+        failedFiles: result.failedFiles || [],
         rowsBefore: result.totalRowsBeforeDedup,
         duplicates: result.duplicateRowsIgnored,
         rowsAfter: parsedRows.length,
@@ -2290,8 +2458,16 @@ function App() {
       setSelectedCustomers([]);
       setUploadParsedRecords(parsedRows);
 
-      // Do not await DB persistence. Analysis remains immediately available.
-      if (parsedRows.length) void saveHistoryInBackground(parsedRows);
+      if (!parsedRows.length && result.failedFiles?.length) {
+        setError(
+          result.failedFiles
+            .map(item => `${item.name} — This file was ignored because required header was not found. ${item.reason}`)
+            .join(" | ")
+        );
+      } else {
+        // Do not await DB persistence. Analysis remains immediately available.
+        if (parsedRows.length) void saveHistoryInBackground(parsedRows);
+      }
     } catch (err) {
       setUploadMeta(null);
       setUploadedFiles([]);
@@ -2647,9 +2823,9 @@ function App() {
         body { margin: 0; background: #d9e2f3; font-family: Calibri, Arial, sans-serif; color: #1f1f1f; }
         .excel-app { min-height: 100vh; background: #d9e2f3; }
         .excel-window { width: min(1500px, 100%); margin: 0 auto; background: #fff; min-height: 100vh; box-shadow: 0 0 0 1px #9e9e9e; }
-        .excel-titlebar { height: 34px; background: #217346; color: #fff; display:flex; align-items:center; justify-content:space-between; padding:0 12px; font-size:14px; }
-        .excel-title { font-weight:700; }
-        .excel-title-right { font-size:12px; }
+        .excel-titlebar { height: 34px; background: #217346; color: #fff; display:flex; align-items:center; justify-content:center; padding:0 12px; font-size:14px; }
+        .excel-title { font-weight:700; text-align:center; flex:1; }
+        .excel-title-right { display:none; }
         .excel-ribbon { background:#f3f3f3; border-bottom:1px solid #b7b7b7; }
         .excel-tabs { height:36px; display:flex; align-items:flex-end; gap:2px; padding:0 10px; border-bottom:1px solid #c8c8c8; }
         .excel-tab { padding:8px 15px 7px; font-size:13px; cursor:pointer; border:1px solid transparent; border-bottom:0; }
@@ -2664,9 +2840,10 @@ function App() {
         .sheet-heading { background:#1f4e78; color:#fff; border:1px solid #17365d; font-size:18px; font-weight:700; padding:9px 12px; text-align:center; }
         .sheet-subheading { background:#d9eaf7; border:1px solid #9fbad0; border-top:0; padding:5px 10px; font-size:12px; color:#404040; }
         .sheet-grid { display:grid; grid-template-columns: 125px minmax(110px,1fr) 95px minmax(110px,1fr) 95px minmax(110px,1fr); border-left:1px solid #b7b7b7; border-top:1px solid #b7b7b7; }
-        .reading-override-grid { grid-template-columns: 125px minmax(150px,0.82fr) 125px minmax(110px,1fr) 95px minmax(110px,1fr); }
-        .override-reading-input { width:88%; }
-        .recalculate-button { width:112px; min-width:112px; padding:5px 4px; font-size:11px; line-height:1.15; white-space:normal; }
+        .compact-override-control { display:flex; align-items:center; gap:5px; }
+        .compact-override-input { width:88px; min-width:88px; height:30px; padding:5px 7px; }
+        .compact-recalculate-button { min-height:30px; height:30px; padding:4px 8px; font-size:11px; }
+
         .vehicle-output-layout { display:grid; grid-template-columns:minmax(0, 1fr) minmax(300px, 360px); gap:10px; align-items:stretch; }
         .vehicle-profile-panel, .customer-output-panel {
           min-width:0;
@@ -2999,6 +3176,21 @@ function App() {
         .single-service-summary th:nth-child(1), .single-service-summary td:nth-child(1) { width:100px; min-width:100px; white-space:nowrap; }
         .single-service-summary th:nth-child(2), .single-service-summary td:nth-child(2) { width:130px; min-width:130px; white-space:nowrap; }
         .single-service-summary th:nth-child(3), .single-service-summary td:nth-child(3) { width:130px; min-width:130px; white-space:nowrap; }
+        .service-summary-note { padding:5px 8px; margin-top:4px; }
+        .service-summary-title {
+          background:#2f75b5;
+          color:#fff;
+          border-color:#255e91;
+          margin-top:10px;
+          box-shadow:0 1px 2px rgba(0,0,0,.18);
+          letter-spacing:.1px;
+        }
+
+        .history-part { display:inline-block; margin:2px 4px 2px 0; padding:3px 6px; border:1px solid transparent; }
+        .history-part.eligible { background:#e2f0d9; color:#006100; border-color:#70ad47; font-weight:700; border-radius:2px; }
+        .pre-analysis-empty { min-height:420px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; border:1px dashed #9fbad0; background:#eef4fa; color:#5b6770; padding:30px 20px; }
+        .pre-analysis-title { font-size:20px; font-weight:700; color:#1f4e78; margin-bottom:8px; }
+        .pre-analysis-text { max-width:560px; font-size:13px; line-height:1.5; }
         .excel-input { width:100%; border:1px solid #a6a6a6; min-height:29px; padding:5px 7px; font-family:Calibri,Arial,sans-serif; font-size:13px; }
         .excel-input:focus { outline:2px solid #70ad47; outline-offset:-2px; }
         .upload-area { border:1px dashed #70ad47; background:#f4fbef; padding:10px; }
@@ -3025,6 +3217,23 @@ function App() {
         @media (max-width: 900px) {
           .sheet-grid { grid-template-columns: 105px minmax(100px,1fr) 105px minmax(100px,1fr); }
           .wide-hide { display:none; }
+        }
+        @media (max-width: 600px) {
+          .excel-tabs { overflow-x:auto; justify-content:flex-start; align-items:stretch; padding:0 4px; scrollbar-width:none; }
+          .excel-tabs::-webkit-scrollbar { display:none; }
+          .excel-tab { flex:0 0 auto; white-space:nowrap; padding:9px 13px 8px; font-size:12px; }
+          .excel-toolbar { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; align-items:stretch; }
+          .excel-toolbar .excel-button { width:100%; min-width:0; min-height:40px; padding:6px 8px; line-height:1.15; }
+          .excel-toolbar .status-pill { width:100%; text-align:center; min-width:0; }
+          .excel-toolbar .status-pill:first-of-type { grid-column:1 / -1; }
+          .reading-override-grid { grid-template-columns:100px minmax(0,1fr); }
+          .reading-override-grid .cell:nth-child(3),
+          .reading-override-grid .cell:nth-child(4) { grid-column:2; }
+          .reading-override-grid .cell:nth-child(5),
+          .reading-override-grid .cell:nth-child(6) { grid-column:1 / -1; }
+          .recalculate-button { width:100%; min-width:0; }
+          .sheet-heading { font-size:15px; line-height:1.25; }
+          .vehicle-profile-panel .sheet-grid { grid-template-columns:110px minmax(0,1fr); }
         }
         @media (prefers-color-scheme: dark) {
           body, .excel-app { background:#111827; color:#e5e7eb; color-scheme:dark; }
@@ -3073,8 +3282,8 @@ function App() {
 
           <div className="excel-ribbon no-print">
             <div className="excel-tabs">
-              <div className={`excel-tab ${mode === "single" ? "active" : ""}`} onClick={() => { setMode("single"); setError(""); setBulkResults([]); setBulkMeta(null); }}>Service Dashboard</div>
-              <div className={`excel-tab ${mode === "bulk" ? "active" : ""}`} onClick={() => { setMode("bulk"); setError(""); setAnalysis(null); }}>Bulk Service</div>
+              <div className={`excel-tab ${mode === "single" ? "active" : ""}`} onClick={() => { setMode("single"); setError(""); setBulkResults([]); setBulkMeta(null); }}>Single Vehicle</div>
+              <div className={`excel-tab ${mode === "bulk" ? "active" : ""}`} onClick={() => { setMode("bulk"); setError(""); setAnalysis(null); }}>Bulk Vehicle</div>
               <div className={`excel-tab ${mode === "schedule" ? "active" : ""}`} onClick={() => { setMode("schedule"); setError(""); }}>Service Schedule Chart</div>
             </div>
             <div className="excel-toolbar">
@@ -3082,27 +3291,47 @@ function App() {
                 <button className="excel-button green" onClick={() => document.getElementById("excel-file-input")?.click()} disabled={uploadBusy}>Upload Excel</button>
                 <button className="excel-button" onClick={clear}>Clear</button>
                 <button className="excel-button green" onClick={mode === "bulk" ? analyzeBulk : analyze} disabled={uploadBusy || (!excelData.trim() && !uploadParsedRecords.length)}>{mode === "bulk" ? "Analyze All Vehicles" : "Analyze Vehicle"}</button>
-                {mode === "single" && analysis && <button className="excel-button" onClick={recalculateWithOverride}>Recalculate</button>}
+
               </>}
               {mode === "bulk" && bulkMeta && <span className="status-pill green">{bulkMeta.vehicles} Vehicles · {bulkMeta.records} Rows</span>}
               {uploadedFiles.length > 0 && <span className="status-pill blue">{uploadedFiles.length} Excel file{uploadedFiles.length > 1 ? "s" : ""}</span>}
+              {mode === "single" && analysis && (
+                <div className="compact-override-control no-print">
+                  <input
+                    className="excel-input compact-override-input"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={overrideReading}
+                    onChange={(e)=>{setOverrideReading(e.target.value);setError("")}}
+                    placeholder={analysis?.running?.unit || "KM"}
+                    aria-label={`Enter ${analysis?.running?.unit || "KM"}`}
+                  />
+                  <button
+                    className="excel-button green compact-recalculate-button"
+                    onClick={recalculateWithOverride}
+                  >
+                    Recalculate
+                  </button>
+                </div>
+              )}
+              {uploadMeta?.failedFiles?.length > 0 && (
+                <div className="upload-warning no-print" style={{color:"#ff4d4f",fontWeight:700,marginTop:6}}>
+                  {uploadMeta.failedFiles.map((item,index) => (
+                    <div key={index}>
+                      ⚠ {item.name} — This file was ignored because required header was not found. Below are required headers in file: {item.reason}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
           <input id="excel-file-input" className="no-print" type="file" accept=".xlsx,.xls,.xlsm,.csv" multiple style={{display:"none"}} onChange={handleExcelUpload} disabled={uploadBusy} />
 
           <main className="excel-sheet">
-            {mode === "single" ? (
+            {mode === "single" ? (analysis ? (
               <>
-                <div className="section-title no-print">Reading Override</div>
-                <div className="sheet-grid reading-override-grid no-print">
-                  <div className="cell label">Override {analysis?.running?.unit || "KM"}</div>
-                  <div className="cell"><input className="excel-input override-reading-input" type="number" min="1" step="1" value={overrideReading} onChange={(e)=>{setOverrideReading(e.target.value);setError("")}} placeholder={`Enter ${analysis?.running?.unit || "KM"}`} /></div>
-                  <div className="cell"><button className="excel-button green recalculate-button" onClick={recalculateWithOverride} disabled={!analysis}>RECALCULATE DECISION</button></div>
-                  <div className="cell value">{analysis?.running?.current ? `${formatNumber(analysis.running.current)} ${analysis.running.unit || "KM"}` : ""}</div>
-                  <div className="cell label">Source</div><div className="cell value">{appliedOverride !== null ? "User entered reading" : analysis ? "DMS / automatic calculation" : ""}</div>
-                </div>
-
                 <div className="sheet-heading" style={{marginTop:10}}>VEHICLE SCHEDULE SERVICE HISTORY FROM LAST 3 YEARS AS ON DATE - {todayDisplay}</div>
 
                 <div className="vehicle-output-layout" style={{marginTop:10}}>
@@ -3113,10 +3342,10 @@ function App() {
                       <div className="cell label">Reg No</div><div className="cell value">{analysis?.vehicle?.reg || ""}</div>
                       <div className="cell label">Engine No</div><div className="cell value">{analysis?.vehicle?.engine || ""}</div>
                       <div className="cell label">Sale Date</div><div className="cell value">{analysis ? formatDate(analysis.vehicle.sale) : ""}</div>
-                      <div className="cell label">Vehicle Age</div><div className="cell value">{analysis?.vehicle?.sale ? `${Math.floor((Date.now()-analysis.vehicle.sale.getTime())/31557600000)} Years` : ""}</div>
+                      <div className="cell label">Vehicle Age</div><div className="cell value">{analysis?.vehicle?.sale ? formatVehicleAge(analysis.vehicle.sale) : ""}</div>
                       <div className="cell label">Model</div><div className="cell value">{analysis?.vehicle?.model || ""}</div>
                       <div className="cell label">Last Odometer recorded/date</div><div className="cell value">{analysis?.running?.last ? `${formatNumber(getRelevantReading(analysis.running.last, analysis.vehicle))} / ${formatDate(analysis.running.last.date)}` : ""}</div>
-                      <div className="cell label">Current Reading</div><div className="cell value">{analysis?.running?.current ? `${formatNumber(analysis.running.current)} ${analysis.running.unit || "KM"}` : ""}</div>
+                      <div className="cell label">Current Reading</div><div className="cell value">{analysis?.running?.current ? `${formatNumber(analysis.running.current)} ${analysis.running.unit || "KM"}${appliedOverride === null ? " (Approx.)" : ""}` : ""}</div>
                       <div className="cell label">VIN</div><div className="cell value">{analysis?.vehicle?.vin || ""}</div>
                     </div>
                   </div>
@@ -3125,9 +3354,14 @@ function App() {
                     <div className="section-title">Customer Output — Service To Be Completed</div>
                     <div className="due-box">
                       {analysis ? (() => {
+                        const aggregateNames = BULK_SERVICE_LABELS
+                          .filter(([,key]) => analysis.decision.result[key])
+                          .map(([name]) => name);
                         const names = [
-                          ...BULK_SERVICE_LABELS.filter(([,key]) => analysis.decision.result[key]).map(([name]) => name),
-                          ...(analysis.decision.freeService ? [analysis.decision.freeService.replace(/^1st free service$/i,'1st Free Service').replace(/^2nd free service$/i,'2nd Free Service').replace(/^3rd free service$/i,'3rd Free Service')] : []),
+                          ...aggregateNames,
+                          ...(analysis.decision.freeService && aggregateNames.length
+                            ? [analysis.decision.freeService.replace(/^1st free service$/i,'1st Free Service').replace(/^2nd free service$/i,'2nd Free Service').replace(/^3rd free service$/i,'3rd Free Service')]
+                            : []),
                           ...(analysis.decision.additionalServices || []).filter(name => !String(name).toLowerCase().includes('free service'))
                         ];
                         return names.length ? names.map(name => <span className="due-chip" key={name}>{name}</span>) : <div className="no-due">No service to be completed at the current reading.</div>;
@@ -3138,27 +3372,43 @@ function App() {
 
                 {error && <div className="error-line no-print">{error}</div>}
 
-                <div className="section-title">Service Summary</div>
+                <div className="section-title service-summary-title">Service Summary — Complete Vehicle History</div>
                 <div className="history-wrap">
                   <table className="history-table single-service-summary">
                     <thead><tr><th>Date</th><th>Job Card</th><th>Reading</th><th>Part No. / Service / Qty</th></tr></thead>
                     <tbody>
                       {analysis?.visits?.length ? analysis.visits.map((visit,i) => {
-                        const visitDate=getVisitDate(visit), jobCard=getVisitJobCard(visit), visitReading=getVisitReading(visit,analysis.vehicle), parts=getVisitParts(visit);
-                        return <tr key={i}><td>{formatDateShort(visitDate)}</td><td>{jobCard}</td><td>{visitReading ? `${formatNumber(visitReading)} ${getTargetUnit(analysis.vehicle)}` : "-"}</td><td>{parts || "-"}</td></tr>;
+                        const visitDate=getVisitDate(visit), jobCard=getVisitJobCard(visit), visitReading=getVisitReading(visit,analysis.vehicle), parts=getVisitParts(visit,analysis.vehicle,analysis.decision);
+                        return <tr key={i}>
+                          <td>{formatDateShort(visitDate)}</td>
+                          <td>{jobCard}</td>
+                          <td>{visitReading ? `${formatNumber(visitReading)} ${getTargetUnit(analysis.vehicle)}` : "-"}</td>
+                          <td>
+                            {parts.length ? parts.map((part,index) => (
+                              <span key={index} className={part.eligible ? "history-part eligible" : "history-part"} title={part.eligible ? "Eligible service-calculation record" : "History record"}>
+                                {part.text}
+                              </span>
+                            )) : "-"}
+                          </td>
+                        </tr>;
                       }) : <tr><td colSpan="4" className="small-note">No service history loaded.</td></tr>}
                     </tbody>
                   </table>
                 </div>
               </>
-            ) : mode === "bulk" ? (
+            ) : (
+              <div className="pre-analysis-empty">
+                <div className="pre-analysis-title">Upload Excel to start</div>
+                <div className="pre-analysis-text">Vehicle analysis, profile and service history will appear here after the Excel file is uploaded and analysed.</div>
+              </div>
+            ) ) : mode === "bulk" ? (
               <>
                 <div className="sheet-heading">BULK VEHICLE SERVICE DECISION</div>
                 <div className="sheet-subheading">Multiple Excel files supported · Vehicle separation by VIN · Cross-file duplicate protection only.</div>
                 {bulkMeta && <>
                   <div className="section-title">Customer Grouping</div>
                   <div className="bulk-card"><div className="bulk-card-head">Customer groups — {customerGroups.length}</div><div className="bulk-card-body">
-                    <table className="history-table" style={{minWidth:500}}><thead><tr><th>Select</th><th>Customer Group</th><th>Vehicles</th></tr></thead><tbody>
+                    <table className="history-table" style={{minWidth:500}}><thead><tr><th><label style={{display:"inline-flex",alignItems:"center",gap:6,cursor:"pointer"}}><input type="checkbox" checked={customerGroups.length>0 && selectedCustomers.length===customerGroups.length} onChange={(event)=>setSelectedCustomers(event.target.checked ? customerGroups.map(group=>group.id) : [])}/> <span>Select All</span></label></th><th>Customer Group</th><th>Vehicles</th></tr></thead><tbody>
                       {customerGroups.map(group=><tr key={group.id}><td><input type="checkbox" checked={selectedCustomers.includes(group.id)} onChange={()=>setSelectedCustomers(prev=>prev.includes(group.id)?prev.filter(x=>x!==group.id):[...prev,group.id])}/></td><td><strong>{group.name}</strong>{group.customerKeys.length>1&&<div className="small-note">Merged group</div>}</td><td>{group.vehicles.length}</td></tr>)}
                     </tbody></table>
                     <div className="action-row" style={{marginTop:8}}><input className="excel-input" style={{maxWidth:280}} value={mergedCustomerName} onChange={(event)=>setMergedCustomerName(event.target.value)} placeholder="Optional merged customer name" /><button className="excel-button" disabled={selectedCustomers.length<2} onClick={()=>{setCustomerGroups(prev=>mergeCustomerGroups(prev,selectedCustomers,mergedCustomerName));setSelectedCustomers([]);setMergedCustomerName("")}}>Merge Selected Customers</button><button className="excel-button" onClick={()=>{const fresh=buildCustomerGroups(bulkResults);setCustomerGroups(fresh);setSelectedCustomers([]);setMergedCustomerName("")}}>Reset Grouping</button></div>

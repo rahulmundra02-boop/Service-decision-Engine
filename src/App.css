@@ -123,3 +123,24 @@ tr:last-child td { border-bottom:0; }
   border: 0 !important;
   font-weight: 700;
 }
+
+
+/* Single Vehicle Service Summary: give the history/parts column more room. */
+.single-service-summary {
+  table-layout: fixed;
+  min-width: 760px;
+}
+.single-service-summary th:nth-child(1),
+.single-service-summary td:nth-child(1) { width: 10%; }
+.single-service-summary th:nth-child(2),
+.single-service-summary td:nth-child(2) { width: 15%; }
+.single-service-summary th:nth-child(3),
+.single-service-summary td:nth-child(3) { width: 14%; }
+.single-service-summary th:nth-child(4),
+.single-service-summary td:nth-child(4) { width: 61%; }
+
+.single-service-summary td:nth-child(4) {
+  overflow-wrap: anywhere;
+}
+
+/* Trigger preview redeploy after environment variable update. */

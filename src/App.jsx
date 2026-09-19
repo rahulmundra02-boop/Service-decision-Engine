@@ -3173,6 +3173,15 @@ function App() {
         .single-service-summary th:nth-child(2), .single-service-summary td:nth-child(2) { width:130px; min-width:130px; white-space:nowrap; }
         .single-service-summary th:nth-child(3), .single-service-summary td:nth-child(3) { width:130px; min-width:130px; white-space:nowrap; }
         .service-summary-note { padding:5px 8px; margin-top:4px; }
+        .service-summary-title {
+          background:#2f75b5;
+          color:#fff;
+          border-color:#255e91;
+          margin-top:10px;
+          box-shadow:0 1px 2px rgba(0,0,0,.18);
+          letter-spacing:.1px;
+        }
+
         .history-part { display:inline-block; margin:2px 4px 2px 0; padding:3px 6px; border:1px solid transparent; }
         .history-part.eligible { background:#e2f0d9; color:#006100; border-color:#70ad47; font-weight:700; border-radius:2px; }
         .pre-analysis-empty { min-height:420px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; border:1px dashed #9fbad0; background:#eef4fa; color:#5b6770; padding:30px 20px; }
@@ -3359,8 +3368,7 @@ function App() {
 
                 {error && <div className="error-line no-print">{error}</div>}
 
-                <div className="section-title">Service Summary — Complete Vehicle History</div>
-                <div className="small-note service-summary-note">Complete imported service history is shown below. Highlighted lines are service-related records that meet the quantity/companion conditions used by the current service calculation.</div>
+                <div className="section-title service-summary-title">Service Summary — Complete Vehicle History</div>
                 <div className="history-wrap">
                   <table className="history-table single-service-summary">
                     <thead><tr><th>Date</th><th>Job Card</th><th>Reading</th><th>Part No. / Service / Qty</th></tr></thead>

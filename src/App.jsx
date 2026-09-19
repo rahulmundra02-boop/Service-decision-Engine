@@ -1291,13 +1291,9 @@ function isCalculationEligibleLine(record, visit, vehicle, decision) {
     return qty >= 12 && sameJob.some(r => String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase().includes("ENGINE OIL FILTER"));
   }
   if (text.includes("ENGINE OIL FILTER")) {
-    // The visit is already grouped by Job Card. Check the complete visit so
-    // an Engine Oil line without a repeated Job Card value is still treated
-    // as the companion record for the Engine Oil Filter.
-    return visit.some(r => {
-      const t = String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase();
-      return t.includes("ENGINE OIL") && !t.includes("FILTER") && Number(r?.qty || 0) >= 12;
-    });
+    // Engine Oil Filter is a service-history item and must be highlighted
+    // whenever it is present in the history.
+    return true;
   }
 
   if (text.includes("STEERING OIL") && !text.includes("FILTER")) {

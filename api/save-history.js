@@ -47,8 +47,29 @@ function normalizeRate(record = {}) {
 }
 
 export default async function handler(req, res) {
+  if (req.method === "GET") {
+    const vin = String(req.query?.vin || "").trim().toUpperCase();
+    if (!vin) return res.status(400).json({ success: false, error: "VIN/Chassis is required." });
+    const client = await pool.connect();
+    try {
+      const result = await client.query(
+        "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, " +
+        "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
+        "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
+        "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
+        "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
+        "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +
+        "WHERE v.vin=$1 ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id ASC",
+        [vin]
+      );
+      return res.status(200).json({ success: true, vin, rows: result.rows });
+    } catch (error) {
+      console.error("Read History Error:", error);
+      return res.status(500).json({ success: false, error: error?.message || "Service history read failed" });
+    } finally { client.release(); }
+  }
   if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
+    res.setHeader("Allow", "GET, POST");
     return res.status(405).json({ success: false, error: "Method not allowed" });
   }
 

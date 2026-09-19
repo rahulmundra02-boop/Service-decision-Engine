@@ -24,6 +24,7 @@ export default function AuthGate({ children }) {
   const [user, setUser] = useState(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [showAccountHelp, setShowAccountHelp] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [passwordForm, setPasswordForm] = useState({ currentPassword:"", newPassword:"", confirmPassword:"" });
   const [adminOpen, setAdminOpen] = useState(false);
@@ -138,19 +139,29 @@ export default function AuthGate({ children }) {
           <input id="auth-password" type="password" placeholder="Enter your password" onKeyDown={e => e.key === "Enter" && login()} />
           <button className="auth-primary" onClick={login} disabled={loading}>Login</button>
 
-          <div className="auth-account-help">
-            <div className="auth-help-title">Need a Service Decision account?</div>
-            <div className="auth-help-text">New accounts are created by the administrator. Please contact:</div>
-            <div className="auth-contact-row"><strong>Email:</strong> {ADMIN_CONTACT_EMAIL}</div>
-            <div className="auth-contact-row"><strong>Contact:</strong> {ADMIN_CONTACT_MOBILE}</div>
-          </div>
+          <button className="auth-secondary" onClick={() => setShowAccountHelp(v => !v)}>
+            {showAccountHelp ? "Hide Account Help" : "Sign Up / Request Account"}
+          </button>
 
-          <div className="auth-help-panel">
-            <strong>Forgot Password?</strong>
-            <p>Please contact the Service Decision administrator. Password recovery is handled manually.</p>
-            <div>{ADMIN_CONTACT_EMAIL}</div>
-            <div>{ADMIN_CONTACT_MOBILE}</div>
-          </div>
+          {showAccountHelp && (
+            <div className="auth-account-help">
+              <div className="auth-help-title">Account Creation</div>
+              <div className="auth-help-text">Self sign-up is not enabled. Your account will be created by the Service Decision administrator.</div>
+              <div className="auth-contact-row"><strong>Email:</strong> {ADMIN_CONTACT_EMAIL}</div>
+              <div className="auth-contact-row"><strong>Contact:</strong> {ADMIN_CONTACT_MOBILE}</div>
+            </div>
+          )}
+
+          <button className="auth-secondary" onClick={() => setShowAccountHelp(true)}>
+            Forgot Password?
+          </button>
+
+          {showAccountHelp && (
+            <div className="auth-help-panel">
+              <strong>Forgot Password</strong>
+              <p>Please contact the administrator. Password recovery is handled manually; no OTP or third-party service is used.</p>
+            </div>
+          )}
         </div>
       </div>
     );

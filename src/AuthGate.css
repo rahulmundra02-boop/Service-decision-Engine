@@ -256,3 +256,6 @@
   .admin-form-card .auth-primary{grid-column:1;width:100% !important}
   .admin-users-card{width:100%;min-width:0;box-sizing:border-box}
 }
+
+.admin-analytics-section-title{scroll-margin-top:20px}
+.admin-analytics-btn{cursor:pointer !important;position:relative;z-index:2}

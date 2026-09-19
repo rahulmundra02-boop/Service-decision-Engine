@@ -1291,7 +1291,10 @@ function isCalculationEligibleLine(record, visit, vehicle, decision) {
     return qty >= 12 && sameJob.some(r => String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase().includes("ENGINE OIL FILTER"));
   }
   if (text.includes("ENGINE OIL FILTER")) {
-    return sameJob.some(r => {
+    // The visit is already grouped by Job Card. Check the complete visit so
+    // an Engine Oil line without a repeated Job Card value is still treated
+    // as the companion record for the Engine Oil Filter.
+    return visit.some(r => {
       const t = String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase();
       return t.includes("ENGINE OIL") && !t.includes("FILTER") && Number(r?.qty || 0) >= 12;
     });

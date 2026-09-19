@@ -280,6 +280,16 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onRefresh, onRese
   const periods = analytics.periods || [];
   const breakdown = analytics.breakdown || [];
 
+  const displayDealerName = (u) => {
+    if (
+      u?.role === "admin" &&
+      String(u?.dealerName || "").trim().toLowerCase() === "service decision admin"
+    ) {
+      return "Kandla Motors";
+    }
+    return u?.dealerName || "";
+  };
+
   const totals = summary.reduce((acc,u)=>({
     users:acc.users+1,
     active:acc.active+(u.status==="active"?1:0),
@@ -398,7 +408,7 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onRefresh, onRese
                 <div className="admin-panel-card-title">Recent Users</div>
                 <div className="admin-mini-list">
                   {recentUsers.map(u=><button key={u.id} onClick={()=>onAnalytics(Number(u.id),analyticsRange)}>
-                    <span><strong>{u.personName}</strong><small>{u.dealerName}</small></span>
+                    <span><strong>{u.personName}</strong><small>{displayDealerName(u)}</small></span>
                     <em>{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "—"}</em>
                   </button>)}
                 </div>
@@ -518,7 +528,7 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onRefresh, onRese
                     <thead><tr><th>ID</th><th>Name</th><th>Dealer</th><th>Email</th><th>Status</th><th>Last Login</th><th>Last Activity</th><th>Analytics</th><th>Action</th></tr></thead>
                     <tbody>
                       {users.map(u=><tr key={u.id}>
-                        <td>{u.id}</td><td>{u.personName}</td><td>{u.dealerName}</td><td>{u.email}</td>
+                        <td>{u.id}</td><td>{u.personName}</td><td>{displayDealerName(u)}</td><td>{u.email}</td>
                         <td>{u.role === "admin" ? "ADMIN" : u.status}</td>
                         <td>{u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : "Never"}</td>
                         <td>{u.lastActivityAt ? new Date(u.lastActivityAt).toLocaleString() : "—"}</td>

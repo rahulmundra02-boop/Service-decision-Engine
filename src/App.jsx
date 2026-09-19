@@ -2359,8 +2359,12 @@ function estimateServiceKeyFromText(value = "") {
   return "";
 }
 function estimateIsLabour(row = {}) {
-  const text = [row.item_category, row.part_description, row.standardized_part, row.repair_line_item_type, row.repair_type].join(" ").toUpperCase();
-  return /LABOUR|LABOR|SERVICE CHARGE|JOB CHARGE|LABOR CHARGE/.test(text);
+  // DMS item category is the source of truth:
+  // P001 = Labour, P002 = Parts.
+  const category = String(row.item_category || "").trim().toUpperCase();
+  if (category === "P001") return true;
+  if (category === "P002") return false;
+  return false;
 }
 function estimateHistoryToItems(rows = [], selectedKeys = []) {
   const selected = new Set(selectedKeys), map = new Map();

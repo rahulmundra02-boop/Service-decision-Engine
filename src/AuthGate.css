@@ -22,3 +22,20 @@
 .admin-note{margin-top:14px;font-size:12px;color:#60758a;background:#f5f8fb;padding:10px;border-radius:6px}
 @media(max-width:900px){.admin-grid{grid-template-columns:1fr}.admin-header{align-items:flex-start;flex-direction:column}.admin-back{width:100%}}
 @media(max-width:600px){.auth-page{padding:12px}.auth-card{padding:20px}.auth-userbar{font-size:11px;align-items:flex-start}.auth-user-actions{flex-wrap:wrap;justify-content:flex-end}.auth-user-actions button{font-size:11px}.admin-page{padding:10px}.admin-card{padding:12px}.admin-title{font-size:20px}}
+
+/* Admin panel form/layout fix: keep fields stacked and prevent mobile horizontal overflow */
+.admin-page{width:100%;box-sizing:border-box;overflow-x:hidden}
+.admin-card{width:100%;box-sizing:border-box;min-width:0}
+.admin-grid{min-width:0}
+.admin-form-card,.admin-users-card{min-width:0;box-sizing:border-box}
+.admin-form-card label{display:block;margin:11px 0 6px;color:#31495f}
+.admin-form-card input{display:block;width:100%;max-width:100%;box-sizing:border-box;background:#fff;color:#17324d;border-color:#b8c8d8}
+.admin-form-card .auth-primary{display:block;width:100%;box-sizing:border-box}
+.admin-table-wrap{width:100%;max-width:100%;min-width:0;overflow-x:auto}
+@media(max-width:600px){
+  .admin-card{padding:12px}
+  .admin-form-card,.admin-users-card{padding:12px}
+  .admin-users-header{gap:8px}
+  .admin-row-actions{flex-wrap:wrap}
+  .admin-row-actions button{white-space:nowrap}
+}

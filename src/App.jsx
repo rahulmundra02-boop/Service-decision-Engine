@@ -724,7 +724,7 @@ async function parseExcelFiles(files) {
             const yyyy = value.getFullYear();
             return `${dd}-${mm}-${yyyy}`;
           }
-          return String(value ?? "").replace(/[\\r\\n\\t]+/g, " ").trim();
+          return String(value ?? "").replace(/[\r\n\t]+/g, " ").trim();
         };
 
         const tsv = rows
@@ -737,7 +737,7 @@ async function parseExcelFiles(files) {
           const parsed = parseExcelPaste(tsv);
           fileRecords.push(...parsed.records);
         } catch (err) {
-          const rowCount = tsv.trim().split(/\\r?\\n/).length;
+          const rowCount = tsv.trim().split(/\r?\n/).length;
 
           // A sheet with only a header/one row can be an empty or irrelevant
           // worksheet, so keep the existing ignore behavior for that case.

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { cloneElement, useEffect, useRef, useState } from "react";
 import "./AuthGate.css";
 
 const TOKEN_KEY = "serviceDecisionAuthToken";
@@ -242,7 +242,7 @@ export default function AuthGate({ children }) {
           analyticsLoading={analyticsLoading}
           onAnalytics={loadAdminAnalytics}
         />
-      ) : children}
+      ) : cloneElement(children, { user })}
     </div>
   );
 }

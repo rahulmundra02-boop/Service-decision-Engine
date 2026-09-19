@@ -2,7 +2,7 @@ import { Pool } from "pg";
 import crypto from "crypto";
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: process.env.DATABASE_URL || process.env.DATABASE_URL1,
   ssl: { rejectUnauthorized: false },
   max: 4,
 });

@@ -2364,6 +2364,19 @@ function ServiceDecisionApp() {
   });
   const [openBulkFilter, setOpenBulkFilter] = useState(null);
 
+  const logUsage = (activityType, payload = {}) => {
+    const token = localStorage.getItem("serviceDecisionAuthToken");
+    if (!token) return;
+    void fetch("/api/auth", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ action:"log-activity", activityType, ...payload }),
+    }).catch(() => {});
+  };
+
   const previewRows = useMemo(() => {
     if (!excelData.trim()) return [];
     return excelData.trim().split(/\r?\n/).slice(0, 6);
@@ -2474,6 +2487,13 @@ function ServiceDecisionApp() {
       setCustomerGroups([]);
       setSelectedCustomers([]);
       setUploadParsedRecords(parsedRows);
+      if (parsedRows.length) {
+        logUsage("Excel Upload", {
+          fileCount: acceptedFiles.length,
+          vehicleCount: new Set(parsedRows.map(r=>String(r.vin||"").trim().toUpperCase()).filter(Boolean)).size,
+          details: { rows: parsedRows.length, files: acceptedFiles.map(f=>f.name) }
+        });
+      }
 
       if (!parsedRows.length && result.failedFiles?.length) {
         setError(
@@ -2550,6 +2570,12 @@ function ServiceDecisionApp() {
         setOpenBulkFilter(null);
         setBulkMeta({ records: parsed.records.length, vehicles: results.length, customers: groups.length });
         setMode("bulk");
+        logUsage("Bulk Vehicle Analysis", {
+          mode:"bulk",
+          vehicleCount:results.length,
+          fileCount:uploadedFiles.length,
+          details:{ rows:parsed.records.length, customers:groups.length, automatic:true }
+        });
         setError(`Multiple Vehicle Detected: ${uniqueVins.length} unique VINs found. Automatically switched to Bulk Service.`);
         return;
       }
@@ -2561,6 +2587,13 @@ function ServiceDecisionApp() {
       setOverrideReading("");
       setAppliedOverride(null);
       setAnalysis({ ...parsed, vehicle, running, visits, decision });
+      logUsage("Single Vehicle Analysis", {
+        mode:"single",
+        vehicleCount:1,
+        fileCount:uploadedFiles.length,
+        vin:String(vehicle?.vin || parsed.records?.[0]?.vin || "").trim().toUpperCase(),
+        details:{ serviceCount:(decision?.services || []).length }
+      });
     } catch (e) {
       setAnalysis(null);
       setError(e.message || "Excel data read nahi ho paya.");
@@ -2597,6 +2630,12 @@ function ServiceDecisionApp() {
       });
       setOpenBulkFilter(null);
       setBulkMeta({ records: parsed.records.length, vehicles: results.length, customers: groups.length });
+      logUsage("Bulk Vehicle Analysis", {
+        mode:"bulk",
+        vehicleCount:results.length,
+        fileCount:uploadedFiles.length,
+        details:{ rows:parsed.records.length, customers:groups.length }
+      });
     } catch (e) {
       setBulkResults([]);
       setBulkMeta(null);
@@ -2606,6 +2645,12 @@ function ServiceDecisionApp() {
 
   const recalculateWithOverride = () => {
     if (!analysis) return;
+    logUsage("Reading Override", {
+      mode:"single",
+      vehicleCount:1,
+      vin:String(analysis?.vehicle?.vin || "").trim().toUpperCase(),
+      details:{ value:overrideReading || "", unit:analysis?.running?.unit || "KM" }
+    });
 
     const raw = String(overrideReading || "").replace(/,/g, "").trim();
 
@@ -2797,6 +2842,7 @@ function ServiceDecisionApp() {
   };
 
   const clear = () => {
+    logUsage("Clear", { mode, details:{ hadAnalysis:Boolean(analysis), uploadedFiles:uploadedFiles.length } });
     setExcelData("");
     setAnalysis(null);
     setError("");
@@ -3339,7 +3385,7 @@ function ServiceDecisionApp() {
             <div className="excel-tabs">
               <div className={`excel-tab ${mode === "single" ? "active" : ""}`} onClick={() => { setMode("single"); setError(""); setBulkResults([]); setBulkMeta(null); }}>Single Vehicle</div>
               <div className={`excel-tab ${mode === "bulk" ? "active" : ""}`} onClick={() => { setMode("bulk"); setError(""); setAnalysis(null); }}>Bulk Vehicle</div>
-              <div className={`excel-tab ${mode === "schedule" ? "active" : ""}`} onClick={() => { setMode("schedule"); setError(""); }}>Service Schedule Chart</div>
+              <div className={`excel-tab ${mode === "schedule" ? "active" : ""}`} onClick={() => { setMode("schedule"); setError(""); logUsage("Service Schedule Viewed", { mode:"schedule" }); }}>Service Schedule Chart</div>
             </div>
             <div className="excel-toolbar">
               {mode !== "schedule" && <>

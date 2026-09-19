@@ -2343,6 +2343,44 @@ function ExcelFilterDropdown({
   );
 }
 
+function estimateServiceKeyFromText(value = "") {
+  const t = String(value).toUpperCase();
+  if (t.includes("ENGINE OIL")) return "engineOil";
+  if (t.includes("COOLANT")) return "coolant";
+  if (t.includes("GEAR OIL")) return "gearOil";
+  if (t.includes("HUB GREASE")) return "hubGrease";
+  if (t.includes("AXLE OIL")) return "axleOil";
+  if (t.includes("FUEL FILTER")) return "fuelFilter";
+  if (t.includes("STEERING OIL")) return "steeringOil";
+  if (t.includes("AIR FILTER")) return "airFilter";
+  if (t.includes("CLUTCH OIL")) return "clutchOil";
+  if (t.includes("DEF FILTER")) return "defFilter";
+  if (t.includes("APDA FILTER")) return "apdaFilter";
+  return "";
+}
+function estimateIsLabour(row = {}) {
+  const text = [row.item_category, row.part_description, row.standardized_part, row.repair_line_item_type, row.repair_type].join(" ").toUpperCase();
+  return /LABOUR|LABOR|SERVICE CHARGE|JOB CHARGE|LABOR CHARGE/.test(text);
+}
+function estimateHistoryToItems(rows = [], selectedKeys = []) {
+  const selected = new Set(selectedKeys), map = new Map();
+  for (const row of rows) {
+    const serviceKey = estimateServiceKeyFromText([row.standardized_part, row.part_description, row.part_code, row.item_category].join(" "));
+    if (!serviceKey || !selected.has(serviceKey)) continue;
+    const qty = Number(row.quantity || 0), rate = Number(row.rate);
+    if (!Number.isFinite(qty) || qty <= 0) continue;
+    const labour = estimateIsLabour(row);
+    const code = String(row.part_code || "").trim();
+    const desc = String(row.part_description || row.standardized_part || "").trim();
+    const key = (labour ? "L" : "P") + "|" + code + "|" + desc.toUpperCase() + "|" + rate;
+    if (!map.has(key)) map.set(key, { id: (labour ? "labour" : "part") + "-" + map.size + "-" + Date.now(), type: labour ? "labour" : "part", partNo: code, description: desc, qty, rate: Number.isFinite(rate) ? rate : 0, source: Number.isFinite(rate) && rate > 0 ? "Historical DB" : "Manual" });
+    else map.get(key).qty += qty;
+  }
+  return [...map.values()];
+}
+function emptyEstimateItem(type = "part") {
+  return { id: type + "-" + Date.now() + "-" + Math.random().toString(36).slice(2,8), type, partNo:"", description:"", qty:1, rate:0, source:"Manual" };
+}
 function ServiceDecisionApp({ user }) {
   const [excelData, setExcelData] = useState("");
   const [analysis, setAnalysis] = useState(null);
@@ -2359,6 +2397,14 @@ function ServiceDecisionApp({ user }) {
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadMeta, setUploadMeta] = useState(null);
   const [uploadParsedRecords, setUploadParsedRecords] = useState([]);
+  const [estimateOpen, setEstimateOpen] = useState(false);
+  const [estimateHistory, setEstimateHistory] = useState([]);
+  const [estimateLoading, setEstimateLoading] = useState(false);
+  const [estimateSelectedServices, setEstimateSelectedServices] = useState([]);
+  const [estimateParts, setEstimateParts] = useState([]);
+  const [estimateLabour, setEstimateLabour] = useState([]);
+  const [estimateNotice, setEstimateNotice] = useState("");
+
   const [bulkTableSort, setBulkTableSort] = useState({ key: "dueCount", direction: "desc" });
   const [bulkTableFilters, setBulkTableFilters] = useState({
     customerName: "",
@@ -2931,6 +2977,38 @@ function ServiceDecisionApp({ user }) {
     return () => window.removeEventListener("keydown", handleEscapeNavigation, true);
   }, [mode, openBulkFilter, analysis, uploadParsedRecords.length]);
 
+  async function openEstimate() {
+    if (!analysis?.vehicle?.vin) return;
+    const dueKeys = BULK_SERVICE_LABELS.filter(([, key]) => analysis?.decision?.result?.[key]).map(([, key]) => key);
+    setEstimateSelectedServices(dueKeys); setEstimateParts([]); setEstimateLabour([]); setEstimateNotice(""); setEstimateOpen(true); setEstimateLoading(true);
+    try {
+      const response = await fetch("/api/save-history?vin=" + encodeURIComponent(analysis.vehicle.vin));
+      const data = await response.json();
+      const rows = Array.isArray(data?.rows) ? data.rows : [];
+      setEstimateHistory(rows);
+      const items = estimateHistoryToItems(rows, dueKeys);
+      setEstimateParts(items.filter(item => item.type === "part")); setEstimateLabour(items.filter(item => item.type === "labour"));
+      setEstimateNotice(rows.length ? "Historical data loaded. You can edit every line or add missing items manually." : "No historical estimate data found for this vehicle. Please enter items manually.");
+    } catch {
+      setEstimateHistory([]); setEstimateNotice("Historical data could not be loaded. Manual estimate entry is available.");
+    } finally { setEstimateLoading(false); }
+  }
+  function rebuildEstimateFromServices(keys) {
+    const items = estimateHistoryToItems(estimateHistory, keys);
+    setEstimateParts(items.filter(item => item.type === "part")); setEstimateLabour(items.filter(item => item.type === "labour"));
+  }
+  function updateEstimateItem(type, id, field, value) {
+    const setter = type === "labour" ? setEstimateLabour : setEstimateParts;
+    setter(prev => prev.map(item => item.id === id ? { ...item, [field]: field === "qty" || field === "rate" ? Number(value) || 0 : value, source:"Manual" } : item));
+  }
+  function addEstimateItem(type) { (type === "labour" ? setEstimateLabour : setEstimateParts)(prev => [...prev, emptyEstimateItem(type)]); }
+  function removeEstimateItem(type, id) { (type === "labour" ? setEstimateLabour : setEstimateParts)(prev => prev.filter(item => item.id !== id)); }
+  const estimatePartsTotal = estimateParts.reduce((sum,item)=>sum+Number(item.qty||0)*Number(item.rate||0),0);
+  const estimateLabourBase = estimateLabour.reduce((sum,item)=>sum+Number(item.qty||0)*Number(item.rate||0),0);
+  const estimateLabourGst = estimateLabourBase*0.18;
+  const estimateLabourTotal = estimateLabourBase+estimateLabourGst;
+  const estimateGrandTotal = estimatePartsTotal+estimateLabourTotal;
+
   return (
     <>
       <style>{`
@@ -3468,7 +3546,7 @@ function ServiceDecisionApp({ user }) {
                   </div>
 
                   <div className="customer-output-panel">
-                    <div className="section-title">Customer Output — Service To Be Completed</div>
+                    <div className="section-title" style={{display:"flex",alignItems:"center",gap:10}}><span>Customer Output — Service To Be Completed</span><button className="excel-button no-print" style={{marginLeft:"auto"}} onClick={openEstimate}>Generate Estimate</button></div>
                     <div className="due-box">
                       {analysis ? (() => {
                         const aggregateNames = BULK_SERVICE_LABELS
@@ -3668,6 +3746,25 @@ function ServiceDecisionApp({ user }) {
               </>
             )}
           </main>
+
+        {estimateOpen && (
+          <div className="no-print" style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+            <div style={{background:"#fff",color:"#111",width:"min(1100px,96vw)",maxHeight:"92vh",overflow:"auto",borderRadius:10,padding:18}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}><div style={{fontSize:22,fontWeight:800}}>SERVICE ESTIMATE</div><span style={{fontSize:12,color:"#666"}}>Single Vehicle Only</span><span style={{marginLeft:"auto"}}>{user?.dealerName || "Workshop"}</span><button className="excel-button" onClick={()=>setEstimateOpen(false)}>Close</button></div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:8,marginBottom:12}}><div><b>Customer</b><br/>{analysis?.vehicle?.customerName || "-"}</div><div><b>Reg. No.</b><br/>{analysis?.vehicle?.reg || "-"}</div><div><b>VIN</b><br/>{analysis?.vehicle?.vin || "-"}</div><div><b>Model</b><br/>{analysis?.vehicle?.model || "-"}</div></div>
+              <div style={{border:"1px solid #ddd",borderRadius:8,padding:12,marginBottom:14}}><div style={{fontWeight:800,marginBottom:8}}>Select Services for Estimate</div><div style={{display:"flex",flexWrap:"wrap",gap:8}}>{BULK_SERVICE_LABELS.map(([label,key])=>{const due=!!analysis?.decision?.result?.[key],checked=estimateSelectedServices.includes(key);return <label key={key} style={{border:"1px solid #ddd",padding:"7px 10px",borderRadius:6,cursor:"pointer"}}><input type="checkbox" checked={checked} onChange={e=>{const next=e.target.checked?[...estimateSelectedServices,key]:estimateSelectedServices.filter(x=>x!==key);setEstimateSelectedServices(next);rebuildEstimateFromServices(next);}}/> {label} <small>({due?"Due":"Not Due"})</small></label>})}</div></div>
+              {estimateNotice && <div style={{padding:"8px 10px",background:"#f5f5f5",marginBottom:12,borderRadius:6}}>{estimateNotice}</div>}
+              {estimateLoading?<div>Loading historical data...</div>:<>
+                <div style={{fontWeight:800,margin:"10px 0 6px"}}>Parts</div>
+                <table className="history-table"><thead><tr><th>Part No.</th><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th><th></th></tr></thead><tbody>{estimateParts.map(item=><tr key={item.id}><td><input value={item.partNo} onChange={e=>updateEstimateItem("part",item.id,"partNo",e.target.value)}/></td><td><input value={item.description} onChange={e=>updateEstimateItem("part",item.id,"description",e.target.value)}/></td><td><input type="number" min="0" step="0.01" value={item.qty} onChange={e=>updateEstimateItem("part",item.id,"qty",e.target.value)} style={{width:80}}/></td><td><input type="number" min="0" step="0.01" value={item.rate} onChange={e=>updateEstimateItem("part",item.id,"rate",e.target.value)} style={{width:110}}/></td><td>{formatNumber(item.qty*item.rate)}</td><td><button className="excel-button" onClick={()=>removeEstimateItem("part",item.id)}>Delete</button></td></tr>)}{!estimateParts.length&&<tr><td colSpan="6">No historical part found. Add manually.</td></tr>}</tbody></table><div style={{margin:"8px 0"}}><button className="excel-button" onClick={()=>addEstimateItem("part")}>+ Add Part</button></div>
+                <div style={{fontWeight:800,margin:"14px 0 6px"}}>Labour</div>
+                <table className="history-table"><thead><tr><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th><th></th></tr></thead><tbody>{estimateLabour.map(item=><tr key={item.id}><td><input value={item.description} onChange={e=>updateEstimateItem("labour",item.id,"description",e.target.value)}/></td><td><input type="number" min="0" step="0.01" value={item.qty} onChange={e=>updateEstimateItem("labour",item.id,"qty",e.target.value)} style={{width:80}}/></td><td><input type="number" min="0" step="0.01" value={item.rate} onChange={e=>updateEstimateItem("labour",item.id,"rate",e.target.value)} style={{width:110}}/></td><td>{formatNumber(item.qty*item.rate)}</td><td><button className="excel-button" onClick={()=>removeEstimateItem("labour",item.id)}>Delete</button></td></tr>)}{!estimateLabour.length&&<tr><td colSpan="5">No historical labour found. Add manually.</td></tr>}</tbody></table><div style={{margin:"8px 0"}}><button className="excel-button" onClick={()=>addEstimateItem("labour")}>+ Add Labour</button></div>
+                <div style={{marginTop:16,marginLeft:"auto",maxWidth:380,borderTop:"2px solid #222",paddingTop:10}}><div style={{display:"flex",justifyContent:"space-between"}}><span>Parts Total</span><b>₹ {formatNumber(estimatePartsTotal)}</b></div><div style={{display:"flex",justifyContent:"space-between"}}><span>Labour Subtotal</span><b>₹ {formatNumber(estimateLabourBase)}</b></div><div style={{display:"flex",justifyContent:"space-between"}}><span>GST on Labour (18%)</span><b>₹ {formatNumber(estimateLabourGst)}</b></div><div style={{display:"flex",justifyContent:"space-between",fontSize:18,marginTop:6}}><span>Grand Total</span><b>₹ {formatNumber(estimateGrandTotal)}</b></div></div>
+                <div style={{marginTop:12,fontSize:12,color:"#666"}}>Estimate only. Historical rates are used where available; missing items/rates can be entered manually.</div>
+              </>}
+            </div>
+          </div>
+        )}
         </div>
       </div>
     </>

@@ -86,9 +86,33 @@ function serviceLineIdentityFromDb(row = {}) {
 export default async function handler(req, res) {
   if (req.method === "GET") {
     const vin = String(req.query?.vin || "").trim().toUpperCase();
-    if (!vin) return res.status(400).json({ success: false, error: "VIN/Chassis is required." });
+    const partNo = String(req.query?.partNo || "").trim().toUpperCase().replace(/\s+/g, "");
+
     const client = await pool.connect();
     try {
+      if (partNo) {
+        const result = await client.query(
+          "SELECT sh.part_code, sh.part_description, sh.rate, jc.job_date " +
+          "FROM service_history sh JOIN job_cards jc ON jc.id=sh.job_card_id " +
+          "WHERE sh.item_category LIKE 'P002%' " +
+          "AND UPPER(REPLACE(TRIM(sh.part_code), ' ', ''))=$1 " +
+          "AND sh.rate IS NOT NULL AND sh.rate > 0 " +
+          "ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC LIMIT 1",
+          [partNo]
+        );
+        const row = result.rows[0] || null;
+        return res.status(200).json({
+          success:true,
+          part: row ? {
+            partNo: row.part_code,
+            description: row.part_description || "",
+            rate: Number(row.rate || 0),
+            rateInclGst: Number((Number(row.rate || 0) * 1.18).toFixed(2))
+          } : null
+        });
+      }
+
+      if (!vin) return res.status(400).json({ success:false,error:"VIN/Chassis is required." });
       const result = await client.query(
         "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, " +
         "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
@@ -100,12 +124,8 @@ export default async function handler(req, res) {
         [vin]
       );
 
-      // Estimate fallback source: fetch history from other vehicles having the
-      // exact same model. The frontend keeps this separate from the current
-      // VIN history and uses it only for estimate lines missing on this VIN.
       const modelName = String(result.rows.find(row => String(row.model || "").trim())?.model || "").trim();
       let modelRows = [];
-
       if (modelName) {
         const modelResult = await client.query(
           "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, " +
@@ -121,33 +141,23 @@ export default async function handler(req, res) {
         modelRows = modelResult.rows;
       }
 
-      // For estimate rates, part number is the only matching key. The rate
-      // may come from any vehicle/model in the DB, while quantity remains
-      // sourced from the current vehicle/same-model history.
       const rateResult = await client.query(
         "SELECT DISTINCT ON (UPPER(REPLACE(TRIM(sh.part_code), ' ', ''))) " +
         "sh.part_code, sh.rate, jc.job_date " +
-        "FROM service_history sh " +
-        "JOIN job_cards jc ON jc.id=sh.job_card_id " +
+        "FROM service_history sh JOIN job_cards jc ON jc.id=sh.job_card_id " +
         "JOIN vehicles v ON v.id=jc.vehicle_id " +
-        "WHERE sh.item_category LIKE 'P002%' " +
-        "AND sh.part_code IS NOT NULL " +
-        "AND sh.rate IS NOT NULL " +
-        "AND sh.rate > 0 " +
+        "WHERE sh.item_category LIKE 'P002%' AND sh.part_code IS NOT NULL " +
+        "AND sh.rate IS NOT NULL AND sh.rate > 0 " +
         "ORDER BY UPPER(REPLACE(TRIM(sh.part_code), ' ', '')), jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC"
       );
 
       return res.status(200).json({
-        success: true,
-        vin,
-        rows: result.rows,
-        model: modelName || null,
-        modelRows,
-        globalPartRates: rateResult.rows
+        success:true, vin, rows:result.rows, model:modelName||null,
+        modelRows, globalPartRates:rateResult.rows
       });
     } catch (error) {
       console.error("Read History Error:", error);
-      return res.status(500).json({ success: false, error: error?.message || "Service history read failed" });
+      return res.status(500).json({ success:false,error:error?.message||"Service history read failed" });
     } finally { client.release(); }
   }
   if (req.method !== "POST") {

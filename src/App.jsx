@@ -2411,19 +2411,19 @@ const ESTIMATE_LABOUR_REFERENCE = {
 };
 
 const ESTIMATE_LABOUR_RULES = [
-  { key:"engineOil", test:t => t.includes("ENGINE OIL") && (t.includes("OIL FILTER") || t.includes("FILTER")) },
-  { key:"gearOil", test:t => (t.includes("GEARBOX") || t.includes("GEAR BOX") || t.includes("GEAR OIL")) && (t.includes("OIL") || t.includes("REFILL")) },
-  { key:"axleOil", test:t => (t.includes("REAR AXLE") || t.includes("REAR AXEL") || t.includes("AXLE OIL")) && (t.includes("OIL") || t.includes("REFILL")) },
-  { key:"steeringOil", test:t => t.includes("STEERING") && (t.includes("OIL") || t.includes("FILTER") || t.includes("BOX")) },
-  { key:"clutchOil", test:t => t.includes("CLUTCH OIL") || (t.includes("CLUTCH") && (t.includes("BLEED") || t.includes("REFILL"))) },
-  { key:"coolant", test:t => t.includes("COOLANT") && (t.includes("REFILL") || t.includes("DRAIN") || t.includes("DRAI") || t.includes("R AND R") || t.includes("R R")) },
-  { key:"fuelFilter", test:t => t.includes("FUEL FILTER") },
-  { key:"hubGrease", test:t => t.includes("HUB GREAS") },
-  { key:"airFilter", test:t => t.includes("AIR FILTER") && (t.includes("ELEMENT") || t.includes("R AND R") || t.includes("R R")) },
-  { key:"defFilter", test:t => t.includes("DEF") && ((t.includes("SUCTION") && t.includes("FILTER")) || (t.includes("DEF FILTER") && t.includes("AIR"))) },
+  { key:"engineOil", test:t => t.includes("ENGINE OIL") && (t.includes("FILTER") || t.includes("REFILL") || t.includes("DRAIN") || t.includes("DRAI")) },
+  { key:"gearOil", test:t => (t.includes("GEARBOX") || t.includes("GEAR BOX") || t.includes("GEAR OIL")) },
+  { key:"axleOil", test:t => (t.includes("REAR AXLE") || t.includes("REAR AXEL") || t.includes("AXLE OIL")) },
+  { key:"steeringOil", test:t => t.includes("STEERING") && (t.includes("OIL") || t.includes("BOX") || t.includes("FLUID") || t.includes("FILTER")) },
+  { key:"clutchOil", test:t => t.includes("CLUTCH") && (t.includes("OIL") || t.includes("BLEED") || t.includes("REFILL") || t.includes("DRAIN")) },
+  { key:"coolant", test:t => t.includes("COOLANT") },
+  { key:"fuelFilter", test:t => t.includes("FUEL") && t.includes("FILTER") },
+  { key:"hubGrease", test:t => t.includes("HUB") && t.includes("GREAS") },
+  { key:"airFilter", test:t => t.includes("AIR") && t.includes("FILTER") && (t.includes("ELEMENT") || t.includes("R AND R") || t.includes("R R") || t.includes("REPLACE")) },
+  { key:"defFilter", test:t => t.includes("DEF") && (t.includes("SUCTION") || (t.includes("FILTER") && t.includes("AIR"))) },
   { key:"defInline", test:t => t.includes("DEF") && t.includes("INLINE") && t.includes("FILTER") },
-  { key:"apdaFilter", test:t => t.includes("APDA") && (t.includes("FILTER") || t.includes("DESICCANT") || t.includes("CARTRIDGE")) },
-];
+  { key:"apdaFilter", test:t => t.includes("APDA") || (t.includes("DESICCANT") && t.includes("CARTRIDGE")) || (t.includes("APDA") && t.includes("CARTRIDGE")) },
+]
 
 function estimateCategory(row = {}) {
   const category = String(row?.item_category || "")
@@ -2511,10 +2511,17 @@ function estimateLabourMatchesService(row = {}, serviceKey = "") {
   const text = estimateLabourText(row);
   const referenceRows = ESTIMATE_LABOUR_REFERENCE[serviceKey] || [];
 
+  // Prefer an exact historical labour operation code when the DMS provides it.
+  if (referenceRows.some(reference =>
+    reference.code && text.includes(normalizePartCode(reference.code))
+  )) {
+    return true;
+  }
+
   // Hub greasing remains model/axle/hub-count specific.
   if (serviceKey === "hubGrease") {
     return referenceRows.some(reference => {
-      if (text.includes(reference.code)) return true;
+      if (reference.code && text.includes(normalizePartCode(reference.code))) return true;
       if (reference.code === "WHL165A") return text.includes("FRONT") && text.includes("2") && text.includes("HUB");
       if (reference.code === "WHL165C") return text.includes("FRONT") && text.includes("4") && text.includes("HUB");
       if (reference.code === "WHL170A") return text.includes("REAR") && text.includes("2") && text.includes("HUB");
@@ -2525,8 +2532,29 @@ function estimateLabourMatchesService(row = {}, serviceKey = "") {
     });
   }
 
+  // Match the historical DMS operation text independently of the exact
+  // spelling used in the master labour description. This is intentionally
+  // based only on P001 rows; P002 parts can never become labour.
   const rule = ESTIMATE_LABOUR_RULES.find(item => item.key === serviceKey);
-  return !!rule && rule.test(text);
+  if (rule?.test(text)) return true;
+
+  // Final explicit checks for known DMS wording variations.
+  switch (serviceKey) {
+    case "coolant":
+      return text.includes("COOLANT");
+    case "axleOil":
+      return text.includes("REAR AXLE") || text.includes("REAR AXEL");
+    case "clutchOil":
+      return text.includes("CLUTCH");
+    case "defFilter":
+      return text.includes("DEF") && (text.includes("SUCTION") || text.includes("DEF FILTER"));
+    case "defInline":
+      return text.includes("DEF") && text.includes("INLINE") && text.includes("FILTER");
+    case "apdaFilter":
+      return text.includes("APDA") || (text.includes("DESICCANT") && text.includes("CARTRIDGE"));
+    default:
+      return false;
+  }
 }
 
 function estimateServiceKeyFromText(value = "") {
@@ -3535,28 +3563,177 @@ function ServiceDecisionApp({ user }) {
   const estimateGrandTotal = estimatePartsTotal+estimateLabourTotal;
   function buildEstimatePdf(autoPrint = false) {
     const pdf = new jsPDF({ unit:"mm", format:"a4", orientation:"portrait", compress:true });
-    const margin = 10, width = 190, vehicle = analysis?.vehicle || {}, workshop = String(user?.dealerName || "Workshop").trim();
-    pdf.setFont("helvetica","bold"); pdf.setFontSize(17); pdf.text("SERVICE ESTIMATE",105,14,{align:"center"});
-    pdf.setFontSize(10); pdf.text(workshop,105,21,{align:"center"});
-    pdf.setFont("helvetica","normal"); pdf.setFontSize(8.5); pdf.text("Estimate only - subject to actual inspection and applicable rates.",105,27,{align:"center"});
-    autoTable(pdf,{startY:32,margin:{left:margin,right:margin},tableWidth:width,theme:"grid",styles:{font:"helvetica",fontSize:8.5,cellPadding:3,lineColor:[150,150,150],lineWidth:0.2},body:[
-      ["Customer\n"+(vehicle.customerName||"-"),"Reg. No.\n"+(vehicle.reg||"-"),"VIN\n"+(vehicle.vin||"-")],
-      ["Model\n"+(vehicle.model||"-"),"Current Reading\n"+(analysis?.running?.current ? formatNumber(analysis.running.current)+" "+(analysis.running.unit||getTargetUnit(vehicle)) : "-"),"Date\n"+formatDate(new Date())]
-    ]});
-    let y=(pdf.lastAutoTable?.finalY||58)+7;
-    pdf.setFont("helvetica","bold"); pdf.setFontSize(10); pdf.text("Selected Aggregate Services",margin,y); y+=4;
-    const selectedNames=BULK_SERVICE_LABELS.filter(([,key])=>estimateSelectedServices.includes(key)).map(([name])=>name);
-    pdf.setFont("helvetica","normal"); pdf.setFontSize(8.5); pdf.text(selectedNames.length?selectedNames.join(", "):"No aggregate service selected",margin,y+3,{maxWidth:width}); y+=selectedNames.length?9:7;
-    autoTable(pdf,{startY:y,margin:{left:margin,right:margin},tableWidth:width,theme:"grid",styles:{font:"helvetica",fontSize:8,cellPadding:2.5,lineColor:[150,150,150],lineWidth:0.2,overflow:"linebreak"},head:[["Part No.","Description","Qty","Rate (Incl. GST)","Amount"]],body:estimateParts.length?estimateParts.map(item=>[item.partNo||"-",item.description||"-",String(item.qty||0),"₹ "+formatNumber(item.rate),"₹ "+formatNumber(item.qty*item.rate)]):[["-","No parts added","-","-","₹ 0"]],columnStyles:{0:{cellWidth:28},1:{cellWidth:82},2:{cellWidth:18},3:{cellWidth:27},4:{cellWidth:35}}});
-    y=(pdf.lastAutoTable?.finalY||y+20)+7; pdf.setFont("helvetica","bold"); pdf.text("Labour",margin,y); y+=4;
-    autoTable(pdf,{startY:y,margin:{left:margin,right:margin},tableWidth:width,theme:"grid",styles:{font:"helvetica",fontSize:8,cellPadding:2.5,lineColor:[150,150,150],lineWidth:0.2,overflow:"linebreak"},head:[["Description","Qty","Rate","Amount"]],body:estimateLabour.length?estimateLabour.map(item=>[item.description||"-",String(item.qty||0),"₹ "+formatNumber(item.rate),"₹ "+formatNumber(item.qty*item.rate)]):[["No labour added","-","-","₹ 0"]],columnStyles:{0:{cellWidth:110},1:{cellWidth:20},2:{cellWidth:25},3:{cellWidth:35}}});
-    y=(pdf.lastAutoTable?.finalY||y+20)+7;
-    autoTable(pdf,{startY:y,margin:{left:120,right:margin},tableWidth:80,theme:"grid",styles:{font:"helvetica",fontSize:8.5,cellPadding:3,lineColor:[150,150,150],lineWidth:0.2},body:[["Parts Total (GST Incl.)","₹ "+formatNumber(estimatePartsTotal)],["Labour Subtotal","₹ "+formatNumber(estimateLabourBase)],["GST on Labour (18%)","₹ "+formatNumber(estimateLabourGst)],["Grand Total","₹ "+formatNumber(estimateGrandTotal)]],columnStyles:{0:{cellWidth:45,fontStyle:"bold"},1:{cellWidth:35,halign:"right"}}});
-    y=(pdf.lastAutoTable?.finalY||y+25)+12; pdf.setFont("helvetica","normal"); pdf.setFontSize(8); pdf.line(140,y-2,190,y-2); pdf.text("Authorized Signatory",165,y,{align:"center"});
-    if(autoPrint){ pdf.autoPrint(); window.open(pdf.output("bloburl"),"_blank"); }
-    else { const fileName=("Service_Estimate_"+(vehicle.reg||vehicle.vin||"Vehicle")+".pdf").replace(/[^a-z0-9_.-]+/gi,"_"); pdf.save(fileName); }
-  }
+    const margin = 10;
+    const width = 190;
+    const vehicle = analysis?.vehicle || {};
+    const workshop = String(user?.dealerName || "Workshop").trim();
 
+    // jsPDF's built-in Helvetica does not render the ₹ glyph reliably.
+    // Use plain ASCII "INR" in the PDF so Adobe/Edge do not show broken
+    // characters or artificial digit spacing.
+    const money = value => {
+      const n = Number(value || 0);
+      return "INR " + n.toLocaleString("en-IN", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+    };
+
+    pdf.setFont("helvetica","bold");
+    pdf.setFontSize(17);
+    pdf.text("SERVICE ESTIMATE",105,14,{align:"center"});
+    pdf.setFontSize(10);
+    pdf.text(workshop,105,21,{align:"center"});
+    pdf.setFont("helvetica","normal");
+    pdf.setFontSize(8.5);
+    pdf.text("Estimate only - subject to actual inspection and applicable rates.",105,27,{align:"center"});
+
+    autoTable(pdf,{
+      startY:32,
+      margin:{left:margin,right:margin},
+      tableWidth:width,
+      theme:"grid",
+      styles:{
+        font:"helvetica",
+        fontSize:8.5,
+        cellPadding:3,
+        lineColor:[150,150,150],
+        lineWidth:0.2
+      },
+      body:[
+        ["Customer\n"+(vehicle.customerName||"-"),"Reg. No.\n"+(vehicle.reg||"-"),"VIN\n"+(vehicle.vin||"-")],
+        ["Model\n"+(vehicle.model||"-"),"Current Reading\n"+(analysis?.running?.current ? formatNumber(analysis.running.current)+" "+(analysis.running.unit||getTargetUnit(vehicle)) : "-"),"Date\n"+formatDate(new Date())]
+      ]
+    });
+
+    let y=(pdf.lastAutoTable?.finalY||58)+7;
+    pdf.setFont("helvetica","bold");
+    pdf.setFontSize(10);
+    pdf.text("Selected Aggregate Services",margin,y);
+    y+=4;
+
+    const selectedNames=BULK_SERVICE_LABELS
+      .filter(([,key])=>estimateSelectedServices.includes(key))
+      .map(([name])=>name);
+
+    pdf.setFont("helvetica","normal");
+    pdf.setFontSize(8.5);
+    pdf.text(
+      selectedNames.length ? selectedNames.join(", ") : "No aggregate service selected",
+      margin,
+      y+3,
+      {maxWidth:width}
+    );
+    y+=selectedNames.length?9:7;
+
+    autoTable(pdf,{
+      startY:y,
+      margin:{left:margin,right:margin},
+      tableWidth:width,
+      theme:"grid",
+      styles:{
+        font:"helvetica",
+        fontSize:8,
+        cellPadding:2.5,
+        lineColor:[150,150,150],
+        lineWidth:0.2,
+        overflow:"linebreak"
+      },
+      head:[["Part No.","Description","Qty","Rate (Incl. GST)","Amount"]],
+      body:estimateParts.length
+        ? estimateParts.map(item=>[
+            item.partNo||"-",
+            item.description||"-",
+            formatQty(item.qty),
+            money(item.rate),
+            money(Number(item.qty||0)*Number(item.rate||0))
+          ])
+        : [["-","No parts added","-","-",money(0)]],
+      columnStyles:{
+        0:{cellWidth:28},
+        1:{cellWidth:82},
+        2:{cellWidth:18},
+        3:{cellWidth:27},
+        4:{cellWidth:35}
+      }
+    });
+
+    y=(pdf.lastAutoTable?.finalY||y+20)+7;
+    pdf.setFont("helvetica","bold");
+    pdf.text("Labour",margin,y);
+    y+=4;
+
+    autoTable(pdf,{
+      startY:y,
+      margin:{left:margin,right:margin},
+      tableWidth:width,
+      theme:"grid",
+      styles:{
+        font:"helvetica",
+        fontSize:8,
+        cellPadding:2.5,
+        lineColor:[150,150,150],
+        lineWidth:0.2,
+        overflow:"linebreak"
+      },
+      head:[["Description","Qty","Rate","Amount"]],
+      body:estimateLabour.length
+        ? estimateLabour.map(item=>[
+            item.description||"-",
+            formatQty(item.qty),
+            money(item.rate),
+            money(Number(item.qty||0)*Number(item.rate||0))
+          ])
+        : [["No labour added","-","-",money(0)]],
+      columnStyles:{
+        0:{cellWidth:110},
+        1:{cellWidth:20},
+        2:{cellWidth:25},
+        3:{cellWidth:35}
+      }
+    });
+
+    y=(pdf.lastAutoTable?.finalY||y+20)+7;
+
+    autoTable(pdf,{
+      startY:y,
+      margin:{left:120,right:margin},
+      tableWidth:80,
+      theme:"grid",
+      styles:{
+        font:"helvetica",
+        fontSize:8.5,
+        cellPadding:3,
+        lineColor:[150,150,150],
+        lineWidth:0.2
+      },
+      body:[
+        ["Parts Total (GST Incl.)",money(estimatePartsTotal)],
+        ["Labour Subtotal",money(estimateLabourBase)],
+        ["GST on Labour (18%)",money(estimateLabourGst)],
+        ["Grand Total",money(estimateGrandTotal)]
+      ],
+      columnStyles:{
+        0:{cellWidth:45,fontStyle:"bold"},
+        1:{cellWidth:35,halign:"right"}
+      }
+    });
+
+    y=(pdf.lastAutoTable?.finalY||y+25)+12;
+    pdf.setFont("helvetica","normal");
+    pdf.setFontSize(8);
+    pdf.line(140,y-2,190,y-2);
+    pdf.text("Authorized Signatory",165,y,{align:"center"});
+
+    if(autoPrint){
+      pdf.autoPrint();
+      window.open(pdf.output("bloburl"),"_blank");
+    } else {
+      const fileName=("Service_Estimate_"+(vehicle.reg||vehicle.vin||"Vehicle")+".pdf")
+        .replace(/[^a-z0-9_.-]+/gi,"_");
+      pdf.save(fileName);
+    }
+  }
   return (
     <>
       <style>{`

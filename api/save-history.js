@@ -99,7 +99,35 @@ export default async function handler(req, res) {
         "WHERE v.vin=$1 ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id ASC",
         [vin]
       );
-      return res.status(200).json({ success: true, vin, rows: result.rows });
+
+      // Estimate fallback source: fetch history from other vehicles having the
+      // exact same model. The frontend keeps this separate from the current
+      // VIN history and uses it only for estimate lines missing on this VIN.
+      const modelName = String(result.rows.find(row => String(row.model || "").trim())?.model || "").trim();
+      let modelRows = [];
+
+      if (modelName) {
+        const modelResult = await client.query(
+          "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, " +
+          "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
+          "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
+          "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
+          "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
+          "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +
+          "WHERE UPPER(TRIM(v.model))=UPPER(TRIM($1)) AND v.vin<>$2 " +
+          "ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id ASC",
+          [modelName, vin]
+        );
+        modelRows = modelResult.rows;
+      }
+
+      return res.status(200).json({
+        success: true,
+        vin,
+        rows: result.rows,
+        model: modelName || null,
+        modelRows
+      });
     } catch (error) {
       console.error("Read History Error:", error);
       return res.status(500).json({ success: false, error: error?.message || "Service history read failed" });

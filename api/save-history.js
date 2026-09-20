@@ -121,12 +121,29 @@ export default async function handler(req, res) {
         modelRows = modelResult.rows;
       }
 
+      // For estimate rates, part number is the only matching key. The rate
+      // may come from any vehicle/model in the DB, while quantity remains
+      // sourced from the current vehicle/same-model history.
+      const rateResult = await client.query(
+        "SELECT DISTINCT ON (UPPER(REPLACE(TRIM(sh.part_code), ' ', ''))) " +
+        "sh.part_code, sh.rate, jc.job_date " +
+        "FROM service_history sh " +
+        "JOIN job_cards jc ON jc.id=sh.job_card_id " +
+        "JOIN vehicles v ON v.id=jc.vehicle_id " +
+        "WHERE sh.item_category LIKE 'P002%' " +
+        "AND sh.part_code IS NOT NULL " +
+        "AND sh.rate IS NOT NULL " +
+        "AND sh.rate > 0 " +
+        "ORDER BY UPPER(REPLACE(TRIM(sh.part_code), ' ', '')), jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC"
+      );
+
       return res.status(200).json({
         success: true,
         vin,
         rows: result.rows,
         model: modelName || null,
-        modelRows
+        modelRows,
+        globalPartRates: rateResult.rows
       });
     } catch (error) {
       console.error("Read History Error:", error);

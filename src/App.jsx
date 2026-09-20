@@ -2374,7 +2374,7 @@ const ESTIMATE_REFERENCE_PARTS = {
   clutchOil: ["CFD99991"],
   defInline: ["XFM00800"],
   coolant: ["C9999993"],
-  hubGrease: ["S9999997", "FJ607400", "F1721500", "F1771990", "H5001220", "S9999999"],
+  hubGrease: ["S9999997", "FJ607400", "F1721500", "F1771990", "H5001220"],
   fuelFilter: ["P5105609"],
   airFilter: ["P5105688"],
   defFilter: ["XFM00500", "PET00001"],
@@ -2383,7 +2383,6 @@ const ESTIMATE_REFERENCE_PARTS = {
 
 const HUB_GREASE_STANDARD_CODES = new Set([
   "S9999997",
-  "S9999999",
   "FJ607400",
   "F1721500",
   "F1771990",
@@ -2434,10 +2433,9 @@ function estimateCategory(row = {}) {
 
   // DMS source-of-truth categories:
   // P001 = Labour Value, P002 = Part.
-  // Some exports may contain the category plus its description, so accept
-  // only an explicit P001/P002 token at the beginning.
-  if (/^P001(?:$|\s|-|:)/.test(category)) return "labour";
-  if (/^P002(?:$|\s|-|:)/.test(category)) return "part";
+  // Accept the category code even when the DMS export appends a description.
+  if (/(^|[^A-Z0-9])P001([^A-Z0-9]|$)/.test(category)) return "labour";
+  if (/(^|[^A-Z0-9])P002([^A-Z0-9]|$)/.test(category)) return "part";
   return "";
 }
 
@@ -2449,19 +2447,30 @@ function estimateStandardPartName(row = {}) {
   return String(row.standardized_part || row.part_description || "").trim().toUpperCase();
 }
 
+function estimateLabourText(row = {}) {
+  return [
+    row.part_description,
+    row.standardized_part,
+    row.repair_line_item_type,
+    row.repair_type,
+    row.part_code,
+    row.complaint_code,
+  ].join(" ").toUpperCase().replace(/[^A-Z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
 function estimatePartMatchesService(row = {}, serviceKey = "") {
   if (estimateCategory(row) !== "part") return false;
-  const code = normalizePartCode(row.part_code);
 
-  // Explicit estimate reference part codes are valid service references even
-  // when the DMS description/standardization wording is different.
+  const code = normalizePartCode(row.part_code);
   const referenceCodes = (ESTIMATE_REFERENCE_PARTS[serviceKey] || []).map(normalizePartCode);
+
+  // User-provided reference part numbers are authoritative identifiers for
+  // the estimate. If the exact reference exists in DB, it is always included.
   if (code && referenceCodes.includes(code)) return true;
 
   if (serviceKey === "hubGrease") {
     if (HUB_GREASE_STANDARD_CODES.has(code)) return true;
-    const name = estimateStandardPartName(row);
-    return name.includes("HUB GREASE");
+    return estimateStandardPartName(row).includes("HUB GREASE");
   }
 
   const name = estimateStandardPartName(row);
@@ -2499,35 +2508,23 @@ function estimatePreferredReferenceCode(serviceKey = "", standardName = "", cand
 function estimateLabourMatchesService(row = {}, serviceKey = "") {
   if (estimateCategory(row) !== "labour") return false;
 
-  const text = [
-    row.part_description,
-    row.standardized_part,
-    row.repair_line_item_type,
-    row.repair_type,
-    row.part_code,
-  ].join(" ").toUpperCase().replace(/[^A-Z0-9]+/g, " ").replace(/\s+/g, " ").trim();
-
+  const text = estimateLabourText(row);
   const referenceRows = ESTIMATE_LABOUR_REFERENCE[serviceKey] || [];
 
-  // Hub Greasing is model/axle/hub-count specific. Match the historical
-  // operation to its exact reference family; do not include all six.
+  // Hub greasing remains model/axle/hub-count specific.
   if (serviceKey === "hubGrease") {
     return referenceRows.some(reference => {
       if (text.includes(reference.code)) return true;
-      const t = text;
-      if (reference.code === "WHL165A") return t.includes("FRONT") && t.includes("2") && t.includes("HUB");
-      if (reference.code === "WHL165C") return t.includes("FRONT") && t.includes("4") && t.includes("HUB");
-      if (reference.code === "WHL170A") return t.includes("REAR") && t.includes("2") && t.includes("HUB");
-      if (reference.code === "WHL170C") return t.includes("REAR") && t.includes("4") && t.includes("HUB");
-      if (reference.code === "WHL175A") return t.includes("STLA") && t.includes("2") && t.includes("HUB");
-      if (reference.code === "WHL180A") return t.includes("DTLA") && t.includes("2") && t.includes("HUB");
+      if (reference.code === "WHL165A") return text.includes("FRONT") && text.includes("2") && text.includes("HUB");
+      if (reference.code === "WHL165C") return text.includes("FRONT") && text.includes("4") && text.includes("HUB");
+      if (reference.code === "WHL170A") return text.includes("REAR") && text.includes("2") && text.includes("HUB");
+      if (reference.code === "WHL170C") return text.includes("REAR") && text.includes("4") && text.includes("HUB");
+      if (reference.code === "WHL175A") return text.includes("STLA") && text.includes("2") && text.includes("HUB");
+      if (reference.code === "WHL180A") return text.includes("DTLA") && text.includes("2") && text.includes("HUB");
       return false;
     });
   }
 
-  // Historical DMS labour wording can differ from the reference description.
-  // Find the actual operation using the service rule, then display the configured
-  // reference code/description when one exists.
   const rule = ESTIMATE_LABOUR_RULES.find(item => item.key === serviceKey);
   return !!rule && rule.test(text);
 }
@@ -2550,10 +2547,6 @@ function estimateRowRank(row = {}, index = 0) {
 }
 
 function estimateChooseBestQuantity(rows = []) {
-  // Historical quantity must represent the actual replacement quantity.
-  // Frequency alone is unsafe because top-up records can be more frequent
-  // than complete replacement records (for example 3 L top-up vs 16.5 L
-  // rear-axle oil replacement).
   const candidates = rows
     .map((row, index) => ({
       row,
@@ -2565,9 +2558,6 @@ function estimateChooseBestQuantity(rows = []) {
 
   if (!candidates.length) return null;
 
-  // Once rows have been restricted to complete-service job cards, choose the
-  // most recent valid service quantity. This keeps the estimate tied to an
-  // actual replacement event instead of a repeated top-up.
   candidates.sort((a, b) => b.rank - a.rank);
   return {
     qty: candidates[0].qty,
@@ -2579,28 +2569,40 @@ function estimateChooseBestQuantity(rows = []) {
 
 function estimateChooseBestRate(rows = []) {
   const valid = rows
-    .map((row, index) => ({ row, rate:Number(row?.rate), rank:estimateRowRank(row,index) }))
+    .map((row, index) => ({
+      row,
+      rate: Number(row?.rate),
+      rank: estimateRowRank(row, index),
+    }))
     .filter(item => Number.isFinite(item.rate) && item.rate > 0);
-  if (!valid.length) return 0;
 
-  // Prefer the latest historical rate for the selected applicable part.
-  valid.sort((a,b) => b.rank - a.rank);
+  if (!valid.length) return 0;
+  valid.sort((a, b) => b.rank - a.rank);
   return valid[0].rate;
 }
 
 function estimateBuildHistoricalItem(type, serviceKey, rows, code = "") {
   if (!rows.length) return null;
-  const qtyChoice = estimateChooseBestQuantity(rows);
-  const rate = estimateChooseBestRate(rows);
-  const sourceRow = rows.slice().sort((a,b) => estimateRowRank(b,0) - estimateRowRank(a,0))[0];
-  const partNo = String(code || sourceRow.part_code || "").trim();
-  const description = String(sourceRow.part_description || sourceRow.standardized_part || "").trim();
 
+  const qtyChoice = estimateChooseBestQuantity(rows);
   if (!qtyChoice) return null;
 
-  const customerRate = Number.isFinite(rate) && rate > 0 ? Number((rate * 1.18).toFixed(2)) : 0;
+  const rate = estimateChooseBestRate(rows);
+  const sourceRow = rows
+    .slice()
+    .sort((a, b) => estimateRowRank(b, 0) - estimateRowRank(a, 0))[0];
+
+  const partNo = String(code || sourceRow.part_code || "").trim();
+  const description = String(
+    sourceRow.part_description || sourceRow.standardized_part || ""
+  ).trim();
+
+  const customerRate = Number.isFinite(rate) && rate > 0
+    ? Number((rate * 1.18).toFixed(2))
+    : 0;
+
   return {
-    id: type + "-" + serviceKey + "-" + partNo + "-" + Date.now() + "-" + Math.random().toString(36).slice(2,7),
+    id: type + "-" + serviceKey + "-" + partNo + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7),
     type,
     serviceKey,
     partNo,
@@ -2615,153 +2617,186 @@ function estimateBuildHistoricalItem(type, serviceKey, rows, code = "") {
 
 function estimateJobCardKey(row = {}) {
   const jc = String(row?.job_card || row?.job_card_no || "").trim();
-  return jc ? "JC|" + jc.toUpperCase() : "DATE|" + String(row?.job_date || "").slice(0,10);
+  return jc ? "JC|" + jc.toUpperCase() : "DATE|" + String(row?.job_date || "").slice(0, 10);
 }
-function estimateRowsForJobCard(rows = [], key = "") { return rows.filter(row => estimateJobCardKey(row) === key); }
-function estimatePartRows(rows = [], serviceKey = "") {
-  return rows.filter(row => estimateCategory(row) === "part" && estimatePartMatchesService(row, serviceKey));
-}
-function estimateTotalQty(rows = [], serviceKey = "") {
-  return estimatePartRows(rows, serviceKey).reduce((sum,row)=>sum+Math.max(0,Number(row?.quantity||0)),0);
-}
-function estimateHasPart(rows = [], standardNames = [], minQty = 1) {
-  const matches=rows.filter(row=>{
-    if(estimateCategory(row)!=="part") return false;
-    const name=estimateStandardPartName(row).toUpperCase();
-    return standardNames.some(item=>name===item || name.includes(item));
-  });
-  return matches.reduce((sum,row)=>sum+Math.max(0,Number(row?.quantity||0)),0)>=minQty;
-}
-function estimateEligibleJobCards(rows = [], serviceKey = "") {
-  // Use the same aggregate eligibility logic as Service Decision before
-  // selecting estimate quantity/rate. Ineligible/top-up lines are discarded.
-  const keys=[...new Set(rows.map(estimateJobCardKey))];
-  const eligible=new Set();
-  for(const key of keys){
-    const jcRows=estimateRowsForJobCard(rows,key);
-    const parts=estimatePartRows(jcRows,serviceKey);
-    if(!parts.length) continue;
 
-    if(serviceKey==="axleOil"){
-      if(estimateTotalQty(jcRows,"axleOil")>=12) eligible.add(key);
-      continue;
-    }
-    if(serviceKey==="steeringOil"){
-      const steeringQty=estimateTotalQty(jcRows,"steeringOil");
-      const filterQty=estimateHasPart(jcRows,["STEERING OIL FILTER"],1);
-      if(steeringQty>=1 && filterQty) eligible.add(key);
-      continue;
-    }
-    if(serviceKey==="engineOil"){
-      const engineQty=estimateTotalQty(jcRows,"engineOil");
-      const oilFilter=estimateHasPart(jcRows,["ENGINE OIL FILTER"],1);
-      const fuelFilterPair=estimateHasPart(jcRows,["FUEL FILTER"],2);
-      const fuelFilterKit=estimateHasPart(jcRows,["FUEL FILTER KIT","FUEL FILTER & ENGINE OIL FILTER KIT"],1);
-      if(engineQty>=12 && oilFilter && (fuelFilterPair || fuelFilterKit)) eligible.add(key);
-      continue;
-    }
-    if(serviceKey==="defFilter"){
-      const defKit=estimateHasPart(jcRows,["DEF FILTER KIT"],1);
-      const defAir=estimateHasPart(jcRows,["DEF FILTER AIR"],1);
-      const defSuction=estimateHasPart(jcRows,["DEF FILTER SUCTION"],1);
-      if(defKit || (defAir && defSuction)) eligible.add(key);
-      continue;
-    }
-    if(parts.some(row=>Number(row?.quantity||0)>0)) eligible.add(key);
-  }
-  return eligible;
+function estimateRowsForJobCard(rows = [], key = "") {
+  return rows.filter(row => estimateJobCardKey(row) === key);
 }
-function estimateRowsForCompleteService(rows = [], serviceKey = "") {
-  const eligibleKeys=estimateEligibleJobCards(rows,serviceKey);
-  if(!eligibleKeys.size) return [];
+
+function estimatePartRows(rows = [], serviceKey = "") {
   return rows.filter(row =>
-    eligibleKeys.has(estimateJobCardKey(row)) &&
-    estimateCategory(row)==="part" &&
-    estimatePartMatchesService(row,serviceKey) &&
-    Number(row?.quantity||0)>0
+    estimateCategory(row) === "part" &&
+    estimatePartMatchesService(row, serviceKey) &&
+    Number(row?.quantity || 0) > 0
   );
 }
-function estimateHistoryToItems(rows = [], selectedKeys = []) {
-  const selected=new Set(selectedKeys), items=[];
-  for(const serviceKey of selected){
-    const serviceRows=estimateRowsForCompleteService(rows,serviceKey);
 
-    if(serviceKey==="hubGrease"){
-      for(const code of HUB_GREASE_STANDARD_CODES){
-        const matches=serviceRows.filter(row=>normalizePartCode(row.part_code)===code);
-        const item=estimateBuildHistoricalItem("part",serviceKey,matches,code);
-        if(item) items.push(item);
+function estimateHasPart(rows = [], standardNames = [], minQty = 1) {
+  const matches = rows.filter(row => {
+    if (estimateCategory(row) !== "part") return false;
+    const name = estimateStandardPartName(row).toUpperCase();
+    return standardNames.some(item => name === item || name.includes(item));
+  });
+  return matches.reduce((sum, row) => sum + Math.max(0, Number(row?.quantity || 0)), 0) >= minQty;
+}
+
+// These rules are used only to prefer a complete replacement history row when
+// available. They must NEVER make a selected aggregate disappear from the
+// estimate. If no qualifying job card exists, the estimate falls back to all
+// matching vehicle-history rows.
+function estimateEligibleJobCards(rows = [], serviceKey = "") {
+  const keys = [...new Set(rows.map(estimateJobCardKey))];
+  const eligible = new Set();
+
+  for (const key of keys) {
+    const jcRows = estimateRowsForJobCard(rows, key);
+    const parts = estimatePartRows(jcRows, serviceKey);
+    if (!parts.length) continue;
+
+    if (serviceKey === "axleOil") {
+      if (parts.some(row => Number(row?.quantity || 0) >= 12)) eligible.add(key);
+      continue;
+    }
+
+    if (serviceKey === "steeringOil") {
+      const steeringQty = estimatePartRows(jcRows, "steeringOil")
+        .reduce((sum, row) => sum + Math.max(0, Number(row?.quantity || 0)), 0);
+      const filterQty = estimateHasPart(jcRows, ["STEERING OIL FILTER"], 1);
+      if (steeringQty >= 1 && filterQty) eligible.add(key);
+      continue;
+    }
+
+    if (serviceKey === "engineOil") {
+      const engineQty = estimatePartRows(jcRows, "engineOil")
+        .filter(row => !estimateStandardPartName(row).includes("FILTER"))
+        .reduce((sum, row) => sum + Math.max(0, Number(row?.quantity || 0)), 0);
+      const oilFilter = estimateHasPart(jcRows, ["ENGINE OIL FILTER"], 1);
+      const fuelFilterPair = estimateHasPart(jcRows, ["FUEL FILTER"], 2);
+      const fuelFilterKit = estimateHasPart(
+        jcRows,
+        ["FUEL FILTER KIT", "FUEL FILTER & ENGINE OIL FILTER KIT"],
+        1
+      );
+      if (engineQty >= 12 && oilFilter && (fuelFilterPair || fuelFilterKit)) eligible.add(key);
+      continue;
+    }
+
+    if (serviceKey === "defFilter") {
+      const defKit = estimateHasPart(jcRows, ["DEF FILTER KIT"], 1);
+      const defAir = estimateHasPart(jcRows, ["DEF FILTER AIR"], 1);
+      const defSuction = estimateHasPart(jcRows, ["DEF FILTER SUCTION"], 1);
+      if (defKit || (defAir && defSuction)) eligible.add(key);
+      continue;
+    }
+
+    if (parts.some(row => Number(row?.quantity || 0) > 0)) eligible.add(key);
+  }
+
+  return eligible;
+}
+
+function estimateRowsForCompleteService(rows = [], serviceKey = "") {
+  const allRows = estimatePartRows(rows, serviceKey);
+  if (!allRows.length) return [];
+
+  const eligibleKeys = estimateEligibleJobCards(rows, serviceKey);
+
+  // Prefer parts from a complete-service job card. If the vehicle history does
+  // not contain such a card, do not hide the aggregate: fall back to every
+  // matching historical part for this VIN.
+  const preferredRows = eligibleKeys.size
+    ? allRows.filter(row => eligibleKeys.has(estimateJobCardKey(row)))
+    : [];
+
+  return preferredRows.length ? preferredRows : allRows;
+}
+
+function estimateHistoryToItems(rows = [], selectedKeys = []) {
+  const items = [];
+
+  for (const serviceKey of selectedKeys) {
+    const serviceRows = estimateRowsForCompleteService(rows, serviceKey);
+
+    if (serviceKey === "hubGrease") {
+      for (const code of HUB_GREASE_STANDARD_CODES) {
+        const matches = serviceRows.filter(row => normalizePartCode(row.part_code) === code);
+        const item = estimateBuildHistoricalItem("part", serviceKey, matches, code);
+        if (item) items.push(item);
       }
     } else {
-      const byStandard=new Map();
-      for(const row of serviceRows){
-        const standard=estimateStandardPartName(row);
-        const key=standard || normalizePartCode(row.part_code);
-        if(!key) continue;
-        if(!byStandard.has(key)) byStandard.set(key,[]);
+      const byStandard = new Map();
+
+      for (const row of serviceRows) {
+        const standard = estimateStandardPartName(row);
+        const key = standard || normalizePartCode(row.part_code);
+        if (!key) continue;
+        if (!byStandard.has(key)) byStandard.set(key, []);
         byStandard.get(key).push(row);
       }
-      for(const [standard,candidates] of byStandard){
-        const codes=new Map();
-        for(const row of candidates){
-          const code=normalizePartCode(row.part_code);
-          if(!code) continue;
-          if(!codes.has(code)) codes.set(code,[]);
+
+      for (const [standard, candidates] of byStandard) {
+        const codes = new Map();
+
+        for (const row of candidates) {
+          const code = normalizePartCode(row.part_code);
+          if (!code) continue;
+          if (!codes.has(code)) codes.set(code, []);
           codes.get(code).push(row);
         }
-        const rankedCodes=[...codes.entries()].map(([code,codeRows])=>({
-          code,rows:codeRows,count:codeRows.length,
-          latest:Math.max(...codeRows.map((row,index)=>estimateRowRank(row,index)))
-        })).sort((a,b)=>b.count-a.count || b.latest-a.latest);
-        const winner=rankedCodes[0];
-        if(winner){
-          const referenceCode = estimatePreferredReferenceCode(
-            serviceKey,
-            standard,
-            winner.rows
-          );
-          const item=estimateBuildHistoricalItem(
-            "part",
-            serviceKey,
-            winner.rows,
-            referenceCode || winner.code
-          );
-          if(item) items.push(item);
-        }
+
+        const rankedCodes = [...codes.entries()]
+          .map(([code, codeRows]) => ({
+            code,
+            rows: codeRows,
+            count: codeRows.length,
+            latest: Math.max(...codeRows.map((row, index) => estimateRowRank(row, index))),
+          }))
+          .sort((a, b) => b.count - a.count || b.latest - a.latest);
+
+        const winner = rankedCodes[0];
+        if (!winner) continue;
+
+        // For Engine Oil / Axle Oil, prefer a historical full-replacement row
+        // (12L+ / 12L+) when the vehicle has both top-up and replacement rows.
+        const qualifyingRows = (serviceKey === "engineOil" && !String(standard).includes("FILTER"))
+          ? candidates.filter(row => Number(row?.quantity || 0) >= 12)
+          : serviceKey === "axleOil"
+            ? candidates.filter(row => Number(row?.quantity || 0) >= 12)
+            : [];
+
+        const sourceCandidates = qualifyingRows.length ? qualifyingRows : winner.rows;
+
+        const referenceCode = estimatePreferredReferenceCode(
+          serviceKey,
+          standard,
+          sourceCandidates
+        );
+
+        const item = estimateBuildHistoricalItem(
+          "part",
+          serviceKey,
+          sourceCandidates,
+          referenceCode || winner.code
+        );
+
+        if (item) items.push(item);
       }
     }
 
-    // Labour is identified independently from the part eligibility check.
-    // A historical labour operation is direct evidence that this service was
-    // actually performed; requiring a matching part row was hiding valid labour
-    // for Coolant, Axle Oil, Steering Oil, DEF/APDA and similar services.
-    const labourJobKeys = new Set(
-      rows
-        .filter(row =>
-          estimateLabourMatchesService(row, serviceKey) &&
-          Number(row?.quantity || 0) > 0
-        )
-        .map(row => estimateJobCardKey(row))
-    );
-    const labourRows=rows.filter(row =>
-      labourJobKeys.has(estimateJobCardKey(row)) &&
-      estimateLabourMatchesService(row,serviceKey) &&
-      Number(row?.quantity||0)>0
+    // Labour is always searched independently across the full VIN history.
+    // A missing/mismatched part line must never hide valid historical labour.
+    const labourRows = rows.filter(row =>
+      estimateLabourMatchesService(row, serviceKey) &&
+      Number(row?.quantity || 0) > 0
     );
 
     if (serviceKey === "hubGrease") {
-      // Keep each model-specific hub greasing operation separately so the
-      // estimate shows only the operations actually present in this vehicle's history.
       const referenceRows = ESTIMATE_LABOUR_REFERENCE.hubGrease || [];
+
       for (const reference of referenceRows) {
         const matches = labourRows.filter(row => {
-          const text = [
-            row.part_description,
-            row.standardized_part,
-            row.repair_line_item_type,
-            row.repair_type,
-            row.part_code,
-          ].join(" ").toUpperCase().replace(/[^A-Z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+          const text = estimateLabourText(row);
           if (text.includes(reference.code)) return true;
           if (reference.code === "WHL165A") return text.includes("FRONT") && text.includes("2") && text.includes("HUB");
           if (reference.code === "WHL165C") return text.includes("FRONT") && text.includes("4") && text.includes("HUB");
@@ -2771,6 +2806,7 @@ function estimateHistoryToItems(rows = [], selectedKeys = []) {
           if (reference.code === "WHL180A") return text.includes("DTLA") && text.includes("2") && text.includes("HUB");
           return false;
         });
+
         const labourItem = estimateBuildHistoricalItem("labour", serviceKey, matches, reference.code);
         if (labourItem) {
           labourItem.description = reference.description;
@@ -2779,8 +2815,14 @@ function estimateHistoryToItems(rows = [], selectedKeys = []) {
         }
       }
     } else {
-      const labourItem=estimateBuildHistoricalItem("labour",serviceKey,labourRows,ESTIMATE_LABOUR_REFERENCE[serviceKey]?.[0]?.code || "");
-      if(labourItem) {
+      const labourItem = estimateBuildHistoricalItem(
+        "labour",
+        serviceKey,
+        labourRows,
+        ESTIMATE_LABOUR_REFERENCE[serviceKey]?.[0]?.code || ""
+      );
+
+      if (labourItem) {
         const reference = ESTIMATE_LABOUR_REFERENCE[serviceKey]?.[0];
         if (reference) labourItem.description = reference.description;
         items.push(labourItem);
@@ -2788,21 +2830,22 @@ function estimateHistoryToItems(rows = [], selectedKeys = []) {
     }
   }
 
-  // One estimate line per final reference part number within the same
-  // aggregate. Keep the latest historical line when duplicate source rows
-  // resolve to the same displayed reference code.
+  // One estimate line per final reference part number within the same aggregate.
   const uniqueParts = new Map();
   const finalItems = [];
+
   for (const item of items) {
     if (item.type !== "part") {
       finalItems.push(item);
       continue;
     }
+
     const key = item.serviceKey + "|" + normalizePartCode(item.partNo);
     if (!normalizePartCode(item.partNo)) {
       finalItems.push(item);
       continue;
     }
+
     if (!uniqueParts.has(key)) {
       uniqueParts.set(key, item);
       finalItems.push(item);
@@ -2810,6 +2853,7 @@ function estimateHistoryToItems(rows = [], selectedKeys = []) {
       const previous = uniqueParts.get(key);
       const previousRank = estimateRowRank(previous.latestRow || {}, 0);
       const currentRank = estimateRowRank(item.latestRow || {}, 0);
+
       if (currentRank >= previousRank) {
         const index = finalItems.indexOf(previous);
         if (index >= 0) finalItems[index] = item;

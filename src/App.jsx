@@ -3063,12 +3063,62 @@ function ServiceDecisionApp({ user }) {
   const [estimateLabour, setEstimateLabour] = useState([]);
   const [estimateNotice, setEstimateNotice] = useState("");
   const [manualPartLookupBusy, setManualPartLookupBusy] = useState({});
-  const userPrefs = user?.preferences || {};
-  const singleTableColumns = Array.isArray(userPrefs.singleColumns) && userPrefs.singleColumns.length ? userPrefs.singleColumns : ["date","jobCard","reading","plant","parts"];
-  const bulkTableColumns = Array.isArray(userPrefs.bulkColumns) && userPrefs.bulkColumns.length ? userPrefs.bulkColumns : ["customerName","vin","reg","saleDate","model","currentReading","services"];
+  const defaultSingleColumns = ["date","jobCard","reading","plant","parts"];
+  const defaultBulkColumns = ["customerName","vin","reg","saleDate","model","currentReading","services"];
+  const defaultSingleLabels = { date:"Date", jobCard:"Job Card", reading:"Reading", plant:"Plant", parts:"Part No. / Service / Qty" };
+  const defaultBulkLabels = { customerName:"Customer Name", vin:"VIN", reg:"Reg. No.", saleDate:"Sale Date", model:"Model", currentReading:"Current Reading", services:"Service To Be Completed" };
+  const defaultSingleWidths = { date:8, jobCard:10, reading:10, plant:12, parts:60 };
+  const defaultBulkWidths = { serial:7, customerName:16, vin:13, reg:12, saleDate:11, model:13, currentReading:13, services:22 };
+  const normalizeDashboardPrefs = (preferences = {}) => ({
+    ...preferences,
+    singleColumns: Array.isArray(preferences.singleColumns) && preferences.singleColumns.length ? preferences.singleColumns : defaultSingleColumns,
+    bulkColumns: Array.isArray(preferences.bulkColumns) && preferences.bulkColumns.length ? preferences.bulkColumns : defaultBulkColumns,
+    singleColumnLabels: { ...defaultSingleLabels, ...(preferences.singleColumnLabels || {}) },
+    bulkColumnLabels: { ...defaultBulkLabels, ...(preferences.bulkColumnLabels || {}) },
+    singleColumnWidths: { ...defaultSingleWidths, ...(preferences.singleColumnWidths || {}) },
+    bulkColumnWidths: { ...defaultBulkWidths, ...(preferences.bulkColumnWidths || {}) },
+  });
+  const [dashboardPrefs, setDashboardPrefs] = useState(() => normalizeDashboardPrefs(user?.preferences || {}));
+  useEffect(() => { setDashboardPrefs(normalizeDashboardPrefs(user?.preferences || {})); }, [user?.id, user?.preferences]);
+  const singleTableColumns = dashboardPrefs.singleColumns;
+  const bulkTableColumns = dashboardPrefs.bulkColumns;
+  const singleColumnLabels = dashboardPrefs.singleColumnLabels;
+  const bulkColumnLabels = dashboardPrefs.bulkColumnLabels;
+  const singleColumnWidths = dashboardPrefs.singleColumnWidths;
+  const bulkColumnWidths = dashboardPrefs.bulkColumnWidths;
   const isSingleColumnVisible = key => singleTableColumns.includes(key);
   const isBulkColumnVisible = key => bulkTableColumns.includes(key);
-  const tableWidthClass = value => value === "compact" ? "table-width-compact" : value === "normal" ? "table-width-normal" : "table-width-wide";
+  const persistDashboardPrefs = async (nextPrefs) => {
+    setDashboardPrefs(nextPrefs);
+    const token = localStorage.getItem("serviceDecisionAuthToken");
+    if (!token) return;
+    try {
+      const response = await fetch("/api/auth", { method:"POST", headers:{ "Content-Type":"application/json", Authorization:`Bearer ${token}` }, body:JSON.stringify({ action:"update-profile", personName:user?.personName || "", dealerName:user?.dealerName || "", mobile:user?.mobile || "", preferences:nextPrefs }) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.success === false) throw new Error(data.error || "Unable to save table preferences.");
+    } catch (error) { console.error("Dashboard preference save failed:", error); }
+  };
+  const resizeTableColumn = (tableType, key, event) => {
+    event.preventDefault(); event.stopPropagation();
+    const th = event.currentTarget.parentElement, table = th?.closest("table");
+    if (!th || !table) return;
+    const startX = event.clientX, startWidth = th.getBoundingClientRect().width, tableWidth = Math.max(1, table.getBoundingClientRect().width);
+    const sourceKey = tableType === "single" ? "singleColumnWidths" : "bulkColumnWidths";
+    let latestWidths = tableType === "single" ? { ...singleColumnWidths } : { ...bulkColumnWidths };
+    const onMove = (moveEvent) => {
+      const nextWidthPx = Math.max(55, startWidth + (moveEvent.clientX - startX));
+      latestWidths = { ...latestWidths, [key]: Number(Math.max(3, Math.min(90, (nextWidthPx / tableWidth) * 100)).toFixed(2)) };
+      setDashboardPrefs(prev => ({ ...prev, [sourceKey]: latestWidths }));
+    };
+    const onUp = () => {
+      document.removeEventListener("pointermove", onMove); document.removeEventListener("pointerup", onUp);
+      void persistDashboardPrefs({ ...dashboardPrefs, [sourceKey]: latestWidths });
+      document.body.style.cursor = ""; document.body.style.userSelect = "";
+    };
+    document.body.style.cursor = "col-resize"; document.body.style.userSelect = "none";
+    document.addEventListener("pointermove", onMove); document.addEventListener("pointerup", onUp);
+  };
+  const tableColumnStyle = (tableType, key) => ({ width:`${Number((tableType === "single" ? singleColumnWidths[key] : bulkColumnWidths[key]) || 10)}%` });
 
   const [bulkTableSort, setBulkTableSort] = useState({ key: "dueCount", direction: "desc" });
   const [bulkTableFilters, setBulkTableFilters] = useState({
@@ -4354,7 +4404,7 @@ function ServiceDecisionApp({ user }) {
         }
       `}</style>
 
-      <div className={`excel-app theme-${userPrefs.theme || "blue"}`}>
+      <div className={`excel-app theme-${dashboardPrefs.theme || "blue"}`}>
         <div className="excel-window">
           <div className="excel-titlebar">
             <div className="excel-title">Vehicle Service Decision &amp; Maintenance Dashboard</div>
@@ -4458,19 +4508,21 @@ function ServiceDecisionApp({ user }) {
 
                 <div className="section-title service-summary-title">Service Summary — Complete Vehicle History</div>
                 <div className="history-wrap">
-                  <table className={`history-table single-service-summary ${tableWidthClass(userPrefs.singleTableWidth)}`}>
-                    <thead><tr>
-                      {isSingleColumnVisible("date") && <th>Date</th>}{isSingleColumnVisible("jobCard") && <th>Job Card</th>}{isSingleColumnVisible("reading") && <th>Reading</th>}{isSingleColumnVisible("plant") && <th>Plant</th>}{isSingleColumnVisible("parts") && <th>Part No. / Service / Qty</th>}
-                    </tr></thead>
-                    <tbody>
-                      {analysis?.visits?.length ? analysis.visits.map((visit,i) => {
-                        const visitDate=getVisitDate(visit), jobCard=getVisitJobCard(visit), visitReading=getVisitReading(visit,analysis.vehicle), parts=getVisitParts(visit,analysis.vehicle,analysis.decision);
-                        return <tr key={i}>
-                          {isSingleColumnVisible("date") && <td>{formatDateShort(visitDate)}</td>}{isSingleColumnVisible("jobCard") && <td>{jobCard}</td>}{isSingleColumnVisible("reading") && <td>{visitReading ? `${formatNumber(visitReading)} ${getTargetUnit(analysis.vehicle)}` : "-"}</td>}{isSingleColumnVisible("plant") && <td>{[...new Set(visit.map(r => String(r?.plantName || r?.salesOrgName || "").trim()).filter(Boolean))].join(", ") || "-"}</td>}{isSingleColumnVisible("parts") && <td>{parts.length ? parts.map((part,index) => <span key={index} className={part.eligible ? "history-part eligible" : "history-part"} title={part.eligible ? "Eligible service-calculation record" : "History record"}>{part.text}</span>) : "-"}</td>}
-                        </tr>;
-                      }) : <tr><td colSpan={Math.max(1,singleTableColumns.length)} className="small-note">No service history loaded.</td></tr>}
-                    </tbody>
-                  </table>
+                  <table className="history-table single-service-summary dashboard-resizable-table"><thead><tr>
+{isSingleColumnVisible("date") && <th style={tableColumnStyle("single","date")}><span className="dashboard-th-content">{singleColumnLabels.date}</span><span className="column-resizer" onPointerDown={e=>resizeTableColumn("single","date",e)} /></th>}
+{isSingleColumnVisible("jobCard") && <th style={tableColumnStyle("single","jobCard")}><span className="dashboard-th-content">{singleColumnLabels.jobCard}</span><span className="column-resizer" onPointerDown={e=>resizeTableColumn("single","jobCard",e)} /></th>}
+{isSingleColumnVisible("reading") && <th style={tableColumnStyle("single","reading")}><span className="dashboard-th-content">{singleColumnLabels.reading}</span><span className="column-resizer" onPointerDown={e=>resizeTableColumn("single","reading",e)} /></th>}
+{isSingleColumnVisible("plant") && <th style={tableColumnStyle("single","plant")}><span className="dashboard-th-content">{singleColumnLabels.plant}</span><span className="column-resizer" onPointerDown={e=>resizeTableColumn("single","plant",e)} /></th>}
+{isSingleColumnVisible("parts") && <th style={tableColumnStyle("single","parts")}><span className="dashboard-th-content">{singleColumnLabels.parts}</span><span className="column-resizer" onPointerDown={e=>resizeTableColumn("single","parts",e)} /></th>}
+</tr></thead><tbody>
+{analysis?.visits?.length ? analysis.visits.map((visit,i)=>{const visitDate=getVisitDate(visit),jobCard=getVisitJobCard(visit),visitReading=getVisitReading(visit,analysis.vehicle),parts=getVisitParts(visit,analysis.vehicle,analysis.decision);return <tr key={i}>
+{isSingleColumnVisible("date")&&<td style={tableColumnStyle("single","date")}>{formatDateShort(visitDate)}</td>}
+{isSingleColumnVisible("jobCard")&&<td style={tableColumnStyle("single","jobCard")}>{jobCard}</td>}
+{isSingleColumnVisible("reading")&&<td style={tableColumnStyle("single","reading")}>{visitReading?`${formatNumber(visitReading)} ${getTargetUnit(analysis.vehicle)}`:"-"}</td>}
+{isSingleColumnVisible("plant")&&<td style={tableColumnStyle("single","plant")}>{[...new Set(visit.map(r=>String(r?.plantName||r?.salesOrgName||"").trim()).filter(Boolean))].join(", ")||"-"}</td>}
+{isSingleColumnVisible("parts")&&<td style={tableColumnStyle("single","parts")}>{parts.length?parts.map((part,index)=><span key={index} className={part.eligible?"history-part eligible":"history-part"} title={part.eligible?"Eligible service-calculation record":"History record"}>{part.text}</span>):"-"}</td>}
+</tr>}) : <tr><td colSpan={Math.max(1,singleTableColumns.length)} className="small-note">No service history loaded.</td></tr>}
+</tbody></table>
                 </div>
               </>
             ) : (
@@ -4506,30 +4558,21 @@ function ServiceDecisionApp({ user }) {
                     <button className="excel-button" onClick={clearAllBulkFilters}>Reset Sort / Filter</button>
                   </div>
                   <div className="history-wrap">
-                    <table className={`history-table bulk-service-table ${tableWidthClass(userPrefs.bulkTableWidth)}`}>
-                      <thead>
-                        <tr>
-                          <th>
-                            <div className="bulk-th">
-                              <div className="bulk-th-top">
-                                <button className="bulk-sort-btn" onClick={() => setBulkSort("dueCount")} title="Sort by number of due services">S.No. / Due</button>
-                                <span className="bulk-sort-indicator">{bulkTableSort.key === "dueCount" ? (bulkTableSort.direction === "asc" ? "▲" : "▼") : ""}</span>
-                              </div>
-                            </div>
-                          </th>
+                    <table className="history-table bulk-service-table dashboard-resizable-table"><thead><tr>
+<th style={tableColumnStyle("bulk","serial")}><div className="bulk-th"><div className="bulk-th-top"><button className="bulk-sort-btn" onClick={()=>setBulkSort("dueCount")} title="Sort by number of due services">{dashboardPrefs.bulkColumnLabels?.serial||"S.No. / Due"}</button><span className="bulk-sort-indicator">{bulkTableSort.key==="dueCount"?(bulkTableSort.direction==="asc"?"▲":"▼"):""}</span></div></div><span className="column-resizer" onPointerDown={e=>resizeTableColumn("bulk","serial",e)}/></th>
                           {[
-                            ["Customer Name","customerName"],
-                            ["VIN","vin"],
-                            ["Reg. No.","reg"],
-                            ["Sale Date","saleDate"],
-                            ["Model","model"],
-                            ["Current Reading","currentReading"],
-                            ["Service To Be Completed","services"],
+                            [bulkColumnLabels.customerName||"Customer Name","customerName"],
+                            [bulkColumnLabels.vin||"VIN","vin"],
+                            [bulkColumnLabels.reg||"Reg. No.","reg"],
+                            [bulkColumnLabels.saleDate||"Sale Date","saleDate"],
+                            [bulkColumnLabels.model||"Model","model"],
+                            [bulkColumnLabels.currentReading||"Current Reading","currentReading"],
+                            [bulkColumnLabels.services||"Service To Be Completed","services"],
                           ].filter(([,key]) => isBulkColumnVisible(key)).map(([label,key]) => {
                             const active = bulkFilterSelections[key]?.length > 0;
                             const sortActive = bulkTableSort.key === key;
                             return (
-                              <th key={key}>
+                              <th key={key} style={tableColumnStyle("bulk",key)}>
                                 <div className={`bulk-th ${active ? "bulk-th-filtered" : ""}`}>
                                   <div className="bulk-th-top">
                                     <span className="bulk-column-title">{label}</span>
@@ -4554,8 +4597,7 @@ function ServiceDecisionApp({ user }) {
                                       ? `${bulkFilterSelections[key].length} selected`
                                       : "Filter"}
                                   </div>
-                                </div>
-                              </th>
+                                </div><span className="column-resizer" onPointerDown={e=>resizeTableColumn("bulk",key,e)}/></th>
                             );
                           })}
                         </tr>
@@ -4563,8 +4605,8 @@ function ServiceDecisionApp({ user }) {
                       <tbody>
                         {bulkSummaryRows.map((item,index) => (
                           <tr key={item.vin || index}>
-                            <td>{index + 1}</td>
-                            {isBulkColumnVisible("customerName") && <td>{item.vehicle.customerName || "-"}</td>}{isBulkColumnVisible("vin") && <td>{item.vin || item.vehicle.vin || "-"}</td>}{isBulkColumnVisible("reg") && <td>{item.vehicle.reg || "-"}</td>}{isBulkColumnVisible("saleDate") && <td>{item.vehicle.sale ? formatDateShort(item.vehicle.sale) : "-"}</td>}{isBulkColumnVisible("model") && <td>{item.vehicle.model || "-"}</td>}{isBulkColumnVisible("currentReading") && <td>{item.running?.current ? `${formatNumber(item.running.current)} ${item.running.unit || getTargetUnit(item.vehicle)}` : "-"}</td>}{isBulkColumnVisible("services") && <td>{item.services.join(", ")}</td>}
+                            <td style={tableColumnStyle("bulk","serial")}>{index + 1}</td>
+                            {isBulkColumnVisible("customerName") && <td style={tableColumnStyle("bulk","customerName")}>{item.vehicle.customerName || "-"}</td>}{isBulkColumnVisible("vin") && <td style={tableColumnStyle("bulk","vin")}>{item.vin || item.vehicle.vin || "-"}</td>}{isBulkColumnVisible("reg") && <td style={tableColumnStyle("bulk","reg")}>{item.vehicle.reg || "-"}</td>}{isBulkColumnVisible("saleDate") && <td style={tableColumnStyle("bulk","saleDate")}>{item.vehicle.sale ? formatDateShort(item.vehicle.sale) : "-"}</td>}{isBulkColumnVisible("model") && <td style={tableColumnStyle("bulk","model")}>{item.vehicle.model || "-"}</td>}{isBulkColumnVisible("currentReading") && <td style={tableColumnStyle("bulk","currentReading")}>{item.running?.current ? `${formatNumber(item.running.current)} ${item.running.unit || getTargetUnit(item.vehicle)}` : "-"}</td>}{isBulkColumnVisible("services") && <td style={tableColumnStyle("bulk","services")}>{item.services.join(", ")}</td>}
                           </tr>
                         ))}
                         {!bulkSummaryRows.length && (

@@ -3038,13 +3038,33 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
 function emptyEstimateItem(type = "part") {
   return { id: type + "-" + Date.now() + "-" + Math.random().toString(36).slice(2,8), type, partNo:"", description:"", qty:1, rate:0, source:"Manual" };
 }
+function PortalHome({ user, onNavigate, onUpload, hasAnalysis, bulkResults }) {
+  const dueVehicles = (bulkResults || []).filter(item => Array.isArray(item?.services) && item.services.length > 0).length;
+  const totalVehicles = (bulkResults || []).length;
+  const cards = [
+    { key:"single", icon:"🚚", title:"Single Vehicle", text:"Check one vehicle service decision, history and due services." },
+    { key:"bulk", icon:"📊", title:"Bulk Vehicle", text:"Analyse multiple vehicles and prepare customer-wise due summaries." },
+    { key:"schedule", icon:"📅", title:"Service Schedule", text:"View service intervals and additional service windows." },
+  ];
+  return (
+    <div className="portal-home">
+      <div className="portal-home-hero"><div><div className="portal-home-kicker">SERVICE DECISION WEB PORTAL</div><h1>Welcome{user?.personName ? ", " + user.personName : ""}</h1><p>Choose what you want to do. The portal will guide you to the required service information.</p></div><button className="excel-button green portal-upload-button" onClick={onUpload}>Upload Excel &amp; Start</button></div>
+      <div className="portal-kpi-grid"><div className="portal-kpi"><span>Vehicles Loaded</span><strong>{totalVehicles}</strong><small>Current session</small></div><div className="portal-kpi"><span>Vehicles With Service Due</span><strong>{dueVehicles}</strong><small>Current session</small></div><div className="portal-kpi"><span>Portal Mode</span><strong>Beta</strong><small>Testing &amp; feedback</small></div></div>
+      <div className="portal-section-title">What would you like to do?</div>
+      <div className="portal-action-grid">{cards.map(card => <button key={card.key} className="portal-action-card" onClick={() => onNavigate(card.key)}><span className="portal-action-icon">{card.icon}</span><span className="portal-action-title">{card.title}</span><span className="portal-action-text">{card.text}</span><span className="portal-action-link">Open →</span></button>)}
+        <button className={"portal-action-card " + (hasAnalysis ? "" : "disabled")} disabled={!hasAnalysis} onClick={() => onNavigate("estimate")}><span className="portal-action-icon">🧾</span><span className="portal-action-title">Prepare Estimate</span><span className="portal-action-text">{hasAnalysis ? "Prepare a service estimate from the analysed vehicle." : "Analyse a single vehicle first."}</span><span className="portal-action-link">{hasAnalysis ? "Open →" : "Not available yet"}</span></button>
+      </div>
+      <div className="portal-workflow"><div><b>Recommended workflow</b><span>Upload Excel → Analyse → Review Service Decision → Prepare Estimate / Share Due Summary</span></div><div><b>Personalise</b><span>Theme, columns, custom names and table widths are saved in Profile &amp; Settings.</span></div></div>
+    </div>
+  );
+}
 function ServiceDecisionApp({ user }) {
   const [excelData, setExcelData] = useState("");
   const [analysis, setAnalysis] = useState(null);
   const [error, setError] = useState("");
   const [overrideReading, setOverrideReading] = useState("");
   const [appliedOverride, setAppliedOverride] = useState(null);
-  const [mode, setMode] = useState("single");
+  const [mode, setMode] = useState("home");
   const [bulkResults, setBulkResults] = useState([]);
   const [bulkMeta, setBulkMeta] = useState(null);
   const [customerGroups, setCustomerGroups] = useState([]);
@@ -3062,6 +3082,8 @@ function ServiceDecisionApp({ user }) {
   const [estimateParts, setEstimateParts] = useState([]);
   const [estimateLabour, setEstimateLabour] = useState([]);
   const [estimateNotice, setEstimateNotice] = useState("");
+  const [estimateNumber, setEstimateNumber] = useState("");
+  const [bulkSearch, setBulkSearch] = useState("");
   const [manualPartLookupBusy, setManualPartLookupBusy] = useState({});
   const defaultSingleColumns = ["date","jobCard","reading","plant","parts"];
   const defaultBulkColumns = ["customerName","vin","reg","saleDate","model","currentReading","services"];
@@ -3530,8 +3552,14 @@ function ServiceDecisionApp({ user }) {
   }, [bulkResults]);
 
   const bulkSummaryRows = useMemo(() => {
+    const search = bulkSearch.trim().toLowerCase();
     const rows = bulkResults
       .filter(item => Array.isArray(item.services) && item.services.length > 0)
+      .filter(item => {
+        if (!search) return true;
+        const values = getBulkDisplayValues(item);
+        return Object.values(values).some(value => String(value ?? "").toLowerCase().includes(search));
+      })
       .filter(item => {
         const values = getBulkDisplayValues(item);
 
@@ -3557,7 +3585,7 @@ function ServiceDecisionApp({ user }) {
     });
 
     return sorted;
-  }, [bulkResults, bulkFilterSelections, bulkTableSort]);
+  }, [bulkResults, bulkFilterSelections, bulkTableSort, bulkSearch]);
 
   const openBulkFilterMenu = (key, event) => {
     event.preventDefault();
@@ -3600,6 +3628,23 @@ function ServiceDecisionApp({ user }) {
     setOpenBulkFilter(null);
   };
 
+  const downloadBulkCsv = () => {
+    const rows = bulkSummaryRows.map((item,index) => ({
+      "S.No.": index + 1,
+      "Customer Name": item.vehicle.customerName || "",
+      "VIN": item.vin || item.vehicle.vin || "",
+      "Reg. No.": item.vehicle.reg || "",
+      "Sale Date": item.vehicle.sale ? formatDateShort(item.vehicle.sale) : "",
+      "Model": item.vehicle.model || "",
+      "Current Reading": item.running?.current ? formatNumber(item.running.current) + " " + (item.running.unit || getTargetUnit(item.vehicle)) : "",
+      "Service To Be Completed": item.services.join(", "),
+    }));
+    const sheet = XLSX.utils.json_to_sheet(rows);
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, sheet, "Due Summary");
+    XLSX.writeFile(book, "Service_Due_Summary.xlsx");
+  };
+
   const clearAllBulkFilters = () => {
     setBulkFilterSelections({
       customerName: [],
@@ -3619,6 +3664,7 @@ function ServiceDecisionApp({ user }) {
   };
 
   const clear = () => {
+    if ((analysis || bulkResults.length || uploadedFiles.length) && !window.confirm("Clear the current vehicle data and analysis?")) return;
     logUsage("Clear", { mode, details:{ hadAnalysis:Boolean(analysis), uploadedFiles:uploadedFiles.length } });
     setExcelData("");
     setAnalysis(null);
@@ -3696,6 +3742,7 @@ function ServiceDecisionApp({ user }) {
     if (!analysis?.vehicle?.vin) return;
     const dueKeys = BULK_SERVICE_LABELS.filter(([, key]) => analysis?.decision?.result?.[key]).map(([, key]) => key);
     setEstimateSelectedServices(dueKeys);
+    setEstimateNumber("EST-" + new Date().getFullYear() + String(new Date().getMonth()+1).padStart(2,"0") + String(new Date().getDate()).padStart(2,"0") + "-" + String(Date.now()).slice(-5));
     setEstimateParts([]);
     setEstimateLabour([]);
     setEstimateNotice("");
@@ -3763,7 +3810,10 @@ function ServiceDecisionApp({ user }) {
     finally { setManualPartLookupBusy(prev => ({...prev,[id]:false})); }
   }
   function addEstimateItem(type) { (type === "labour" ? setEstimateLabour : setEstimateParts)(prev => [...prev, emptyEstimateItem(type)]); }
-  function removeEstimateItem(type, id) { (type === "labour" ? setEstimateLabour : setEstimateParts)(prev => prev.filter(item => item.id !== id)); }
+  function removeEstimateItem(type, id) {
+    if (!window.confirm("Remove this estimate line?")) return;
+    (type === "labour" ? setEstimateLabour : setEstimateParts)(prev => prev.filter(item => item.id !== id));
+  }
   const estimatePartsTotal = estimateParts.reduce((sum,item)=>sum+Number(item.qty||0)*Number(item.rate||0),0);
   const estimateLabourBase = estimateLabour.reduce((sum,item)=>sum+Number(item.qty||0)*Number(item.rate||0),0);
   const estimateLabourGst = estimateLabourBase*0.18;
@@ -3795,6 +3845,9 @@ function ServiceDecisionApp({ user }) {
     pdf.setFont("helvetica","normal");
     pdf.setFontSize(8.5);
     pdf.text("Estimate only - subject to actual inspection and applicable rates.",105,27,{align:"center"});
+    pdf.setFontSize(8);
+    pdf.text("Estimate No.: " + (estimateNumber || "-"),margin,27);
+    pdf.text("Prepared: " + formatDate(new Date()),width + margin,27,{align:"right"});
 
     autoTable(pdf,{
       startY:32,
@@ -3951,6 +4004,51 @@ function ServiceDecisionApp({ user }) {
         .table-width-compact { min-width:560px !important; }.table-width-normal { min-width:760px !important; }.table-width-wide { min-width:100% !important;}
         .theme-green .excel-titlebar,.theme-green .section-title {background:#217346 !important}.theme-navy .excel-titlebar,.theme-navy .section-title {background:#17365d !important}.theme-teal .excel-titlebar,.theme-teal .section-title {background:#0f766e !important}.theme-purple .excel-titlebar,.theme-purple .section-title {background:#6b46c1 !important}
         .theme-green .decision-table th,.theme-green .history-table th {background:#217346 !important}.theme-navy .decision-table th,.theme-navy .history-table th {background:#17365d !important}.theme-teal .decision-table th,.theme-teal .history-table th {background:#0f766e !important}.theme-purple .decision-table th,.theme-purple .history-table th {background:#6b46c1 !important}
+
+        .portal-home { padding:18px 8px 28px; }
+        .portal-home-hero { display:flex; justify-content:space-between; gap:20px; align-items:center; padding:24px; border:1px solid #b7b7b7; background:linear-gradient(135deg,#f7fbff,#eef5fb); border-radius:6px; }
+        .portal-home-kicker { color:#1f4e78; font-size:11px; font-weight:800; letter-spacing:1px; }
+        .portal-home-hero h1 { margin:5px 0 4px; font-size:27px; color:#1f1f1f; }
+        .portal-home-hero p { margin:0; color:#5f6b75; font-size:13px; }
+        .portal-upload-button { white-space:nowrap; min-height:38px; }
+        .portal-kpi-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:12px 0; }
+        .portal-kpi,.bulk-overview-card { border:1px solid #c7d1da; background:#fff; padding:13px; border-radius:5px; }
+        .portal-kpi span,.bulk-overview-card span { display:block; color:#66737d; font-size:11px; }
+        .portal-kpi strong,.bulk-overview-card strong { display:block; font-size:24px; color:#1f4e78; margin-top:4px; }
+        .portal-kpi small { color:#8a969f; }
+        .portal-section-title { background:#4472c4; color:#fff; padding:8px 10px; font-weight:700; font-size:14px; margin-top:16px; }
+        .portal-action-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:10px; }
+        .portal-action-card { text-align:left; border:1px solid #c7d1da; background:#fff; padding:16px; min-height:155px; display:flex; flex-direction:column; align-items:flex-start; gap:7px; border-radius:5px; }
+        .portal-action-card:hover:not(:disabled) { border-color:#70ad47; box-shadow:0 2px 8px rgba(0,0,0,.08); }
+        .portal-action-card.disabled { opacity:.5; cursor:not-allowed; }
+        .portal-action-icon { font-size:25px; }
+        .portal-action-title { font-weight:800; font-size:15px; color:#1f4e78; }
+        .portal-action-text { color:#66737d; font-size:12px; line-height:1.45; }
+        .portal-action-link { margin-top:auto; color:#217346; font-size:12px; font-weight:800; }
+        .portal-workflow { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
+        .portal-workflow div { border:1px solid #d7dee4; background:#f8fafc; padding:11px 13px; font-size:12px; }
+        .portal-workflow b { display:block; color:#1f4e78; margin-bottom:4px; }
+        .portal-workflow span { color:#66737d; }
+        .professional-section-title { margin-top:12px; }
+        .decision-status-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:7px; margin-top:7px; }
+        .decision-status-card { border:1px solid #b7b7b7; padding:9px; background:#f7f7f7; min-height:56px; }
+        .decision-status-card span { display:block; font-size:11px; color:#58646d; line-height:1.2; }
+        .decision-status-card strong { display:inline-block; margin-top:5px; font-size:12px; }
+        .decision-status-card.is-due { background:#e2f0d9; border-color:#70ad47; }
+        .decision-status-card.is-due strong { color:#006100; }
+        .decision-status-card.is-not-due strong { color:#666; }
+        .decision-basis { margin-top:8px; border:1px solid #c7d1da; background:#f8fafc; }
+        .decision-basis summary { cursor:pointer; padding:8px 10px; font-weight:700; color:#1f4e78; }
+        .decision-basis-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; padding:0 10px 8px; }
+        .decision-basis-grid div { background:#fff; border:1px solid #dfe5e9; padding:8px; }
+        .decision-basis-grid b { display:block; font-size:10px; color:#74808b; }
+        .decision-basis-grid span { display:block; margin-top:4px; font-size:12px; font-weight:700; }
+        .bulk-overview-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:8px; }
+        .bulk-overview-card.due { background:#e2f0d9; border-color:#70ad47; }
+        .bulk-overview-card.due strong { color:#006100; }
+        .bulk-search-input { max-width:360px; min-height:31px; }
+        @media (max-width:900px) { .portal-action-grid{grid-template-columns:repeat(2,1fr)} .decision-status-grid{grid-template-columns:repeat(2,1fr)} .decision-basis-grid{grid-template-columns:repeat(2,1fr)} .bulk-overview-grid{grid-template-columns:repeat(2,1fr)} }
+        @media (max-width:600px) { .portal-home-hero{flex-direction:column;align-items:flex-start}.portal-kpi-grid,.portal-workflow{grid-template-columns:1fr}.portal-action-grid{grid-template-columns:1fr}.decision-basis-grid{grid-template-columns:1fr}.bulk-overview-grid{grid-template-columns:1fr}.bulk-search-input{max-width:none;width:100%} }
         .excel-window { width: min(1500px, 100%); margin: 0 auto; background: #fff; min-height: 100vh; box-shadow: 0 0 0 1px #9e9e9e; }
         .excel-titlebar { height: 34px; background: #217346; color: #fff; display:flex; align-items:center; justify-content:center; padding:0 12px; font-size:14px; }
         .excel-title { font-weight:700; text-align:center; flex:1; }
@@ -4416,12 +4514,13 @@ function ServiceDecisionApp({ user }) {
 
           <div className="excel-ribbon no-print">
             <div className="excel-tabs">
-              <div className={`excel-tab ${mode === "single" ? "active" : ""}`} onClick={() => { setMode("single"); setError(""); setBulkResults([]); setBulkMeta(null); }}>Single Vehicle</div>
+              <div className={"excel-tab " + (mode === "home" ? "active" : "")} onClick={() => setMode("home")}>Home</div>
+              <div className={"excel-tab " + (mode === "single" ? "active" : "")} onClick={() => { setMode("single"); setError(""); setBulkResults([]); setBulkMeta(null); }}>Single Vehicle</div>
               <div className={`excel-tab ${mode === "bulk" ? "active" : ""}`} onClick={() => { setMode("bulk"); setError(""); setAnalysis(null); }}>Bulk Vehicle</div>
               <div className={`excel-tab ${mode === "schedule" ? "active" : ""}`} onClick={() => { setMode("schedule"); setError(""); logUsage("Service Schedule Viewed", { mode:"schedule" }); }}>Service Schedule Chart</div>
             </div>
             <div className="excel-toolbar">
-              {mode !== "schedule" && <>
+              {mode !== "schedule" && mode !== "home" && <>
                 <button className="excel-button green" onClick={() => document.getElementById("excel-file-input")?.click()} disabled={uploadBusy}>Upload Excel</button>
                 <button className="excel-button" onClick={clear}>Clear</button>
                 <button className="excel-button green" onClick={mode === "bulk" ? analyzeBulk : analyze} disabled={uploadBusy || (!excelData.trim() && !uploadParsedRecords.length)}>{mode === "bulk" ? "Analyze All Vehicles" : "Analyze Vehicle"}</button>
@@ -4464,7 +4563,12 @@ function ServiceDecisionApp({ user }) {
           <input id="excel-file-input" className="no-print" type="file" accept=".xlsx,.xls,.xlsm,.csv" multiple style={{display:"none"}} onChange={handleExcelUpload} disabled={uploadBusy} />
 
           <main className="excel-sheet">
-            {mode === "single" ? (analysis ? (
+            {mode === "home" ? (
+              <PortalHome user={user} hasAnalysis={Boolean(analysis)} bulkResults={bulkResults}
+                onNavigate={(nextMode) => { if (nextMode === "estimate") { if (analysis) void openEstimate(); else setMode("single"); } else setMode(nextMode); }}
+                onUpload={() => document.getElementById("excel-file-input")?.click()}
+              />
+            ) : mode === "single" ? (analysis ? (
               <>
                 <div className="sheet-heading" style={{marginTop:10}}>VEHICLE SCHEDULE SERVICE HISTORY FROM LAST 3 YEARS AS ON DATE - {todayDisplay}</div>
 
@@ -4504,6 +4608,23 @@ function ServiceDecisionApp({ user }) {
                   </div>
                 </div>
 
+
+                <div className="section-title professional-section-title">Service Decision — At A Glance</div>
+                <div className="decision-status-grid">
+                  {BULK_SERVICE_LABELS.map(([label,key]) => {
+                    const due = Boolean(analysis?.decision?.result?.[key]);
+                    return <div className={"decision-status-card " + (due ? "is-due" : "is-not-due")} key={key}><span>{label}</span><strong>{due ? "DUE" : "NOT DUE"}</strong></div>;
+                  })}
+                </div>
+                <details className="decision-basis"><summary>View decision basis</summary>
+                  <div className="decision-basis-grid">
+                    <div><b>Current Reading</b><span>{analysis?.running?.current ? formatNumber(analysis.running.current) + " " + (analysis.running.unit || getTargetUnit(analysis.vehicle)) : "-"}</span></div>
+                    <div><b>Last Recorded Reading</b><span>{analysis?.running?.last ? formatNumber(getRelevantReading(analysis.running.last, analysis.vehicle)) + " / " + formatDate(analysis.running.last.date) : "-"}</span></div>
+                    <div><b>Vehicle Age</b><span>{analysis?.vehicle?.sale ? formatVehicleAge(analysis.vehicle.sale) : "-"}</span></div>
+                    <div><b>Service History Visits</b><span>{analysis?.visits?.length || 0}</span></div>
+                  </div>
+                  <div className="small-note">Decision is calculated from uploaded vehicle history, current reading, service intervals and applicable vehicle/model conditions.</div>
+                </details>
                 {error && <div className="error-line no-print">{error}</div>}
 
                 <div className="section-title service-summary-title">Service Summary — Complete Vehicle History</div>
@@ -4546,8 +4667,15 @@ function ServiceDecisionApp({ user }) {
                   <div className="section-title">Customer-wise Output</div>
                   {customerGroups.map(group=>{const dueVehicles=group.vehicles.filter(v=>v.services.length>0);return <div className="bulk-card" key={group.id}><div className="bulk-card-head"><div className="action-row"><strong>{group.name}</strong><span className="small-note">{group.vehicles.length} vehicles · {dueVehicles.length} due</span><span className="spacer"/><button className="excel-button no-print" onClick={()=>copyCustomerSummary(group, user?.dealerName, user?.preferences || {})}>Copy WhatsApp Summary</button><button className="excel-button no-print" onClick={()=>printCustomerReport(group,true)}>Print Detailed PDF</button></div></div></div>})}
 
+                  <div className="bulk-overview-grid">
+                    <div className="bulk-overview-card"><span>Total Vehicles</span><strong>{bulkResults.length}</strong></div>
+                    <div className="bulk-overview-card due"><span>Service Due</span><strong>{bulkResults.filter(item => item.services?.length > 0).length}</strong></div>
+                    <div className="bulk-overview-card"><span>No Service Due</span><strong>{bulkResults.filter(item => !item.services?.length).length}</strong></div>
+                    <div className="bulk-overview-card"><span>Due Services</span><strong>{bulkResults.reduce((sum,item)=>sum + (item.services?.length || 0),0)}</strong></div>
+                  </div>
                   <div className="section-title">Service Summary</div>
                   <div className="action-row no-print" style={{margin:"6px 0"}}>
+                    <input className="excel-input bulk-search-input" value={bulkSearch} onChange={e=>setBulkSearch(e.target.value)} placeholder="Search VIN, Reg. No., Customer, Model or Service..." aria-label="Search bulk vehicle summary" />
                     <span className="small-note">
                       {bulkSummaryRows.length} vehicle{bulkSummaryRows.length === 1 ? "" : "s"} shown
                       {bulkResults.filter(item=>item.services.length>0).length !== bulkSummaryRows.length
@@ -4556,6 +4684,7 @@ function ServiceDecisionApp({ user }) {
                     </span>
                     <span className="spacer"/>
                     <button className="excel-button" onClick={clearAllBulkFilters}>Reset Sort / Filter</button>
+                    <button className="excel-button" onClick={downloadBulkCsv}>Download Excel</button>
                   </div>
                   <div className="history-wrap">
                     <table className="history-table bulk-service-table dashboard-resizable-table"><thead><tr>

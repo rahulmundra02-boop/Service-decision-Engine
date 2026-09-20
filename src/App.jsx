@@ -1990,7 +1990,9 @@ function buildCustomerWhatsAppText(group, preferences = {}) {
   const booking2 = String(preferences?.booking2 || "").trim();
   const bookingNumbers = [booking1, booking2].filter(Boolean).join(" & ");
   const bookingLine = bookingNumbers ? `\n\nFor advance booking, kindly call to mobile no ${bookingNumbers}` : "";
-  const intro = `Dear Sir, ${count} vehicles have service due. Kindly send below the due vehicles to ${workshopName} for the required service. If any of your vehicles are not available in this list, please provide the vehicle number for regular updates on the service schedule.${bookingLine}`;
+  const openingLine = String(preferences?.whatsappOpeningLine || "").trim();
+  const openingLineText = openingLine ? `\n\n${openingLine}` : "";
+  const intro = `Dear Sir, ${count} vehicles have service due. Kindly send below the due vehicles to ${workshopName} for the required service.${openingLineText}${bookingLine}`;
   return `${intro}\n\n${lines.join('\\n')}`.replace(/\\n/g, '\n');
 }
 

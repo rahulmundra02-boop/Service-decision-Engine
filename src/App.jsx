@@ -1994,10 +1994,10 @@ function buildCustomerWhatsAppText(group, preferences = {}) {
   return `${intro}\n\n${lines.join('\\n')}`.replace(/\\n/g, '\n');
 }
 
-async function copyCustomerSummary(group, dealerName = "") {
+async function copyCustomerSummary(group, dealerName = "", preferences = {}) {
   try {
     const effectiveGroup = group?.dealerName ? group : { ...group, dealerName: String(dealerName || "").trim() };
-    const text = buildCustomerWhatsAppText(effectiveGroup, user?.preferences || {});
+    const text = buildCustomerWhatsAppText(effectiveGroup, preferences);
     if (!text.trim()) throw new Error('Copy karne ke liye summary available nahi hai.');
 
     if (navigator.clipboard && window.isSecureContext) {
@@ -4492,7 +4492,7 @@ function ServiceDecisionApp({ user }) {
                   </div></div>
 
                   <div className="section-title">Customer-wise Output</div>
-                  {customerGroups.map(group=>{const dueVehicles=group.vehicles.filter(v=>v.services.length>0);return <div className="bulk-card" key={group.id}><div className="bulk-card-head"><div className="action-row"><strong>{group.name}</strong><span className="small-note">{group.vehicles.length} vehicles · {dueVehicles.length} due</span><span className="spacer"/><button className="excel-button no-print" onClick={()=>copyCustomerSummary(group, user?.dealerName)}>Copy WhatsApp Summary</button><button className="excel-button no-print" onClick={()=>printCustomerReport(group,true)}>Print Detailed PDF</button></div></div></div>})}
+                  {customerGroups.map(group=>{const dueVehicles=group.vehicles.filter(v=>v.services.length>0);return <div className="bulk-card" key={group.id}><div className="bulk-card-head"><div className="action-row"><strong>{group.name}</strong><span className="small-note">{group.vehicles.length} vehicles · {dueVehicles.length} due</span><span className="spacer"/><button className="excel-button no-print" onClick={()=>copyCustomerSummary(group, user?.dealerName, user?.preferences || {})}>Copy WhatsApp Summary</button><button className="excel-button no-print" onClick={()=>printCustomerReport(group,true)}>Print Detailed PDF</button></div></div></div>})}
 
                   <div className="section-title">Service Summary</div>
                   <div className="action-row no-print" style={{margin:"6px 0"}}>
@@ -4506,7 +4506,7 @@ function ServiceDecisionApp({ user }) {
                     <button className="excel-button" onClick={clearAllBulkFilters}>Reset Sort / Filter</button>
                   </div>
                   <div className="history-wrap">
-                    <table className="history-table bulk-service-table">
+                    <table className={`history-table bulk-service-table ${tableWidthClass(userPrefs.bulkTableWidth)}`}>
                       <thead>
                         <tr>
                           <th>

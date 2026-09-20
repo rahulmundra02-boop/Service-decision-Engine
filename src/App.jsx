@@ -1974,7 +1974,7 @@ function escapeHtml(value) {
     .replace(/"/g,'&quot;').replace(/'/g,'&#039;');
 }
 
-function buildCustomerWhatsAppText(group) {
+function buildCustomerWhatsAppText(group, preferences = {}) {
   const dueVehicles = (group?.vehicles || []).filter(v => Array.isArray(v.services) && v.services.length > 0);
   const count = dueVehicles.length;
   const lines = dueVehicles.map((v, i) => {
@@ -1986,14 +1986,18 @@ function buildCustomerWhatsAppText(group) {
   const workshopName = dealerName
     ? (dealerName.toLowerCase().includes("workshop") ? dealerName : `${dealerName} Workshop`)
     : "your workshop";
-  const intro = `Dear Sir, ${count} vehicles have service due. Kindly send below the due vehicles to ${workshopName} for the required service. If any of your vehicles are not available in this list, please provide the vehicle number for regular updates on the service schedule. Please refer to the Detailed Service History PDF for vehicle-wise details.`;
+  const booking1 = String(preferences?.booking1 || "").trim();
+  const booking2 = String(preferences?.booking2 || "").trim();
+  const bookingNumbers = [booking1, booking2].filter(Boolean).join(" & ");
+  const bookingLine = bookingNumbers ? `\n\nFor advance booking, kindly call to mobile no ${bookingNumbers}` : "";
+  const intro = `Dear Sir, ${count} vehicles have service due. Kindly send below the due vehicles to ${workshopName} for the required service. If any of your vehicles are not available in this list, please provide the vehicle number for regular updates on the service schedule.${bookingLine}`;
   return `${intro}\n\n${lines.join('\\n')}`.replace(/\\n/g, '\n');
 }
 
 async function copyCustomerSummary(group, dealerName = "") {
   try {
     const effectiveGroup = group?.dealerName ? group : { ...group, dealerName: String(dealerName || "").trim() };
-    const text = buildCustomerWhatsAppText(effectiveGroup);
+    const text = buildCustomerWhatsAppText(effectiveGroup, user?.preferences || {});
     if (!text.trim()) throw new Error('Copy karne ke liye summary available nahi hai.');
 
     if (navigator.clipboard && window.isSecureContext) {
@@ -3058,6 +3062,13 @@ function ServiceDecisionApp({ user }) {
   const [estimateParts, setEstimateParts] = useState([]);
   const [estimateLabour, setEstimateLabour] = useState([]);
   const [estimateNotice, setEstimateNotice] = useState("");
+  const [manualPartLookupBusy, setManualPartLookupBusy] = useState({});
+  const userPrefs = user?.preferences || {};
+  const singleTableColumns = Array.isArray(userPrefs.singleColumns) && userPrefs.singleColumns.length ? userPrefs.singleColumns : ["date","jobCard","reading","plant","parts"];
+  const bulkTableColumns = Array.isArray(userPrefs.bulkColumns) && userPrefs.bulkColumns.length ? userPrefs.bulkColumns : ["customerName","vin","reg","saleDate","model","currentReading","services"];
+  const isSingleColumnVisible = key => singleTableColumns.includes(key);
+  const isBulkColumnVisible = key => bulkTableColumns.includes(key);
+  const tableWidthClass = value => value === "compact" ? "table-width-compact" : value === "normal" ? "table-width-normal" : "table-width-wide";
 
   const [bulkTableSort, setBulkTableSort] = useState({ key: "dueCount", direction: "desc" });
   const [bulkTableFilters, setBulkTableFilters] = useState({
@@ -3690,6 +3701,17 @@ function ServiceDecisionApp({ user }) {
     const setter = type === "labour" ? setEstimateLabour : setEstimateParts;
     setter(prev => prev.map(item => item.id === id ? { ...item, [field]: field === "qty" || field === "rate" ? Number(value) || 0 : value, source:"Manual" } : item));
   }
+  async function lookupManualEstimatePart(id, partNo) {
+    const code = String(partNo || "").trim();
+    if (!code) return;
+    setManualPartLookupBusy(prev => ({...prev,[id]:true}));
+    try {
+      const response = await fetch("/api/save-history?partNo=" + encodeURIComponent(code));
+      const data = await response.json().catch(() => ({}));
+      if (data.part) setEstimateParts(prev => prev.map(item => item.id === id ? {...item,partNo:data.part.partNo||code,description:data.part.description||item.description,rate:Number(data.part.rateInclGst||0),baseRate:Number(data.part.rate||0),source:"Historical DB - exact Part No."} : item));
+    } catch (err) { console.warn("Manual estimate part lookup:",err); }
+    finally { setManualPartLookupBusy(prev => ({...prev,[id]:false})); }
+  }
   function addEstimateItem(type) { (type === "labour" ? setEstimateLabour : setEstimateParts)(prev => [...prev, emptyEstimateItem(type)]); }
   function removeEstimateItem(type, id) { (type === "labour" ? setEstimateLabour : setEstimateParts)(prev => prev.filter(item => item.id !== id)); }
   const estimatePartsTotal = estimateParts.reduce((sum,item)=>sum+Number(item.qty||0)*Number(item.rate||0),0);
@@ -3876,6 +3898,9 @@ function ServiceDecisionApp({ user }) {
         * { box-sizing: border-box; }
         body { margin: 0; background: #d9e2f3; font-family: Calibri, Arial, sans-serif; color: #1f1f1f; }
         .excel-app { min-height: 100vh; background: #d9e2f3; }
+        .table-width-compact { min-width:560px !important; }.table-width-normal { min-width:760px !important; }.table-width-wide { min-width:100% !important;}
+        .theme-green .excel-titlebar,.theme-green .section-title {background:#217346 !important}.theme-navy .excel-titlebar,.theme-navy .section-title {background:#17365d !important}.theme-teal .excel-titlebar,.theme-teal .section-title {background:#0f766e !important}.theme-purple .excel-titlebar,.theme-purple .section-title {background:#6b46c1 !important}
+        .theme-green .decision-table th,.theme-green .history-table th {background:#217346 !important}.theme-navy .decision-table th,.theme-navy .history-table th {background:#17365d !important}.theme-teal .decision-table th,.theme-teal .history-table th {background:#0f766e !important}.theme-purple .decision-table th,.theme-purple .history-table th {background:#6b46c1 !important}
         .excel-window { width: min(1500px, 100%); margin: 0 auto; background: #fff; min-height: 100vh; box-shadow: 0 0 0 1px #9e9e9e; }
         .excel-titlebar { height: 34px; background: #217346; color: #fff; display:flex; align-items:center; justify-content:center; padding:0 12px; font-size:14px; }
         .excel-title { font-weight:700; text-align:center; flex:1; }
@@ -4329,7 +4354,7 @@ function ServiceDecisionApp({ user }) {
         }
       `}</style>
 
-      <div className="excel-app">
+      <div className={`excel-app theme-${userPrefs.theme || "blue"}`}>
         <div className="excel-window">
           <div className="excel-titlebar">
             <div className="excel-title">Vehicle Service Decision &amp; Maintenance Dashboard</div>
@@ -4433,25 +4458,17 @@ function ServiceDecisionApp({ user }) {
 
                 <div className="section-title service-summary-title">Service Summary — Complete Vehicle History</div>
                 <div className="history-wrap">
-                  <table className="history-table single-service-summary">
-                    <thead><tr><th>Date</th><th>Job Card</th><th>Reading</th><th>Plant</th><th>Part No. / Service / Qty</th></tr></thead>
+                  <table className={`history-table single-service-summary ${tableWidthClass(userPrefs.singleTableWidth)}`}>
+                    <thead><tr>
+                      {isSingleColumnVisible("date") && <th>Date</th>}{isSingleColumnVisible("jobCard") && <th>Job Card</th>}{isSingleColumnVisible("reading") && <th>Reading</th>}{isSingleColumnVisible("plant") && <th>Plant</th>}{isSingleColumnVisible("parts") && <th>Part No. / Service / Qty</th>}
+                    </tr></thead>
                     <tbody>
                       {analysis?.visits?.length ? analysis.visits.map((visit,i) => {
                         const visitDate=getVisitDate(visit), jobCard=getVisitJobCard(visit), visitReading=getVisitReading(visit,analysis.vehicle), parts=getVisitParts(visit,analysis.vehicle,analysis.decision);
                         return <tr key={i}>
-                          <td>{formatDateShort(visitDate)}</td>
-                          <td>{jobCard}</td>
-                          <td>{visitReading ? `${formatNumber(visitReading)} ${getTargetUnit(analysis.vehicle)}` : "-"}</td>
-                          <td>{[...new Set(visit.map(r => String(r?.plantName || r?.salesOrgName || "").trim()).filter(Boolean))].join(", ") || "-"}</td>
-                          <td>
-                            {parts.length ? parts.map((part,index) => (
-                              <span key={index} className={part.eligible ? "history-part eligible" : "history-part"} title={part.eligible ? "Eligible service-calculation record" : "History record"}>
-                                {part.text}
-                              </span>
-                            )) : "-"}
-                          </td>
+                          {isSingleColumnVisible("date") && <td>{formatDateShort(visitDate)}</td>}{isSingleColumnVisible("jobCard") && <td>{jobCard}</td>}{isSingleColumnVisible("reading") && <td>{visitReading ? `${formatNumber(visitReading)} ${getTargetUnit(analysis.vehicle)}` : "-"}</td>}{isSingleColumnVisible("plant") && <td>{[...new Set(visit.map(r => String(r?.plantName || r?.salesOrgName || "").trim()).filter(Boolean))].join(", ") || "-"}</td>}{isSingleColumnVisible("parts") && <td>{parts.length ? parts.map((part,index) => <span key={index} className={part.eligible ? "history-part eligible" : "history-part"} title={part.eligible ? "Eligible service-calculation record" : "History record"}>{part.text}</span>) : "-"}</td>}
                         </tr>;
-                      }) : <tr><td colSpan="5" className="small-note">No service history loaded.</td></tr>}
+                      }) : <tr><td colSpan={Math.max(1,singleTableColumns.length)} className="small-note">No service history loaded.</td></tr>}
                     </tbody>
                   </table>
                 </div>
@@ -4508,7 +4525,7 @@ function ServiceDecisionApp({ user }) {
                             ["Model","model"],
                             ["Current Reading","currentReading"],
                             ["Service To Be Completed","services"],
-                          ].map(([label,key]) => {
+                          ].filter(([,key]) => isBulkColumnVisible(key)).map(([label,key]) => {
                             const active = bulkFilterSelections[key]?.length > 0;
                             const sortActive = bulkTableSort.key === key;
                             return (
@@ -4547,13 +4564,7 @@ function ServiceDecisionApp({ user }) {
                         {bulkSummaryRows.map((item,index) => (
                           <tr key={item.vin || index}>
                             <td>{index + 1}</td>
-                            <td>{item.vehicle.customerName || "-"}</td>
-                            <td>{item.vin || item.vehicle.vin || "-"}</td>
-                            <td>{item.vehicle.reg || "-"}</td>
-                            <td>{item.vehicle.sale ? formatDateShort(item.vehicle.sale) : "-"}</td>
-                            <td>{item.vehicle.model || "-"}</td>
-                            <td>{item.running?.current ? `${formatNumber(item.running.current)} ${item.running.unit || getTargetUnit(item.vehicle)}` : "-"}</td>
-                            <td>{item.services.join(", ")}</td>
+                            {isBulkColumnVisible("customerName") && <td>{item.vehicle.customerName || "-"}</td>}{isBulkColumnVisible("vin") && <td>{item.vin || item.vehicle.vin || "-"}</td>}{isBulkColumnVisible("reg") && <td>{item.vehicle.reg || "-"}</td>}{isBulkColumnVisible("saleDate") && <td>{item.vehicle.sale ? formatDateShort(item.vehicle.sale) : "-"}</td>}{isBulkColumnVisible("model") && <td>{item.vehicle.model || "-"}</td>}{isBulkColumnVisible("currentReading") && <td>{item.running?.current ? `${formatNumber(item.running.current)} ${item.running.unit || getTargetUnit(item.vehicle)}` : "-"}</td>}{isBulkColumnVisible("services") && <td>{item.services.join(", ")}</td>}
                           </tr>
                         ))}
                         {!bulkSummaryRows.length && (
@@ -4654,7 +4665,7 @@ function ServiceDecisionApp({ user }) {
                   <div style={{fontWeight:800,margin:"10px 0 6px"}}>Selected Aggregate Services</div>
                   <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>{BULK_SERVICE_LABELS.filter(([,key])=>estimateSelectedServices.includes(key)).map(([label])=><span key={label} style={{border:"1px solid #bbb",padding:"5px 8px",borderRadius:5,fontSize:12,background:"#f7f7f7"}}>{label}</span>)}</div>
                   <div style={{fontWeight:800,margin:"10px 0 6px"}}>Parts</div>
-                  <table className="history-table"><thead><tr><th>Part No.</th><th>Description</th><th>Qty</th><th>Rate (Incl. GST)</th><th>Amount</th><th></th></tr></thead><tbody>{estimateParts.map(item=><tr key={item.id}><td><input value={item.partNo} onChange={e=>updateEstimateItem("part",item.id,"partNo",e.target.value)}/></td><td><input value={item.description} onChange={e=>updateEstimateItem("part",item.id,"description",e.target.value)}/></td><td><input type="number" min="0" step="0.01" value={item.qty} onChange={e=>updateEstimateItem("part",item.id,"qty",e.target.value)} style={{width:80}}/></td><td><input type="number" min="0" step="0.01" value={item.rate} onChange={e=>updateEstimateItem("part",item.id,"rate",e.target.value)} style={{width:110}}/></td><td>{formatNumber(item.qty*item.rate)}</td><td><button className="excel-button no-print" onClick={()=>removeEstimateItem("part",item.id)}>Delete</button></td></tr>)}{!estimateParts.length&&<tr><td colSpan="6">No historical part found. Add manually.</td></tr>}</tbody></table>
+                  <table className="history-table"><thead><tr><th>Part No.</th><th>Description</th><th>Qty</th><th>Rate (Incl. GST)</th><th>Amount</th><th></th></tr></thead><tbody>{estimateParts.map(item=><tr key={item.id}><td><input value={item.partNo} onChange={e=>updateEstimateItem("part",item.id,"partNo",e.target.value)} onBlur={e=>lookupManualEstimatePart(item.id,e.target.value)} title="Enter Part No. and leave the field to auto-fill description and rate"/></td><td><input value={item.description} onChange={e=>updateEstimateItem("part",item.id,"description",e.target.value)}/></td><td><input type="number" min="0" step="0.01" value={item.qty} onChange={e=>updateEstimateItem("part",item.id,"qty",e.target.value)} style={{width:80}}/></td><td><input type="number" min="0" step="0.01" value={item.rate} onChange={e=>updateEstimateItem("part",item.id,"rate",e.target.value)} style={{width:110}}/></td><td>{formatNumber(item.qty*item.rate)}</td><td><button className="excel-button no-print" onClick={()=>removeEstimateItem("part",item.id)}>Delete</button></td></tr>)}{!estimateParts.length&&<tr><td colSpan="6">No historical part found. Add manually.</td></tr>}</tbody></table>
                   <div style={{margin:"8px 0"}}><button className="excel-button no-print" onClick={()=>addEstimateItem("part")}>+ Add Part</button></div>
                   <div style={{fontWeight:800,margin:"14px 0 6px"}}>Labour</div>
                   <table className="history-table"><thead><tr><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th><th></th></tr></thead><tbody>{estimateLabour.map(item=><tr key={item.id}><td><input value={item.description} onChange={e=>updateEstimateItem("labour",item.id,"description",e.target.value)}/></td><td><input type="number" min="0" step="0.01" value={item.qty} onChange={e=>updateEstimateItem("labour",item.id,"qty",e.target.value)} style={{width:80}}/></td><td><input type="number" min="0" step="0.01" value={item.rate} onChange={e=>updateEstimateItem("labour",item.id,"rate",e.target.value)} style={{width:110}}/></td><td>{formatNumber(item.qty*item.rate)}</td><td><button className="excel-button no-print" onClick={()=>removeEstimateItem("labour",item.id)}>Delete</button></td></tr>)}{!estimateLabour.length&&<tr><td colSpan="5">No historical labour found. Add manually.</td></tr>}</tbody></table>

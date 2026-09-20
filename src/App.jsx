@@ -2935,18 +2935,38 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
 
     if (serviceKey === "hubGrease") {
       const referenceRows = ESTIMATE_LABOUR_REFERENCE.hubGrease || [];
-      for (const reference of referenceRows) {
+
+      // Hub configuration is position-specific. For a 4-hub vehicle the
+      // applicable operations are Front Axle - 2 Hubs + Rear Axle - 2 Hubs.
+      // Front/Rear - 4 Hubs must NOT be added as extra operations.
+      const selectedHubReferences = referenceRows.filter(reference => {
+        if (reference.code === "WHL165C" || reference.code === "WHL170C") return false;
+        return true;
+      });
+
+      const seenHubPositions = new Set();
+      for (const reference of selectedHubReferences) {
         const matches = labourRows.filter(row => {
           const text = estimateLabourText(row);
           if (text.includes(normalizePartCode(reference.code))) return true;
           if (reference.code === "WHL165A") return text.includes("FRONT") && text.includes("2") && text.includes("HUB");
-          if (reference.code === "WHL165C") return text.includes("FRONT") && text.includes("4") && text.includes("HUB");
           if (reference.code === "WHL170A") return text.includes("REAR") && text.includes("2") && text.includes("HUB");
-          if (reference.code === "WHL170C") return text.includes("REAR") && text.includes("4") && text.includes("HUB");
           if (reference.code === "WHL175A") return text.includes("STLA") && text.includes("2") && text.includes("HUB");
           if (reference.code === "WHL180A") return text.includes("DTLA") && text.includes("2") && text.includes("HUB");
           return false;
         });
+
+        if (!matches.length) continue;
+
+        const positionKey =
+          reference.code === "WHL165A" ? "FRONT" :
+          reference.code === "WHL170A" ? "REAR" :
+          reference.code === "WHL175A" ? "STLA" :
+          reference.code === "WHL180A" ? "DTLA" :
+          reference.code;
+
+        if (seenHubPositions.has(positionKey)) continue;
+        seenHubPositions.add(positionKey);
 
         const labourItem = estimateBuildHistoricalItem(
           "labour",

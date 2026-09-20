@@ -158,7 +158,7 @@ export default function AuthGate({ children }) {
     });
     setMessage("");
     setError("");
-  });
+  };
 
   const saveProfile = () => run(async () => {
     const data = await api("update-profile", {

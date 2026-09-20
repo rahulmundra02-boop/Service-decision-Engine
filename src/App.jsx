@@ -3286,6 +3286,7 @@ function ServiceDecisionApp({ user }) {
       setCustomerGroups([]);
       setSelectedCustomers([]);
       setUploadParsedRecords(parsedRows);
+      if (parsedRows.length) setMode("single");
       if (parsedRows.length) {
         logUsage("Excel Upload", {
           fileCount: acceptedFiles.length,
@@ -4005,6 +4006,7 @@ function ServiceDecisionApp({ user }) {
         .theme-green .excel-titlebar,.theme-green .section-title {background:#217346 !important}.theme-navy .excel-titlebar,.theme-navy .section-title {background:#17365d !important}.theme-teal .excel-titlebar,.theme-teal .section-title {background:#0f766e !important}.theme-purple .excel-titlebar,.theme-purple .section-title {background:#6b46c1 !important}
         .theme-green .decision-table th,.theme-green .history-table th {background:#217346 !important}.theme-navy .decision-table th,.theme-navy .history-table th {background:#17365d !important}.theme-teal .decision-table th,.theme-teal .history-table th {background:#0f766e !important}.theme-purple .decision-table th,.theme-purple .history-table th {background:#6b46c1 !important}
 
+        .estimate-meta { margin-left:auto; font-size:11px; color:#666; }
         .portal-home { padding:18px 8px 28px; }
         .portal-home-hero { display:flex; justify-content:space-between; gap:20px; align-items:center; padding:24px; border:1px solid #b7b7b7; background:linear-gradient(135deg,#f7fbff,#eef5fb); border-radius:6px; }
         .portal-home-kicker { color:#1f4e78; font-size:11px; font-weight:800; letter-spacing:1px; }
@@ -4799,7 +4801,7 @@ function ServiceDecisionApp({ user }) {
               {estimateStage === "select" ? (
                 <>
                   <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
-                    <div style={{fontSize:22,fontWeight:800}}>SELECT AGGREGATE SERVICES</div>
+                    <div style={{fontSize:22,fontWeight:800}}>SELECT AGGREGATE SERVICES</div><div className="estimate-meta">Estimate No.: <b>{estimateNumber || "-"}</b> · Date: <b>{formatDate(new Date())}</b></div>
                     <span style={{fontSize:12,color:"#666"}}>Single Vehicle Estimate</span>
                     <button className="excel-button" style={{marginLeft:"auto"}} onClick={()=>setEstimateOpen(false)}>Cancel</button>
                   </div>
@@ -4825,7 +4827,7 @@ function ServiceDecisionApp({ user }) {
               ) : (
                 <>
                   <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,borderBottom:"1px solid #ddd",paddingBottom:10}}>
-                    <div style={{fontSize:22,fontWeight:800}}>SERVICE ESTIMATE</div>
+                    <div style={{fontSize:22,fontWeight:800}}>SERVICE ESTIMATE</div><div className="estimate-meta">Estimate No.: <b>{estimateNumber || "-"}</b> · Date: <b>{formatDate(new Date())}</b></div>
                     <span style={{fontSize:12,color:"#666"}}>Single Vehicle Only</span>
                     <span style={{marginLeft:"auto",fontWeight:700}}>{user?.dealerName || "Workshop"}</span>
                     <button className="excel-button no-print" onClick={()=>setEstimateOpen(false)}>Close</button>

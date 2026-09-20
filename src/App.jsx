@@ -2506,6 +2506,7 @@ function estimateBuildHistoricalItem(type, serviceKey, rows, code = "") {
 
   if (!qtyChoice) return null;
 
+  const customerRate = Number.isFinite(rate) && rate > 0 ? Number((rate * 1.18).toFixed(2)) : 0;
   return {
     id: type + "-" + serviceKey + "-" + partNo + "-" + Date.now() + "-" + Math.random().toString(36).slice(2,7),
     type,
@@ -2513,122 +2514,129 @@ function estimateBuildHistoricalItem(type, serviceKey, rows, code = "") {
     partNo,
     description,
     qty: qtyChoice.qty,
-    rate,
-    source: "Historical DB",
+    rate: customerRate,
+    baseRate: rate,
+    source: "Historical DB (18% GST added)",
   };
 }
 
-function estimateServiceJobCards(rows = [], serviceKey = "") {
-  // A complete replacement is normally accompanied by its corresponding
-  // labour operation on the same Job Card. Top-up rows usually do not carry
-  // the "drain/refill" labour operation. Use this relationship before
-  // looking at quantity frequency.
-  const jobCards = new Set();
-  for (const row of rows) {
-    if (estimateLabourMatchesService(row, serviceKey)) {
-      const jc = String(row?.job_card || "").trim();
-      if (jc) jobCards.add(jc);
-    }
-  }
-  return jobCards;
+function estimateJobCardKey(row = {}) {
+  const jc = String(row?.job_card || "").trim();
+  return jc ? "JC|" + jc.toUpperCase() : "DATE|" + String(row?.job_date || "").slice(0,10);
 }
-
-function estimateRowsForCompleteService(rows = [], serviceKey = "") {
-  const jobCards = estimateServiceJobCards(rows, serviceKey);
-  if (!jobCards.size) return rows;
-
-  const matched = rows.filter(row => {
-    if (estimateCategory(row) !== "part") return false;
-    const jc = String(row?.job_card || "").trim();
-    return jc && jobCards.has(jc);
+function estimateRowsForJobCard(rows = [], key = "") { return rows.filter(row => estimateJobCardKey(row) === key); }
+function estimatePartRows(rows = [], serviceKey = "") {
+  return rows.filter(row => estimateCategory(row) === "part" && estimatePartMatchesService(row, serviceKey));
+}
+function estimateTotalQty(rows = [], serviceKey = "") {
+  return estimatePartRows(rows, serviceKey).reduce((sum,row)=>sum+Math.max(0,Number(row?.quantity||0)),0);
+}
+function estimateHasPart(rows = [], standardNames = [], minQty = 1) {
+  const matches=rows.filter(row=>{
+    if(estimateCategory(row)!=="part") return false;
+    const name=estimateStandardPartName(row).toUpperCase();
+    return standardNames.some(item=>name===item || name.includes(item));
   });
-
-  return matched.length ? matched : rows;
+  return matches.reduce((sum,row)=>sum+Math.max(0,Number(row?.quantity||0)),0)>=minQty;
 }
+function estimateEligibleJobCards(rows = [], serviceKey = "") {
+  // Use the same aggregate eligibility logic as Service Decision before
+  // selecting estimate quantity/rate. Ineligible/top-up lines are discarded.
+  const keys=[...new Set(rows.map(estimateJobCardKey))];
+  const eligible=new Set();
+  for(const key of keys){
+    const jcRows=estimateRowsForJobCard(rows,key);
+    const parts=estimatePartRows(jcRows,serviceKey);
+    if(!parts.length) continue;
 
+    if(serviceKey==="axleOil"){
+      if(estimateTotalQty(jcRows,"axleOil")>=12) eligible.add(key);
+      continue;
+    }
+    if(serviceKey==="steeringOil"){
+      const steeringQty=estimateTotalQty(jcRows,"steeringOil");
+      const filterQty=estimateHasPart(jcRows,["STEERING OIL FILTER"],1);
+      if(steeringQty>=1 && filterQty) eligible.add(key);
+      continue;
+    }
+    if(serviceKey==="engineOil"){
+      const engineQty=estimateTotalQty(jcRows,"engineOil");
+      const oilFilter=estimateHasPart(jcRows,["ENGINE OIL FILTER"],1);
+      const fuelFilterPair=estimateHasPart(jcRows,["FUEL FILTER"],2);
+      const fuelFilterKit=estimateHasPart(jcRows,["FUEL FILTER KIT","FUEL FILTER & ENGINE OIL FILTER KIT"],1);
+      if(engineQty>=12 && oilFilter && (fuelFilterPair || fuelFilterKit)) eligible.add(key);
+      continue;
+    }
+    if(serviceKey==="defFilter"){
+      const defKit=estimateHasPart(jcRows,["DEF FILTER KIT"],1);
+      const defAir=estimateHasPart(jcRows,["DEF FILTER AIR"],1);
+      const defSuction=estimateHasPart(jcRows,["DEF FILTER SUCTION"],1);
+      if(defKit || (defAir && defSuction)) eligible.add(key);
+      continue;
+    }
+    if(parts.some(row=>Number(row?.quantity||0)>0)) eligible.add(key);
+  }
+  return eligible;
+}
+function estimateRowsForCompleteService(rows = [], serviceKey = "") {
+  const eligibleKeys=estimateEligibleJobCards(rows,serviceKey);
+  if(!eligibleKeys.size) return [];
+  return rows.filter(row =>
+    eligibleKeys.has(estimateJobCardKey(row)) &&
+    estimateCategory(row)==="part" &&
+    estimatePartMatchesService(row,serviceKey) &&
+    Number(row?.quantity||0)>0
+  );
+}
 function estimateHistoryToItems(rows = [], selectedKeys = []) {
-  const selected = new Set(selectedKeys);
-  const items = [];
+  const selected=new Set(selectedKeys), items=[];
+  for(const serviceKey of selected){
+    const serviceRows=estimateRowsForCompleteService(rows,serviceKey);
 
-  for (const serviceKey of selected) {
-    const allServiceRows = rows.filter(row => {
-      if (estimateCategory(row) !== "part") return false;
-      return estimatePartMatchesService(row, serviceKey);
-    });
-
-    // Prefer part rows belonging to a Job Card that contains the matching
-    // full-service labour operation. If no such Job Card exists, fall back to
-    // the historical part rows rather than inventing a quantity.
-    const serviceRows = estimateRowsForCompleteService(rows, serviceKey)
-      .filter(row => estimatePartMatchesService(row, serviceKey));
-
-    if (serviceKey === "hubGrease") {
-      // Fixed Hub Grease list: include only codes actually found in history.
-      for (const code of HUB_GREASE_STANDARD_CODES) {
-        const matches = serviceRows.filter(row => normalizePartCode(row.part_code) === code);
-        const fallbackMatches = allServiceRows.filter(row => normalizePartCode(row.part_code) === code);
-        const item = estimateBuildHistoricalItem(
-          "part",
-          serviceKey,
-          matches.length ? matches : fallbackMatches,
-          code
-        );
-        if (item) items.push(item);
+    if(serviceKey==="hubGrease"){
+      for(const code of HUB_GREASE_STANDARD_CODES){
+        const matches=serviceRows.filter(row=>normalizePartCode(row.part_code)===code);
+        const item=estimateBuildHistoricalItem("part",serviceKey,matches,code);
+        if(item) items.push(item);
       }
     } else {
-      // For normal aggregates, choose ONE applicable historical part for each
-      // standardised part family, not every old alternative part number.
-      const byStandard = new Map();
-      for (const row of serviceRows) {
-        const standard = estimateStandardPartName(row);
-        const key = standard || normalizePartCode(row.part_code);
-        if (!key) continue;
-        if (!byStandard.has(key)) byStandard.set(key, []);
+      const byStandard=new Map();
+      for(const row of serviceRows){
+        const standard=estimateStandardPartName(row);
+        const key=standard || normalizePartCode(row.part_code);
+        if(!key) continue;
+        if(!byStandard.has(key)) byStandard.set(key,[]);
         byStandard.get(key).push(row);
       }
-
-      // If no complete-service row exists for this service, use all historical
-      // service rows as the fallback source.
-      if (!byStandard.size) {
-        for (const row of allServiceRows) {
-          const standard = estimateStandardPartName(row);
-          const key = standard || normalizePartCode(row.part_code);
-          if (!key) continue;
-          if (!byStandard.has(key)) byStandard.set(key, []);
-          byStandard.get(key).push(row);
-        }
-      }
-
-      for (const [standard, candidates] of byStandard) {
-        const codes = new Map();
-        for (const row of candidates) {
-          const code = normalizePartCode(row.part_code);
-          if (!code) continue;
-          if (!codes.has(code)) codes.set(code, []);
+      for(const [standard,candidates] of byStandard){
+        const codes=new Map();
+        for(const row of candidates){
+          const code=normalizePartCode(row.part_code);
+          if(!code) continue;
+          if(!codes.has(code)) codes.set(code,[]);
           codes.get(code).push(row);
         }
-
-        const rankedCodes = [...codes.entries()].map(([code, codeRows]) => ({
-          code,
-          rows: codeRows,
-          count: codeRows.length,
-          latest: Math.max(...codeRows.map((row,index) => estimateRowRank(row,index))),
-        })).sort((a,b) => b.count - a.count || b.latest - a.latest);
-
-        const winner = rankedCodes[0];
-        if (winner) {
-          const item = estimateBuildHistoricalItem("part", serviceKey, winner.rows, winner.code);
-          if (item) items.push(item);
+        const rankedCodes=[...codes.entries()].map(([code,codeRows])=>({
+          code,rows:codeRows,count:codeRows.length,
+          latest:Math.max(...codeRows.map((row,index)=>estimateRowRank(row,index)))
+        })).sort((a,b)=>b.count-a.count || b.latest-a.latest);
+        const winner=rankedCodes[0];
+        if(winner){
+          const item=estimateBuildHistoricalItem("part",serviceKey,winner.rows,winner.code);
+          if(item) items.push(item);
         }
       }
     }
 
-    // Labour is independent from parts and comes only from DMS P001 rows.
-    const labourRows = rows.filter(row => estimateLabourMatchesService(row, serviceKey));
-    const labourItem = estimateBuildHistoricalItem("labour", serviceKey, labourRows, "");
-    if (labourItem) items.push(labourItem);
+    const eligibleKeys=estimateEligibleJobCards(rows,serviceKey);
+    const labourRows=rows.filter(row =>
+      eligibleKeys.has(estimateJobCardKey(row)) &&
+      estimateLabourMatchesService(row,serviceKey) &&
+      Number(row?.quantity||0)>0
+    );
+    const labourItem=estimateBuildHistoricalItem("labour",serviceKey,labourRows,"");
+    if(labourItem) items.push(labourItem);
   }
-
   return items;
 }
 
@@ -3286,11 +3294,11 @@ function ServiceDecisionApp({ user }) {
     pdf.setFont("helvetica","bold"); pdf.setFontSize(10); pdf.text("Selected Aggregate Services",margin,y); y+=4;
     const selectedNames=BULK_SERVICE_LABELS.filter(([,key])=>estimateSelectedServices.includes(key)).map(([name])=>name);
     pdf.setFont("helvetica","normal"); pdf.setFontSize(8.5); pdf.text(selectedNames.length?selectedNames.join(", "):"No aggregate service selected",margin,y+3,{maxWidth:width}); y+=selectedNames.length?9:7;
-    autoTable(pdf,{startY:y,margin:{left:margin,right:margin},tableWidth:width,theme:"grid",styles:{font:"helvetica",fontSize:8,cellPadding:2.5,lineColor:[150,150,150],lineWidth:0.2,overflow:"linebreak"},head:[["Part No.","Description","Qty","Rate","Amount"]],body:estimateParts.length?estimateParts.map(item=>[item.partNo||"-",item.description||"-",String(item.qty||0),"₹ "+formatNumber(item.rate),"₹ "+formatNumber(item.qty*item.rate)]):[["-","No parts added","-","-","₹ 0"]],columnStyles:{0:{cellWidth:28},1:{cellWidth:82},2:{cellWidth:18},3:{cellWidth:27},4:{cellWidth:35}}});
+    autoTable(pdf,{startY:y,margin:{left:margin,right:margin},tableWidth:width,theme:"grid",styles:{font:"helvetica",fontSize:8,cellPadding:2.5,lineColor:[150,150,150],lineWidth:0.2,overflow:"linebreak"},head:[["Part No.","Description","Qty","Rate (Incl. GST)","Amount"]],body:estimateParts.length?estimateParts.map(item=>[item.partNo||"-",item.description||"-",String(item.qty||0),"₹ "+formatNumber(item.rate),"₹ "+formatNumber(item.qty*item.rate)]):[["-","No parts added","-","-","₹ 0"]],columnStyles:{0:{cellWidth:28},1:{cellWidth:82},2:{cellWidth:18},3:{cellWidth:27},4:{cellWidth:35}}});
     y=(pdf.lastAutoTable?.finalY||y+20)+7; pdf.setFont("helvetica","bold"); pdf.text("Labour",margin,y); y+=4;
     autoTable(pdf,{startY:y,margin:{left:margin,right:margin},tableWidth:width,theme:"grid",styles:{font:"helvetica",fontSize:8,cellPadding:2.5,lineColor:[150,150,150],lineWidth:0.2,overflow:"linebreak"},head:[["Description","Qty","Rate","Amount"]],body:estimateLabour.length?estimateLabour.map(item=>[item.description||"-",String(item.qty||0),"₹ "+formatNumber(item.rate),"₹ "+formatNumber(item.qty*item.rate)]):[["No labour added","-","-","₹ 0"]],columnStyles:{0:{cellWidth:110},1:{cellWidth:20},2:{cellWidth:25},3:{cellWidth:35}}});
     y=(pdf.lastAutoTable?.finalY||y+20)+7;
-    autoTable(pdf,{startY:y,margin:{left:120,right:margin},tableWidth:80,theme:"grid",styles:{font:"helvetica",fontSize:8.5,cellPadding:3,lineColor:[150,150,150],lineWidth:0.2},body:[["Parts Total","₹ "+formatNumber(estimatePartsTotal)],["Labour Subtotal","₹ "+formatNumber(estimateLabourBase)],["GST on Labour (18%)","₹ "+formatNumber(estimateLabourGst)],["Grand Total","₹ "+formatNumber(estimateGrandTotal)]],columnStyles:{0:{cellWidth:45,fontStyle:"bold"},1:{cellWidth:35,halign:"right"}}});
+    autoTable(pdf,{startY:y,margin:{left:120,right:margin},tableWidth:80,theme:"grid",styles:{font:"helvetica",fontSize:8.5,cellPadding:3,lineColor:[150,150,150],lineWidth:0.2},body:[["Parts Total (GST Incl.)","₹ "+formatNumber(estimatePartsTotal)],["Labour Subtotal","₹ "+formatNumber(estimateLabourBase)],["GST on Labour (18%)","₹ "+formatNumber(estimateLabourGst)],["Grand Total","₹ "+formatNumber(estimateGrandTotal)]],columnStyles:{0:{cellWidth:45,fontStyle:"bold"},1:{cellWidth:35,halign:"right"}}});
     y=(pdf.lastAutoTable?.finalY||y+25)+12; pdf.setFont("helvetica","normal"); pdf.setFontSize(8); pdf.line(140,y-2,190,y-2); pdf.text("Authorized Signatory",165,y,{align:"center"});
     if(autoPrint){ pdf.autoPrint(); window.open(pdf.output("bloburl"),"_blank"); }
     else { const fileName=("Service_Estimate_"+(vehicle.reg||vehicle.vin||"Vehicle")+".pdf").replace(/[^a-z0-9_.-]+/gi,"_"); pdf.save(fileName); }
@@ -4077,14 +4085,14 @@ function ServiceDecisionApp({ user }) {
                   <div style={{fontWeight:800,margin:"10px 0 6px"}}>Selected Aggregate Services</div>
                   <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>{BULK_SERVICE_LABELS.filter(([,key])=>estimateSelectedServices.includes(key)).map(([label])=><span key={label} style={{border:"1px solid #bbb",padding:"5px 8px",borderRadius:5,fontSize:12,background:"#f7f7f7"}}>{label}</span>)}</div>
                   <div style={{fontWeight:800,margin:"10px 0 6px"}}>Parts</div>
-                  <table className="history-table"><thead><tr><th>Part No.</th><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th><th></th></tr></thead><tbody>{estimateParts.map(item=><tr key={item.id}><td><input value={item.partNo} onChange={e=>updateEstimateItem("part",item.id,"partNo",e.target.value)}/></td><td><input value={item.description} onChange={e=>updateEstimateItem("part",item.id,"description",e.target.value)}/></td><td><input type="number" min="0" step="0.01" value={item.qty} onChange={e=>updateEstimateItem("part",item.id,"qty",e.target.value)} style={{width:80}}/></td><td><input type="number" min="0" step="0.01" value={item.rate} onChange={e=>updateEstimateItem("part",item.id,"rate",e.target.value)} style={{width:110}}/></td><td>{formatNumber(item.qty*item.rate)}</td><td><button className="excel-button no-print" onClick={()=>removeEstimateItem("part",item.id)}>Delete</button></td></tr>)}{!estimateParts.length&&<tr><td colSpan="6">No historical part found. Add manually.</td></tr>}</tbody></table>
+                  <table className="history-table"><thead><tr><th>Part No.</th><th>Description</th><th>Qty</th><th>Rate (Incl. GST)</th><th>Amount</th><th></th></tr></thead><tbody>{estimateParts.map(item=><tr key={item.id}><td><input value={item.partNo} onChange={e=>updateEstimateItem("part",item.id,"partNo",e.target.value)}/></td><td><input value={item.description} onChange={e=>updateEstimateItem("part",item.id,"description",e.target.value)}/></td><td><input type="number" min="0" step="0.01" value={item.qty} onChange={e=>updateEstimateItem("part",item.id,"qty",e.target.value)} style={{width:80}}/></td><td><input type="number" min="0" step="0.01" value={item.rate} onChange={e=>updateEstimateItem("part",item.id,"rate",e.target.value)} style={{width:110}}/></td><td>{formatNumber(item.qty*item.rate)}</td><td><button className="excel-button no-print" onClick={()=>removeEstimateItem("part",item.id)}>Delete</button></td></tr>)}{!estimateParts.length&&<tr><td colSpan="6">No historical part found. Add manually.</td></tr>}</tbody></table>
                   <div style={{margin:"8px 0"}}><button className="excel-button no-print" onClick={()=>addEstimateItem("part")}>+ Add Part</button></div>
                   <div style={{fontWeight:800,margin:"14px 0 6px"}}>Labour</div>
                   <table className="history-table"><thead><tr><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th><th></th></tr></thead><tbody>{estimateLabour.map(item=><tr key={item.id}><td><input value={item.description} onChange={e=>updateEstimateItem("labour",item.id,"description",e.target.value)}/></td><td><input type="number" min="0" step="0.01" value={item.qty} onChange={e=>updateEstimateItem("labour",item.id,"qty",e.target.value)} style={{width:80}}/></td><td><input type="number" min="0" step="0.01" value={item.rate} onChange={e=>updateEstimateItem("labour",item.id,"rate",e.target.value)} style={{width:110}}/></td><td>{formatNumber(item.qty*item.rate)}</td><td><button className="excel-button no-print" onClick={()=>removeEstimateItem("labour",item.id)}>Delete</button></td></tr>)}{!estimateLabour.length&&<tr><td colSpan="5">No historical labour found. Add manually.</td></tr>}</tbody></table>
                   <div style={{margin:"8px 0"}}><button className="excel-button no-print" onClick={()=>addEstimateItem("labour")}>+ Add Labour</button></div>
                   <div style={{marginTop:16,marginLeft:"auto",maxWidth:380,borderTop:"2px solid #222",paddingTop:10}}><div style={{display:"flex",justifyContent:"space-between"}}><span>Parts Total</span><b>₹ {formatNumber(estimatePartsTotal)}</b></div><div style={{display:"flex",justifyContent:"space-between"}}><span>Labour Subtotal</span><b>₹ {formatNumber(estimateLabourBase)}</b></div><div style={{display:"flex",justifyContent:"space-between"}}><span>GST on Labour (18%)</span><b>₹ {formatNumber(estimateLabourGst)}</b></div><div style={{display:"flex",justifyContent:"space-between",fontSize:18,marginTop:6}}><span>Grand Total</span><b>₹ {formatNumber(estimateGrandTotal)}</b></div></div>
                   <div className="no-print" style={{display:"flex",flexWrap:"wrap",justifyContent:"flex-end",gap:8,marginTop:18,paddingTop:12,borderTop:"1px solid #ddd"}}><button className="excel-button" onClick={reviseEstimateServices}>Revise Aggregate Service</button><button className="excel-button" onClick={()=>buildEstimatePdf(true)}>Print A4</button><button className="excel-button green" onClick={()=>buildEstimatePdf(false)}>Download PDF</button></div>
-                  <div style={{marginTop:8,fontSize:12,color:"#666"}}>Estimate only. Historical rates are used where available; missing items/rates can be entered manually.</div>
+                  <div style={{marginTop:8,fontSize:12,color:"#666"}}>Estimate only. Historical DB rates are without GST; 18% GST is added to historical part rates shown above. Missing items/rates can be entered manually using GST-inclusive rates.</div>
                 </>
               )}
             </div>

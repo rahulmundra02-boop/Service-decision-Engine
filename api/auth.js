@@ -80,13 +80,15 @@ async function ensureSchema(client) {
       mobile_verified BOOLEAN NOT NULL DEFAULT TRUE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       last_login_at TIMESTAMPTZ,
-      last_activity_at TIMESTAMPTZ
+      last_activity_at TIMESTAMPTZ,
+      preferences JSONB NOT NULL DEFAULT '{}'::jsonb
     );
 
     ALTER TABLE app_users ALTER COLUMN mobile DROP NOT NULL;
     ALTER TABLE app_users ALTER COLUMN status SET DEFAULT 'active';
     ALTER TABLE app_users ALTER COLUMN email_verified SET DEFAULT TRUE;
     ALTER TABLE app_users ALTER COLUMN mobile_verified SET DEFAULT TRUE;
+    ALTER TABLE app_users ADD COLUMN IF NOT EXISTS preferences JSONB NOT NULL DEFAULT '{}'::jsonb;
 
     CREATE TABLE IF NOT EXISTS auth_otps (
       id BIGSERIAL PRIMARY KEY,
@@ -214,6 +216,7 @@ function userPayload(user) {
     createdAt: user.created_at,
     lastLoginAt: user.last_login_at,
     lastActivityAt: user.last_activity_at,
+    preferences: user.preferences || {},
   };
 }
 
@@ -234,26 +237,52 @@ async function createOrUpdateUser(client, body) {
   const email = normalizeEmail(body.email);
   const mobile = normalizeMobile(body.mobile);
   const password = body.password;
+  const userId = Number(body.userId || 0);
 
-  if (!personName || !dealerName || !email || !validPassword(password)) {
-    throw new Error("Name, dealer name, email and password (minimum 8 characters) are required.");
+  if (!personName || !dealerName || !email) {
+    throw new Error("Name, dealer name and email are required.");
   }
 
-  const existing = await client.query("SELECT * FROM app_users WHERE email=$1 LIMIT 1", [email]);
+  const existingById = userId > 0
+    ? await client.query("SELECT * FROM app_users WHERE id=$1 LIMIT 1", [userId])
+    : { rows: [] };
+  const existingByEmail = await client.query("SELECT * FROM app_users WHERE email=$1 LIMIT 1", [email]);
+  const existing = existingById.rows[0] || existingByEmail.rows[0];
+
+  if (existing) {
+    if (existing.role === "admin" && Number(existing.id) !== userId) {
+      throw new Error("Admin account cannot be overwritten by email.");
+    }
+
+    if (password && !validPassword(password)) {
+      throw new Error("Password must be at least 8 characters.");
+    }
+
+    if (password) {
+      const passwordHash = await hashPassword(password);
+      await client.query(
+        `UPDATE app_users
+            SET person_name=$1,dealer_name=$2,email=$3,mobile=$4,password_hash=$5,
+                status='active',email_verified=TRUE,mobile_verified=TRUE
+          WHERE id=$6`,
+        [personName, dealerName, email, mobile || null, passwordHash, existing.id]
+      );
+    } else {
+      await client.query(
+        `UPDATE app_users
+            SET person_name=$1,dealer_name=$2,email=$3,mobile=$4
+          WHERE id=$5`,
+        [personName, dealerName, email, mobile || null, existing.id]
+      );
+    }
+    return (await client.query("SELECT * FROM app_users WHERE id=$1", [existing.id])).rows[0];
+  }
+
+  if (!validPassword(password)) {
+    throw new Error("Password (minimum 8 characters) is required when creating a new user.");
+  }
+
   const passwordHash = await hashPassword(password);
-
-  if (existing.rows[0]) {
-    const user = existing.rows[0];
-    await client.query(
-      `UPDATE app_users
-          SET person_name=$1,dealer_name=$2,mobile=$3,password_hash=$4,
-              status='active',email_verified=TRUE,mobile_verified=TRUE
-        WHERE id=$5`,
-      [personName, dealerName, mobile || null, passwordHash, user.id]
-    );
-    return (await client.query("SELECT * FROM app_users WHERE id=$1", [user.id])).rows[0];
-  }
-
   const created = await client.query(
     `INSERT INTO app_users
       (person_name,dealer_name,email,mobile,password_hash,role,status,email_verified,mobile_verified)
@@ -467,6 +496,33 @@ export default async function handler(req, res) {
         periods:periods.rows,
         breakdown:breakdown.rows
       });
+    }
+
+    if (action === "update-profile") {
+      const sessionUser = await getUserByToken(client, authToken(req));
+      if (!sessionUser) {
+        await client.query("ROLLBACK");
+        return res.status(401).json({success:false,error:"Session expired."});
+      }
+
+      const personName = clean(body.personName);
+      const dealerName = clean(body.dealerName);
+      const mobile = normalizeMobile(body.mobile);
+      const preferences = body.preferences && typeof body.preferences === "object"
+        ? body.preferences
+        : {};
+
+      if (!personName || !dealerName) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({success:false,error:"Name and dealer name are required."});
+      }
+
+      const updated = await client.query(
+        "UPDATE app_users SET person_name=$1,dealer_name=$2,mobile=$3,preferences=$4::jsonb WHERE id=$5 RETURNING *",
+        [personName,dealerName,mobile || null,JSON.stringify(preferences),sessionUser.id]
+      );
+      await client.query("COMMIT");
+      return res.json({success:true,user:userPayload(updated.rows[0]),message:"Profile and preferences saved."});
     }
 
     if (action === "admin-list-users") {

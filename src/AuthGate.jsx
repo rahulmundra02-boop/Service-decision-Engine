@@ -48,7 +48,7 @@ export default function AuthGate({ children }) {
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminForm, setAdminForm] = useState({ userId:null, personName:"", dealerName:"", email:"", mobile:"", password:"" });
   const [profileOpen, setProfileOpen] = useState(false);
-  const [profileForm, setProfileForm] = useState({ personName:"", dealerName:"", mobile:"", booking1:"", booking2:"", theme:"blue", singleTableWidth:"wide", bulkTableWidth:"wide", singleColumns:["date","jobCard","reading","plant","parts"], bulkColumns:["customerName","vin","reg","saleDate","model","currentReading","services"] });
+  const [profileForm, setProfileForm] = useState({ personName:"", dealerName:"", mobile:"", booking1:"", booking2:"", theme:"blue", singleColumns:["date","jobCard","reading","plant","parts"], bulkColumns:["customerName","vin","reg","saleDate","model","currentReading","services"], singleColumnLabels:{date:"Date",jobCard:"Job Card",reading:"Reading",plant:"Plant",parts:"Part No. / Service / Qty"}, bulkColumnLabels:{serial:"S.No. / Due",customerName:"Customer Name",vin:"VIN",reg:"Reg. No.",saleDate:"Sale Date",model:"Model",currentReading:"Current Reading",services:"Service To Be Completed"} });
   const [adminAnalytics, setAdminAnalytics] = useState({ summary:[], recent:[], periods:[] });
   const [analyticsUserId, setAnalyticsUserId] = useState(null);
   const [analyticsRange, setAnalyticsRange] = useState(30);
@@ -169,10 +169,10 @@ export default function AuthGate({ children }) {
         booking1: profileForm.booking1,
         booking2: profileForm.booking2,
         theme: profileForm.theme,
-        singleTableWidth: profileForm.singleTableWidth,
-        bulkTableWidth: profileForm.bulkTableWidth,
         singleColumns: profileForm.singleColumns,
         bulkColumns: profileForm.bulkColumns,
+        singleColumnLabels: profileForm.singleColumnLabels,
+        bulkColumnLabels: profileForm.bulkColumnLabels,
       }
     }, localStorage.getItem(TOKEN_KEY));
     setUser(normalizeLoggedInUser(data.user));
@@ -189,10 +189,10 @@ export default function AuthGate({ children }) {
       booking1:p.booking1 || "",
       booking2:p.booking2 || "",
       theme:p.theme || "blue",
-      singleTableWidth:p.singleTableWidth || "wide",
-      bulkTableWidth:p.bulkTableWidth || "wide",
       singleColumns:Array.isArray(p.singleColumns) && p.singleColumns.length ? p.singleColumns : ["date","jobCard","reading","plant","parts"],
       bulkColumns:Array.isArray(p.bulkColumns) && p.bulkColumns.length ? p.bulkColumns : ["customerName","vin","reg","saleDate","model","currentReading","services"],
+      singleColumnLabels:{date:"Date",jobCard:"Job Card",reading:"Reading",plant:"Plant",parts:"Part No. / Service / Qty",...(p.singleColumnLabels || {})},
+      bulkColumnLabels:{serial:"S.No. / Due",customerName:"Customer Name",vin:"VIN",reg:"Reg. No.",saleDate:"Sale Date",model:"Model",currentReading:"Current Reading",services:"Service To Be Completed",...(p.bulkColumnLabels || {})},
     });
     setProfileOpen(true);
     setError("");
@@ -334,69 +334,13 @@ export default function AuthGate({ children }) {
 }
 
 function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
-  const toggleColumn = (key, value, checked) => {
-    const list = Array.isArray(form[key]) ? form[key] : [];
-    const next = checked ? [...new Set([...list,value])] : list.filter(x=>x!==value);
-    setForm({...form,[key]:next});
-  };
-
-  const themes = [
-    ["blue","Classic Blue"],["green","Excel Green"],["navy","Navy"],["teal","Teal"],["purple","Purple"]
-  ];
-  const singleCols = [
-    ["date","Date"],["jobCard","Job Card"],["reading","Reading"],["plant","Plant"],["parts","Part / Service / Qty"]
-  ];
-  const bulkCols = [
-    ["customerName","Customer Name"],["vin","VIN"],["reg","Reg. No."],["saleDate","Sale Date"],
-    ["model","Model"],["currentReading","Current Reading"],["services","Service To Be Completed"]
-  ];
-
-  return (
-    <div className="auth-modal-backdrop">
-      <div className="auth-modal" style={{maxWidth:760,maxHeight:"90vh",overflow:"auto"}}>
-        <h2>Profile & Dashboard Settings</h2>
-        <p className="auth-hint">Ye settings sirf aapki user ID ke liye save hongi.</p>
-
-        <label>Person Name</label>
-        <input value={form.personName} onChange={e=>setForm({...form,personName:e.target.value})}/>
-        <label>Dealer / Workshop Name</label>
-        <input value={form.dealerName} onChange={e=>setForm({...form,dealerName:e.target.value})}/>
-        <label>Mobile</label>
-        <input value={form.mobile} onChange={e=>setForm({...form,mobile:e.target.value})}/>
-
-        <label>Advance Booking Contact 1</label>
-        <input value={form.booking1} onChange={e=>setForm({...form,booking1:e.target.value})} placeholder="Optional mobile number"/>
-        <label>Advance Booking Contact 2</label>
-        <input value={form.booking2} onChange={e=>setForm({...form,booking2:e.target.value})} placeholder="Optional mobile number"/>
-
-        <div style={{marginTop:14,fontWeight:800}}>Dashboard Colour</div>
-        <div style={{display:"flex",flexWrap:"wrap",gap:8,margin:"8px 0 14px"}}>
-          {themes.map(([key,label])=><button type="button" key={key} onClick={()=>setForm({...form,theme:key})} className={form.theme===key?"auth-primary":"auth-secondary"}>{label}</button>)}
-        </div>
-
-        <div style={{fontWeight:800}}>Single Vehicle Service History Table</div>
-        <select value={form.singleTableWidth} onChange={e=>setForm({...form,singleTableWidth:e.target.value})}>
-          <option value="compact">Compact</option><option value="normal">Normal</option><option value="wide">Wide</option>
-        </select>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:5,margin:"8px 0 14px"}}>
-          {singleCols.map(([key,label])=><label key={key} style={{fontWeight:400}}><input type="checkbox" checked={form.singleColumns.includes(key)} onChange={e=>toggleColumn("singleColumns",key,e.target.checked)}/> {label}</label>)}
-        </div>
-
-        <div style={{fontWeight:800}}>Bulk Vehicle Due / Service Summary Table</div>
-        <select value={form.bulkTableWidth} onChange={e=>setForm({...form,bulkTableWidth:e.target.value})}>
-          <option value="compact">Compact</option><option value="normal">Normal</option><option value="wide">Wide</option>
-        </select>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:5,margin:"8px 0"}}>
-          {bulkCols.map(([key,label])=><label key={key} style={{fontWeight:400}}><input type="checkbox" checked={form.bulkColumns.includes(key)} onChange={e=>toggleColumn("bulkColumns",key,e.target.checked)}/> {label}</label>)}
-        </div>
-
-        <div className="auth-modal-actions">
-          <button className="auth-secondary" onClick={onClose}>Cancel</button>
-          <button className="auth-primary" onClick={onSave} disabled={loading}>Save Profile & Settings</button>
-        </div>
-      </div>
-    </div>
-  );
+  const toggleColumn=(key,value,checked)=>{const list=Array.isArray(form[key])?form[key]:[];setForm({...form,[key]:checked?[...new Set([...list,value])]:list.filter(x=>x!==value)});};
+  const setLabel=(group,key,value)=>setForm({...form,[group]:{...(form[group]||{}),[key]:value}});
+  const themes=[["blue","Classic Blue"],["green","Excel Green"],["navy","Navy"],["teal","Teal"],["purple","Purple"]];
+  const singleCols=[["date","Date"],["jobCard","Job Card"],["reading","Reading"],["plant","Plant"],["parts","Part / Service / Qty"]];
+  const bulkCols=[["customerName","Customer Name"],["vin","VIN"],["reg","Reg. No."],["saleDate","Sale Date"],["model","Model"],["currentReading","Current Reading"],["services","Service To Be Completed"]];
+  const editor=(group,key,label)=>{const lg=group==="singleColumns"?"singleColumnLabels":"bulkColumnLabels";return <div key={key} style={{display:"grid",gridTemplateColumns:"28px 1fr",gap:7,alignItems:"center",marginBottom:6}}><input type="checkbox" checked={(form[group]||[]).includes(key)} onChange={e=>toggleColumn(group,key,e.target.checked)}/><input value={(form[lg]||{})[key]||label} onChange={e=>setLabel(lg,key,e.target.value)} placeholder={label}/></div>};
+  return <div className="auth-modal-backdrop"><div className="auth-modal" style={{maxWidth:820,maxHeight:"90vh",overflow:"auto"}}><h2>Profile & Dashboard Settings</h2><p className="auth-hint">Ye settings sirf aapki user ID ke liye save hongi. Table width header divider ko mouse se drag karke set hogi.</p><label>Person Name</label><input value={form.personName} onChange={e=>setForm({...form,personName:e.target.value})}/><label>Dealer / Workshop Name</label><input value={form.dealerName} onChange={e=>setForm({...form,dealerName:e.target.value})}/><label>Mobile</label><input value={form.mobile} onChange={e=>setForm({...form,mobile:e.target.value})}/><label>Advance Booking Contact 1</label><input value={form.booking1} onChange={e=>setForm({...form,booking1:e.target.value})} placeholder="Optional mobile number"/><label>Advance Booking Contact 2</label><input value={form.booking2} onChange={e=>setForm({...form,booking2:e.target.value})} placeholder="Optional mobile number"/><div style={{marginTop:14,fontWeight:800}}>Dashboard Colour</div><div style={{display:"flex",flexWrap:"wrap",gap:8,margin:"8px 0 14px"}}>{themes.map(([key,label])=><button type="button" key={key} onClick={()=>setForm({...form,theme:key})} className={form.theme===key?"auth-primary":"auth-secondary"}>{label}</button>)}</div><div style={{fontWeight:800}}>Single Vehicle Service History Table</div><div className="auth-hint">Checkbox = show/hide · Text box = custom heading · width by mouse drag.</div><div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:5,margin:"8px 0 16px"}}>{singleCols.map(([k,l])=>editor("singleColumns",k,l))}</div><div style={{fontWeight:800}}>Bulk Vehicle Due / Service Summary Table</div><div className="auth-hint">Checkbox = show/hide · Text box = custom heading · width by mouse drag.</div><div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:5,margin:"8px 0"}}>{bulkCols.map(([k,l])=>editor("bulkColumns",k,l))}<div style={{display:"grid",gridTemplateColumns:"28px 1fr",gap:7,alignItems:"center"}}><span></span><input value={(form.bulkColumnLabels||{}).serial||"S.No. / Due"} onChange={e=>setLabel("bulkColumnLabels","serial",e.target.value)} placeholder="S.No. / Due"/></div></div><div className="auth-modal-actions"><button className="auth-secondary" onClick={onClose}>Cancel</button><button className="auth-primary" onClick={onSave} disabled={loading}>Save Profile & Settings</button></div></div></div>;
 }
 
 function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, onAnalytics }) {

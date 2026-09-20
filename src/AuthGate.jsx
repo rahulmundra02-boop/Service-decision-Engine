@@ -46,7 +46,9 @@ export default function AuthGate({ children }) {
   const [adminOpen, setAdminOpen] = useState(false);
   const [adminUsers, setAdminUsers] = useState([]);
   const [adminLoading, setAdminLoading] = useState(false);
-  const [adminForm, setAdminForm] = useState({ personName:"", dealerName:"", email:"", mobile:"", password:"" });
+  const [adminForm, setAdminForm] = useState({ userId:null, personName:"", dealerName:"", email:"", mobile:"", password:"" });
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileForm, setProfileForm] = useState({ personName:"", dealerName:"", mobile:"", booking1:"", booking2:"", theme:"blue", singleTableWidth:"wide", bulkTableWidth:"wide", singleColumns:["date","jobCard","reading","plant","parts"], bulkColumns:["customerName","vin","reg","saleDate","model","currentReading","services"] });
   const [adminAnalytics, setAdminAnalytics] = useState({ summary:[], recent:[], periods:[] });
   const [analyticsUserId, setAnalyticsUserId] = useState(null);
   const [analyticsRange, setAnalyticsRange] = useState(30);
@@ -133,11 +135,68 @@ export default function AuthGate({ children }) {
   }, [user?.role, adminOpen]);
 
   const createUser = () => run(async () => {
-    if (adminForm.password.length < 8) throw new Error("Password must be at least 8 characters.");
+    if (!adminForm.userId && adminForm.password.length < 8) {
+      throw new Error("Password must be at least 8 characters for a new user.");
+    }
+    if (adminForm.password && adminForm.password.length < 8) {
+      throw new Error("Password must be at least 8 characters.");
+    }
     const data = await api("admin-create-user", adminForm, localStorage.getItem(TOKEN_KEY));
-    setAdminForm({ personName:"", dealerName:"", email:"", mobile:"", password:"" });
-    setMessage(data.message || "User account created successfully.");
+    setAdminForm({ userId:null, personName:"", dealerName:"", email:"", mobile:"", password:"" });
+    setMessage(data.message || (adminForm.userId ? "User account updated successfully." : "User account created successfully."));
     await loadAdminUsers();
+  });
+
+  const editUser = (target) => {
+    setAdminForm({
+      userId: target.id,
+      personName: target.personName || "",
+      dealerName: target.dealerName || "",
+      email: target.email || "",
+      mobile: target.mobile || "",
+      password: "",
+    });
+    setMessage("");
+    setError("");
+  });
+
+  const saveProfile = () => run(async () => {
+    const data = await api("update-profile", {
+      personName: profileForm.personName,
+      dealerName: profileForm.dealerName,
+      mobile: profileForm.mobile,
+      preferences: {
+        booking1: profileForm.booking1,
+        booking2: profileForm.booking2,
+        theme: profileForm.theme,
+        singleTableWidth: profileForm.singleTableWidth,
+        bulkTableWidth: profileForm.bulkTableWidth,
+        singleColumns: profileForm.singleColumns,
+        bulkColumns: profileForm.bulkColumns,
+      }
+    }, localStorage.getItem(TOKEN_KEY));
+    setUser(normalizeLoggedInUser(data.user));
+    setProfileOpen(false);
+    setMessage("Profile and dashboard preferences saved.");
+  });
+
+  const openProfile = () => {
+    const p = user?.preferences || {};
+    setProfileForm({
+      personName:user?.personName || "",
+      dealerName:user?.dealerName || "",
+      mobile:user?.mobile || "",
+      booking1:p.booking1 || "",
+      booking2:p.booking2 || "",
+      theme:p.theme || "blue",
+      singleTableWidth:p.singleTableWidth || "wide",
+      bulkTableWidth:p.bulkTableWidth || "wide",
+      singleColumns:Array.isArray(p.singleColumns) && p.singleColumns.length ? p.singleColumns : ["date","jobCard","reading","plant","parts"],
+      bulkColumns:Array.isArray(p.bulkColumns) && p.bulkColumns.length ? p.bulkColumns : ["customerName","vin","reg","saleDate","model","currentReading","services"],
+    });
+    setProfileOpen(true);
+    setError("");
+    setMessage("");
   });
 
   const resetUserPassword = (target) => {
@@ -212,6 +271,7 @@ export default function AuthGate({ children }) {
       <div className="auth-userbar">
         <span><strong>{user.personName}</strong> · {user.dealerName}</span>
         <div className="auth-user-actions">
+          <button onClick={openProfile}>Profile & Settings</button>
           {user.role === "admin" && <button onClick={() => { setAdminOpen(true); setError(""); setMessage(""); }}>Admin</button>}
           <button onClick={() => { setShowPassword(true); setError(""); setMessage(""); }}>Change Password</button>
           <button className="logout-btn" onClick={logout}>Logout</button>
@@ -240,6 +300,16 @@ export default function AuthGate({ children }) {
         </div>
       )}
 
+      {profileOpen && (
+        <ProfileSettingsModal
+          form={profileForm}
+          setForm={setProfileForm}
+          onSave={saveProfile}
+          onClose={()=>setProfileOpen(false)}
+          loading={loading}
+        />
+      )}
+
       {adminOpen && user.role === "admin" ? (
         <AdminPanel
           users={adminUsers}
@@ -247,6 +317,7 @@ export default function AuthGate({ children }) {
           setForm={setAdminForm}
           loading={adminLoading || loading}
           onCreate={createUser}
+          onEdit={editUser}
           onRefresh={loadAdminUsers}
           onReset={resetUserPassword}
           onToggleStatus={toggleUserStatus}
@@ -262,7 +333,73 @@ export default function AuthGate({ children }) {
   );
 }
 
-function AdminPanel({ users, form, setForm, loading, onCreate, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, onAnalytics }) {
+function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
+  const toggleColumn = (key, value, checked) => {
+    const list = Array.isArray(form[key]) ? form[key] : [];
+    const next = checked ? [...new Set([...list,value])] : list.filter(x=>x!==value);
+    setForm({...form,[key]:next});
+  };
+
+  const themes = [
+    ["blue","Classic Blue"],["green","Excel Green"],["navy","Navy"],["teal","Teal"],["purple","Purple"]
+  ];
+  const singleCols = [
+    ["date","Date"],["jobCard","Job Card"],["reading","Reading"],["plant","Plant"],["parts","Part / Service / Qty"]
+  ];
+  const bulkCols = [
+    ["customerName","Customer Name"],["vin","VIN"],["reg","Reg. No."],["saleDate","Sale Date"],
+    ["model","Model"],["currentReading","Current Reading"],["services","Service To Be Completed"]
+  ];
+
+  return (
+    <div className="auth-modal-backdrop">
+      <div className="auth-modal" style={{maxWidth:760,maxHeight:"90vh",overflow:"auto"}}>
+        <h2>Profile & Dashboard Settings</h2>
+        <p className="auth-hint">Ye settings sirf aapki user ID ke liye save hongi.</p>
+
+        <label>Person Name</label>
+        <input value={form.personName} onChange={e=>setForm({...form,personName:e.target.value})}/>
+        <label>Dealer / Workshop Name</label>
+        <input value={form.dealerName} onChange={e=>setForm({...form,dealerName:e.target.value})}/>
+        <label>Mobile</label>
+        <input value={form.mobile} onChange={e=>setForm({...form,mobile:e.target.value})}/>
+
+        <label>Advance Booking Contact 1</label>
+        <input value={form.booking1} onChange={e=>setForm({...form,booking1:e.target.value})} placeholder="Optional mobile number"/>
+        <label>Advance Booking Contact 2</label>
+        <input value={form.booking2} onChange={e=>setForm({...form,booking2:e.target.value})} placeholder="Optional mobile number"/>
+
+        <div style={{marginTop:14,fontWeight:800}}>Dashboard Colour</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:8,margin:"8px 0 14px"}}>
+          {themes.map(([key,label])=><button type="button" key={key} onClick={()=>setForm({...form,theme:key})} className={form.theme===key?"auth-primary":"auth-secondary"}>{label}</button>)}
+        </div>
+
+        <div style={{fontWeight:800}}>Single Vehicle Service History Table</div>
+        <select value={form.singleTableWidth} onChange={e=>setForm({...form,singleTableWidth:e.target.value})}>
+          <option value="compact">Compact</option><option value="normal">Normal</option><option value="wide">Wide</option>
+        </select>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:5,margin:"8px 0 14px"}}>
+          {singleCols.map(([key,label])=><label key={key} style={{fontWeight:400}}><input type="checkbox" checked={form.singleColumns.includes(key)} onChange={e=>toggleColumn("singleColumns",key,e.target.checked)}/> {label}</label>)}
+        </div>
+
+        <div style={{fontWeight:800}}>Bulk Vehicle Due / Service Summary Table</div>
+        <select value={form.bulkTableWidth} onChange={e=>setForm({...form,bulkTableWidth:e.target.value})}>
+          <option value="compact">Compact</option><option value="normal">Normal</option><option value="wide">Wide</option>
+        </select>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:5,margin:"8px 0"}}>
+          {bulkCols.map(([key,label])=><label key={key} style={{fontWeight:400}}><input type="checkbox" checked={form.bulkColumns.includes(key)} onChange={e=>toggleColumn("bulkColumns",key,e.target.checked)}/> {label}</label>)}
+        </div>
+
+        <div className="auth-modal-actions">
+          <button className="auth-secondary" onClick={onClose}>Cancel</button>
+          <button className="auth-primary" onClick={onSave} disabled={loading}>Save Profile & Settings</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, onAnalytics }) {
   const analyticsDetailRef = useRef(null);
   const [view, setView] = useState("overview");
 
@@ -507,7 +644,7 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onRefresh, onRese
             <div className="admin-section-title">User Management</div>
             <div className="admin-grid admin-management-grid">
               <div className="admin-form-card">
-                <h3>User Account</h3>
+                <h3>{form.userId ? "Edit User Account" : "Create User Account"}</h3>
                 <label>Person Name *</label>
                 <input value={form.personName} onChange={e=>setForm({...form,personName:e.target.value})} />
                 <label>Dealer Name *</label>
@@ -516,9 +653,10 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onRefresh, onRese
                 <input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} />
                 <label>Mobile (optional)</label>
                 <input value={form.mobile} onChange={e=>setForm({...form,mobile:e.target.value})} placeholder="10 digit mobile" />
-                <label>Password *</label>
-                <input type="password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder="Minimum 8 characters" />
-                <button className="auth-primary" onClick={onCreate} disabled={loading}>Create / Update User</button>
+                <label>Password {form.userId ? "(optional)" : "*"}</label>
+                <input type="password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder={form.userId ? "Leave blank to keep current password" : "Minimum 8 characters"} />
+                <button className="auth-primary" onClick={onCreate} disabled={loading}>{form.userId ? "Save User Changes" : "Create User"}</button>
+                {form.userId && <button className="auth-secondary" onClick={()=>setForm({userId:null,personName:"",dealerName:"",email:"",mobile:"",password:""})}>Cancel Edit</button>}
               </div>
 
               <div className="admin-users-card">
@@ -533,7 +671,11 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onRefresh, onRese
                         <td>{u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : "Never"}</td>
                         <td>{u.lastActivityAt ? new Date(u.lastActivityAt).toLocaleString() : "—"}</td>
                         <td><button className="admin-analytics-btn" onClick={()=>onAnalytics(Number(u.id),analyticsRange)}>View</button></td>
-                        <td>{u.role !== "admin" && <div className="admin-row-actions"><button onClick={()=>onReset(u)}>Reset Password</button><button onClick={()=>onToggleStatus(u)}>{u.status === "active" ? "Deactivate" : "Activate"}</button></div>}</td>
+                        <td><div className="admin-row-actions">
+                          {u.role !== "admin" && <button onClick={()=>onEdit(u)}>Edit</button>}
+                          {u.role !== "admin" && <button onClick={()=>onReset(u)}>Reset Password</button>}
+                          {u.role !== "admin" && <button onClick={()=>onToggleStatus(u)}>{u.status === "active" ? "Deactivate" : "Activate"}</button>}
+                        </div></td>
                       </tr>)}
                       {!users.length && <tr><td colSpan="9" className="admin-empty">No users found.</td></tr>}
                     </tbody>

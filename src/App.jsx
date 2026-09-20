@@ -2585,7 +2585,16 @@ function estimateBuildHistoricalItem(type, serviceKey, rows, code = "") {
   if (!rows.length) return null;
 
   const qtyChoice = estimateChooseBestQuantity(rows);
-  if (!qtyChoice) return null;
+  // Labour operations are normally one job operation. Some DMS exports do not
+  // carry a usable quantity on P001 rows, so do not hide a valid historical
+  // labour operation just because quantity is blank/zero.
+  const effectiveQtyChoice = qtyChoice || {
+    qty: type === "labour" ? 1 : 0,
+    count: 1,
+    latestRank: -1,
+    latestRow: rows[0],
+  };
+  if (effectiveQtyChoice.qty <= 0) return null;
 
   const rate = estimateChooseBestRate(rows);
   const sourceRow = rows
@@ -2607,7 +2616,7 @@ function estimateBuildHistoricalItem(type, serviceKey, rows, code = "") {
     serviceKey,
     partNo,
     description,
-    qty: qtyChoice.qty,
+    qty: effectiveQtyChoice.qty,
     rate: customerRate,
     baseRate: rate,
     source: "Historical DB (18% GST added)",
@@ -2807,8 +2816,7 @@ function estimateHistoryToItems(rows = [], selectedKeys = []) {
     // Labour is always searched independently across the full VIN history.
     // A missing/mismatched part line must never hide valid historical labour.
     const labourRows = rows.filter(row =>
-      estimateLabourMatchesService(row, serviceKey) &&
-      Number(row?.quantity || 0) > 0
+      estimateLabourMatchesService(row, serviceKey)
     );
 
     if (serviceKey === "hubGrease") {

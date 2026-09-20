@@ -2608,6 +2608,7 @@ function estimateBuildHistoricalItem(type, serviceKey, rows, code = "") {
     rate: customerRate,
     baseRate: rate,
     source: "Historical DB (18% GST added)",
+    latestRow: sourceRow,
   };
 }
 

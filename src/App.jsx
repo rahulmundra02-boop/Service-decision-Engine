@@ -3048,8 +3048,8 @@ function PortalHome({ user, onNavigate, onUpload, hasAnalysis, bulkResults }) {
   ];
   return (
     <div className="portal-home">
-      <div className="portal-home-hero"><div><div className="portal-home-kicker">SERVICE DECISION WEB PORTAL</div><h1>Welcome{user?.personName ? ", " + user.personName : ""}</h1><p>Choose what you want to do. The portal will guide you to the required service information.</p></div><button className="excel-button green portal-upload-button" onClick={onUpload}>Upload Excel &amp; Start</button></div>
-      <div className="portal-kpi-grid"><div className="portal-kpi"><span>Vehicles Loaded</span><strong>{totalVehicles}</strong><small>Current session</small></div><div className="portal-kpi"><span>Vehicles With Service Due</span><strong>{dueVehicles}</strong><small>Current session</small></div><div className="portal-kpi"><span>Portal Mode</span><strong>Beta</strong><small>Testing &amp; feedback</small></div></div>
+      <div className="portal-home-hero"><div><div className="portal-home-kicker">SERVICE DECISION WEB PORTAL</div><h1>Welcome{user?.personName ? ", " + user.personName : ""}</h1><p>Your main workflow starts with Excel upload. Upload the DMS file first, then analyse vehicles or prepare the due summary.</p></div><button className="excel-button green portal-upload-button" onClick={onUpload}>Upload Excel &amp; Start</button></div>
+      <div className="portal-kpi-grid"><div className="portal-kpi"><span>Vehicles in Current Upload</span><strong>{totalVehicles}</strong><small>Current session only</small></div><div className="portal-kpi"><span>Due Vehicles in Current Upload</span><strong>{dueVehicles}</strong><small>Current session only</small></div><div className="portal-kpi"><span>Portal Mode</span><strong>Beta</strong><small>Testing &amp; feedback</small></div></div>
       <div className="portal-section-title">What would you like to do?</div>
       <div className="portal-action-grid">{cards.map(card => <button key={card.key} className="portal-action-card" onClick={() => onNavigate(card.key)}><span className="portal-action-icon">{card.icon}</span><span className="portal-action-title">{card.title}</span><span className="portal-action-text">{card.text}</span><span className="portal-action-link">Open →</span></button>)}
         <button className={"portal-action-card " + (hasAnalysis ? "" : "disabled")} disabled={!hasAnalysis} onClick={() => onNavigate("estimate")}><span className="portal-action-icon">🧾</span><span className="portal-action-title">Prepare Estimate</span><span className="portal-action-text">{hasAnalysis ? "Prepare a service estimate from the analysed vehicle." : "Analyse a single vehicle first."}</span><span className="portal-action-link">{hasAnalysis ? "Open →" : "Not available yet"}</span></button>
@@ -3084,6 +3084,7 @@ function ServiceDecisionApp({ user }) {
   const [estimateNotice, setEstimateNotice] = useState("");
   const [estimateNumber, setEstimateNumber] = useState("");
   const [bulkSearch, setBulkSearch] = useState("");
+  const [bulkQuickFilter, setBulkQuickFilter] = useState("all");
   const [manualPartLookupBusy, setManualPartLookupBusy] = useState({});
   const defaultSingleColumns = ["date","jobCard","reading","plant","parts"];
   const defaultBulkColumns = ["customerName","vin","reg","saleDate","model","currentReading","services"];
@@ -3556,6 +3557,7 @@ function ServiceDecisionApp({ user }) {
     const search = bulkSearch.trim().toLowerCase();
     const rows = bulkResults
       .filter(item => Array.isArray(item.services) && item.services.length > 0)
+      .filter(item => bulkQuickFilter === "all" || bulkQuickFilter === "due")
       .filter(item => {
         if (!search) return true;
         const values = getBulkDisplayValues(item);
@@ -3586,7 +3588,7 @@ function ServiceDecisionApp({ user }) {
     });
 
     return sorted;
-  }, [bulkResults, bulkFilterSelections, bulkTableSort, bulkSearch]);
+  }, [bulkResults, bulkFilterSelections, bulkTableSort, bulkSearch, bulkQuickFilter]);
 
   const openBulkFilterMenu = (key, event) => {
     event.preventDefault();
@@ -3630,16 +3632,27 @@ function ServiceDecisionApp({ user }) {
   };
 
   const downloadBulkCsv = () => {
-    const rows = bulkSummaryRows.map((item,index) => ({
-      "S.No.": index + 1,
-      "Customer Name": item.vehicle.customerName || "",
-      "VIN": item.vin || item.vehicle.vin || "",
-      "Reg. No.": item.vehicle.reg || "",
-      "Sale Date": item.vehicle.sale ? formatDateShort(item.vehicle.sale) : "",
-      "Model": item.vehicle.model || "",
-      "Current Reading": item.running?.current ? formatNumber(item.running.current) + " " + (item.running.unit || getTargetUnit(item.vehicle)) : "",
-      "Service To Be Completed": item.services.join(", "),
-    }));
+    const exportColumns = [
+      ["serial", "S.No."],
+      ["customerName", bulkColumnLabels.customerName || "Customer Name"],
+      ["vin", bulkColumnLabels.vin || "VIN"],
+      ["reg", bulkColumnLabels.reg || "Reg. No."],
+      ["saleDate", bulkColumnLabels.saleDate || "Sale Date"],
+      ["model", bulkColumnLabels.model || "Model"],
+      ["currentReading", bulkColumnLabels.currentReading || "Current Reading"],
+      ["services", bulkColumnLabels.services || "Service To Be Completed"],
+    ].filter(([key]) => key === "serial" || isBulkColumnVisible(key));
+
+    const rows = bulkSummaryRows.map((item, index) => {
+      const values = getBulkDisplayValues(item);
+      return Object.fromEntries(
+        exportColumns.map(([key, label]) => [
+          label,
+          key === "serial" ? index + 1 : (values[key] === "-" ? "" : values[key]),
+        ])
+      );
+    });
+
     const sheet = XLSX.utils.json_to_sheet(rows);
     const book = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(book, sheet, "Due Summary");
@@ -3657,6 +3670,8 @@ function ServiceDecisionApp({ user }) {
       services: [],
     });
     setBulkTableSort({ key: "dueCount", direction: "desc" });
+    setBulkSearch("");
+    setBulkQuickFilter("all");
     setOpenBulkFilter(null);
   };
 
@@ -3682,6 +3697,8 @@ function ServiceDecisionApp({ user }) {
     setUploadMeta(null);
     setUploadParsedRecords([]);
     setBulkTableSort({ key: "dueCount", direction: "desc" });
+    setBulkSearch("");
+    setBulkQuickFilter("all");
     setBulkTableFilters({
       customerName: "",
       vin: "",
@@ -3845,13 +3862,13 @@ function ServiceDecisionApp({ user }) {
     pdf.text(workshop,105,21,{align:"center"});
     pdf.setFont("helvetica","normal");
     pdf.setFontSize(8.5);
-    pdf.text("Estimate only - subject to actual inspection and applicable rates.",105,27,{align:"center"});
+    pdf.text("Estimate only - subject to actual inspection and applicable rates.",105,25,{align:"center"});
     pdf.setFontSize(8);
-    pdf.text("Estimate No.: " + (estimateNumber || "-"),margin,27);
-    pdf.text("Prepared: " + formatDate(new Date()),width + margin,27,{align:"right"});
+    pdf.text("Estimate No. (Session): " + (estimateNumber || "-"),margin,30);
+    pdf.text("Prepared: " + formatDate(new Date()),width + margin,30,{align:"right"});
 
     autoTable(pdf,{
-      startY:32,
+      startY:35,
       margin:{left:margin,right:margin},
       tableWidth:width,
       theme:"grid",
@@ -4605,7 +4622,7 @@ function ServiceDecisionApp({ user }) {
                           ...(analysis.decision.additionalServices || []).filter(name => !String(name).toLowerCase().includes('free service'))
                         ];
                         return names.length ? names.map(name => <span className="due-chip" key={name}>{name}</span>) : <div className="no-due">No service to be completed at the current reading.</div>;
-                      })() : <div className="small-note">Analyse vehicle to display customer-facing service due.</div>}
+                      })() : <div className="single-empty-state"><b>No vehicle analysis yet</b><span>Upload the DMS Excel file to start the service decision.</span><button className="excel-button green no-print" onClick={() => document.getElementById("excel-file-input")?.click()}>Upload Excel &amp; Start</button></div>}
                     </div>
                   </div>
                 </div>
@@ -4670,12 +4687,13 @@ function ServiceDecisionApp({ user }) {
                   {customerGroups.map(group=>{const dueVehicles=group.vehicles.filter(v=>v.services.length>0);return <div className="bulk-card" key={group.id}><div className="bulk-card-head"><div className="action-row"><strong>{group.name}</strong><span className="small-note">{group.vehicles.length} vehicles · {dueVehicles.length} due</span><span className="spacer"/><button className="excel-button no-print" onClick={()=>copyCustomerSummary(group, user?.dealerName, user?.preferences || {})}>Copy WhatsApp Summary</button><button className="excel-button no-print" onClick={()=>printCustomerReport(group,true)}>Print Detailed PDF</button></div></div></div>})}
 
                   <div className="bulk-overview-grid">
-                    <div className="bulk-overview-card"><span>Total Vehicles</span><strong>{bulkResults.length}</strong></div>
-                    <div className="bulk-overview-card due"><span>Service Due</span><strong>{bulkResults.filter(item => item.services?.length > 0).length}</strong></div>
-                    <div className="bulk-overview-card"><span>No Service Due</span><strong>{bulkResults.filter(item => !item.services?.length).length}</strong></div>
-                    <div className="bulk-overview-card"><span>Due Services</span><strong>{bulkResults.reduce((sum,item)=>sum + (item.services?.length || 0),0)}</strong></div>
+                    <button type="button" className={"bulk-overview-card bulk-overview-card-button " + (bulkQuickFilter === "all" ? "active" : "")} onClick={() => setBulkQuickFilter("all")}><span>Total Vehicles</span><strong>{bulkResults.length}</strong><small>Show all due vehicles</small></button>
+                    <button type="button" className={"bulk-overview-card bulk-overview-card-button " + (bulkQuickFilter === "due" ? "active" : "")} onClick={() => setBulkQuickFilter("due")}><span>Service Due</span><strong>{bulkResults.filter(item => item.services?.length > 0).length}</strong><small>Show due vehicles</small></button>
+                    <div className="bulk-overview-card"><span>Due Services</span><strong>{bulkResults.reduce((sum,item)=>sum + (item.services?.length || 0),0)}</strong><small>Total due service items</small></div>
+                    <div className="bulk-overview-card"><span>Currently Shown</span><strong>{bulkSummaryRows.length}</strong><small>After search / Excel filters</small></div>
                   </div>
                   <div className="section-title">Service Summary</div>
+                  <div className="bulk-control-labels no-print"><span>Search</span><span>Excel Filter / Sort</span><span>Export</span></div>
                   <div className="action-row no-print" style={{margin:"6px 0"}}>
                     <input className="excel-input bulk-search-input" value={bulkSearch} onChange={e=>setBulkSearch(e.target.value)} placeholder="Search VIN, Reg. No., Customer, Model or Service..." aria-label="Search bulk vehicle summary" />
                     <span className="small-note">
@@ -4801,7 +4819,7 @@ function ServiceDecisionApp({ user }) {
               {estimateStage === "select" ? (
                 <>
                   <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
-                    <div style={{fontSize:22,fontWeight:800}}>SELECT AGGREGATE SERVICES</div><div className="estimate-meta">Estimate No.: <b>{estimateNumber || "-"}</b> · Date: <b>{formatDate(new Date())}</b></div>
+                    <div style={{fontSize:22,fontWeight:800}}>SELECT AGGREGATE SERVICES</div><div className="estimate-meta">Estimate No. (Session): <b>{estimateNumber || "-"}</b> · Date: <b>{formatDate(new Date())}</b></div>
                     <span style={{fontSize:12,color:"#666"}}>Single Vehicle Estimate</span>
                     <button className="excel-button" style={{marginLeft:"auto"}} onClick={()=>setEstimateOpen(false)}>Cancel</button>
                   </div>
@@ -4827,7 +4845,7 @@ function ServiceDecisionApp({ user }) {
               ) : (
                 <>
                   <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,borderBottom:"1px solid #ddd",paddingBottom:10}}>
-                    <div style={{fontSize:22,fontWeight:800}}>SERVICE ESTIMATE</div><div className="estimate-meta">Estimate No.: <b>{estimateNumber || "-"}</b> · Date: <b>{formatDate(new Date())}</b></div>
+                    <div style={{fontSize:22,fontWeight:800}}>SERVICE ESTIMATE</div><div className="estimate-meta">Estimate No. (Session): <b>{estimateNumber || "-"}</b> · Date: <b>{formatDate(new Date())}</b></div>
                     <span style={{fontSize:12,color:"#666"}}>Single Vehicle Only</span>
                     <span style={{marginLeft:"auto",fontWeight:700}}>{user?.dealerName || "Workshop"}</span>
                     <button className="excel-button no-print" onClick={()=>setEstimateOpen(false)}>Close</button>

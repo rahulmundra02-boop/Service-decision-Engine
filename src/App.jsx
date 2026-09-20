@@ -3634,7 +3634,11 @@ function ServiceDecisionApp({ user }) {
     );
     setEstimateParts(items.filter(item => item.type === "part"));
     setEstimateLabour(items.filter(item => item.type === "labour"));
-    setEstimateNotice(estimateHistory.length ? "Estimate prepared from vehicle history. You can edit every line or add missing items manually." : "No historical estimate items found. Please add the required items manually.");
+    setEstimateNotice(
+      (history.vehicleRows?.length || history.modelRows?.length)
+        ? "Estimate prepared from vehicle history and same-model DB fallback. You can edit every line or add missing items manually."
+        : "No historical estimate items found. Please add the required items manually."
+    );
     setEstimateStage("estimate");
   }
   function reviseEstimateServices() { setEstimateStage("select"); }

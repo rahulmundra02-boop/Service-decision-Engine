@@ -2390,9 +2390,27 @@ const HUB_GREASE_STANDARD_CODES = new Set([
   "H5001220",
 ]);
 
+const ESTIMATE_LABOUR_REFERENCE = {
+  airFilter: [{ code:"AIS110", description:"R and R Air Filter And Replace Element" }],
+  defFilter: [{ code:"ATS455Z", description:"R & R DEF tank suction filter" }],
+  coolant: [{ code:"CLG125", description:"Drain and Refill Coolant" }],
+  clutchOil: [{ code:"CLH125", description:"Drain and Refill Clutch Oil and Bleed Sy" }],
+  engineOil: [{ code:"ELS105", description:"Drain and Refill Engine Oil and Filter" }],
+  fuelFilter: [{ code:"FUL110", description:"R and R Fuel Filter / Pre Filter" }],
+  gearOil: [{ code:"GBX130", description:"Drain oil in Gearbox and Refill" }],
+  axleOil: [{ code:"RAX145", description:"Drain and Refill oil in Rear Axle" }],
+  steeringOil: [{ code:"STH110", description:"Drain and Refill Steering Box oil" }],
+  hubGrease: [
+    { code:"WHL165A", description:"Hub Greasing - Front Axle - 2 Hubs" },
+    { code:"WHL165C", description:"Hub Greasing - Front Axle - 4 Hubs" },
+    { code:"WHL170A", description:"Hub Greasing - Rear Axle - 2 Hubs" },
+    { code:"WHL170C", description:"Hub Greasing - Rear Axle - 4 Hubs" },
+    { code:"WHL175A", description:"Hub Greasing - STLA - 2 Hubs" },
+    { code:"WHL180A", description:"Hub Greasing - DTLA - 2 Hubs" },
+  ],
+};
+
 const ESTIMATE_LABOUR_RULES = [
-  // DMS labour descriptions can contain spelling/wording variations.
-  // Match the service operation, not one exact sentence.
   { key:"engineOil", test:t => t.includes("ENGINE OIL") && t.includes("OIL FILTER") },
   { key:"gearOil", test:t => (t.includes("GEARBOX") || t.includes("GEAR BOX")) && t.includes("OIL") },
   { key:"axleOil", test:t => (t.includes("REAR AXLE") || t.includes("REAR AXEL")) && t.includes("OIL") },
@@ -2472,6 +2490,7 @@ function estimatePreferredReferenceCode(serviceKey = "", standardName = "", cand
 
 function estimateLabourMatchesService(row = {}, serviceKey = "") {
   if (estimateCategory(row) !== "labour") return false;
+
   const text = [
     row.part_description,
     row.standardized_part,
@@ -2479,6 +2498,30 @@ function estimateLabourMatchesService(row = {}, serviceKey = "") {
     row.repair_type,
     row.part_code,
   ].join(" ").toUpperCase().replace(/[^A-Z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+
+  const referenceRows = ESTIMATE_LABOUR_REFERENCE[serviceKey] || [];
+
+  // For Hub Greasing, only use the model-specific labour operation(s)
+  // actually found in the same VIN/model history. Never add all six.
+  if (serviceKey === "hubGrease") {
+    return referenceRows.some(reference =>
+      text.includes(reference.code) ||
+      text.includes(reference.description.toUpperCase()) ||
+      text.includes(reference.description.toUpperCase().replace(/[^A-Z0-9]+/g, " ").replace(/\s+/g, " "))
+    );
+  }
+
+  // For all other aggregates, use the exact reference labour code first,
+  // while retaining description matching for legacy DMS wording.
+  const reference = referenceRows[0];
+  if (reference) {
+    const codeMatches = text.includes(reference.code);
+    const description = reference.description.toUpperCase();
+    const descriptionMatches =
+      text.includes(description) ||
+      text.includes(description.replace(/[^A-Z0-9]+/g, " ").replace(/\s+/g, " "));
+    return codeMatches || descriptionMatches;
+  }
 
   const rule = ESTIMATE_LABOUR_RULES.find(item => item.key === serviceKey);
   return !!rule && rule.test(text);
@@ -2688,8 +2731,40 @@ function estimateHistoryToItems(rows = [], selectedKeys = []) {
       estimateLabourMatchesService(row,serviceKey) &&
       Number(row?.quantity||0)>0
     );
-    const labourItem=estimateBuildHistoricalItem("labour",serviceKey,labourRows,"");
-    if(labourItem) items.push(labourItem);
+
+    if (serviceKey === "hubGrease") {
+      // Keep each model-specific hub greasing operation separately so the
+      // estimate shows only the operations actually present in this vehicle's history.
+      const referenceRows = ESTIMATE_LABOUR_REFERENCE.hubGrease || [];
+      for (const reference of referenceRows) {
+        const matches = labourRows.filter(row => {
+          const text = [
+            row.part_description,
+            row.standardized_part,
+            row.repair_line_item_type,
+            row.repair_type,
+            row.part_code,
+          ].join(" ").toUpperCase().replace(/[^A-Z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+          const description = reference.description.toUpperCase();
+          return text.includes(reference.code) ||
+            text.includes(description) ||
+            text.includes(description.replace(/[^A-Z0-9]+/g, " ").replace(/\s+/g, " "));
+        });
+        const labourItem = estimateBuildHistoricalItem("labour", serviceKey, matches, reference.code);
+        if (labourItem) {
+          labourItem.description = reference.description;
+          labourItem.partNo = reference.code;
+          items.push(labourItem);
+        }
+      }
+    } else {
+      const labourItem=estimateBuildHistoricalItem("labour",serviceKey,labourRows,ESTIMATE_LABOUR_REFERENCE[serviceKey]?.[0]?.code || "");
+      if(labourItem) {
+        const reference = ESTIMATE_LABOUR_REFERENCE[serviceKey]?.[0];
+        if (reference) labourItem.description = reference.description;
+        items.push(labourItem);
+      }
+    }
   }
   return items;
 }

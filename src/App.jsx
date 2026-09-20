@@ -2412,17 +2412,18 @@ const ESTIMATE_LABOUR_REFERENCE = {
 };
 
 const ESTIMATE_LABOUR_RULES = [
-  { key:"engineOil", test:t => t.includes("ENGINE OIL") && t.includes("OIL FILTER") },
-  { key:"gearOil", test:t => (t.includes("GEARBOX") || t.includes("GEAR BOX")) && t.includes("OIL") },
-  { key:"axleOil", test:t => (t.includes("REAR AXLE") || t.includes("REAR AXEL")) && t.includes("OIL") },
-  { key:"steeringOil", test:t => t.includes("STEERING OIL") || (t.includes("STEERING") && t.includes("FILTER")) },
-  { key:"clutchOil", test:t => t.includes("CLUTCH OIL") || (t.includes("CLUTCH") && t.includes("BLEED")) },
-  { key:"coolant", test:t => t.includes("COOLANT") && (t.includes("REFILL") || t.includes("DRAIN") || t.includes("DRAI")) },
+  { key:"engineOil", test:t => t.includes("ENGINE OIL") && (t.includes("OIL FILTER") || t.includes("FILTER")) },
+  { key:"gearOil", test:t => (t.includes("GEARBOX") || t.includes("GEAR BOX") || t.includes("GEAR OIL")) && (t.includes("OIL") || t.includes("REFILL")) },
+  { key:"axleOil", test:t => (t.includes("REAR AXLE") || t.includes("REAR AXEL") || t.includes("AXLE OIL")) && (t.includes("OIL") || t.includes("REFILL")) },
+  { key:"steeringOil", test:t => t.includes("STEERING") && (t.includes("OIL") || t.includes("FILTER") || t.includes("BOX")) },
+  { key:"clutchOil", test:t => t.includes("CLUTCH OIL") || (t.includes("CLUTCH") && (t.includes("BLEED") || t.includes("REFILL"))) },
+  { key:"coolant", test:t => t.includes("COOLANT") && (t.includes("REFILL") || t.includes("DRAIN") || t.includes("DRAI") || t.includes("R AND R") || t.includes("R R")) },
   { key:"fuelFilter", test:t => t.includes("FUEL FILTER") },
   { key:"hubGrease", test:t => t.includes("HUB GREAS") },
   { key:"airFilter", test:t => t.includes("AIR FILTER") && (t.includes("ELEMENT") || t.includes("R AND R") || t.includes("R R")) },
-  { key:"defFilter", test:t => t.includes("DEF") && (t.includes("SUCTION FILTER") || (t.includes("SUCTION") && t.includes("FILTER"))) },
-  { key:"apdaFilter", test:t => t.includes("APDA") && t.includes("FILTER") },
+  { key:"defFilter", test:t => t.includes("DEF") && ((t.includes("SUCTION") && t.includes("FILTER")) || (t.includes("DEF FILTER") && t.includes("AIR"))) },
+  { key:"defInline", test:t => t.includes("DEF") && t.includes("INLINE") && t.includes("FILTER") },
+  { key:"apdaFilter", test:t => t.includes("APDA") && (t.includes("FILTER") || t.includes("DESICCANT") || t.includes("CARTRIDGE")) },
 ];
 
 function estimateCategory(row = {}) {
@@ -2525,8 +2526,8 @@ function estimateLabourMatchesService(row = {}, serviceKey = "") {
   }
 
   // Historical DMS labour wording can differ from the reference description.
-  // Find the actual service operation using the established service rule,
-  // then replace its displayed code/description with the reference below.
+  // Find the actual operation using the service rule, then display the configured
+  // reference code/description when one exists.
   const rule = ESTIMATE_LABOUR_RULES.find(item => item.key === serviceKey);
   return !!rule && rule.test(text);
 }
@@ -2730,9 +2731,20 @@ function estimateHistoryToItems(rows = [], selectedKeys = []) {
       }
     }
 
-    const eligibleKeys=estimateEligibleJobCards(rows,serviceKey);
+    // Labour is identified independently from the part eligibility check.
+    // A historical labour operation is direct evidence that this service was
+    // actually performed; requiring a matching part row was hiding valid labour
+    // for Coolant, Axle Oil, Steering Oil, DEF/APDA and similar services.
+    const labourJobKeys = new Set(
+      rows
+        .filter(row =>
+          estimateLabourMatchesService(row, serviceKey) &&
+          Number(row?.quantity || 0) > 0
+        )
+        .map(row => estimateJobCardKey(row))
+    );
     const labourRows=rows.filter(row =>
-      eligibleKeys.has(estimateJobCardKey(row)) &&
+      labourJobKeys.has(estimateJobCardKey(row)) &&
       estimateLabourMatchesService(row,serviceKey) &&
       Number(row?.quantity||0)>0
     );

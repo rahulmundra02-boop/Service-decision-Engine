@@ -197,7 +197,7 @@ export default function AuthGate({ children }) {
     setProfileOpen(true);
     setError("");
     setMessage("");
-  });
+  };
 
   const resetUserPassword = (target) => {
     const newPassword = window.prompt(`Enter new password for ${target.personName} (minimum 8 characters):`);

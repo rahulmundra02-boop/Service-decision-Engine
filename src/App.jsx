@@ -201,6 +201,7 @@ const PART_STANDARDIZATION = {
   'EN6A9991': 'Engine Oil',
   'EN6A9992': 'Engine Oil',
   'F7A01500': 'Engine Oil Filter',
+  'ENB99998': 'Engine Oil',
   'F7A05000': 'Engine Oil Filter',
   'FPA00300': 'Engine Oil Filter',
   'P7A00029': 'Engine Oil Filter',
@@ -262,6 +263,7 @@ const PART_STANDARDIZATION = {
   'P5104332': 'Fuel Filter',
   'P5104480': 'Fuel Filter',
   'P5104481': 'Fuel Filter',
+  'X8820800': 'Fuel Filter',
   'P7A00031': 'Fuel Filter',
   'P7A00090': 'Fuel Filter',
   'P7B00002': 'Fuel Filter',
@@ -325,6 +327,7 @@ const PART_STANDARDIZATION = {
   'P5104737': 'Fuel Filter Kit',
   'P5105606': 'Fuel Filter Kit',
   'P5105609': 'Fuel Filter Kit',
+  'P5104720': 'Fuel Filter Kit',
   'P5105703': 'Fuel Filter Kit',
   'P7A00042': 'Fuel Filter Kit',
   'G9999994': 'Gear Oil',
@@ -332,6 +335,7 @@ const PART_STANDARDIZATION = {
   'G9999998': 'Gear Oil',
   'G9999997': 'Hub Grease',
   'S9999997': 'Hub Grease',
+  'S9999999': 'Hub Grease',
   'FS0H1D': 'Hub grease 10 Hub',
   'FS0H1A': 'Hub grease 4 Hub',
   'FS0H1B': 'Hub grease 6 Hub',
@@ -2362,6 +2366,21 @@ const ESTIMATE_STANDARD_PARTS = {
   apdaFilter: ["APDA FILTER"],
 };
 
+const ESTIMATE_REFERENCE_PARTS = {
+  engineOil: ["EN699991", "F7A01500"],
+  gearOil: ["G9999994"],
+  axleOil: ["GB699991"],
+  steeringOil: ["PSB99994", "PD600391"],
+  clutchOil: ["CFD99991"],
+  defInline: ["XFM00800"],
+  coolant: ["C9999993"],
+  hubGrease: ["S9999997", "FJ607400", "F1721500", "F1771990", "H5001220", "S9999999"],
+  fuelFilter: ["P5105609"],
+  airFilter: ["P5105688"],
+  defFilter: ["XFM00500", "PET00001"],
+  apdaFilter: ["PD600968"],
+};
+
 const HUB_GREASE_STANDARD_CODES = new Set([
   "S9999997",
   "FJ607400",
@@ -2424,6 +2443,30 @@ function estimatePartMatchesService(row = {}, serviceKey = "") {
     if (serviceKey === "defFilter" && name.includes("INLINE")) return false;
     return name.includes(family);
   });
+}
+
+function estimatePreferredReferenceCode(serviceKey = "", standardName = "", candidates = []) {
+  const references = ESTIMATE_REFERENCE_PARTS[serviceKey] || [];
+  if (!references.length) return "";
+
+  const candidateCodes = new Set(
+    candidates.map(row => normalizePartCode(row?.part_code)).filter(Boolean)
+  );
+  const matchingReference = references.find(code => candidateCodes.has(normalizePartCode(code)));
+  if (matchingReference) return matchingReference;
+
+  const name = String(standardName || "").toUpperCase();
+  if (serviceKey === "engineOil") {
+    return name.includes("FILTER") ? "F7A01500" : "EN699991";
+  }
+  if (serviceKey === "steeringOil") {
+    return name.includes("FILTER") ? "PD600391" : "PSB99994";
+  }
+  if (serviceKey === "defFilter") {
+    if (name.includes("SUCTION")) return "PET00001";
+    return "XFM00500";
+  }
+  return references[0];
 }
 
 function estimateLabourMatchesService(row = {}, serviceKey = "") {
@@ -2622,7 +2665,17 @@ function estimateHistoryToItems(rows = [], selectedKeys = []) {
         })).sort((a,b)=>b.count-a.count || b.latest-a.latest);
         const winner=rankedCodes[0];
         if(winner){
-          const item=estimateBuildHistoricalItem("part",serviceKey,winner.rows,winner.code);
+          const referenceCode = estimatePreferredReferenceCode(
+            serviceKey,
+            standard,
+            winner.rows
+          );
+          const item=estimateBuildHistoricalItem(
+            "part",
+            serviceKey,
+            winner.rows,
+            referenceCode || winner.code
+          );
           if(item) items.push(item);
         }
       }
@@ -3767,7 +3820,10 @@ function ServiceDecisionApp({ user }) {
         <div className="excel-window">
           <div className="excel-titlebar">
             <div className="excel-title">Vehicle Service Decision &amp; Maintenance Dashboard</div>
-            <div className="excel-title-right">Excel Web Version</div>
+            <div className="excel-title-right" style={{display:"flex",alignItems:"center",gap:10}}>
+              <span>Excel Web Version</span>
+              <span style={{fontSize:11,fontWeight:700,opacity:.9}}>Beta Commit: {import.meta.env.VITE_VERCEL_GIT_COMMIT_SHA || "Local"}</span>
+            </div>
           </div>
 
           <div className="excel-ribbon no-print">

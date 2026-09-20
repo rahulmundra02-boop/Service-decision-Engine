@@ -2698,18 +2698,38 @@ function estimateEligibleJobCards(rows = [], serviceKey = "") {
 
 function estimateRowsForCompleteService(rows = [], serviceKey = "") {
   const allRows = estimatePartRows(rows, serviceKey);
-  if (!allRows.length) return [];
-
   const eligibleKeys = estimateEligibleJobCards(rows, serviceKey);
 
-  // Prefer parts from a complete-service job card. If the vehicle history does
-  // not contain such a card, do not hide the aggregate: fall back to every
-  // matching historical part for this VIN.
+  // First preference: the same service part from a job card that looks like a
+  // complete replacement. Second preference: any matching historical part for
+  // this VIN. This prevents a missing/misnamed line on one job card from
+  // making a selected aggregate disappear.
   const preferredRows = eligibleKeys.size
     ? allRows.filter(row => eligibleKeys.has(estimateJobCardKey(row)))
     : [];
+  if (preferredRows.length) return preferredRows;
+  if (allRows.length) return allRows;
 
-  return preferredRows.length ? preferredRows : allRows;
+  // Final fallback: when the DMS history contains the labour operation for the
+  // selected service but the part line has an unknown/mismatched description,
+  // use P002 rows from the same job card as the historical quantity/rate source.
+  // The displayed part number will then come from the user-provided reference
+  // list. This is deliberately a fallback only; unrelated vehicle-history
+  // parts from other job cards are never used.
+  const labourJobKeys = new Set(
+    rows
+      .filter(row =>
+        estimateLabourMatchesService(row, serviceKey) &&
+        Number(row?.quantity || 0) > 0
+      )
+      .map(row => estimateJobCardKey(row))
+  );
+
+  return rows.filter(row =>
+    labourJobKeys.has(estimateJobCardKey(row)) &&
+    estimateCategory(row) === "part" &&
+    Number(row?.quantity || 0) > 0
+  );
 }
 
 function estimateHistoryToItems(rows = [], selectedKeys = []) {

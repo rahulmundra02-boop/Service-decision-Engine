@@ -2769,9 +2769,30 @@ function estimateRowsForCompleteService(rows = [], serviceKey = "") {
   );
 }
 
-function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows = []) {
+function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows = [], globalPartRates = []) {
   const vehicle = Array.isArray(vehicleRows) ? vehicleRows : [];
   const modelHistory = Array.isArray(modelRows) ? modelRows : [];
+  const allModelRates = Array.isArray(globalPartRates) ? globalPartRates : [];
+
+  function latestGlobalPartRate(partCode) {
+    const code = normalizePartCode(partCode);
+    if (!code) return 0;
+    const row = allModelRates.find(item =>
+      normalizePartCode(item?.part_code) === code &&
+      Number(item?.rate) > 0
+    );
+    return Number(row?.rate || 0);
+  }
+
+  function applyGlobalPartRate(item) {
+    if (!item || item.type !== "part") return item;
+    const globalRate = latestGlobalPartRate(item.partNo);
+    if (!(globalRate > 0)) return item;
+    item.baseRate = globalRate;
+    item.rate = Number((globalRate * 1.18).toFixed(2));
+    item.source = "Historical DB (Qty from same-model history; Rate from matching part history, 18% GST added)";
+    return item;
+  }
 
   // Per-line source selection: vehicle history always wins for the same
   // reference part/labour operation. Same-model DB history is only used when
@@ -2853,11 +2874,12 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
           referenceCode
         );
         if (item) {
-          // Keep the actual historical description from the source row, but
-          // always show the authoritative reference part number.
+          // Part number is authoritative. Quantity comes from same-model
+          // history, while rate is allowed to come from any vehicle/model
+          // carrying the exact same part number.
           item.partNo = referenceCode;
           if (!item.description) item.description = standard;
-          result.push(item);
+          result.push(applyGlobalPartRate(item));
         }
       }
 
@@ -2889,7 +2911,7 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
         standardRows,
         estimatePreferredReferenceCode(serviceKey, standard, standardRows) || winner?.part_code || ""
       );
-      if (item) result.push(item);
+      if (item) result.push(applyGlobalPartRate(item));
     }
     return result;
   }
@@ -3612,6 +3634,7 @@ function ServiceDecisionApp({ user }) {
       setEstimateHistory({
         vehicleRows: rows,
         modelRows,
+        globalPartRates: Array.isArray(data?.globalPartRates) ? data.globalPartRates : [],
       });
       setEstimateNotice(
         rows.length || modelRows.length
@@ -3630,7 +3653,8 @@ function ServiceDecisionApp({ user }) {
     const items = estimateHistoryToItems(
       history.vehicleRows || [],
       estimateSelectedServices,
-      history.modelRows || []
+      history.modelRows || [],
+      history.globalPartRates || []
     );
     setEstimateParts(items.filter(item => item.type === "part"));
     setEstimateLabour(items.filter(item => item.type === "labour"));

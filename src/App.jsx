@@ -2769,91 +2769,154 @@ function estimateRowsForCompleteService(rows = [], serviceKey = "") {
   );
 }
 
-function estimateHistoryToItems(rows = [], selectedKeys = []) {
-  const items = [];
+function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows = []) {
+  const vehicle = Array.isArray(vehicleRows) ? vehicleRows : [];
+  const modelHistory = Array.isArray(modelRows) ? modelRows : [];
 
-  for (const serviceKey of selectedKeys) {
-    const serviceRows = estimateRowsForCompleteService(rows, serviceKey);
+  // Per-line source selection: vehicle history always wins for the same
+  // reference part/labour operation. Same-model DB history is only used when
+  // that line is not available for this VIN.
+  function rowsByReferenceOrService(sourceRows, serviceKey) {
+    return sourceRows.filter(row =>
+      estimateCategory(row) === "part" &&
+      estimatePartMatchesService(row, serviceKey) &&
+      Number(row?.quantity || 0) > 0
+    );
+  }
 
-    if (serviceKey === "hubGrease") {
-      for (const code of HUB_GREASE_STANDARD_CODES) {
-        const matches = serviceRows.filter(row => normalizePartCode(row.part_code) === code);
-        const item = estimateBuildHistoricalItem("part", serviceKey, matches, code);
-        if (item) items.push(item);
-      }
-    } else {
-      const byStandard = new Map();
+  function modelFallbackPartRows(serviceKey) {
+    const direct = rowsByReferenceOrService(modelHistory, serviceKey);
+    if (direct.length) return direct;
 
-      for (const row of serviceRows) {
-        const standard = estimateStandardPartName(row);
-        const key = standard || normalizePartCode(row.part_code);
-        if (!key) continue;
-        if (!byStandard.has(key)) byStandard.set(key, []);
-        byStandard.get(key).push(row);
-      }
+    // If the exact reference part code is not present in the model history,
+    // use the same model's matching service family as the quantity/rate source.
+    return modelHistory.filter(row =>
+      estimateCategory(row) === "part" &&
+      estimatePartMatchesService(row, serviceKey) &&
+      Number(row?.quantity || 0) > 0
+    );
+  }
 
-      for (const [standard, candidates] of byStandard) {
-        const codes = new Map();
+  function buildPartItemsForService(serviceKey) {
+    const references = ESTIMATE_REFERENCE_PARTS[serviceKey] || [];
 
-        for (const row of candidates) {
-          const code = normalizePartCode(row.part_code);
-          if (!code) continue;
-          if (!codes.has(code)) codes.set(code, []);
-          codes.get(code).push(row);
-        }
+    // For services with explicit reference part numbers, process every
+    // reference independently. Missing VIN lines fall back independently to
+    // same-model history.
+    if (references.length) {
+      const result = [];
 
-        const rankedCodes = [...codes.entries()]
-          .map(([code, codeRows]) => ({
-            code,
-            rows: codeRows,
-            count: codeRows.length,
-            latest: Math.max(...codeRows.map((row, index) => estimateRowRank(row, index))),
-          }))
-          .sort((a, b) => b.count - a.count || b.latest - a.latest);
-
-        const winner = rankedCodes[0];
-        if (!winner) continue;
-
-        // For Engine Oil / Axle Oil, prefer a historical full-replacement row
-        // (12L+ / 12L+) when the vehicle has both top-up and replacement rows.
-        const qualifyingRows = (serviceKey === "engineOil" && !String(standard).includes("FILTER"))
-          ? candidates.filter(row => Number(row?.quantity || 0) >= 12)
-          : serviceKey === "axleOil"
-            ? candidates.filter(row => Number(row?.quantity || 0) >= 12)
-            : [];
-
-        const sourceCandidates = qualifyingRows.length ? qualifyingRows : winner.rows;
-
-        const referenceCode = estimatePreferredReferenceCode(
-          serviceKey,
-          standard,
-          sourceCandidates
+      for (const reference of references) {
+        const referenceCode = normalizePartCode(reference);
+        const vinExact = vehicle.filter(row =>
+          estimateCategory(row) === "part" &&
+          normalizePartCode(row?.part_code) === referenceCode &&
+          Number(row?.quantity || 0) > 0
         );
 
+        const modelExact = modelHistory.filter(row =>
+          estimateCategory(row) === "part" &&
+          normalizePartCode(row?.part_code) === referenceCode &&
+          Number(row?.quantity || 0) > 0
+        );
+
+        let candidates = vinExact.length ? vinExact : modelExact;
+
+        // If exact reference code is absent even in same-model history, use
+        // the service family from the same model as the historical qty/rate
+        // source, while displaying the user's reference part number.
+        if (!candidates.length) {
+          candidates = modelFallbackPartRows(serviceKey);
+        }
+
+        if (!candidates.length) continue;
+
+        // Engine Oil / Axle Oil: prefer a full replacement quantity when
+        // available, but never combine quantities from different job cards.
+        if (serviceKey === "engineOil" && referenceCode === "EN699991") {
+          const full = candidates.filter(row =>
+            !estimateStandardPartName(row).includes("FILTER") &&
+            Number(row?.quantity || 0) >= 12
+          );
+          if (full.length) candidates = full;
+        }
+        if (serviceKey === "axleOil") {
+          const full = candidates.filter(row => Number(row?.quantity || 0) >= 12);
+          if (full.length) candidates = full;
+        }
+
+        const standard = estimateStandardPartName(candidates[0]);
         const item = estimateBuildHistoricalItem(
           "part",
           serviceKey,
-          sourceCandidates,
-          referenceCode || winner.code
+          candidates,
+          referenceCode
         );
-
-        if (item) items.push(item);
+        if (item) {
+          // Keep the actual historical description from the source row, but
+          // always show the authoritative reference part number.
+          item.partNo = referenceCode;
+          if (!item.description) item.description = standard;
+          result.push(item);
+        }
       }
+
+      return result;
     }
 
-    // Labour is always searched independently across the full VIN history.
-    // A missing/mismatched part line must never hide valid historical labour.
-    const labourRows = rows.filter(row =>
+    const candidates = rowsByReferenceOrService(vehicle, serviceKey).length
+      ? rowsByReferenceOrService(vehicle, serviceKey)
+      : modelFallbackPartRows(serviceKey);
+
+    if (!candidates.length) return [];
+
+    const byStandard = new Map();
+    for (const row of candidates) {
+      const standard = estimateStandardPartName(row) || normalizePartCode(row.part_code);
+      if (!standard) continue;
+      if (!byStandard.has(standard)) byStandard.set(standard, []);
+      byStandard.get(standard).push(row);
+    }
+
+    const result = [];
+    for (const [standard, standardRows] of byStandard) {
+      const winner = standardRows.slice().sort((a,b) =>
+        estimateRowRank(b,0) - estimateRowRank(a,0)
+      )[0];
+      const item = estimateBuildHistoricalItem(
+        "part",
+        serviceKey,
+        standardRows,
+        estimatePreferredReferenceCode(serviceKey, standard, standardRows) || winner?.part_code || ""
+      );
+      if (item) result.push(item);
+    }
+    return result;
+  }
+
+  const items = [];
+
+  for (const serviceKey of selectedKeys) {
+    // Parts are resolved independently; one VIN line cannot block other
+    // required reference parts.
+    items.push(...buildPartItemsForService(serviceKey));
+
+    // Labour follows the same source priority: exact VIN labour first,
+    // then same-model labour when the VIN has no matching operation.
+    const vehicleLabour = vehicle.filter(row =>
       estimateLabourMatchesService(row, serviceKey)
     );
+    const modelLabour = modelHistory.filter(row =>
+      estimateLabourMatchesService(row, serviceKey)
+    );
+    const labourRows = vehicleLabour.length ? vehicleLabour : modelLabour;
 
     if (serviceKey === "hubGrease") {
       const referenceRows = ESTIMATE_LABOUR_REFERENCE.hubGrease || [];
-
       for (const reference of referenceRows) {
         const matches = labourRows.filter(row => {
           const text = estimateLabourText(row);
-          if (text.includes(reference.code)) return true;
+          if (text.includes(normalizePartCode(reference.code))) return true;
           if (reference.code === "WHL165A") return text.includes("FRONT") && text.includes("2") && text.includes("HUB");
           if (reference.code === "WHL165C") return text.includes("FRONT") && text.includes("4") && text.includes("HUB");
           if (reference.code === "WHL170A") return text.includes("REAR") && text.includes("2") && text.includes("HUB");
@@ -2863,7 +2926,12 @@ function estimateHistoryToItems(rows = [], selectedKeys = []) {
           return false;
         });
 
-        const labourItem = estimateBuildHistoricalItem("labour", serviceKey, matches, reference.code);
+        const labourItem = estimateBuildHistoricalItem(
+          "labour",
+          serviceKey,
+          matches,
+          reference.code
+        );
         if (labourItem) {
           labourItem.description = reference.description;
           labourItem.partNo = reference.code;
@@ -2886,7 +2954,9 @@ function estimateHistoryToItems(rows = [], selectedKeys = []) {
     }
   }
 
-  // One estimate line per final reference part number within the same aggregate.
+  // Keep one estimate line per final reference part number within each
+  // aggregate. If the same reference was sourced from VIN history, it remains
+  // preferred over a model fallback.
   const uniqueParts = new Map();
   const finalItems = [];
 
@@ -2909,8 +2979,7 @@ function estimateHistoryToItems(rows = [], selectedKeys = []) {
       const previous = uniqueParts.get(key);
       const previousRank = estimateRowRank(previous.latestRow || {}, 0);
       const currentRank = estimateRowRank(item.latestRow || {}, 0);
-
-      if (currentRank >= previousRank) {
+      if (currentRank > previousRank) {
         const index = finalItems.indexOf(previous);
         if (index >= 0) finalItems[index] = item;
         uniqueParts.set(key, item);
@@ -2920,7 +2989,6 @@ function estimateHistoryToItems(rows = [], selectedKeys = []) {
 
   return finalItems;
 }
-
 function emptyEstimateItem(type = "part") {
   return { id: type + "-" + Date.now() + "-" + Math.random().toString(36).slice(2,8), type, partNo:"", description:"", qty:1, rate:0, source:"Manual" };
 }
@@ -3532,18 +3600,38 @@ function ServiceDecisionApp({ user }) {
     setEstimateOpen(true);
     setEstimateLoading(true);
     try {
-      const response = await fetch("/api/save-history?vin=" + encodeURIComponent(analysis.vehicle.vin));
+      const response = await fetch(
+        "/api/save-history?vin=" + encodeURIComponent(analysis.vehicle.vin)
+      );
       const data = await response.json();
       const rows = Array.isArray(data?.rows) ? data.rows : [];
-      setEstimateHistory(rows);
-      setEstimateNotice(rows.length ? "Historical service data is available for the selected vehicle." : "No historical service data found. Estimate items can be entered manually.");
+      const modelRows = Array.isArray(data?.modelRows) ? data.modelRows : [];
+      // Keep vehicle history and same-model history separate. Estimate logic
+      // uses vehicle history first and same-model DB history only for missing
+      // parts/labour, so one missing line never suppresses the complete estimate.
+      setEstimateHistory({
+        vehicleRows: rows,
+        modelRows,
+      });
+      setEstimateNotice(
+        rows.length || modelRows.length
+          ? "Vehicle history loaded. Missing items will be sourced from the same model history in DB."
+          : "No historical service data found. Estimate items can be entered manually."
+      );
     } catch {
       setEstimateHistory([]);
       setEstimateNotice("Historical data could not be loaded. Manual estimate entry is available.");
     } finally { setEstimateLoading(false); }
   }
   function prepareEstimate() {
-    const items = estimateHistoryToItems(estimateHistory, estimateSelectedServices);
+    const history = Array.isArray(estimateHistory)
+      ? { vehicleRows: estimateHistory, modelRows: [] }
+      : (estimateHistory || { vehicleRows: [], modelRows: [] });
+    const items = estimateHistoryToItems(
+      history.vehicleRows || [],
+      estimateSelectedServices,
+      history.modelRows || []
+    );
     setEstimateParts(items.filter(item => item.type === "part"));
     setEstimateLabour(items.filter(item => item.type === "labour"));
     setEstimateNotice(estimateHistory.length ? "Estimate prepared from vehicle history. You can edit every line or add missing items manually." : "No historical estimate items found. Please add the required items manually.");

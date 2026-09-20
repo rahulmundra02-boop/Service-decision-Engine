@@ -2400,6 +2400,7 @@ const ESTIMATE_LABOUR_REFERENCE = {
   gearOil: [{ code:"GBX130", description:"Drain oil in Gearbox and Refill" }],
   axleOil: [{ code:"RAX145", description:"Drain and Refill oil in Rear Axle" }],
   steeringOil: [{ code:"STH110", description:"Drain and Refill Steering Box oil" }],
+  apdaFilter: [{ code:"AIR165Z", description:"R & R APDA Desiccant Cartridges" }],
   hubGrease: [
     { code:"WHL165A", description:"Hub Greasing - Front Axle - 2 Hubs" },
     { code:"WHL165C", description:"Hub Greasing - Front Axle - 4 Hubs" },
@@ -2450,6 +2451,12 @@ function estimateStandardPartName(row = {}) {
 function estimatePartMatchesService(row = {}, serviceKey = "") {
   if (estimateCategory(row) !== "part") return false;
   const code = normalizePartCode(row.part_code);
+
+  // Explicit estimate reference part codes are valid service references even
+  // when the DMS description/standardization wording is different.
+  const referenceCodes = (ESTIMATE_REFERENCE_PARTS[serviceKey] || []).map(normalizePartCode);
+  if (code && referenceCodes.includes(code)) return true;
+
   if (serviceKey === "hubGrease") {
     if (HUB_GREASE_STANDARD_CODES.has(code)) return true;
     const name = estimateStandardPartName(row);
@@ -2501,28 +2508,25 @@ function estimateLabourMatchesService(row = {}, serviceKey = "") {
 
   const referenceRows = ESTIMATE_LABOUR_REFERENCE[serviceKey] || [];
 
-  // For Hub Greasing, only use the model-specific labour operation(s)
-  // actually found in the same VIN/model history. Never add all six.
+  // Hub Greasing is model/axle/hub-count specific. Match the historical
+  // operation to its exact reference family; do not include all six.
   if (serviceKey === "hubGrease") {
-    return referenceRows.some(reference =>
-      text.includes(reference.code) ||
-      text.includes(reference.description.toUpperCase()) ||
-      text.includes(reference.description.toUpperCase().replace(/[^A-Z0-9]+/g, " ").replace(/\s+/g, " "))
-    );
+    return referenceRows.some(reference => {
+      if (text.includes(reference.code)) return true;
+      const t = text;
+      if (reference.code === "WHL165A") return t.includes("FRONT") && t.includes("2") && t.includes("HUB");
+      if (reference.code === "WHL165C") return t.includes("FRONT") && t.includes("4") && t.includes("HUB");
+      if (reference.code === "WHL170A") return t.includes("REAR") && t.includes("2") && t.includes("HUB");
+      if (reference.code === "WHL170C") return t.includes("REAR") && t.includes("4") && t.includes("HUB");
+      if (reference.code === "WHL175A") return t.includes("STLA") && t.includes("2") && t.includes("HUB");
+      if (reference.code === "WHL180A") return t.includes("DTLA") && t.includes("2") && t.includes("HUB");
+      return false;
+    });
   }
 
-  // For all other aggregates, use the exact reference labour code first,
-  // while retaining description matching for legacy DMS wording.
-  const reference = referenceRows[0];
-  if (reference) {
-    const codeMatches = text.includes(reference.code);
-    const description = reference.description.toUpperCase();
-    const descriptionMatches =
-      text.includes(description) ||
-      text.includes(description.replace(/[^A-Z0-9]+/g, " ").replace(/\s+/g, " "));
-    return codeMatches || descriptionMatches;
-  }
-
+  // Historical DMS labour wording can differ from the reference description.
+  // Find the actual service operation using the established service rule,
+  // then replace its displayed code/description with the reference below.
   const rule = ESTIMATE_LABOUR_RULES.find(item => item.key === serviceKey);
   return !!rule && rule.test(text);
 }
@@ -2608,7 +2612,7 @@ function estimateBuildHistoricalItem(type, serviceKey, rows, code = "") {
 }
 
 function estimateJobCardKey(row = {}) {
-  const jc = String(row?.job_card || "").trim();
+  const jc = String(row?.job_card || row?.job_card_no || "").trim();
   return jc ? "JC|" + jc.toUpperCase() : "DATE|" + String(row?.job_date || "").slice(0,10);
 }
 function estimateRowsForJobCard(rows = [], key = "") { return rows.filter(row => estimateJobCardKey(row) === key); }
@@ -2745,10 +2749,14 @@ function estimateHistoryToItems(rows = [], selectedKeys = []) {
             row.repair_type,
             row.part_code,
           ].join(" ").toUpperCase().replace(/[^A-Z0-9]+/g, " ").replace(/\s+/g, " ").trim();
-          const description = reference.description.toUpperCase();
-          return text.includes(reference.code) ||
-            text.includes(description) ||
-            text.includes(description.replace(/[^A-Z0-9]+/g, " ").replace(/\s+/g, " "));
+          if (text.includes(reference.code)) return true;
+          if (reference.code === "WHL165A") return text.includes("FRONT") && text.includes("2") && text.includes("HUB");
+          if (reference.code === "WHL165C") return text.includes("FRONT") && text.includes("4") && text.includes("HUB");
+          if (reference.code === "WHL170A") return text.includes("REAR") && text.includes("2") && text.includes("HUB");
+          if (reference.code === "WHL170C") return text.includes("REAR") && text.includes("4") && text.includes("HUB");
+          if (reference.code === "WHL175A") return text.includes("STLA") && text.includes("2") && text.includes("HUB");
+          if (reference.code === "WHL180A") return text.includes("DTLA") && text.includes("2") && text.includes("HUB");
+          return false;
         });
         const labourItem = estimateBuildHistoricalItem("labour", serviceKey, matches, reference.code);
         if (labourItem) {
@@ -2766,7 +2774,38 @@ function estimateHistoryToItems(rows = [], selectedKeys = []) {
       }
     }
   }
-  return items;
+
+  // One estimate line per final reference part number within the same
+  // aggregate. Keep the latest historical line when duplicate source rows
+  // resolve to the same displayed reference code.
+  const uniqueParts = new Map();
+  const finalItems = [];
+  for (const item of items) {
+    if (item.type !== "part") {
+      finalItems.push(item);
+      continue;
+    }
+    const key = item.serviceKey + "|" + normalizePartCode(item.partNo);
+    if (!normalizePartCode(item.partNo)) {
+      finalItems.push(item);
+      continue;
+    }
+    if (!uniqueParts.has(key)) {
+      uniqueParts.set(key, item);
+      finalItems.push(item);
+    } else {
+      const previous = uniqueParts.get(key);
+      const previousRank = estimateRowRank(previous.latestRow || {}, 0);
+      const currentRank = estimateRowRank(item.latestRow || {}, 0);
+      if (currentRank >= previousRank) {
+        const index = finalItems.indexOf(previous);
+        if (index >= 0) finalItems[index] = item;
+        uniqueParts.set(key, item);
+      }
+    }
+  }
+
+  return finalItems;
 }
 
 function emptyEstimateItem(type = "part") {

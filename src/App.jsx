@@ -613,6 +613,177 @@ function standardizePart(code, description) {
 // - Same VIN + different genuine history row = retain.
 // ============================================================
 
+function normalizeJobCard(value) {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+
+const JOB_CARD_INDEX_DB_NAME = "serviceDecisionJobCardIndexV1";
+const JOB_CARD_INDEX_STORE = "jobCards";
+const JOB_CARD_INDEX_META_STORE = "meta";
+const JOB_CARD_INDEX_META_KEY = "sync";
+const JOB_CARD_INDEX_PAGE_SIZE = 5000;
+let jobCardIndexMemory = null;
+let jobCardIndexSyncPromise = null;
+
+function openJobCardIndexDb() {
+  return new Promise((resolve, reject) => {
+    if (typeof window === "undefined" || !window.indexedDB) {
+      reject(new Error("IndexedDB is not available."));
+      return;
+    }
+    const request = window.indexedDB.open(JOB_CARD_INDEX_DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(JOB_CARD_INDEX_STORE)) {
+        db.createObjectStore(JOB_CARD_INDEX_STORE, { keyPath: "jobCardNo" });
+      }
+      if (!db.objectStoreNames.contains(JOB_CARD_INDEX_META_STORE)) {
+        db.createObjectStore(JOB_CARD_INDEX_META_STORE, { keyPath: "key" });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("Unable to open Job Card cache."));
+  });
+}
+
+async function loadJobCardIndexFromBrowser() {
+  if (jobCardIndexMemory) return jobCardIndexMemory;
+  const db = await openJobCardIndexDb();
+  const result = await new Promise((resolve, reject) => {
+    const transaction = db.transaction(
+      [JOB_CARD_INDEX_STORE, JOB_CARD_INDEX_META_STORE],
+      "readonly"
+    );
+    const store = transaction.objectStore(JOB_CARD_INDEX_STORE);
+    const metaStore = transaction.objectStore(JOB_CARD_INDEX_META_STORE);
+    const keysRequest = store.getAllKeys();
+    const metaRequest = metaStore.get(JOB_CARD_INDEX_META_KEY);
+    transaction.oncomplete = () => resolve({
+      jobCards: new Set((keysRequest.result || []).map(normalizeJobCard).filter(Boolean)),
+      lastId: Number(metaRequest.result?.lastId || 0),
+    });
+    transaction.onerror = () => reject(
+      transaction.error || new Error("Unable to read Job Card cache.")
+    );
+  });
+  db.close();
+  jobCardIndexMemory = result;
+  return result;
+}
+
+async function addJobCardsToBrowserIndex(jobCards, lastId = null) {
+  const normalizedJobCards = [...new Set(
+    (jobCards || []).map(normalizeJobCard).filter(Boolean)
+  )];
+  const state = jobCardIndexMemory || { jobCards: new Set(), lastId: 0 };
+  const db = await openJobCardIndexDb();
+
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction(
+      [JOB_CARD_INDEX_STORE, JOB_CARD_INDEX_META_STORE],
+      "readwrite"
+    );
+    const store = transaction.objectStore(JOB_CARD_INDEX_STORE);
+    const metaStore = transaction.objectStore(JOB_CARD_INDEX_META_STORE);
+    for (const jobCardNo of normalizedJobCards) {
+      store.put({ jobCardNo });
+      state.jobCards.add(jobCardNo);
+    }
+    const nextLastId = Number(lastId);
+    if (Number.isFinite(nextLastId) && nextLastId > state.lastId) {
+      state.lastId = nextLastId;
+    }
+    metaStore.put({ key: JOB_CARD_INDEX_META_KEY, lastId: state.lastId });
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(
+      transaction.error || new Error("Unable to update Job Card cache.")
+    );
+  });
+
+  db.close();
+  jobCardIndexMemory = state;
+  return state;
+}
+
+async function syncJobCardIndex(apiBaseUrl) {
+  if (jobCardIndexSyncPromise) return jobCardIndexSyncPromise;
+
+  jobCardIndexSyncPromise = (async () => {
+    const state = await loadJobCardIndexFromBrowser();
+    let afterId = Number(state.lastId || 0);
+
+    while (true) {
+      const response = await fetch(`${apiBaseUrl}/api/save-history`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "get-job-card-index",
+          afterId,
+          limit: JOB_CARD_INDEX_PAGE_SIZE,
+        }),
+      });
+
+      let payload = null;
+      try { payload = await response.json(); } catch { payload = null; }
+
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.error || `Job Card index sync failed (${response.status})`);
+      }
+
+      const rows = Array.isArray(payload.jobCards) ? payload.jobCards : [];
+      const pageJobCards = rows.map(row => normalizeJobCard(row?.jobCardNo)).filter(Boolean);
+      const pageLastId = Number(
+        payload.nextAfterId || rows[rows.length - 1]?.id || afterId
+      );
+
+      await addJobCardsToBrowserIndex(pageJobCards, pageLastId);
+      afterId = pageLastId;
+
+      if (!payload.hasMore || !rows.length) break;
+    }
+
+    return jobCardIndexMemory;
+  })().finally(() => {
+    jobCardIndexSyncPromise = null;
+  });
+
+  return jobCardIndexSyncPromise;
+}
+
+async function getHybridNewJobCards(apiBaseUrl, jobCards, checkNewJobCardsFn) {
+  const uniqueJobCards = [...new Set(
+    (jobCards || []).map(normalizeJobCard).filter(Boolean)
+  )];
+  if (!uniqueJobCards.length) return new Set();
+
+  try {
+    const state = await loadJobCardIndexFromBrowser();
+
+    // First use on a browser: build the complete local index in small pages.
+    // After that, the cache is intentionally allowed to become stale because
+    // stale cache entries can only cause extra central checks, never a missed save.
+    if (!state.jobCards.size) {
+      await syncJobCardIndex(apiBaseUrl);
+    }
+
+    const cached = jobCardIndexMemory?.jobCards || new Set();
+    const candidates = uniqueJobCards.filter(jobCard => !cached.has(jobCard));
+
+    if (!candidates.length) return new Set();
+
+    const confirmedNewJobCards = await checkNewJobCardsFn(candidates);
+
+    // Server confirmation lets us safely add both existing and new candidates.
+    await addJobCardsToBrowserIndex(candidates);
+    return confirmedNewJobCards;
+  } catch (error) {
+    console.warn("Hybrid Job Card cache unavailable; using central check:", error);
+    return checkNewJobCardsFn(uniqueJobCards);
+  }
+}
+
+
 function makeHistoryRowKey(record) {
   const date = record?.date ? formatDate(record.date) : "";
   const vin = normalizePartCode(record?.vin);
@@ -3418,6 +3589,34 @@ function ServiceDecisionApp({ user }) {
       ? "http://localhost:3001"
       : "");
 
+  async function checkNewJobCards(apiBaseUrl, jobCards) {
+    const uniqueJobCards = [...new Set(
+      (jobCards || []).map(normalizeJobCard).filter(Boolean)
+    )];
+
+    if (!uniqueJobCards.length) return new Set();
+
+    const response = await fetch(`${apiBaseUrl}/api/save-history`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "check-job-cards",
+        jobCards: uniqueJobCards,
+      }),
+    });
+
+    let payload = null;
+    try { payload = await response.json(); } catch { payload = null; }
+
+    if (!response.ok || !payload?.success) {
+      throw new Error(payload?.error || `Job Card duplicate check failed (${response.status})`);
+    }
+
+    return new Set(
+      (payload.newJobCards || []).map(normalizeJobCard).filter(Boolean)
+    );
+  }
+
   async function saveHistoryToBackend({ records, vehicle }) {
     const response = await fetch(`${API_BASE_URL}/api/save-history`, {
       method: "POST",
@@ -3439,6 +3638,11 @@ function ServiceDecisionApp({ user }) {
     if (!response.ok || !payload?.success) {
       throw new Error(payload?.error || `History save failed (${response.status})`);
     }
+
+    if (Array.isArray(payload.insertedJobCardNumbers) && payload.insertedJobCardNumbers.length) {
+      await addJobCardsToBrowserIndex(payload.insertedJobCardNumbers);
+    }
+
     return payload;
   }
 
@@ -3524,8 +3728,28 @@ function ServiceDecisionApp({ user }) {
             .join(" | ")
         );
       } else {
-        // Do not await DB persistence. Analysis remains immediately available.
-        if (parsedRows.length) void saveHistoryInBackground(parsedRows);
+        // Service Decision continues from the complete Excel data.
+        // Hybrid persistence checks known Job Cards in the browser first.
+        if (parsedRows.length) {
+          const allJobCards = parsedRows
+            .map(record => normalizeJobCard(record?.jobCard))
+            .filter(Boolean);
+
+          const newJobCards = await getHybridNewJobCards(
+            API_BASE_URL,
+            allJobCards,
+            (candidateJobCards) => checkNewJobCards(API_BASE_URL, candidateJobCards)
+          );
+
+          const recordsForBackend = parsedRows.filter(record => {
+            const jobCard = normalizeJobCard(record?.jobCard);
+            return !!jobCard && newJobCards.has(jobCard);
+          });
+
+          if (recordsForBackend.length) {
+            void saveHistoryInBackground(recordsForBackend);
+          }
+        }
       }
     } catch (err) {
       setUploadMeta(null);

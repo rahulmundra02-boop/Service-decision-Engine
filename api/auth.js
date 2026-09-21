@@ -178,6 +178,7 @@ async function getUserByToken(client, token) {
   const result = await client.query(
     `SELECT u.id,u.person_name,u.dealer_name,u.email,u.mobile,u.role,u.status,
             u.email_verified,u.mobile_verified,u.created_at,u.last_login_at,u.last_activity_at,
+            u.preferences,
             s.last_seen_at
        FROM auth_sessions s
        JOIN app_users u ON u.id=s.user_id

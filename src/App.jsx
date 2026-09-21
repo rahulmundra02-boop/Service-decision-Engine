@@ -4652,22 +4652,6 @@ function ServiceDecisionApp({ user }) {
                 </div>
 
 
-                <div className="section-title professional-section-title">Service Decision — At A Glance</div>
-                <div className="decision-status-grid">
-                  {BULK_SERVICE_LABELS.map(([label,key]) => {
-                    const due = Boolean(analysis?.decision?.result?.[key]);
-                    return <div className={"decision-status-card " + (due ? "is-due" : "is-not-due")} key={key}><span>{label}</span><strong>{due ? "DUE" : "NOT DUE"}</strong></div>;
-                  })}
-                </div>
-                <details className="decision-basis"><summary>View decision basis</summary>
-                  <div className="decision-basis-grid">
-                    <div><b>Current Reading</b><span>{analysis?.running?.current ? formatNumber(analysis.running.current) + " " + (analysis.running.unit || getTargetUnit(analysis.vehicle)) : "-"}</span></div>
-                    <div><b>Last Recorded Reading</b><span>{analysis?.running?.last ? formatNumber(getRelevantReading(analysis.running.last, analysis.vehicle)) + " / " + formatDate(analysis.running.last.date) : "-"}</span></div>
-                    <div><b>Vehicle Age</b><span>{analysis?.vehicle?.sale ? formatVehicleAge(analysis.vehicle.sale) : "-"}</span></div>
-                    <div><b>Service History Visits</b><span>{analysis?.visits?.length || 0}</span></div>
-                  </div>
-                  <div className="small-note">Decision is calculated from uploaded vehicle history, current reading, service intervals and applicable vehicle/model conditions.</div>
-                </details>
                 {error && <div className="error-line no-print">{error}</div>}
 
                 <div className="section-title service-summary-title">Service Summary — Complete Vehicle History</div>

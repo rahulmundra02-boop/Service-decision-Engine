@@ -316,3 +316,15 @@
  .admin-bar-chart{height:180px}
  .admin-hbar-row{grid-template-columns:95px 1fr 30px}
 }
+
+/* Session conflict and profile booking-number notifications */
+.session-conflict-modal{width:min(520px,100%)}
+.session-conflict-details{background:#17283a;border:1px solid #49627c;border-radius:8px;padding:12px;margin:12px 0;color:#dce7f3;font-size:13px;line-height:1.8}
+.profile-button-with-dot{position:relative}
+.profile-alert-dot{position:absolute;top:3px;right:3px;width:7px;height:7px;border-radius:50%;background:#ff4d4d;border:1px solid #fff}
+.booking-field-label{display:flex;align-items:center;gap:6px}
+.booking-field-dot{width:7px;height:7px;border-radius:50%;background:#ff4d4d;display:inline-block}
+.admin-dashboard-scope-tabs{display:flex;gap:6px;flex-wrap:wrap}
+.admin-dashboard-scope-tabs button{border:1px solid #bdccd8;background:#fff;color:#28445c;border-radius:7px;padding:8px 12px;font-weight:800;cursor:pointer}
+.admin-dashboard-scope-tabs button.active{background:#315d82;color:#fff;border-color:#315d82}
+@media(max-width:700px){.admin-dashboard-scope-tabs{width:100%;overflow-x:auto;flex-wrap:nowrap}.admin-dashboard-scope-tabs button{white-space:nowrap}}

@@ -610,7 +610,6 @@ export default async function handler(req, res) {
       const operation = String(body.operation || "save").trim().toLowerCase();
       let enabled = current.enabled !== false;
       let intervalHours = Math.max(1, Number(current.intervalHours || 24));
-
       if (operation === "reset") {
         enabled = true;
         intervalHours = 24;
@@ -626,8 +625,9 @@ export default async function handler(req, res) {
         }
       }
 
-      const version = Number(current.version || 0) + 1;
-      const lastRebuildAt = new Date().toISOString();
+      const shouldRebuild = operation === "rebuild" || operation === "reset";
+      const version = shouldRebuild ? Number(current.version || 0) + 1 : Number(current.version || 1);
+      const lastRebuildAt = shouldRebuild ? new Date().toISOString() : (current.lastRebuildAt || null);
       await client.query(
         "INSERT INTO app_settings (setting_key,setting_value,updated_at) " +
         "VALUES ('job_card_cache',$1::jsonb,NOW()) " +

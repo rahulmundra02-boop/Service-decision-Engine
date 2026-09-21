@@ -4861,10 +4861,6 @@ function ServiceDecisionApp({ user }) {
         <div className="excel-window">
           <div className="excel-titlebar">
             <div className="excel-title">Vehicle Service Decision &amp; Maintenance Dashboard</div>
-            <div className="excel-title-right" style={{display:"flex",alignItems:"center",gap:10}}>
-              <span>Excel Web Version</span>
-              <span style={{fontSize:11,fontWeight:700,opacity:.9}}>Beta Commit: {import.meta.env.VITE_VERCEL_GIT_COMMIT_SHA || "Local"}</span>
-            </div>
           </div>
 
           <div className="excel-ribbon no-print">

@@ -350,8 +350,11 @@ export default async function handler(req, res) {
 
       // Standard users can have only one active session. Admin accounts are exempt.
       if (user.role !== "admin") {
+        // Serialize concurrent login attempts for the same user so two new sessions
+        // cannot pass the single-session check at the same time.
+        await client.query("SELECT pg_advisory_xact_lock($1)", [Number(user.id)]);
         const activeSessions = await client.query(
-          "SELECT id,device_name,ip_address,user_agent,created_at,last_seen_at FROM auth_sessions WHERE user_id=$1 AND expires_at>NOW() ORDER BY last_seen_at DESC",
+          "SELECT id,device_name,ip_address,user_agent,created_at,last_seen_at FROM auth_sessions WHERE user_id=$1 AND expires_at>NOW() AND last_seen_at > NOW() - INTERVAL '12 hours' ORDER BY last_seen_at DESC",
           [user.id]
         );
 

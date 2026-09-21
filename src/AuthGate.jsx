@@ -63,6 +63,7 @@ export default function AuthGate({ children }) {
   const [analyticsRange, setAnalyticsRange] = useState(30);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsIncludeAdmins, setAnalyticsIncludeAdmins] = useState(true);
+  const [jobCardCacheSettings, setJobCardCacheSettings] = useState({ enabled:true, intervalHours:24, version:1, lastRebuildAt:null, nextRebuildAt:null, cachedJobCards:0 });
   const [sessionConflict, setSessionConflict] = useState(null);
 
   useEffect(() => {
@@ -200,6 +201,21 @@ export default function AuthGate({ children }) {
     }
   };
 
+  const loadJobCardCacheSettings = async () => {
+    try {
+      const data = await api("job-card-cache-settings");
+      if (data?.settings) setJobCardCacheSettings(data.settings);
+    } catch (e) {
+      setError(e.message || "Unable to load Job Card cache settings.");
+    }
+  };
+
+  const updateJobCardCacheSettings = (payload) => run(async () => {
+    const data = await api("admin-job-card-cache-settings", payload, localStorage.getItem(TOKEN_KEY));
+    if (data?.settings) setJobCardCacheSettings(data.settings);
+    setMessage(data.message || "Job Card cache settings updated.");
+  });
+
   const loadAdminUsers = async () => {
     setAdminLoading(true);
     try {
@@ -214,7 +230,10 @@ export default function AuthGate({ children }) {
   };
 
   useEffect(() => {
-    if (user?.role === "admin" && adminOpen) loadAdminUsers();
+    if (user?.role === "admin" && adminOpen) {
+      loadAdminUsers();
+      loadJobCardCacheSettings();
+    }
   }, [user?.role, adminOpen, analyticsIncludeAdmins]);
 
   const createUser = () => run(async () => {
@@ -434,6 +453,8 @@ export default function AuthGate({ children }) {
           analyticsIncludeAdmins={analyticsIncludeAdmins}
           onSetAnalyticsIncludeAdmins={setAnalyticsIncludeAdmins}
           onAnalytics={loadAdminAnalytics}
+          jobCardCacheSettings={jobCardCacheSettings}
+          onJobCardCacheSettings={updateJobCardCacheSettings}
         />
       ) : cloneElement(children, { user })}
     </div>
@@ -449,7 +470,7 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
   return <div className="auth-modal-backdrop"><div className="auth-modal" style={{maxWidth:820,width:"min(820px,calc(100vw - 32px))",maxHeight:"90vh",overflow:"auto",boxSizing:"border-box"}}><h2>Profile & Dashboard Settings</h2><p className="auth-hint">Ye settings sirf aapki user ID ke liye save hongi. Table width header divider ko mouse se drag karke set hogi.</p><label>Person Name</label><input value={form.personName} onChange={e=>setForm({...form,personName:e.target.value})}/><label>Dealer / Workshop Name</label><input value={form.dealerName} onChange={e=>setForm({...form,dealerName:e.target.value})}/><label>Mobile</label><input value={form.mobile} onChange={e=>setForm({...form,mobile:e.target.value})}/><label className="booking-field-label">Advance Booking Contact 1 {!form.booking1 && <span className="booking-field-dot" />}</label><input value={form.booking1} onChange={e=>setForm({...form,booking1:e.target.value})} placeholder="Optional mobile number"/><label className="booking-field-label">Advance Booking Contact 2 {!form.booking2 && <span className="booking-field-dot" />}</label><input value={form.booking2} onChange={e=>setForm({...form,booking2:e.target.value})} placeholder="Optional mobile number"/><label>WhatsApp Opening Line (Optional)</label><textarea value={form.whatsappOpeningLine} onChange={e=>setForm({...form,whatsappOpeningLine:e.target.value})} placeholder="Applies to the top of the WhatsApp due message. Leave blank if no extra line is required." rows={3} style={{minHeight:72,resize:"vertical"}}/><div className="auth-hint">This is your personal wording. It will be saved with your user ID and reused in future WhatsApp due summaries.</div><div style={{fontWeight:800}}>Single Vehicle Service History Table</div><div className="auth-hint">Checkbox = show/hide · Text box = custom heading · width by mouse drag.</div><div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:"6px 12px",margin:"8px 0 16px",minWidth:0}}>{singleCols.map(([k,l])=>editor("singleColumns",k,l))}</div><div style={{fontWeight:800}}>Bulk Vehicle Due / Service Summary Table</div><div className="auth-hint">Checkbox = show/hide · Text box = custom heading · width by mouse drag.</div><div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:"6px 12px",margin:"8px 0",minWidth:0}}>{bulkCols.map(([k,l])=>editor("bulkColumns",k,l))}<div style={{display:"grid",gridTemplateColumns:"28px 1fr",gap:7,alignItems:"center"}}><span></span><input value={(form.bulkColumnLabels||{}).serial||"S.No. / Due"} onChange={e=>setLabel("bulkColumnLabels","serial",e.target.value)} placeholder="S.No. / Due"/></div></div><div className="auth-modal-actions"><button className="auth-secondary" onClick={onClose}>Cancel</button><button className="auth-primary" onClick={onSave} disabled={loading}>Save Profile & Settings</button></div></div></div>;
 }
 
-function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics }) {
+function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings }) {
   const analyticsDetailRef = useRef(null);
   const [view, setView] = useState("overview");
 
@@ -524,6 +545,34 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
           {metricCard("Vehicles Analysed", totals.vehicles)}
           {metricCard("Excel Files", totals.files)}
           {metricCard("Activities", totals.activities)}
+        </div>
+
+        <div className="admin-panel-card" style={{marginTop:16,padding:"18px 20px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
+            <div>
+              <div className="admin-panel-card-title">Job Card Browser Cache</div>
+              <div className="admin-panel-card-sub">Central Neon index + browser IndexedDB cache control</div>
+            </div>
+            <label style={{display:"flex",alignItems:"center",gap:8,fontWeight:700}}>
+              <span>Cache System</span>
+              <input type="checkbox" checked={jobCardCacheSettings?.enabled !== false} onChange={e=>onJobCardCacheSettings({enabled:e.target.checked})} />
+              <span>{jobCardCacheSettings?.enabled !== false ? "ON" : "OFF"}</span>
+            </label>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:12,marginTop:16}}>
+            <div><div className="admin-panel-card-sub">Cache Rebuild Interval</div>
+              <select value={Number(jobCardCacheSettings?.intervalHours || 24)} onChange={e=>onJobCardCacheSettings({intervalHours:Number(e.target.value)})} style={{marginTop:6,width:"100%",padding:"9px 10px",borderRadius:8,border:"1px solid #d7dce3"}}>
+                {[6,12,24,48,168].map(v=><option key={v} value={v}>{v===168?"7 Days":v+" Hours"}</option>)}
+              </select>
+            </div>
+            <div><div className="admin-panel-card-sub">Last Global Index Update</div><strong>{jobCardCacheSettings?.lastRebuildAt ? new Date(jobCardCacheSettings.lastRebuildAt).toLocaleString("en-IN") : "Not yet rebuilt"}</strong></div>
+            <div><div className="admin-panel-card-sub">Next Rebuild</div><strong>{jobCardCacheSettings?.nextRebuildAt ? new Date(jobCardCacheSettings.nextRebuildAt).toLocaleString("en-IN") : "—"}</strong></div>
+            <div><div className="admin-panel-card-sub">Cached Job Cards</div><strong>{Number(jobCardCacheSettings?.cachedJobCards || 0).toLocaleString("en-IN")}</strong></div>
+          </div>
+          <div style={{display:"flex",gap:10,marginTop:16,flexWrap:"wrap"}}>
+            <button className="auth-primary" onClick={()=>onJobCardCacheSettings({operation:"rebuild"})}>Rebuild Cache Now</button>
+            <button className="auth-secondary" onClick={()=>onJobCardCacheSettings({operation:"reset"})}>Clear Cache Policy</button>
+          </div>
         </div>
 
         <div className="admin-analytics-toolbar professional">

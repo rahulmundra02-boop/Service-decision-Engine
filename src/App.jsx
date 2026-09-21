@@ -3961,7 +3961,7 @@ function ServiceDecisionApp({ user }) {
     setEstimateLabour(prev => prev.map(item => ({ ...item, qty:String(item.qty ?? "").trim()==="" ? 1 : Number(item.qty) || 0 })));
   }
   async function lookupManualEstimatePart(id, partNo) {
-    const code = String(partNo || "").trim();
+    const code = String(partNo || "").replace(/\s+/g,"").trim().toUpperCase();
     if (!code) return;
     setManualPartLookupBusy(prev => ({...prev,[id]:true}));
     try {
@@ -3985,7 +3985,7 @@ function ServiceDecisionApp({ user }) {
     const pdf = new jsPDF({ unit:"mm", format:"a4", orientation:"portrait", compress:true });
     const margin = 10;
     const width = 190;
-    const vehicle = analysis?.vehicle || {};
+    const vehicle = estimateVehicle || analysis?.vehicle || {};
     const workshop = String(user?.dealerName || "Workshop").trim();
 
     // jsPDF's built-in Helvetica does not render the ₹ glyph reliably.

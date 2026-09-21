@@ -169,7 +169,6 @@ const PART_STANDARDIZATION = {
   'FS0500': 'Body Building Checkup',
   'FL100290': 'Cluster Meter',
   'FL100390': 'Cluster Meter',
-  'CF000001': 'Clutch Oil',
   'CFD99991': 'Clutch Oil',
   'CLA99994': 'Clutch Oil',
   'U9999995': 'Clutch Oil',
@@ -1653,9 +1652,32 @@ function decideAggregate(records, vehicle, running, key, analysisDate){
   if(key==='airFilter') base=latestFilter(records,'AIR FILTER','AIR FILTER KIT',vehicle);
   else if(key==='fuelFilter') base=latestFuelFilter(records,vehicle);
   else if(key==='defFilter') base=latestDefFilter(records,vehicle);
+  else if(key==='clutchOil') base=latestClutchOilPart(records,vehicle);
   else base=serviceBase(records,[keyToPart(key)],cfg[2],false,vehicle);
   if(tip){ const tr=TIP_RULES[key]; return tr ? dueByHours(running.current,base,tr[0],tr[1],analysisDate,sale,vehicle) : false; }
   return dueNormalWithSale(running.current,base,cfg[0],cfg[1],analysisDate,sale,running.mode,vehicle);
+}
+function latestClutchOilPart(records, vehicle = null) {
+  // Clutch Oil decision is based ONLY on these approved clutch-oil PART codes.
+  // Labour codes/descriptions such as CLH125 must never create or reset the
+  // Clutch Oil service base.
+  const allowedCodes = new Set(['CFD99991', 'CLA99994', 'U9999995', 'U9999999']);
+
+  const matches = records
+    .filter(r => {
+      const code = normalizePartCode(r?.partCode);
+      return allowedCodes.has(code) && Number(r?.qty || 0) >= 0.5 && r?.date;
+    })
+    .sort((a, b) => b.date - a.date);
+
+  const latest = matches[0] || null;
+  return latest
+    ? {
+        ...latest,
+        serviceQty: Number(latest.qty || 0),
+        relevantReading: vehicle ? getRelevantReading(latest, vehicle) : (latest.reading || 0)
+      }
+    : null;
 }
 function keyToPart(key){ return ({coolant:'COOLANT',gearOil:'GEAR OIL',hubGrease:'HUB GREASE',axleOil:'AXLE OIL',clutchOil:'CLUTCH OIL',apdaFilter:'APDA FILTER',defInline:'DEF INLINE FILTER'})[key]||''; }
 function latestDefFilter(records, vehicle){

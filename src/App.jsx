@@ -3191,7 +3191,7 @@ function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResu
           <div className="small-note">No saved estimates yet.</div>
         )}
       </div>
-      <div className="portal-workflow"><div><b>Recommended workflow</b><span>Upload Excel → Analyse → Review Service Decision → Prepare Estimate / Share Due Summary</span></div><div><b>Personalise</b><span>Theme, columns, custom names and table widths are saved in Profile &amp; Settings.</span></div></div>
+      <div className="portal-workflow"><div><b>Recommended workflow</b><span>Upload Excel → Analyse → Review Service Decision → Prepare Estimate / Share Due Summary</span></div><div><b>Personalise</b><span>Theme is selected from Home. Columns, custom names and table widths are saved in Profile &amp; Settings.</span></div></div>
     </div>
   );
 }

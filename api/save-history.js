@@ -86,6 +86,7 @@ function serviceLineIdentityFromDb(row = {}) {
 export default async function handler(req, res) {
   if (req.method === "GET") {
     const vin = String(req.query?.vin || "").trim().toUpperCase();
+    const registration = String(req.query?.registration || "").replace(/\s+/g, "").trim().toUpperCase();
     const partNo = String(req.query?.partNo || "").trim().toUpperCase().replace(/\s+/g, "");
 
     const client = await pool.connect();
@@ -112,9 +113,69 @@ export default async function handler(req, res) {
         });
       }
 
+      if (registration) {
+        const vehicleResult = await client.query(
+          "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date " +
+          "FROM vehicles v " +
+          "WHERE UPPER(REPLACE(TRIM(v.registration), ' ', ''))=$1 " +
+          "ORDER BY v.last_refreshed_at DESC NULLS LAST, v.id DESC LIMIT 1",
+          [registration]
+        );
+        const vehicle = vehicleResult.rows[0] || null;
+        if (!vehicle) {
+          return res.status(200).json({ success:true, rows:[], modelRows:[], globalPartRates:[], vehicle:null });
+        }
+
+        const historyResult = await client.query(
+          "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
+          "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
+          "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
+          "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
+          "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
+          "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +
+          "WHERE v.id=$1 ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id ASC",
+          [vehicle.vin ? (await client.query("SELECT id FROM vehicles WHERE vin=$1 LIMIT 1",[vehicle.vin])).rows[0]?.id : null]
+        );
+        const rows = historyResult.rows;
+        const modelName = String(vehicle.model || "").trim();
+        let modelRows = [];
+        if (modelName) {
+          const modelResult = await client.query(
+            "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
+            "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
+            "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
+            "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
+            "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
+            "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +
+            "WHERE UPPER(TRIM(v.model))=UPPER(TRIM($1)) AND v.vin<>$2 " +
+            "ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id ASC",
+            [modelName, vehicle.vin]
+          );
+          modelRows = modelResult.rows;
+        }
+        const rateResult = await client.query(
+          "SELECT DISTINCT ON (UPPER(REPLACE(TRIM(sh.part_code), ' ', ''))) " +
+          "sh.part_code, sh.rate, jc.job_date " +
+          "FROM service_history sh JOIN job_cards jc ON jc.id=sh.job_card_id " +
+          "JOIN vehicles v ON v.id=jc.vehicle_id " +
+          "WHERE sh.item_category LIKE 'P002%' AND sh.part_code IS NOT NULL " +
+          "AND sh.rate IS NOT NULL AND sh.rate > 0 " +
+          "ORDER BY UPPER(REPLACE(TRIM(sh.part_code), ' ', '')), jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC"
+        );
+        return res.status(200).json({
+          success:true,
+          registration,
+          vehicle,
+          rows,
+          model:modelName || null,
+          modelRows,
+          globalPartRates:rateResult.rows
+        });
+      }
+
       if (!vin) return res.status(400).json({ success:false,error:"VIN/Chassis is required." });
       const result = await client.query(
-        "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, " +
+        "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
         "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
         "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
         "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +

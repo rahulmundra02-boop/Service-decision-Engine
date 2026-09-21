@@ -3092,7 +3092,7 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
   return finalItems;
 }
 function emptyEstimateItem(type = "part") {
-  return { id: type + "-" + Date.now() + "-" + Math.random().toString(36).slice(2,8), type, partNo:"", description:"", qty:1, rate:0, source:"Manual" };
+  return { id: type + "-" + Date.now() + "-" + Math.random().toString(36).slice(2,8), type, partNo:"", description:"", qty:"", rate:0, source:"Manual" };
 }
 function PortalHome({ user, onNavigate, onUpload, hasAnalysis, bulkResults }) {
   const dueVehicles = (bulkResults || []).filter(item => Array.isArray(item?.services) && item.services.length > 0).length;
@@ -3108,7 +3108,19 @@ function PortalHome({ user, onNavigate, onUpload, hasAnalysis, bulkResults }) {
       <div className="portal-kpi-grid"><div className="portal-kpi"><span>Vehicles in Current Upload</span><strong>{totalVehicles}</strong><small>Current session only</small></div><div className="portal-kpi"><span>Due Vehicles in Current Upload</span><strong>{dueVehicles}</strong><small>Current session only</small></div><div className="portal-kpi"><span>Portal Mode</span><strong>Beta</strong><small>Testing &amp; feedback</small></div></div>
       <div className="portal-section-title">What would you like to do?</div>
       <div className="portal-action-grid">{cards.map(card => <button key={card.key} className="portal-action-card" onClick={() => onNavigate(card.key)}><span className="portal-action-icon">{card.icon}</span><span className="portal-action-title">{card.title}</span><span className="portal-action-text">{card.text}</span><span className="portal-action-link">Open →</span></button>)}
-        <button className={"portal-action-card " + (hasAnalysis ? "" : "disabled")} disabled={!hasAnalysis} onClick={() => onNavigate("estimate")}><span className="portal-action-icon">🧾</span><span className="portal-action-title">Prepare Estimate</span><span className="portal-action-text">{hasAnalysis ? "Prepare a service estimate from the analysed vehicle." : "Analyse a single vehicle first."}</span><span className="portal-action-link">{hasAnalysis ? "Open →" : "Not available yet"}</span></button>
+        <button className="portal-action-card" onClick={() => onNavigate("estimate")}><span className="portal-action-icon">🧾</span><span className="portal-action-title">Prepare Estimate</span><span className="portal-action-text">Prepare an estimate directly from Home. Enter Vehicle No. first; DB details and parts can be loaded automatically or entered manually.</span><span className="portal-action-link">Open Estimate →</span></button>
+      </div>
+      <div className="home-estimate-preview" onClick={() => onNavigate("estimate")} role="button" tabIndex={0} onKeyDown={event => { if(event.key==="Enter" || event.key===" ") onNavigate("estimate"); }}>
+        <div className="home-estimate-preview-head">
+          <div><strong>SERVICE ESTIMATE</strong><span>Same estimate format • Click to open</span></div>
+          <button type="button" className="excel-button green no-print" onClick={event => { event.stopPropagation(); onNavigate("estimate"); }}>Open Estimate</button>
+        </div>
+        <div className="home-estimate-preview-grid">
+          <div><b>Vehicle No.</b><span>Vehicle number → DB lookup</span></div>
+          <div><b>Vehicle Details</b><span>Customer, Model, Engine, Chassis / VIN</span></div>
+          <div><b>Parts</b><span>Part No. → Description + MRP / Rate</span></div>
+          <div><b>Qty / Rate / Amount</b><span>Editable estimate lines and totals</span></div>
+        </div>
       </div>
       <div className="portal-workflow"><div><b>Recommended workflow</b><span>Upload Excel → Analyse → Review Service Decision → Prepare Estimate / Share Due Summary</span></div><div><b>Personalise</b><span>Theme, columns, custom names and table widths are saved in Profile &amp; Settings.</span></div></div>
     </div>
@@ -3133,6 +3145,10 @@ function ServiceDecisionApp({ user }) {
   const [estimateOpen, setEstimateOpen] = useState(false);
   const [estimateStage, setEstimateStage] = useState("select");
   const [estimateHistory, setEstimateHistory] = useState([]);
+  const [estimateVehicle, setEstimateVehicle] = useState({ customerName:"", reg:"", vin:"", engine:"", model:"", sale:null });
+  const [estimateVehicleNo, setEstimateVehicleNo] = useState("");
+  const [estimateVehicleLookupBusy, setEstimateVehicleLookupBusy] = useState(false);
+  const [estimateVehicleLookupMessage, setEstimateVehicleLookupMessage] = useState("");
   const [estimateLoading, setEstimateLoading] = useState(false);
   const [estimateSelectedServices, setEstimateSelectedServices] = useState([]);
   const [estimateParts, setEstimateParts] = useState([]);
@@ -3844,42 +3860,77 @@ function ServiceDecisionApp({ user }) {
     return () => window.removeEventListener("keydown", handleEscapeNavigation, true);
   }, [mode, openBulkFilter, analysis, uploadParsedRecords.length]);
 
+  async function loadEstimateHistoryByVin(vin) {
+    const response = await fetch("/api/save-history?vin=" + encodeURIComponent(vin));
+    const data = await response.json();
+    return { vehicleRows:Array.isArray(data?.rows)?data.rows:[], modelRows:Array.isArray(data?.modelRows)?data.modelRows:[], globalPartRates:Array.isArray(data?.globalPartRates)?data.globalPartRates:[] };
+  }
+
   async function openEstimate() {
     if (!analysis?.vehicle?.vin) return;
     const dueKeys = BULK_SERVICE_LABELS.filter(([, key]) => analysis?.decision?.result?.[key]).map(([, key]) => key);
+    setEstimateVehicle({ customerName:analysis?.vehicle?.customerName||"", reg:analysis?.vehicle?.reg||"", vin:analysis?.vehicle?.vin||"", engine:analysis?.vehicle?.engine||"", model:analysis?.vehicle?.model||"", sale:analysis?.vehicle?.sale||null });
+    setEstimateVehicleNo(analysis?.vehicle?.reg||"");
     setEstimateSelectedServices(dueKeys);
     setEstimateNumber("EST-" + new Date().getFullYear() + String(new Date().getMonth()+1).padStart(2,"0") + String(new Date().getDate()).padStart(2,"0") + "-" + String(Date.now()).slice(-5));
-    setEstimateParts([]);
-    setEstimateLabour([]);
-    setEstimateNotice("");
-    setEstimateStage("select");
-    setEstimateOpen(true);
-    setEstimateLoading(true);
+    setEstimateParts([]); setEstimateLabour([]); setEstimateNotice(""); setEstimateVehicleLookupMessage("");
+    setEstimateStage("select"); setEstimateOpen(true); setEstimateLoading(true);
     try {
-      const response = await fetch(
-        "/api/save-history?vin=" + encodeURIComponent(analysis.vehicle.vin)
-      );
-      const data = await response.json();
-      const rows = Array.isArray(data?.rows) ? data.rows : [];
-      const modelRows = Array.isArray(data?.modelRows) ? data.modelRows : [];
-      // Keep vehicle history and same-model history separate. Estimate logic
-      // uses vehicle history first and same-model DB history only for missing
-      // parts/labour, so one missing line never suppresses the complete estimate.
-      setEstimateHistory({
-        vehicleRows: rows,
-        modelRows,
-        globalPartRates: Array.isArray(data?.globalPartRates) ? data.globalPartRates : [],
-      });
-      setEstimateNotice(
-        rows.length || modelRows.length
-          ? "Vehicle history loaded. Missing items will be sourced from the same model history in DB."
-          : "No historical service data found. Estimate items can be entered manually."
-      );
+      const history=await loadEstimateHistoryByVin(analysis.vehicle.vin);
+      setEstimateHistory(history);
+      setEstimateNotice(history.vehicleRows.length||history.modelRows.length ? "Vehicle history loaded. Missing items will be sourced from the same model history in DB." : "No historical service data found. Estimate items can be entered manually.");
     } catch {
-      setEstimateHistory([]);
+      setEstimateHistory({vehicleRows:[],modelRows:[],globalPartRates:[]});
       setEstimateNotice("Historical data could not be loaded. Manual estimate entry is available.");
     } finally { setEstimateLoading(false); }
   }
+
+  function openStandaloneEstimate() {
+    setEstimateVehicle({customerName:"",reg:"",vin:"",engine:"",model:"",sale:null});
+    setEstimateVehicleNo("");
+    setEstimateHistory({vehicleRows:[],modelRows:[],globalPartRates:[]});
+    setEstimateSelectedServices([]); setEstimateParts([]); setEstimateLabour([]);
+    setEstimateNotice(""); setEstimateVehicleLookupMessage("");
+    setEstimateNumber("EST-" + new Date().getFullYear() + String(new Date().getMonth()+1).padStart(2,"0") + String(new Date().getDate()).padStart(2,"0") + "-" + String(Date.now()).slice(-5));
+    setEstimateStage("vehicle"); setEstimateOpen(true);
+  }
+
+  async function lookupEstimateVehicle() {
+    const registration=String(estimateVehicleNo||"").replace(/\s+/g,"").trim().toUpperCase();
+    setEstimateVehicleNo(registration);
+    if(!registration){ setEstimateVehicleLookupMessage("Please enter Vehicle No."); return; }
+    setEstimateVehicleLookupBusy(true); setEstimateVehicleLookupMessage("");
+    try {
+      const response=await fetch("/api/save-history?registration="+encodeURIComponent(registration));
+      const data=await response.json().catch(()=>({}));
+      const rows=Array.isArray(data?.rows)?data.rows:[];
+      if(rows.length){
+        const first=rows[0];
+        setEstimateVehicle({
+          customerName:first?.customer_name||"",
+          reg:String(first?.registration||registration).replace(/\s+/g,"").toUpperCase(),
+          vin:String(first?.vin||"").trim().toUpperCase(),
+          engine:first?.engine||"",
+          model:first?.model||"",
+          sale:first?.sale_date?new Date(first.sale_date):null
+        });
+        setEstimateHistory({vehicleRows:rows,modelRows:Array.isArray(data?.modelRows)?data.modelRows:[],globalPartRates:Array.isArray(data?.globalPartRates)?data.globalPartRates:[]});
+        setEstimateVehicleLookupMessage("Vehicle found in DB. Details loaded automatically.");
+      } else {
+        setEstimateVehicle(prev=>({...prev,reg:registration,vin:""}));
+        setEstimateHistory({vehicleRows:[],modelRows:[],globalPartRates:[]});
+        setEstimateVehicleLookupMessage("Vehicle not found in DB. Enter the vehicle/customer details manually below.");
+      }
+    } catch {
+      setEstimateVehicle(prev=>({...prev,reg:registration,vin:""}));
+      setEstimateHistory({vehicleRows:[],modelRows:[],globalPartRates:[]});
+      setEstimateVehicleLookupMessage("DB lookup failed. You can continue with manual vehicle details.");
+    } finally {
+      setEstimateVehicleLookupBusy(false);
+      setEstimateStage("estimate");
+    }
+  }
+
   function prepareEstimate() {
     const history = Array.isArray(estimateHistory)
       ? { vehicleRows: estimateHistory, modelRows: [] }
@@ -3902,7 +3953,12 @@ function ServiceDecisionApp({ user }) {
   function reviseEstimateServices() { setEstimateStage("select"); }
   function updateEstimateItem(type, id, field, value) {
     const setter = type === "labour" ? setEstimateLabour : setEstimateParts;
-    setter(prev => prev.map(item => item.id === id ? { ...item, [field]: field === "qty" || field === "rate" ? Number(value) || 0 : value, source:"Manual" } : item));
+    setter(prev => prev.map(item => item.id === id ? { ...item, [field]: value, source:"Manual" } : item));
+  }
+
+  function normalizeEstimateQuantities() {
+    setEstimateParts(prev => prev.map(item => ({ ...item, qty:String(item.qty ?? "").trim()==="" ? 1 : Number(item.qty) || 0 })));
+    setEstimateLabour(prev => prev.map(item => ({ ...item, qty:String(item.qty ?? "").trim()==="" ? 1 : Number(item.qty) || 0 })));
   }
   async function lookupManualEstimatePart(id, partNo) {
     const code = String(partNo || "").trim();
@@ -4125,6 +4181,15 @@ function ServiceDecisionApp({ user }) {
         .portal-kpi small { color:#8a969f; }
         .portal-section-title { background:#4472c4; color:#fff; padding:8px 10px; font-weight:700; font-size:14px; margin-top:16px; }
         .portal-action-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:10px; }
+         .home-estimate-preview { margin-top:14px; border:2px solid #5b9bd5; background:#fff; color:#1f2937; border-radius:8px; padding:12px; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,.08); }
+         .home-estimate-preview:hover { box-shadow:0 3px 10px rgba(0,0,0,.12); }
+         .home-estimate-preview-head { display:flex; align-items:center; gap:12px; border-bottom:1px solid #d5d5d5; padding-bottom:9px; }
+         .home-estimate-preview-head strong { display:block; font-size:17px; }
+         .home-estimate-preview-head span { display:block; font-size:11px; color:#666; margin-top:2px; }
+         .home-estimate-preview-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-top:10px; }
+         .home-estimate-preview-grid > div { border:1px solid #d5d5d5; padding:9px; border-radius:6px; min-height:58px; }
+         .home-estimate-preview-grid b { display:block; font-size:12px; }
+         .home-estimate-preview-grid span { display:block; font-size:11px; color:#666; margin-top:5px; }
         .portal-action-card { text-align:left; border:1px solid #c7d1da; background:#fff; padding:16px; min-height:155px; display:flex; flex-direction:column; align-items:flex-start; gap:7px; border-radius:5px; }
         .portal-action-card:hover:not(:disabled) { border-color:#70ad47; box-shadow:0 2px 8px rgba(0,0,0,.08); }
         .portal-action-card.disabled { opacity:.5; cursor:not-allowed; }
@@ -4672,7 +4737,7 @@ function ServiceDecisionApp({ user }) {
           <main className="excel-sheet">
             {mode === "home" ? (
               <PortalHome user={user} hasAnalysis={Boolean(analysis)} bulkResults={bulkResults}
-                onNavigate={(nextMode) => { if (nextMode === "estimate") { if (analysis) void openEstimate(); else setMode("single"); } else setMode(nextMode); }}
+                onNavigate={(nextMode) => { if (nextMode === "estimate") { if (analysis) void openEstimate(); else openStandaloneEstimate(); } else setMode(nextMode); }}
                 onUpload={() => document.getElementById("excel-file-input")?.click()}
               />
             ) : mode === "single" ? (analysis ? (
@@ -4888,7 +4953,26 @@ function ServiceDecisionApp({ user }) {
         {estimateOpen && (
           <div className="no-print" style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
             <div style={{background:"#fff",color:"#111",width:"min(1100px,96vw)",maxHeight:"94vh",overflow:"auto",borderRadius:10,padding:18}}>
-              {estimateStage === "select" ? (
+              {estimateStage === "vehicle" ? (
+                <>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
+                    <div style={{fontSize:22,fontWeight:800}}>SERVICE ESTIMATE</div>
+                    <div className="estimate-meta">Estimate No. (Session): <b>{estimateNumber || "-"}</b> · Date: <b>{formatDate(new Date())}</b></div>
+                    <button className="excel-button" style={{marginLeft:"auto"}} onClick={()=>setEstimateOpen(false)}>Cancel</button>
+                  </div>
+                  <div style={{border:"1px solid #d5d5d5",borderRadius:8,padding:14}}>
+                    <div style={{fontWeight:800,fontSize:16,marginBottom:10}}>1. Vehicle Details</div>
+                    <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) auto",gap:8,alignItems:"end"}}>
+                      <div>
+                        <label style={{fontWeight:700}}>Vehicle No.</label>
+                        <input className="excel-input" value={estimateVehicleNo} onChange={e=>setEstimateVehicleNo(e.target.value)} onKeyDown={e=>{if(e.key==="Enter") void lookupEstimateVehicle();}} placeholder="e.g. GJ12BZ7541" autoFocus />
+                      </div>
+                      <button className="excel-button green" disabled={estimateVehicleLookupBusy} onClick={()=>void lookupEstimateVehicle()}>{estimateVehicleLookupBusy ? "Checking DB..." : "Next"}</button>
+                    </div>
+                    <div className="small-note" style={{marginTop:8}}>Spaces are removed automatically before DB lookup.</div>
+                  </div>
+                </>
+              ) : estimateStage === "select" ? (
                 <>
                   <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
                     <div style={{fontSize:22,fontWeight:800}}>SELECT AGGREGATE SERVICES</div><div className="estimate-meta">Estimate No. (Session): <b>{estimateNumber || "-"}</b> · Date: <b>{formatDate(new Date())}</b></div>
@@ -4923,15 +5007,19 @@ function ServiceDecisionApp({ user }) {
                     <button className="excel-button no-print" onClick={()=>setEstimateOpen(false)}>Close</button>
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:8,marginBottom:12}}>
-                    <div><b>Customer</b><br/>{analysis?.vehicle?.customerName || "-"}</div><div><b>Reg. No.</b><br/>{analysis?.vehicle?.reg || "-"}</div><div><b>VIN</b><br/>{analysis?.vehicle?.vin || "-"}</div><div><b>Model</b><br/>{analysis?.vehicle?.model || "-"}</div>
+                   <div style={{display:"grid",gridTemplateColumns:"repeat(5,minmax(0,1fr))",gap:8,marginBottom:12}}>
+                     {[["Customer","customerName"],["Reg. No.","reg"],["Chassis / VIN","vin"],["Engine No.","engine"],["Model","model"]].map(([label,key]) => (
+                       <div key={key}><b>{label}</b><input className="excel-input" value={estimateVehicle?.[key] || ""} onChange={e=>setEstimateVehicle(prev=>({...prev,[key]:e.target.value}))} /></div>
+                     ))}
+                   </div>
                   </div>
                   <div style={{fontWeight:800,margin:"10px 0 6px"}}>Selected Aggregate Services</div>
                   <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>{BULK_SERVICE_LABELS.filter(([,key])=>estimateSelectedServices.includes(key)).map(([label])=><span key={label} style={{border:"1px solid #bbb",padding:"5px 8px",borderRadius:5,fontSize:12,background:"#f7f7f7"}}>{label}</span>)}</div>
                   <div style={{fontWeight:800,margin:"10px 0 6px"}}>Parts</div>
-                  <table className="history-table"><thead><tr><th>Part No.</th><th>Description</th><th>Qty</th><th>Rate (Incl. GST)</th><th>Amount</th><th></th></tr></thead><tbody>{estimateParts.map(item=><tr key={item.id}><td><input value={item.partNo} onChange={e=>updateEstimateItem("part",item.id,"partNo",e.target.value)} onBlur={e=>lookupManualEstimatePart(item.id,e.target.value)} title="Enter Part No. and leave the field to auto-fill description and rate"/></td><td><input value={item.description} onChange={e=>updateEstimateItem("part",item.id,"description",e.target.value)}/></td><td><input type="number" min="0" step="0.01" value={item.qty} onChange={e=>updateEstimateItem("part",item.id,"qty",e.target.value)} style={{width:80}}/></td><td><input type="number" min="0" step="0.01" value={item.rate} onChange={e=>updateEstimateItem("part",item.id,"rate",e.target.value)} style={{width:110}}/></td><td>{formatNumber(item.qty*item.rate)}</td><td><button className="excel-button no-print" onClick={()=>removeEstimateItem("part",item.id)}>Delete</button></td></tr>)}{!estimateParts.length&&<tr><td colSpan="6">No historical part found. Add manually.</td></tr>}</tbody></table>
+                  <table className="history-table"><thead><tr><th>Part No.</th><th>Description</th><th>Qty</th><th>Rate (Incl. GST)</th><th>Amount</th><th></th></tr></thead><tbody>{estimateParts.map(item=><tr key={item.id}><td><input value={item.partNo} onChange={e=>updateEstimateItem("part",item.id,"partNo",e.target.value)} onBlur={e=>lookupManualEstimatePart(item.id,e.target.value)} title="Enter Part No. and leave the field to auto-fill description and rate"/></td><td><input value={item.description} onChange={e=>updateEstimateItem("part",item.id,"description",e.target.value)}/></td><td><input type="number" min="0" step="0.01" value={item.qty ?? ""} onChange={e=>updateEstimateItem("part",item.id,"qty",e.target.value)} onBlur={normalizeEstimateQuantities} onKeyDown={e=>{if(e.key==="Enter") normalizeEstimateQuantities();}} style={{width:80}}/></td><td><input type="number" min="0" step="0.01" value={item.rate} onChange={e=>updateEstimateItem("part",item.id,"rate",e.target.value)} style={{width:110}}/></td><td>{formatNumber(item.qty*item.rate)}</td><td><button className="excel-button no-print" onClick={()=>removeEstimateItem("part",item.id)}>Delete</button></td></tr>)}{!estimateParts.length&&<tr><td colSpan="6">No historical part found. Add manually.</td></tr>}</tbody></table>
                   <div style={{margin:"8px 0"}}><button className="excel-button no-print" onClick={()=>addEstimateItem("part")}>+ Add Part</button></div>
                   <div style={{fontWeight:800,margin:"14px 0 6px"}}>Labour</div>
-                  <table className="history-table"><thead><tr><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th><th></th></tr></thead><tbody>{estimateLabour.map(item=><tr key={item.id}><td><input value={item.description} onChange={e=>updateEstimateItem("labour",item.id,"description",e.target.value)}/></td><td><input type="number" min="0" step="0.01" value={item.qty} onChange={e=>updateEstimateItem("labour",item.id,"qty",e.target.value)} style={{width:80}}/></td><td><input type="number" min="0" step="0.01" value={item.rate} onChange={e=>updateEstimateItem("labour",item.id,"rate",e.target.value)} style={{width:110}}/></td><td>{formatNumber(item.qty*item.rate)}</td><td><button className="excel-button no-print" onClick={()=>removeEstimateItem("labour",item.id)}>Delete</button></td></tr>)}{!estimateLabour.length&&<tr><td colSpan="5">No historical labour found. Add manually.</td></tr>}</tbody></table>
+                  <table className="history-table"><thead><tr><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th><th></th></tr></thead><tbody>{estimateLabour.map(item=><tr key={item.id}><td><input value={item.description} onChange={e=>updateEstimateItem("labour",item.id,"description",e.target.value)}/></td><td><input type="number" min="0" step="0.01" value={item.qty ?? ""} onChange={e=>updateEstimateItem("labour",item.id,"qty",e.target.value)} onBlur={normalizeEstimateQuantities} onKeyDown={e=>{if(e.key==="Enter") normalizeEstimateQuantities();}} style={{width:80}}/></td><td><input type="number" min="0" step="0.01" value={item.rate} onChange={e=>updateEstimateItem("labour",item.id,"rate",e.target.value)} style={{width:110}}/></td><td>{formatNumber(item.qty*item.rate)}</td><td><button className="excel-button no-print" onClick={()=>removeEstimateItem("labour",item.id)}>Delete</button></td></tr>)}{!estimateLabour.length&&<tr><td colSpan="5">No historical labour found. Add manually.</td></tr>}</tbody></table>
                   <div style={{margin:"8px 0"}}><button className="excel-button no-print" onClick={()=>addEstimateItem("labour")}>+ Add Labour</button></div>
                   <div style={{marginTop:16,marginLeft:"auto",maxWidth:380,borderTop:"2px solid #222",paddingTop:10}}><div style={{display:"flex",justifyContent:"space-between"}}><span>Parts Total</span><b>₹ {formatNumber(estimatePartsTotal)}</b></div><div style={{display:"flex",justifyContent:"space-between"}}><span>Labour Subtotal</span><b>₹ {formatNumber(estimateLabourBase)}</b></div><div style={{display:"flex",justifyContent:"space-between"}}><span>GST on Labour (18%)</span><b>₹ {formatNumber(estimateLabourGst)}</b></div><div style={{display:"flex",justifyContent:"space-between",fontSize:18,marginTop:6}}><span>Grand Total</span><b>₹ {formatNumber(estimateGrandTotal)}</b></div></div>
                   <div className="no-print" style={{display:"flex",flexWrap:"wrap",justifyContent:"flex-end",gap:8,marginTop:18,paddingTop:12,borderTop:"1px solid #ddd"}}><button className="excel-button" onClick={reviseEstimateServices}>Revise Aggregate Service</button><button className="excel-button" onClick={()=>buildEstimatePdf(true)}>Print A4</button><button className="excel-button green" onClick={()=>buildEstimatePdf(false)}>Download PDF</button></div>

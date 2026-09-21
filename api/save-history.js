@@ -115,7 +115,7 @@ export default async function handler(req, res) {
 
       if (registration) {
         const vehicleResult = await client.query(
-          "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date " +
+          "SELECT v.id, v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date " +
           "FROM vehicles v " +
           "WHERE UPPER(REPLACE(TRIM(v.registration), ' ', ''))=$1 " +
           "ORDER BY v.last_refreshed_at DESC NULLS LAST, v.id DESC LIMIT 1",

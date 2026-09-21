@@ -2849,7 +2849,7 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
     if (!(globalRate > 0)) return item;
     item.baseRate = globalRate;
     item.rate = Number((globalRate * 1.18).toFixed(2));
-    item.source = "Historical DB (Qty from same-model history; Rate from matching part history, 18% GST added)";
+    item.source = "Historical DB (Qty from same-model history; Rate from latest 10 job cards — most frequent rate, 18% GST added)";
     return item;
   }
 
@@ -4143,7 +4143,7 @@ function ServiceDecisionApp({ user }) {
     try {
       const response = await fetch("/api/save-history?partNo=" + encodeURIComponent(code));
       const data = await response.json().catch(() => ({}));
-      if (data.part) setEstimateParts(prev => prev.map(item => item.id === id ? {...item,partNo:data.part.partNo||code,description:data.part.description||item.description,rate:Number(data.part.rateInclGst||0),baseRate:Number(data.part.rate||0),source:"Historical DB - exact Part No."} : item));
+      if (data.part) setEstimateParts(prev => prev.map(item => item.id === id ? {...item,partNo:data.part.partNo||code,description:data.part.description||item.description,rate:Number(data.part.rateInclGst||0),baseRate:Number(data.part.rate||0),source:"Historical DB - exact Part No. (latest 10 job cards, most frequent rate)"} : item));
     } catch (err) { console.warn("Manual estimate part lookup:",err); }
     finally { setManualPartLookupBusy(prev => ({...prev,[id]:false})); }
   }

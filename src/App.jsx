@@ -3108,7 +3108,7 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
 function emptyEstimateItem(type = "part") {
   return { id: type + "-" + Date.now() + "-" + Math.random().toString(36).slice(2,8), type, partNo:"", description:"", qty:"", rate:0, source:"Manual" };
 }
-function PortalHome({ user, onNavigate, onUpload, hasAnalysis, bulkResults }) {
+function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResults, savedEstimates, savedEstimatesLoading, onOpenSavedEstimate }) {
   const dueVehicles = (bulkResults || []).filter(item => Array.isArray(item?.services) && item.services.length > 0).length;
   const totalVehicles = (bulkResults || []).length;
   const cards = [
@@ -3118,7 +3118,7 @@ function PortalHome({ user, onNavigate, onUpload, hasAnalysis, bulkResults }) {
   ];
   return (
     <div className="portal-home">
-      <div className="portal-home-hero"><div><div className="portal-home-kicker">SERVICE DECISION WEB PORTAL</div><h1>Welcome{user?.personName ? ", " + user.personName : ""}</h1><p>Your main workflow starts with Excel upload. Upload the DMS file first, then analyse vehicles or prepare the due summary.</p></div><button className="excel-button green portal-upload-button" onClick={onUpload}>Upload Excel &amp; Start</button></div>
+      <div className="portal-home-hero"><div><div className="portal-home-kicker">SERVICE DECISION WEB PORTAL</div><h1>Welcome{user?.personName ? ", " + user.personName : ""}</h1><p>Your main workflow starts with Excel upload. Upload the DMS file first, then analyse vehicles or prepare the due summary.</p></div><div style={{display:"flex",gap:8,flexWrap:"wrap"}}><button className="excel-button green portal-upload-button" onClick={onUpload}>Upload Excel &amp; Start</button><button className="excel-button" onClick={onClear}>Clear</button></div></div>
       <div className="portal-kpi-grid"><div className="portal-kpi"><span>Vehicles in Current Upload</span><strong>{totalVehicles}</strong><small>Current session only</small></div><div className="portal-kpi"><span>Due Vehicles in Current Upload</span><strong>{dueVehicles}</strong><small>Current session only</small></div><div className="portal-kpi"><span>Portal Mode</span><strong>Beta</strong><small>Testing &amp; feedback</small></div></div>
       <div className="portal-section-title">What would you like to do?</div>
       <div className="portal-action-grid">{cards.map(card => <button key={card.key} className="portal-action-card" onClick={() => onNavigate(card.key)}><span className="portal-action-icon">{card.icon}</span><span className="portal-action-title">{card.title}</span><span className="portal-action-text">{card.text}</span><span className="portal-action-link">Open →</span></button>)}
@@ -3135,6 +3135,23 @@ function PortalHome({ user, onNavigate, onUpload, hasAnalysis, bulkResults }) {
           <div><b>Parts</b><span>Part No. → Description + MRP / Rate</span></div>
           <div><b>Qty / Rate / Amount</b><span>Editable estimate lines and totals</span></div>
         </div>
+      </div>
+      <div className="home-saved-estimates">
+        <div className="portal-section-title">Saved Estimates</div>
+        {savedEstimatesLoading ? (
+          <div className="small-note">Loading saved estimates...</div>
+        ) : savedEstimates.length ? (
+          <div className="saved-estimate-list">
+            {savedEstimates.map(item => (
+              <button key={item.id} type="button" className="saved-estimate-row" onClick={() => onOpenSavedEstimate(item.id)}>
+                <span><b>{item.estimate_no}</b><small>{item.vehicle_no || "Vehicle No. not entered"}</small></span>
+                <span>Open →</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="small-note">No saved estimates yet.</div>
+        )}
       </div>
       <div className="portal-workflow"><div><b>Recommended workflow</b><span>Upload Excel → Analyse → Review Service Decision → Prepare Estimate / Share Due Summary</span></div><div><b>Personalise</b><span>Theme, columns, custom names and table widths are saved in Profile &amp; Settings.</span></div></div>
     </div>
@@ -3169,6 +3186,10 @@ function ServiceDecisionApp({ user }) {
   const [estimateLabour, setEstimateLabour] = useState([]);
   const [estimateNotice, setEstimateNotice] = useState("");
   const [estimateNumber, setEstimateNumber] = useState("");
+  const [estimateSavedId, setEstimateSavedId] = useState(null);
+  const [savedEstimates, setSavedEstimates] = useState([]);
+  const [savedEstimatesLoading, setSavedEstimatesLoading] = useState(false);
+  const [estimateSaveBusy, setEstimateSaveBusy] = useState(false);
   const [bulkSearch, setBulkSearch] = useState("");
   const [bulkQuickFilter, setBulkQuickFilter] = useState("all");
   const [manualPartLookupBusy, setManualPartLookupBusy] = useState({});
@@ -3177,16 +3198,39 @@ function ServiceDecisionApp({ user }) {
   const defaultSingleLabels = { date:"Date", jobCard:"Job Card", reading:"Reading", plant:"Plant", parts:"Part No. / Service / Qty" };
   const defaultBulkLabels = { customerName:"Customer Name", vin:"VIN", reg:"Reg. No.", saleDate:"Sale Date", model:"Model", currentReading:"Current Reading", services:"Service To Be Completed" };
   const defaultSingleWidths = { date:8, jobCard:10, reading:10, plant:12, parts:60 };
-  const defaultBulkWidths = { serial:7, customerName:16, vin:13, reg:12, saleDate:11, model:13, currentReading:13, services:22 };
-  const normalizeDashboardPrefs = (preferences = {}) => ({
-    ...preferences,
-    singleColumns: Array.isArray(preferences.singleColumns) && preferences.singleColumns.length ? preferences.singleColumns : defaultSingleColumns,
-    bulkColumns: Array.isArray(preferences.bulkColumns) && preferences.bulkColumns.length ? preferences.bulkColumns : defaultBulkColumns,
-    singleColumnLabels: { ...defaultSingleLabels, ...(preferences.singleColumnLabels || {}) },
-    bulkColumnLabels: { ...defaultBulkLabels, ...(preferences.bulkColumnLabels || {}) },
-    singleColumnWidths: { ...defaultSingleWidths, ...(preferences.singleColumnWidths || {}) },
-    bulkColumnWidths: { ...defaultBulkWidths, ...(preferences.bulkColumnWidths || {}) },
-  });
+  const defaultBulkWidths = { serial:6, customerName:15, vin:12, reg:11, saleDate:10, model:12, currentReading:12, services:22 };
+  const normalizeWidthMap = (widths, keys) => {
+    const source = { ...widths };
+    const values = keys.map(key => Math.max(1, Number(source[key] || 0)));
+    const total = values.reduce((sum, value) => sum + value, 0) || 1;
+    const factor = 100 / total;
+    const normalized = {};
+    let running = 0;
+    keys.forEach((key, index) => {
+      if (index === keys.length - 1) {
+        normalized[key] = Number((100 - running).toFixed(2));
+      } else {
+        normalized[key] = Number((values[index] * factor).toFixed(2));
+        running += normalized[key];
+      }
+    });
+    return normalized;
+  };
+  const normalizeDashboardPrefs = (preferences = {}) => {
+    const singleColumns = Array.isArray(preferences.singleColumns) && preferences.singleColumns.length ? preferences.singleColumns : defaultSingleColumns;
+    const bulkColumns = Array.isArray(preferences.bulkColumns) && preferences.bulkColumns.length ? preferences.bulkColumns : defaultBulkColumns;
+    const singleWidthKeys = singleColumns;
+    const bulkWidthKeys = ["serial", ...bulkColumns];
+    return {
+      ...preferences,
+      singleColumns,
+      bulkColumns,
+      singleColumnLabels: { ...defaultSingleLabels, ...(preferences.singleColumnLabels || {}) },
+      bulkColumnLabels: { ...defaultBulkLabels, ...(preferences.bulkColumnLabels || {}) },
+      singleColumnWidths: normalizeWidthMap({ ...defaultSingleWidths, ...(preferences.singleColumnWidths || {}) }, singleWidthKeys),
+      bulkColumnWidths: normalizeWidthMap({ ...defaultBulkWidths, ...(preferences.bulkColumnWidths || {}) }, bulkWidthKeys),
+    };
+  };
   const [dashboardPrefs, setDashboardPrefs] = useState(() => normalizeDashboardPrefs(user?.preferences || {}));
   useEffect(() => { setDashboardPrefs(normalizeDashboardPrefs(user?.preferences || {})); }, [user?.id, user?.preferences]);
   const singleTableColumns = dashboardPrefs.singleColumns;
@@ -3885,6 +3929,7 @@ function ServiceDecisionApp({ user }) {
     setEstimateVehicle({ customerName:analysis?.vehicle?.customerName||"", reg:analysis?.vehicle?.reg||"", vin:analysis?.vehicle?.vin||"", engine:analysis?.vehicle?.engine||"", model:analysis?.vehicle?.model||"", sale:analysis?.vehicle?.sale||null });
     setEstimateVehicleNo(analysis?.vehicle?.reg||"");
     setEstimateSelectedServices(dueKeys);
+    setEstimateSavedId(null);
     setEstimateNumber("EST-" + new Date().getFullYear() + String(new Date().getMonth()+1).padStart(2,"0") + String(new Date().getDate()).padStart(2,"0") + "-" + String(Date.now()).slice(-5));
     setEstimateParts([]); setEstimateLabour([]); setEstimateNotice(""); setEstimateVehicleLookupMessage("");
     setEstimateStage("select"); setEstimateOpen(true); setEstimateLoading(true);
@@ -3904,9 +3949,115 @@ function ServiceDecisionApp({ user }) {
     setEstimateHistory({vehicleRows:[],modelRows:[],globalPartRates:[]});
     setEstimateSelectedServices([]); setEstimateParts([]); setEstimateLabour([]);
     setEstimateNotice(""); setEstimateVehicleLookupMessage("");
+    setEstimateSavedId(null);
     setEstimateNumber("EST-" + new Date().getFullYear() + String(new Date().getMonth()+1).padStart(2,"0") + String(new Date().getDate()).padStart(2,"0") + "-" + String(Date.now()).slice(-5));
     setEstimateStage("vehicle"); setEstimateOpen(true);
   }
+
+  async function loadSavedEstimates() {
+    setSavedEstimatesLoading(true);
+    try {
+      const token = localStorage.getItem("serviceDecisionAuthToken");
+      if (!token) return;
+      const response = await fetch("/api/estimates", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json", Authorization:`Bearer ${token}` },
+        body:JSON.stringify({ action:"list" }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data.success) setSavedEstimates(Array.isArray(data.estimates) ? data.estimates : []);
+    } catch (error) {
+      console.warn("Saved estimate list load failed:", error);
+    } finally {
+      setSavedEstimatesLoading(false);
+    }
+  }
+
+  async function saveEstimateToDb() {
+    const vehicleNo = String(estimateVehicle?.reg || estimateVehicleNo || "").replace(/\s+/g,"").trim().toUpperCase();
+    if (!vehicleNo) {
+      setEstimateNotice("Vehicle No. is required before saving the estimate.");
+      return;
+    }
+    if (!estimateNumber) {
+      setEstimateNotice("Estimate number is missing. Please start a new estimate.");
+      return;
+    }
+
+    setEstimateSaveBusy(true);
+    try {
+      const token = localStorage.getItem("serviceDecisionAuthToken");
+      const response = await fetch("/api/estimates", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json", Authorization:`Bearer ${token}` },
+        body:JSON.stringify({
+          action:"save",
+          estimateNo:estimateNumber,
+          vehicleNo,
+          vehicle:{
+            ...estimateVehicle,
+            sale:estimateVehicle?.sale instanceof Date ? estimateVehicle.sale.toISOString() : estimateVehicle?.sale || null,
+          },
+          selectedServices:estimateSelectedServices,
+          parts:estimateParts,
+          labour:estimateLabour,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.success) throw new Error(data.error || "Unable to save estimate.");
+      setEstimateSavedId(data.estimate?.id || estimateSavedId);
+      setEstimateNotice(`Estimate ${estimateNumber} saved successfully. Future saves will update the same estimate number.`);
+      await loadSavedEstimates();
+    } catch (error) {
+      setEstimateNotice(error.message || "Unable to save estimate.");
+    } finally {
+      setEstimateSaveBusy(false);
+    }
+  }
+
+  async function openSavedEstimate(id) {
+    setEstimateLoading(true);
+    setEstimateOpen(true);
+    try {
+      const token = localStorage.getItem("serviceDecisionAuthToken");
+      const response = await fetch("/api/estimates", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json", Authorization:`Bearer ${token}` },
+        body:JSON.stringify({ action:"get", id }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.success || !data.estimate) throw new Error(data.error || "Unable to load saved estimate.");
+
+      const saved = data.estimate;
+      const vehicle = saved.vehicle_data || {};
+      setEstimateSavedId(saved.id);
+      setEstimateNumber(saved.estimate_no || "");
+      setEstimateVehicleNo(String(saved.vehicle_no || vehicle.reg || "").replace(/\s+/g,"").toUpperCase());
+      setEstimateVehicle({
+        customerName:vehicle.customerName || "",
+        reg:String(vehicle.reg || saved.vehicle_no || "").replace(/\s+/g,"").toUpperCase(),
+        vin:vehicle.vin || "",
+        engine:vehicle.engine || "",
+        model:vehicle.model || "",
+        sale:vehicle.sale ? new Date(vehicle.sale) : null,
+      });
+      setEstimateSelectedServices(Array.isArray(saved.selected_services) ? saved.selected_services : []);
+      setEstimateParts(Array.isArray(saved.parts) ? saved.parts : []);
+      setEstimateLabour(Array.isArray(saved.labour) ? saved.labour : []);
+      setEstimateHistory({vehicleRows:[],modelRows:[],globalPartRates:[]});
+      setEstimateNotice("Saved estimate loaded. You can edit it and save again; the estimate number will remain unchanged.");
+      setEstimateStage("estimate");
+    } catch (error) {
+      setEstimateOpen(false);
+      setError(error.message || "Unable to load saved estimate.");
+    } finally {
+      setEstimateLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (user?.id) void loadSavedEstimates();
+  }, [user?.id]);
 
   async function lookupEstimateVehicle() {
     const registration=String(estimateVehicleNo||"").replace(/\s+/g,"").trim().toUpperCase();
@@ -4326,6 +4477,16 @@ function ServiceDecisionApp({ user }) {
         .section-title { margin-top:12px; background:#5b9bd5; color:#fff; border:1px solid #2f75b5; padding:6px 9px; font-weight:700; font-size:13px; }
         .history-wrap { overflow:auto; max-height:520px; border:1px solid #b7b7b7; }
         .history-table { width:100%; border-collapse:collapse; min-width:760px; }
+        .dashboard-resizable-table { table-layout:fixed; }
+        .dashboard-resizable-table col,
+        .dashboard-resizable-table th,
+        .dashboard-resizable-table td { box-sizing:border-box; }
+        .saved-estimate-list { display:flex; flex-direction:column; gap:6px; }
+        .saved-estimate-row { width:100%; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 12px; border:1px solid #cbd5df; border-radius:7px; background:#fff; color:#1f1f1f; cursor:pointer; text-align:left; }
+        .saved-estimate-row:hover { border-color:#217346; background:#f5fbf7; }
+        .saved-estimate-row span:first-child { display:flex; flex-direction:column; gap:3px; }
+        .saved-estimate-row small { color:#687681; }
+
         .history-table th { position:sticky; top:0; z-index:2; background:#4472c4; color:#fff; border:1px solid #b7b7b7; padding:5px 7px; font-size:12px; }
         .estimate-workspace .history-table th { position:static; top:auto; z-index:auto; }
         .history-table td { border:1px solid #d0d0d0; padding:5px 7px; font-size:12px; }
@@ -4750,8 +4911,12 @@ function ServiceDecisionApp({ user }) {
           <main className="excel-sheet">
             {mode === "home" ? (
               <PortalHome user={user} hasAnalysis={Boolean(analysis)} bulkResults={bulkResults}
+                savedEstimates={savedEstimates}
+                savedEstimatesLoading={savedEstimatesLoading}
                 onNavigate={(nextMode) => { if (nextMode === "estimate") { if (analysis) void openEstimate(); else openStandaloneEstimate(); } else setMode(nextMode); }}
                 onUpload={() => document.getElementById("excel-file-input")?.click()}
+                onClear={clear}
+                onOpenSavedEstimate={openSavedEstimate}
               />
             ) : mode === "single" ? (analysis ? (
               <>
@@ -5027,13 +5192,13 @@ function ServiceDecisionApp({ user }) {
                   <div style={{fontWeight:800,margin:"10px 0 6px"}}>Selected Aggregate Services</div>
                   <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>{BULK_SERVICE_LABELS.filter(([,key])=>estimateSelectedServices.includes(key)).map(([label])=><span key={label} style={{border:"1px solid #bbb",padding:"5px 8px",borderRadius:5,fontSize:12,background:"#f7f7f7"}}>{label}</span>)}</div>
                   <div style={{fontWeight:800,margin:"10px 0 6px"}}>Parts</div>
-                  <table className="history-table"><thead><tr><th>Part No.</th><th>Description</th><th>Qty</th><th>Rate (Incl. GST)</th><th>Amount</th><th></th></tr></thead><tbody>{estimateParts.map(item=><tr key={item.id}><td><input value={item.partNo} onChange={e=>updateEstimateItem("part",item.id,"partNo",e.target.value)} onBlur={e=>lookupManualEstimatePart(item.id,e.target.value)} title="Enter Part No. and leave the field to auto-fill description and rate"/></td><td><input value={item.description} onChange={e=>updateEstimateItem("part",item.id,"description",e.target.value)}/></td><td><input type="number" min="0" step="0.01" value={item.qty ?? ""} onChange={e=>updateEstimateItem("part",item.id,"qty",e.target.value)} onBlur={normalizeEstimateQuantities} onKeyDown={e=>{if(e.key==="Enter") normalizeEstimateQuantities();}} style={{width:80}}/></td><td><input type="number" min="0" step="0.01" value={item.rate} onChange={e=>updateEstimateItem("part",item.id,"rate",e.target.value)} style={{width:110}}/></td><td>{formatNumber(item.qty*item.rate)}</td><td><button className="excel-button no-print" onClick={()=>removeEstimateItem("part",item.id)}>Delete</button></td></tr>)}{!estimateParts.length&&<tr><td colSpan="6">No historical part found. Add manually.</td></tr>}</tbody></table>
+                  <table className="history-table"><thead><tr><th>Part No.</th><th>Description</th><th>Qty</th><th>Rate (Incl. GST)</th><th>Amount</th><th></th></tr></thead><tbody>{estimateParts.map(item=><tr key={item.id}><td><input value={item.partNo} onChange={e=>updateEstimateItem("part",item.id,"partNo",e.target.value)} onBlur={e=>lookupManualEstimatePart(item.id,e.target.value)} title="Enter Part No. and leave the field to auto-fill description and rate"/></td><td><input value={item.description} onChange={e=>updateEstimateItem("part",item.id,"description",e.target.value)}/></td><td><input type="number" min="0" step="0.01" value={item.qty ?? ""} placeholder="Qty" onChange={e=>updateEstimateItem("part",item.id,"qty",e.target.value)} onBlur={normalizeEstimateQuantities} onKeyDown={e=>{if(e.key==="Enter") normalizeEstimateQuantities();}} style={{width:80}}/></td><td><input type="number" min="0" step="0.01" value={item.rate} onChange={e=>updateEstimateItem("part",item.id,"rate",e.target.value)} style={{width:110}}/></td><td>{formatNumber(item.qty*item.rate)}</td><td><button className="excel-button no-print" onClick={()=>removeEstimateItem("part",item.id)}>Delete</button></td></tr>)}{!estimateParts.length&&<tr><td colSpan="6">No historical part found. Add manually.</td></tr>}</tbody></table>
                   <div style={{margin:"8px 0"}}><button className="excel-button no-print" onClick={()=>addEstimateItem("part")}>+ Add Part</button></div>
                   <div style={{fontWeight:800,margin:"14px 0 6px"}}>Labour</div>
                   <table className="history-table"><thead><tr><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th><th></th></tr></thead><tbody>{estimateLabour.map(item=><tr key={item.id}><td><input value={item.description} onChange={e=>updateEstimateItem("labour",item.id,"description",e.target.value)}/></td><td><input type="number" min="0" step="0.01" value={item.qty ?? ""} onChange={e=>updateEstimateItem("labour",item.id,"qty",e.target.value)} onBlur={normalizeEstimateQuantities} onKeyDown={e=>{if(e.key==="Enter") normalizeEstimateQuantities();}} style={{width:80}}/></td><td><input type="number" min="0" step="0.01" value={item.rate} onChange={e=>updateEstimateItem("labour",item.id,"rate",e.target.value)} style={{width:110}}/></td><td>{formatNumber(item.qty*item.rate)}</td><td><button className="excel-button no-print" onClick={()=>removeEstimateItem("labour",item.id)}>Delete</button></td></tr>)}{!estimateLabour.length&&<tr><td colSpan="5">No historical labour found. Add manually.</td></tr>}</tbody></table>
                   <div style={{margin:"8px 0"}}><button className="excel-button no-print" onClick={()=>addEstimateItem("labour")}>+ Add Labour</button></div>
                   <div style={{marginTop:16,marginLeft:"auto",maxWidth:380,borderTop:"2px solid #222",paddingTop:10}}><div style={{display:"flex",justifyContent:"space-between"}}><span>Parts Total</span><b>₹ {formatNumber(estimatePartsTotal)}</b></div><div style={{display:"flex",justifyContent:"space-between"}}><span>Labour Subtotal</span><b>₹ {formatNumber(estimateLabourBase)}</b></div><div style={{display:"flex",justifyContent:"space-between"}}><span>GST on Labour (18%)</span><b>₹ {formatNumber(estimateLabourGst)}</b></div><div style={{display:"flex",justifyContent:"space-between",fontSize:18,marginTop:6}}><span>Grand Total</span><b>₹ {formatNumber(estimateGrandTotal)}</b></div></div>
-                  <div className="no-print" style={{display:"flex",flexWrap:"wrap",justifyContent:"flex-end",gap:8,marginTop:18,paddingTop:12,borderTop:"1px solid #ddd"}}><button className="excel-button" onClick={reviseEstimateServices}>Revise Aggregate Service</button><button className="excel-button" onClick={()=>buildEstimatePdf(true)}>Print A4</button><button className="excel-button green" onClick={()=>buildEstimatePdf(false)}>Download PDF</button></div>
+                  <div className="no-print" style={{display:"flex",flexWrap:"wrap",justifyContent:"flex-end",gap:8,marginTop:18,paddingTop:12,borderTop:"1px solid #ddd"}}><button className="excel-button" onClick={reviseEstimateServices}>Revise Aggregate Service</button><button className="excel-button green" disabled={estimateSaveBusy} onClick={saveEstimateToDb}>{estimateSaveBusy ? "Saving..." : "Save Estimate"}</button><button className="excel-button" onClick={()=>buildEstimatePdf(true)}>Print A4</button><button className="excel-button green" onClick={()=>buildEstimatePdf(false)}>Download PDF</button></div>
                   <div style={{marginTop:8,fontSize:12,color:"#666"}}>Estimate only. Historical DB rates are without GST; 18% GST is added to historical part rates shown above. Missing items/rates can be entered manually using GST-inclusive rates.</div>
                 </>
               )}

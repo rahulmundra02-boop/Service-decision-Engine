@@ -4574,11 +4574,8 @@ function ServiceDecisionApp({ user }) {
           font-weight:700;
         }
         .single-service-summary { min-width:760px; width:100%; table-layout:fixed; }
-        .single-service-summary th:nth-child(1), .single-service-summary td:nth-child(1) { width:7% !important; min-width:0; white-space:normal; overflow-wrap:anywhere; }
-        .single-service-summary th:nth-child(2), .single-service-summary td:nth-child(2) { width:8% !important; min-width:0; white-space:normal; overflow-wrap:anywhere; }
-        .single-service-summary th:nth-child(3), .single-service-summary td:nth-child(3) { width:6% !important; min-width:0; white-space:normal; overflow-wrap:anywhere; }
-        .single-service-summary th:nth-child(4), .single-service-summary td:nth-child(4) { width:10% !important; min-width:0; white-space:normal; overflow-wrap:anywhere; }
-        .single-service-summary th:nth-child(5), .single-service-summary td:nth-child(5) { width:69% !important; min-width:0; }
+        .single-service-summary th, .single-service-summary td { min-width:0; white-space:normal; overflow-wrap:anywhere; }
+        .single-service-summary th:last-child, .single-service-summary td:last-child { overflow-wrap:anywhere; }
         .service-summary-note { padding:5px 8px; margin-top:4px; }
         .service-summary-title {
           background:#2f75b5;

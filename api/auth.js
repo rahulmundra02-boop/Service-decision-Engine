@@ -506,7 +506,7 @@ export default async function handler(req, res) {
                 a.mode,a.vehicle_count,a.file_count,a.vin,a.details
            FROM user_activity a
            JOIN app_users u ON u.id=a.user_id
-          WHERE ${targetUserId ? "a.user_id=$1" : ""}${targetUserId && !includeAdmins ? " AND " : ""}${!includeAdmins ? "u.role <> 'admin'" : ""}
+          WHERE 1=1${targetUserId ? " AND a.user_id=$1" : ""}${!includeAdmins ? " AND u.role <> 'admin'" : ""}
           ORDER BY a.activity_time DESC
           LIMIT 200`,
         params

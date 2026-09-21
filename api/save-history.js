@@ -134,7 +134,7 @@ export default async function handler(req, res) {
           "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
           "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +
           "WHERE v.id=$1 ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id ASC",
-          [vehicle.vin ? (await client.query("SELECT id FROM vehicles WHERE vin=$1 LIMIT 1",[vehicle.vin])).rows[0]?.id : null]
+          [vehicle.id]
         );
         const rows = historyResult.rows;
         const modelName = String(vehicle.model || "").trim();

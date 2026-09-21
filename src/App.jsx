@@ -3140,7 +3140,7 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
 function emptyEstimateItem(type = "part") {
   return { id: type + "-" + Date.now() + "-" + Math.random().toString(36).slice(2,8), type, partNo:"", description:"", qty:"", rate:0, source:"Manual" };
 }
-function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResults, savedEstimates, savedEstimatesLoading, onOpenSavedEstimate }) {
+function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResults, savedEstimates, savedEstimatesLoading, onOpenSavedEstimate, theme = "blue", onThemeChange }) {
   const dueVehicles = (bulkResults || []).filter(item => Array.isArray(item?.services) && item.services.length > 0).length;
   const totalVehicles = (bulkResults || []).length;
   const savedCount = Array.isArray(savedEstimates) ? savedEstimates.length : 0;
@@ -3161,6 +3161,16 @@ function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResu
           <button className="excel-button green portal-upload-button" onClick={onUpload}>Upload DMS Excel</button>
           <button className="excel-button portal-upload-button" onClick={() => onNavigate("estimate")}>Prepare Estimate</button>
           <button className="excel-button" onClick={onClear}>Clear</button>
+        </div>
+      </div>
+      <div className="home-theme-picker">
+        <div className="home-theme-picker-title">Dashboard Theme</div>
+        <div className="home-theme-options">
+          {[["blue","Classic Blue"],["green","Excel Green"],["navy","Navy"],["teal","Teal"],["purple","Purple"]].map(([key,label]) => (
+            <button key={key} type="button" className={`home-theme-option ${theme===key ? "active" : ""} theme-${key}`} onClick={() => onThemeChange?.(key)}>
+              <span className="home-theme-swatch" aria-hidden="true"></span>{label}
+            </button>
+          ))}
         </div>
       </div>
       <div className="portal-kpi-grid">
@@ -3280,6 +3290,7 @@ function ServiceDecisionApp({ user }) {
     };
   };
   const [dashboardPrefs, setDashboardPrefs] = useState(() => normalizeDashboardPrefs(user?.preferences || {}));
+  const changeDashboardTheme = (theme) => { const nextTheme = String(theme || "blue"); void persistDashboardPrefs({ ...dashboardPrefs, theme: nextTheme }); };
   useEffect(() => { setDashboardPrefs(normalizeDashboardPrefs(user?.preferences || {})); }, [user?.id, user?.preferences]);
   const singleTableColumns = dashboardPrefs.singleColumns;
   const bulkTableColumns = dashboardPrefs.bulkColumns;
@@ -4388,6 +4399,45 @@ function ServiceDecisionApp({ user }) {
         .excel-app { min-height: 100vh; background: #d9e2f3; }
         .table-width-compact { min-width:560px !important; }.table-width-normal { min-width:760px !important; }.table-width-wide { min-width:100% !important;}
         .theme-green .excel-titlebar,.theme-green .section-title {background:#217346 !important}.theme-navy .excel-titlebar,.theme-navy .section-title {background:#17365d !important}.theme-teal .excel-titlebar,.theme-teal .section-title {background:#0f766e !important}.theme-purple .excel-titlebar,.theme-purple .section-title {background:#6b46c1 !important}
+        .theme-blue { --theme:#4472c4; --theme-dark:#1f4e78; --theme-soft:#d9eaf7; --theme-bg:#eef5fb; --theme-accent:#217346; }
+        .theme-green { --theme:#217346; --theme-dark:#185c37; --theme-soft:#e2f0d9; --theme-bg:#f1f8f3; --theme-accent:#217346; }
+        .theme-navy { --theme:#17365d; --theme-dark:#102a47; --theme-soft:#dbe7f4; --theme-bg:#edf2f8; --theme-accent:#17365d; }
+        .theme-teal { --theme:#0f766e; --theme-dark:#0b5f59; --theme-soft:#d9f1ef; --theme-bg:#eef9f8; --theme-accent:#0f766e; }
+        .theme-purple { --theme:#6b46c1; --theme-dark:#5535a0; --theme-soft:#ece5fb; --theme-bg:#f6f2fc; --theme-accent:#6b46c1; }
+        .excel-app { background:var(--theme-bg) !important; }
+        .excel-window { border-color:var(--theme); }
+        .excel-titlebar { background:var(--theme) !important; }
+        .excel-ribbon,.excel-toolbar { border-color:var(--theme-soft); }
+        .excel-tab.active { color:var(--theme) !important; border-bottom-color:var(--theme); }
+        .sheet-heading,.section-title,.portal-section-title { background:var(--theme) !important; border-color:var(--theme-dark) !important; }
+        .sheet-subheading { background:var(--theme-soft); border-color:var(--theme); color:var(--theme-dark); }
+        .portal-home-hero { background:linear-gradient(135deg,var(--theme-bg),#fff); border-color:var(--theme); }
+        .portal-home-kicker,.portal-action-title,.portal-workflow b,.portal-kpi strong { color:var(--theme-dark) !important; }
+        .portal-action-card,.portal-kpi,.bulk-overview-card,.home-estimate-preview { border-color:color-mix(in srgb,var(--theme) 35%,#c7d1da); }
+        .portal-action-card:hover:not(:disabled),.home-estimate-preview:hover { border-color:var(--theme); }
+        .portal-action-link { color:var(--theme) !important; }
+        .portal-workflow div,.decision-basis,.decision-status-card { border-color:color-mix(in srgb,var(--theme) 28%,#d7dee4); background:var(--theme-bg); }
+        .decision-table th,.history-table th { background:var(--theme) !important; }
+        .cell.section { background:var(--theme) !important; }
+        .cell.label { background:var(--theme-soft); color:var(--theme-dark); }
+        .status-pill.blue { background:var(--theme-soft); color:var(--theme-dark); border-color:var(--theme); }
+        .upload-area { border-color:var(--theme); background:var(--theme-bg); }
+        .excel-input:focus { outline-color:var(--theme); }
+        .excel-button.green { background:var(--theme); border-color:var(--theme-dark); }
+        .excel-button.green:hover:not(:disabled) { background:var(--theme-dark); }
+        .excel-tab.active { background:#fff; }
+        .home-theme-picker { margin:12px 0 0; padding:10px 12px; border:1px solid color-mix(in srgb,var(--theme) 28%,#d7dee4); background:var(--theme-bg); border-radius:6px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+        .home-theme-picker-title { font-size:12px; font-weight:800; color:var(--theme-dark); white-space:nowrap; }
+        .home-theme-options { display:flex; gap:6px; flex-wrap:wrap; }
+        .home-theme-option { display:inline-flex; align-items:center; gap:6px; border:1px solid #b7c3cd; background:#fff; color:#34495a; border-radius:5px; padding:6px 9px; font:700 11px Calibri,Arial,sans-serif; cursor:pointer; }
+        .home-theme-option.active { border-color:var(--theme); background:var(--theme); color:#fff; }
+        .home-theme-swatch { width:10px; height:10px; border-radius:50%; background:#4472c4; display:inline-block; border:1px solid rgba(0,0,0,.15); }
+        .home-theme-option.theme-green .home-theme-swatch { background:#217346; }
+        .home-theme-option.theme-navy .home-theme-swatch { background:#17365d; }
+        .home-theme-option.theme-teal .home-theme-swatch { background:#0f766e; }
+        .home-theme-option.theme-purple .home-theme-swatch { background:#6b46c1; }
+        .home-theme-option.theme-blue .home-theme-swatch { background:#4472c4; }
+
         .theme-green .decision-table th,.theme-green .history-table th {background:#217346 !important}.theme-navy .decision-table th,.theme-navy .history-table th {background:#17365d !important}.theme-teal .decision-table th,.theme-teal .history-table th {background:#0f766e !important}.theme-purple .decision-table th,.theme-purple .history-table th {background:#6b46c1 !important}
 
         .estimate-meta { margin-left:auto; font-size:11px; color:#666; }
@@ -4964,7 +5014,7 @@ function ServiceDecisionApp({ user }) {
 
           <main className="excel-sheet">
             {mode === "home" ? (
-              <PortalHome user={user} hasAnalysis={Boolean(analysis)} bulkResults={bulkResults}
+              <PortalHome user={user} theme={dashboardPrefs.theme || "blue"} onThemeChange={changeDashboardTheme} hasAnalysis={Boolean(analysis)} bulkResults={bulkResults}
                 savedEstimates={savedEstimates}
                 savedEstimatesLoading={savedEstimatesLoading}
                 onNavigate={(nextMode) => { if (nextMode === "estimate") { if (analysis) void openEstimate(); else openStandaloneEstimate(); } else setMode(nextMode); }}

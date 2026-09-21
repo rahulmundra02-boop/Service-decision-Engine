@@ -581,6 +581,7 @@ export default async function handler(req, res) {
       const nextRebuildAt = lastRebuildAt
         ? new Date(new Date(lastRebuildAt).getTime() + intervalHours * 60 * 60 * 1000).toISOString()
         : null;
+      await client.query("COMMIT");
       return res.json({
         success:true,
         settings:{

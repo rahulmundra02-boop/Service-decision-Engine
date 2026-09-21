@@ -4102,6 +4102,15 @@ function ServiceDecisionApp({ user }) {
     const history = Array.isArray(estimateHistory)
       ? { vehicleRows: estimateHistory, modelRows: [] }
       : (estimateHistory || { vehicleRows: [], modelRows: [] });
+
+    // A saved estimate already contains its edited parts/labour. Changing
+    // aggregate-service selection must not rebuild and erase those saved edits.
+    if (estimateSavedId && !(history.vehicleRows?.length || history.modelRows?.length)) {
+      setEstimateNotice("Aggregate service selection updated. Your existing saved estimate lines are retained.");
+      setEstimateStage("estimate");
+      return;
+    }
+
     const items = estimateHistoryToItems(
       history.vehicleRows || [],
       estimateSelectedServices,

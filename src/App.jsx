@@ -2445,7 +2445,6 @@ const HUB_GREASE_STANDARD_CODES = new Set([
   "S9999997",
   "FJ607400",
   "F1721500",
-  "F1771900",
   "H5001220",
 ]);
 
@@ -2880,12 +2879,30 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
 
   function buildPartItemsForService(serviceKey) {
     const baseReferences = ESTIMATE_REFERENCE_PARTS[serviceKey] || [];
+
+    // F1771900 is NOT a universal hub-grease reference.
+    // It is model-dependent and must only enter the estimate when the exact
+    // part is actually present as a positive-quantity P002 part in this
+    // vehicle's history or in the exact same-model history returned by DB.
+    // Never introduce it from a hardcoded master/reference list or from a
+    // labour row.
+    const hasModelSpecificF1771900 = serviceKey === "hubGrease" && (
+      vehicle.some(row =>
+        estimateCategory(row) === "part" &&
+        normalizePartCode(row?.part_code) === "F1771900" &&
+        Number(row?.quantity || 0) > 0
+      ) ||
+      modelHistory.some(row =>
+        estimateCategory(row) === "part" &&
+        normalizePartCode(row?.part_code) === "F1771900" &&
+        Number(row?.quantity || 0) > 0
+      )
+    );
+
     const references = serviceKey === "hubGrease"
       ? [
           ...baseReferences,
-          ...(vehicle.some(row => normalizePartCode(row?.part_code) === "F1771900") || modelHistory.some(row => normalizePartCode(row?.part_code) === "F1771900")
-            ? ["F1771900"]
-            : [])
+          ...(hasModelSpecificF1771900 ? ["F1771900"] : [])
         ]
       : baseReferences;
 

@@ -2903,13 +2903,10 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
 
         let candidates = vinExact.length ? vinExact : modelExact;
 
-        // If exact reference code is absent even in same-model history, use
-        // the service family from the same model as the historical qty/rate
-        // source, while displaying the user's reference part number.
-        if (!candidates.length) {
-          candidates = modelFallbackPartRows(serviceKey);
-        }
-
+        // Explicit reference part numbers must exist as the exact part
+        // code in the vehicle history or the same-model history. Never
+        // fabricate/display a reference part number by borrowing quantity/rate
+        // from another part in the same service family.
         if (!candidates.length) continue;
 
         // Engine Oil / Axle Oil: prefer a full replacement quantity when

@@ -4364,6 +4364,7 @@ function ServiceDecisionApp({ user }) {
         .portal-home-kicker { color:#1f4e78; font-size:11px; font-weight:800; letter-spacing:1px; }
         .portal-home-hero h1 { margin:5px 0 4px; font-size:27px; color:#1f1f1f; }
         .portal-home-hero p { margin:0; color:#5f6b75; font-size:13px; }
+        .portal-home-hero-actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
         .portal-upload-button { white-space:nowrap; min-height:38px; }
         .portal-kpi-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:12px 0; }
         .portal-kpi,.bulk-overview-card { border:1px solid #c7d1da; background:#fff; padding:13px; border-radius:5px; }
@@ -4411,7 +4412,7 @@ function ServiceDecisionApp({ user }) {
         .bulk-overview-card.due strong { color:#006100; }
         .bulk-search-input { max-width:360px; min-height:31px; }
         @media (max-width:900px) { .portal-action-grid{grid-template-columns:repeat(2,1fr)} .decision-status-grid{grid-template-columns:repeat(2,1fr)} .decision-basis-grid{grid-template-columns:repeat(2,1fr)} .bulk-overview-grid{grid-template-columns:repeat(2,1fr)} }
-        @media (max-width:600px) { .portal-home-hero{flex-direction:column;align-items:flex-start}.portal-kpi-grid,.portal-workflow{grid-template-columns:1fr}.portal-action-grid{grid-template-columns:1fr}.decision-basis-grid{grid-template-columns:1fr}.bulk-overview-grid{grid-template-columns:1fr}.bulk-search-input{max-width:none;width:100%} }
+        @media (max-width:600px) { .portal-home-hero{flex-direction:column;align-items:flex-start}.portal-home-hero-actions{width:100%;justify-content:flex-start}.portal-kpi-grid,.portal-workflow{grid-template-columns:1fr}.portal-action-grid{grid-template-columns:1fr}.decision-basis-grid{grid-template-columns:1fr}.bulk-overview-grid{grid-template-columns:1fr}.bulk-search-input{max-width:none;width:100%} }
         .excel-window { width: min(1500px, 100%); margin: 0 auto; background: #fff; min-height: 100vh; box-shadow: 0 0 0 1px #9e9e9e; }
         .excel-titlebar { height: 34px; background: #217346; color: #fff; display:flex; align-items:center; justify-content:center; padding:0 12px; font-size:14px; }
         .excel-title { font-weight:700; text-align:center; flex:1; }

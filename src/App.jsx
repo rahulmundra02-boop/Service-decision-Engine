@@ -836,20 +836,11 @@ function parseExcelPaste(text) {
     cumulative: headerIndex(headers,
       ["cumulative counter reading"], ["cumulative counter reading"]),
 
-    // DMS exports exist in two formats:
-    // 1) two "Fleet counter unit" columns, where the second belongs to
-    //    Cumulative Counter Reading;
-    // 2) one "Fleet counter unit" column shared by KM/HR and Cumulative
-    //    Counter Reading.
-    // In the second format, fall back to the first unit column.
-    cumulativeUnit: (() => {
-      const second = headerIndex(headers,
-        ["fleet counter unit"], ["fleet counter unit"], 1);
-      return second >= 0
-        ? second
-        : headerIndex(headers,
-            ["fleet counter unit"], ["fleet counter unit"], 0);
-    })(),
+    // Decision mapping uses the fixed DMS cumulative-counter headers:
+    // Cumulative Counter Reading + Fleet counter unit
+    // Secondary Cumulative Reading + Secondary Cumulative Unit.
+    cumulativeUnit: headerIndex(headers,
+      ["fleet counter unit"], ["fleet counter unit"]),
 
     serviceType: headerIndex(headers,
       ["service type"], ["service type"]),
@@ -906,6 +897,12 @@ function parseExcelPaste(text) {
 
     customerVoice: headerIndex(headers,
       ["customer voice"], ["customer voice"]),
+
+    codifiedCustomerVoice: headerIndex(headers,
+      ["codified customer voice"], ["codified customer voice"]),
+
+    complaintCode: headerIndex(headers,
+      ["complaint code"], ["complaint code"]),
 
     driverName: headerIndex(headers,
       ["driver name"], ["driver name"]),
@@ -991,15 +988,32 @@ function parseExcelPaste(text) {
       ["secondary odometer change"], ["secondary odometer change"]),
   };
 
+  // These are mandatory DMS headers for an accepted upload.
+  // Service Decision reading logic specifically depends on the four
+  // cumulative-counter headers below.
   const missing = [
-    ["Document Date", col.date],
-    ["KM/HR Reading", col.reading],
-    ["Labour Value/Part Description", col.part],
+    ["Job card number", col.jobCard],
+    ["Document Date (Date Received/Sent)", col.date],
+    ["Name", col.customerName],
+    ["Customer Voice", col.customerVoice],
+    ["Cumulative Counter Reading", col.cumulative],
+    ["Fleet counter unit", col.unit],
+    ["Item Category", col.itemCategory],
+    ["Service type", col.serviceType],
+    ["Labour value/part code", col.partCode],
+    ["Labour Value/Part description", col.part],
+    ["Codified Customer Voice", col.codifiedCustomerVoice],
+    ["Quantity", col.qty],
+    ["Net Value", col.netValue],
+    ["Plant name", col.plantName],
+    ["Complaint Code", col.complaintCode],
     ["Registration number", col.reg],
     ["Engine Code", col.engine],
-    ["Sale Date", col.sale],
     ["Model Line", col.model],
+    ["Repaire Type Line", col.repairTypeLine],
     ["Vehicle Identification Number", col.vin],
+    ["Secondary Cumulative Reading", col.secondaryCumulativeReading],
+    ["Secondary Cumulative Unit", col.secondaryCumulativeUnit],
   ].filter(([, index]) => index < 0);
 
   if (missing.length) {
@@ -1054,6 +1068,8 @@ function parseExcelPaste(text) {
       customerNumber: cell(col.customerNumber),
       customerName: customerNameFromRow(headers, cells, col.customerName),
       customerVoice: cell(col.customerVoice),
+      codifiedCustomerVoice: cell(col.codifiedCustomerVoice),
+      complaintCode: cell(col.complaintCode),
       lineOfBusiness: cell(col.lineOfBusiness),
       engine: cell(col.engine),
       sale: parseDate(cell(col.sale)),

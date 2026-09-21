@@ -134,6 +134,16 @@ async function ensureSchema(client) {
 
     CREATE INDEX IF NOT EXISTS idx_user_activity_user_time ON user_activity(user_id, activity_time DESC);
     CREATE INDEX IF NOT EXISTS idx_user_activity_type ON user_activity(activity_type);
+
+    CREATE TABLE IF NOT EXISTS app_settings (
+      setting_key TEXT PRIMARY KEY,
+      setting_value JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    INSERT INTO app_settings (setting_key, setting_value)
+    VALUES ('job_card_cache', '{"enabled":true,"intervalHours":24,"version":1,"lastRebuildAt":null}'::jsonb)
+    ON CONFLICT (setting_key) DO NOTHING;
   `);
 }
 
@@ -555,6 +565,90 @@ export default async function handler(req, res) {
         recent:recent.rows,
         periods:periods.rows,
         breakdown:breakdown.rows
+      });
+    }
+
+    if (action === "job-card-cache-settings") {
+      const result = await client.query(
+        "SELECT setting_value, updated_at FROM app_settings WHERE setting_key='job_card_cache' LIMIT 1"
+      );
+      const settings = result.rows[0]?.setting_value || { enabled:true, intervalHours:24, version:1, lastRebuildAt:null };
+      const countResult = await client.query(
+        "SELECT COUNT(DISTINCT UPPER(TRIM(job_card_no)))::int AS count FROM job_cards WHERE job_card_no IS NOT NULL AND TRIM(job_card_no)<>''"
+      );
+      const intervalHours = Math.max(1, Number(settings.intervalHours || 24));
+      const lastRebuildAt = settings.lastRebuildAt || null;
+      const nextRebuildAt = lastRebuildAt
+        ? new Date(new Date(lastRebuildAt).getTime() + intervalHours * 60 * 60 * 1000).toISOString()
+        : null;
+      return res.json({
+        success:true,
+        settings:{
+          enabled: settings.enabled !== false,
+          intervalHours,
+          version: Number(settings.version || 1),
+          lastRebuildAt,
+          nextRebuildAt,
+          cachedJobCards: Number(countResult.rows[0]?.count || 0),
+          updatedAt: result.rows[0]?.updated_at || null
+        }
+      });
+    }
+
+    if (action === "admin-job-card-cache-settings") {
+      const admin = await requireAdmin(client, req);
+      if (admin.error) {
+        await client.query("ROLLBACK");
+        return res.status(admin.status).json({success:false,error:admin.error});
+      }
+
+      const currentResult = await client.query(
+        "SELECT setting_value FROM app_settings WHERE setting_key='job_card_cache' LIMIT 1"
+      );
+      const current = currentResult.rows[0]?.setting_value || { enabled:true, intervalHours:24, version:1, lastRebuildAt:null };
+      const operation = String(body.operation || "save").trim().toLowerCase();
+      let enabled = current.enabled !== false;
+      let intervalHours = Math.max(1, Number(current.intervalHours || 24));
+
+      if (operation === "reset") {
+        enabled = true;
+        intervalHours = 24;
+      } else {
+        if (body.enabled !== undefined) enabled = body.enabled === true;
+        if (body.intervalHours !== undefined) {
+          const requested = Number(body.intervalHours);
+          if (![6,12,24,48,168].includes(requested)) {
+            await client.query("ROLLBACK");
+            return res.status(400).json({success:false,error:"Invalid cache rebuild interval."});
+          }
+          intervalHours = requested;
+        }
+      }
+
+      const version = Number(current.version || 0) + 1;
+      const lastRebuildAt = new Date().toISOString();
+      await client.query(
+        "INSERT INTO app_settings (setting_key,setting_value,updated_at) " +
+        "VALUES ('job_card_cache',$1::jsonb,NOW()) " +
+        "ON CONFLICT (setting_key) DO UPDATE SET setting_value=EXCLUDED.setting_value,updated_at=NOW()",
+        [JSON.stringify({enabled,intervalHours,version,lastRebuildAt})]
+      );
+      const countResult = await client.query(
+        "SELECT COUNT(DISTINCT UPPER(TRIM(job_card_no)))::int AS count FROM job_cards WHERE job_card_no IS NOT NULL AND TRIM(job_card_no)<>''"
+      );
+      await client.query("COMMIT");
+      return res.json({
+        success:true,
+        settings:{
+          enabled,
+          intervalHours,
+          version,
+          lastRebuildAt,
+          nextRebuildAt:new Date(new Date(lastRebuildAt).getTime()+intervalHours*60*60*1000).toISOString(),
+          cachedJobCards:Number(countResult.rows[0]?.count || 0),
+          updatedAt:new Date().toISOString()
+        },
+        message: operation === "reset" ? "Job Card cache policy reset and all browser caches marked for rebuild." : "Job Card cache policy updated and all browser caches marked for rebuild."
       });
     }
 

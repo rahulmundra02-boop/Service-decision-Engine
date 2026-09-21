@@ -2,6 +2,8 @@ import { cloneElement, useEffect, useRef, useState } from "react";
 import "./AuthGate.css";
 
 const TOKEN_KEY = "serviceDecisionAuthToken";
+const ACTIVITY_KEY = "serviceDecisionLastActivity";
+const INACTIVITY_MS = 12 * 60 * 60 * 1000;
 const ADMIN_CONTACT_EMAIL = "rahul.mundra02@gmail.com";
 const ADMIN_CONTACT_MOBILE = "9461768278";
 const ADMIN_DEALER_FALLBACK = "Kandla Motors";
@@ -77,6 +79,7 @@ export default function AuthGate({ children }) {
     const password = document.getElementById("auth-password")?.value || "";
     const data = await api("login", { identifier, password });
     localStorage.setItem(TOKEN_KEY, data.token);
+    localStorage.setItem(ACTIVITY_KEY, String(Date.now()));
     setUser(normalizeLoggedInUser(data.user));
   });
 
@@ -84,9 +87,59 @@ export default function AuthGate({ children }) {
     const token = localStorage.getItem(TOKEN_KEY);
     try { await api("logout", {}, token); } catch {}
     localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(ACTIVITY_KEY);
     setUser(null);
     setAdminOpen(false);
   };
+
+  useEffect(() => {
+    if (!user) return;
+
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) return;
+
+    if (!localStorage.getItem(ACTIVITY_KEY)) {
+      const serverActivity = user?.lastActivityAt ? new Date(user.lastActivityAt).getTime() : Date.now();
+      localStorage.setItem(ACTIVITY_KEY, String(serverActivity || Date.now()));
+    }
+
+    let lastPing = 0;
+    const touch = () => {
+      const now = Date.now();
+      const last = Number(localStorage.getItem(ACTIVITY_KEY) || 0);
+      if (last && now - last >= INACTIVITY_MS) return;
+      localStorage.setItem(ACTIVITY_KEY, String(now));
+
+      if (now - lastPing >= 60 * 1000) {
+        lastPing = now;
+        api("me", {}, token).catch(() => {
+          localStorage.removeItem(TOKEN_KEY);
+          localStorage.removeItem(ACTIVITY_KEY);
+          setUser(null);
+          setAdminOpen(false);
+        });
+      }
+    };
+
+    const events = ["click","keydown","mousemove","scroll","touchstart"];
+    events.forEach(name => window.addEventListener(name, touch, { passive:true }));
+
+    const timer = window.setInterval(() => {
+      const last = Number(localStorage.getItem(ACTIVITY_KEY) || 0);
+      if (!last || Date.now() - last < INACTIVITY_MS) return;
+
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(ACTIVITY_KEY);
+      setAdminOpen(false);
+      setUser(null);
+      setMessage("Session expired after 12 hours of inactivity. Please login again.");
+    }, 60 * 1000);
+
+    return () => {
+      events.forEach(name => window.removeEventListener(name, touch));
+      window.clearInterval(timer);
+    };
+  }, [user?.id]);
 
   const changePassword = () => run(async () => {
     if (passwordForm.newPassword !== passwordForm.confirmPassword) throw new Error("New passwords do not match.");

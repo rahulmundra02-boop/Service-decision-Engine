@@ -228,6 +228,46 @@ export default async function handler(req, res) {
 
   const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
 
+  if (body.action === "get-job-card-index") {
+    const afterId = Math.max(0, Number(body.afterId || 0));
+    const requestedLimit = Number(body.limit || 5000);
+    const limit = Math.min(
+      5000,
+      Math.max(100, Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 5000)
+    );
+
+    const client = await pool.connect();
+    try {
+      const result = await client.query(
+        "SELECT id, UPPER(TRIM(job_card_no)) AS job_card_no " +
+        "FROM job_cards " +
+        "WHERE id>$1 AND job_card_no IS NOT NULL AND TRIM(job_card_no)<>'' " +
+        "ORDER BY id ASC LIMIT $2",
+        [afterId, limit]
+      );
+
+      const jobCards = result.rows.map(row => ({
+        id: Number(row.id),
+        jobCardNo: row.job_card_no,
+      }));
+
+      return res.status(200).json({
+        success: true,
+        jobCards,
+        nextAfterId: jobCards.length ? jobCards[jobCards.length - 1].id : afterId,
+        hasMore: jobCards.length === limit,
+      });
+    } catch (error) {
+      console.error("Job Card Index Error:", error);
+      return res.status(500).json({
+        success: false,
+        error: error?.message || "Job Card index sync failed"
+      });
+    } finally {
+      client.release();
+    }
+  }
+
   if (body.action === "check-job-cards") {
     const requestedJobCards = [...new Set(
       (Array.isArray(body.jobCards) ? body.jobCards : [])
@@ -555,6 +595,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       success: true, vin, uploadedRecords: recordsNormalized.length,
       newJobCards: insertedJobCards.length,
+      insertedJobCardNumbers: insertedJobCards.map(row => normalizeJobCard(row.job_card_no)),
       duplicateJobCards: jobCardNumbers.length - insertedJobCards.length,
       newServiceLines, lastRefreshedAt: new Date().toISOString()
     });

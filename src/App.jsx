@@ -3750,15 +3750,6 @@ function ServiceDecisionApp({ user }) {
         if (recordsForBackend.length) {
           void saveHistoryInBackground(recordsForBackend);
         }
-      }));
-        }
-
-        // Analysis continues to use the uploaded Excel data exactly as before.
-        // Only DB persistence is filtered, so Service Decision calculations/UI
-        // are not changed by this optimization.
-        if (recordsForBackend.length) {
-          void saveHistoryInBackground(recordsForBackend);
-        }
       }
     } catch (err) {
       setUploadMeta(null);

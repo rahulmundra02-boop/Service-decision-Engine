@@ -1625,6 +1625,30 @@ function isBSVIApplicable(vehicle){
   const sale = vehicle?.sale;
   return !!(sale && sale > new Date(2020, 2, 31));
 }
+const CLUTCH_OIL_DECISION_PART_CODES = new Set([
+  "CFD99991",
+  "CLA99994",
+  "U9999995",
+  "U9999999",
+]);
+
+function latestValidClutchOilPart(records, vehicle) {
+  const valid = (records || [])
+    .filter(record => {
+      const code = normalizePartCode(record?.partCode);
+      const qty = Number(record?.qty || 0);
+      return CLUTCH_OIL_DECISION_PART_CODES.has(code) && qty >= 0.5;
+    })
+    .sort((a, b) => (b.date || 0) - (a.date || 0));
+  if (!valid.length) return null;
+  const selected = valid[0];
+  return {
+    ...selected,
+    serviceQty: Number(selected.qty || 0),
+    relevantReading: vehicle ? getRelevantReading(selected, vehicle) : (selected.reading || 0),
+  };
+}
+
 function decideAggregate(records, vehicle, running, key, analysisDate){
   // DEF Filter and APDA Filter are BS-VI-only. Do not run their due logic for BS-IV.
   if ((key === 'defFilter' || key === 'apdaFilter') && !isBSVIApplicable(vehicle)) return false;
@@ -1649,6 +1673,14 @@ function decideAggregate(records, vehicle, running, key, analysisDate){
   }
   const cfg=DECISION_RULES[key]; if(!cfg) return false;
   let base=null;
+  if (key === 'clutchOil') {
+    base = latestValidClutchOilPart(records, vehicle);
+    if(tip){
+      const tr=TIP_RULES[key];
+      return tr ? dueByHours(running.current,base,tr[0],tr[1],analysisDate,sale,vehicle) : false;
+    }
+    return dueNormalWithSale(running.current,base,cfg[0],cfg[1],analysisDate,sale,running.mode,vehicle);
+  }
   if(key==='airFilter') base=latestFilter(records,'AIR FILTER','AIR FILTER KIT',vehicle);
   else if(key==='fuelFilter') base=latestFuelFilter(records,vehicle);
   else if(key==='defFilter') base=latestDefFilter(records,vehicle);
@@ -3146,24 +3178,51 @@ function ServiceDecisionApp({ user }) {
     } catch (error) { console.error("Dashboard preference save failed:", error); }
   };
   const resizeTableColumn = (tableType, key, event) => {
-    event.preventDefault(); event.stopPropagation();
-    const th = event.currentTarget.parentElement, table = th?.closest("table");
+    event.preventDefault();
+    event.stopPropagation();
+    const th = event.currentTarget.parentElement;
+    const table = th?.closest("table");
     if (!th || !table) return;
-    const startX = event.clientX, startWidth = th.getBoundingClientRect().width, tableWidth = Math.max(1, table.getBoundingClientRect().width);
+
+    const visibleKeys = tableType === "single"
+      ? singleTableColumns.filter(isSingleColumnVisible)
+      : ["serial", ...bulkTableColumns.filter(isBulkColumnVisible)];
+    const lastKey = visibleKeys[visibleKeys.length - 1];
+    if (!lastKey || key === lastKey) return;
+
+    const startX = event.clientX;
+    const tableWidth = Math.max(1, table.getBoundingClientRect().width);
     const sourceKey = tableType === "single" ? "singleColumnWidths" : "bulkColumnWidths";
     let latestWidths = tableType === "single" ? { ...singleColumnWidths } : { ...bulkColumnWidths };
+    const startSourcePct = Number(latestWidths[key] || 10);
+    const startLastPct = Number(latestWidths[lastKey] || 10);
+    const minPct = 3;
+
     const onMove = (moveEvent) => {
-      const nextWidthPx = Math.max(55, startWidth + (moveEvent.clientX - startX));
-      latestWidths = { ...latestWidths, [key]: Number(Math.max(3, Math.min(90, (nextWidthPx / tableWidth) * 100)).toFixed(2)) };
+      const deltaPct = ((moveEvent.clientX - startX) / tableWidth) * 100;
+      const sourcePct = Math.max(minPct, Math.min(90, startSourcePct + deltaPct));
+      const actualDelta = sourcePct - startSourcePct;
+      const lastPct = Math.max(minPct, startLastPct - actualDelta);
+      latestWidths = {
+        ...latestWidths,
+        [key]: Number(sourcePct.toFixed(2)),
+        [lastKey]: Number(lastPct.toFixed(2)),
+      };
       setDashboardPrefs(prev => ({ ...prev, [sourceKey]: latestWidths }));
     };
+
     const onUp = () => {
-      document.removeEventListener("pointermove", onMove); document.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
       void persistDashboardPrefs({ ...dashboardPrefs, [sourceKey]: latestWidths });
-      document.body.style.cursor = ""; document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
     };
-    document.body.style.cursor = "col-resize"; document.body.style.userSelect = "none";
-    document.addEventListener("pointermove", onMove); document.addEventListener("pointerup", onUp);
+
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
   };
   const tableColumnStyle = (tableType, key) => ({ width:`${Number((tableType === "single" ? singleColumnWidths[key] : bulkColumnWidths[key]) || 10)}%` });
 
@@ -3311,7 +3370,12 @@ function ServiceDecisionApp({ user }) {
       setCustomerGroups([]);
       setSelectedCustomers([]);
       setUploadParsedRecords(parsedRows);
-      if (parsedRows.length) setMode("single");
+      if (parsedRows.length) {
+        const uploadedVins = new Set(
+          parsedRows.map(r => String(r?.vin || "").trim().toUpperCase()).filter(Boolean)
+        );
+        setMode(uploadedVins.size > 1 ? "bulk" : "single");
+      }
       if (parsedRows.length) {
         logUsage("Excel Upload", {
           fileCount: acceptedFiles.length,
@@ -4657,12 +4721,12 @@ function ServiceDecisionApp({ user }) {
                 <div className="section-title service-summary-title">Service Summary — Complete Vehicle History</div>
                 <div className="history-wrap">
                   <table className="history-table single-service-summary dashboard-resizable-table"><thead><tr>
-{isSingleColumnVisible("date") && <th style={tableColumnStyle("single","date")}><span className="dashboard-th-content">{singleColumnLabels.date}</span><span className="column-resizer" onPointerDown={e=>resizeTableColumn("single","date",e)} /></th>}
-{isSingleColumnVisible("jobCard") && <th style={tableColumnStyle("single","jobCard")}><span className="dashboard-th-content">{singleColumnLabels.jobCard}</span><span className="column-resizer" onPointerDown={e=>resizeTableColumn("single","jobCard",e)} /></th>}
-{isSingleColumnVisible("reading") && <th style={tableColumnStyle("single","reading")}><span className="dashboard-th-content">{singleColumnLabels.reading}</span><span className="column-resizer" onPointerDown={e=>resizeTableColumn("single","reading",e)} /></th>}
-{isSingleColumnVisible("plant") && <th style={tableColumnStyle("single","plant")}><span className="dashboard-th-content">{singleColumnLabels.plant}</span><span className="column-resizer" onPointerDown={e=>resizeTableColumn("single","plant",e)} /></th>}
-{isSingleColumnVisible("parts") && <th style={tableColumnStyle("single","parts")}><span className="dashboard-th-content">{singleColumnLabels.parts}</span><span className="column-resizer" onPointerDown={e=>resizeTableColumn("single","parts",e)} /></th>}
-</tr></thead><tbody>
+{singleTableColumns.map((key,index) => (
+  <th key={key} style={tableColumnStyle("single",key)}>
+    <span className="dashboard-th-content">{singleColumnLabels[key] || key}</span>
+    {index < singleTableColumns.length - 1 && <span className="column-resizer" onPointerDown={e=>resizeTableColumn("single",key,e)} />}
+  </th>
+))}</tr></thead><tbody>
 {analysis?.visits?.length ? analysis.visits.map((visit,i)=>{const visitDate=getVisitDate(visit),jobCard=getVisitJobCard(visit),visitReading=getVisitReading(visit,analysis.vehicle),parts=getVisitParts(visit,analysis.vehicle,analysis.decision);return <tr key={i}>
 {isSingleColumnVisible("date")&&<td style={tableColumnStyle("single","date")}>{formatDateShort(visitDate)}</td>}
 {isSingleColumnVisible("jobCard")&&<td style={tableColumnStyle("single","jobCard")}>{jobCard}</td>}

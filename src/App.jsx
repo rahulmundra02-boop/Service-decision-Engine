@@ -2880,29 +2880,21 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
   function buildPartItemsForService(serviceKey) {
     const baseReferences = ESTIMATE_REFERENCE_PARTS[serviceKey] || [];
 
-    // F1771900 is NOT a universal hub-grease reference.
-    // It is model-dependent and must only enter the estimate when the exact
-    // part is actually present as a positive-quantity P002 part in this
-    // vehicle's history or in the exact same-model history returned by DB.
-    // Never introduce it from a hardcoded master/reference list or from a
-    // labour row.
-    const hasModelSpecificF1771900 = serviceKey === "hubGrease" && (
-      vehicle.some(row =>
-        estimateCategory(row) === "part" &&
-        normalizePartCode(row?.part_code) === "F1771900" &&
-        Number(row?.quantity || 0) > 0
-      ) ||
-      modelHistory.some(row =>
-        estimateCategory(row) === "part" &&
-        normalizePartCode(row?.part_code) === "F1771900" &&
-        Number(row?.quantity || 0) > 0
-      )
+    // F1771900 is a model/variant-dependent hub-grease part.
+    // It must NEVER be introduced from same-model history or a generic
+    // reference list because the same model name can cover different
+    // axle/part configurations. Only the exact vehicle history can prove
+    // that this vehicle uses F1771900.
+    const hasVehicleSpecificF1771900 = serviceKey === "hubGrease" && vehicle.some(row =>
+      estimateCategory(row) === "part" &&
+      normalizePartCode(row?.part_code) === "F1771900" &&
+      Number(row?.quantity || 0) > 0
     );
 
     const references = serviceKey === "hubGrease"
       ? [
           ...baseReferences,
-          ...(hasModelSpecificF1771900 ? ["F1771900"] : [])
+          ...(hasVehicleSpecificF1771900 ? ["F1771900"] : [])
         ]
       : baseReferences;
 
@@ -3997,7 +3989,6 @@ function ServiceDecisionApp({ user }) {
   }
   function addEstimateItem(type) { (type === "labour" ? setEstimateLabour : setEstimateParts)(prev => [...prev, emptyEstimateItem(type)]); }
   function removeEstimateItem(type, id) {
-    if (!window.confirm("Remove this estimate line?")) return;
     (type === "labour" ? setEstimateLabour : setEstimateParts)(prev => prev.filter(item => item.id !== id));
   }
   const estimatePartsTotal = estimateParts.reduce((sum,item)=>sum+Number(item.qty||0)*Number(item.rate||0),0);

@@ -615,6 +615,7 @@ function standardizePart(code, description) {
 
 const UPLOADED_JOB_CARDS_STORAGE_KEY = "serviceDecisionUploadedJobCardsV1";
 const uploadedJobCardsThisSession = new Set();
+const pendingJobCardsThisSession = new Set();
 
 function normalizeJobCard(value) {
   return String(value ?? "").trim().toUpperCase();
@@ -665,13 +666,17 @@ function filterPreviouslyUploadedJobCards(records) {
       continue;
     }
 
-    if (known.has(jobCard)) {
+    if (known.has(jobCard) || pendingJobCardsThisSession.has(jobCard)) {
       duplicateJobCards.add(jobCard);
       continue;
     }
 
     currentJobCards.add(jobCard);
     filtered.push(record);
+  }
+
+  for (const jobCard of currentJobCards) {
+    pendingJobCardsThisSession.add(jobCard);
   }
 
   return {
@@ -3517,11 +3522,14 @@ function ServiceDecisionApp({ user }) {
           // This prevents a failed save from being permanently filtered out
           // on the next upload.
           if (payload?.success) {
-            rememberUploadedJobCards(
-              vehicleRecords.map(record => record?.jobCard)
-            );
+            const jobCards = vehicleRecords.map(record => normalizeJobCard(record?.jobCard));
+            for (const jobCard of jobCards) pendingJobCardsThisSession.delete(jobCard);
+            rememberUploadedJobCards(jobCards);
           }
         } catch (error) {
+          for (const jobCard of vehicleRecords.map(record => normalizeJobCard(record?.jobCard))) {
+            pendingJobCardsThisSession.delete(jobCard);
+          }
           console.error("Background history save failed:", error);
         }
       }

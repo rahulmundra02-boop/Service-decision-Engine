@@ -93,24 +93,12 @@ export default async function handler(req, res) {
     try {
       if (partNo) {
         const result = await client.query(
-          "WITH per_job_card AS (" +
-          "SELECT sh.part_code, sh.part_description, sh.rate, jc.job_date, jc.id AS job_card_id, sh.id AS history_id, " +
-          "ROW_NUMBER() OVER (PARTITION BY jc.id ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC) AS job_row " +
+          "SELECT sh.part_code, sh.part_description, sh.rate, jc.job_date " +
           "FROM service_history sh JOIN job_cards jc ON jc.id=sh.job_card_id " +
           "WHERE sh.item_category LIKE 'P002%' " +
           "AND UPPER(REPLACE(TRIM(sh.part_code), ' ', ''))=$1 " +
-          "AND sh.rate IS NOT NULL AND sh.rate > 0" +
-          "), latest10 AS (" +
-          "SELECT * FROM per_job_card WHERE job_row=1 " +
-          "ORDER BY job_date DESC NULLS LAST, job_card_id DESC, history_id DESC LIMIT 10" +
-          "), rate_frequency AS (" +
-          "SELECT rate, COUNT(*) AS frequency, MAX(job_date) AS latest_rate_date FROM latest10 GROUP BY rate" +
-          "), winner AS (" +
-          "SELECT rate, frequency FROM rate_frequency ORDER BY frequency DESC, latest_rate_date DESC, rate DESC LIMIT 1" +
-          ") " +
-          "SELECT l.part_code, l.part_description, w.rate, l.job_date, w.frequency AS rate_frequency, (SELECT COUNT(*) FROM latest10) AS sample_size " +
-          "FROM latest10 l CROSS JOIN winner w " +
-          "ORDER BY l.job_date DESC NULLS LAST, l.job_card_id DESC, l.history_id DESC LIMIT 1",
+          "AND sh.rate IS NOT NULL AND sh.rate > 0 " +
+          "ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC LIMIT 1",
           [partNo]
         );
         const row = result.rows[0] || null;
@@ -166,30 +154,14 @@ export default async function handler(req, res) {
           modelRows = modelResult.rows;
         }
         const rateResult = await client.query(
-"WITH per_job_card AS (" +
-          "SELECT UPPER(REPLACE(TRIM(sh.part_code), ' ', '')) AS normalized_part_code, sh.part_code, sh.rate, jc.job_date, jc.id AS job_card_id, sh.id AS history_id, " +
-          "ROW_NUMBER() OVER (PARTITION BY UPPER(REPLACE(TRIM(sh.part_code), ' ', '')), jc.id ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC) AS job_row " +
+          "SELECT DISTINCT ON (UPPER(REPLACE(TRIM(sh.part_code), ' ', ''))) " +
+          "sh.part_code, sh.rate, jc.job_date " +
           "FROM service_history sh JOIN job_cards jc ON jc.id=sh.job_card_id " +
           "JOIN vehicles v ON v.id=jc.vehicle_id " +
           "WHERE sh.item_category LIKE 'P002%' AND sh.part_code IS NOT NULL " +
-          "AND sh.rate IS NOT NULL AND sh.rate > 0" +
-          "), latest_per_job_card AS (" +
-          "SELECT * FROM per_job_card WHERE job_row=1" +
-          "), numbered AS (" +
-          "SELECT *, ROW_NUMBER() OVER (PARTITION BY normalized_part_code ORDER BY job_date DESC NULLS LAST, job_card_id DESC, history_id DESC) AS part_job_rank " +
-          "FROM latest_per_job_card" +
-          "), sample AS (" +
-          "SELECT * FROM numbered WHERE part_job_rank <= 10" +
-          "), rate_frequency AS (" +
-          "SELECT normalized_part_code, rate, COUNT(*) AS frequency, MAX(job_date) AS latest_rate_date FROM sample GROUP BY normalized_part_code, rate" +
-          "), winners AS (" +
-          "SELECT normalized_part_code, rate, frequency, ROW_NUMBER() OVER (PARTITION BY normalized_part_code ORDER BY frequency DESC, latest_rate_date DESC, rate DESC) AS rate_rank FROM rate_frequency" +
-          ") " +
-          "SELECT s.part_code, w.rate, s.job_date, w.frequency AS rate_frequency, " +
-          "(SELECT COUNT(*) FROM sample s2 WHERE s2.normalized_part_code=s.normalized_part_code) AS sample_size " +
-          "FROM sample s JOIN winners w ON w.normalized_part_code=s.normalized_part_code AND w.rate=s.rate " +
-          "WHERE w.rate_rank=1 AND s.part_job_rank=1"
-);;
+          "AND sh.rate IS NOT NULL AND sh.rate > 0 " +
+          "ORDER BY UPPER(REPLACE(TRIM(sh.part_code), ' ', '')), jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC"
+        );
         return res.status(200).json({
           success:true,
           registration,
@@ -231,30 +203,186 @@ export default async function handler(req, res) {
       }
 
       const rateResult = await client.query(
-"WITH per_job_card AS (" +
-          "SELECT UPPER(REPLACE(TRIM(sh.part_code), ' ', '')) AS normalized_part_code, sh.part_code, sh.rate, jc.job_date, jc.id AS job_card_id, sh.id AS history_id, " +
-          "ROW_NUMBER() OVER (PARTITION BY UPPER(REPLACE(TRIM(sh.part_code), ' ', '')), jc.id ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC) AS job_row " +
-          "FROM service_history sh JOIN job_cards jc ON jc.id=sh.job_card_id " +
-          "JOIN vehicles v ON v.id=jc.vehicle_id " +
-          "WHERE sh.item_category LIKE 'P002%' AND sh.part_code IS NOT NULL " +
-          "AND sh.rate IS NOT NULL AND sh.rate > 0" +
-          "), latest_per_job_card AS (" +
-          "SELECT * FROM per_job_card WHERE job_row=1" +
-          "), numbered AS (" +
-          "SELECT *, ROW_NUMBER() OVER (PARTITION BY normalized_part_code ORDER BY job_date DESC NULLS LAST, job_card_id DESC, history_id DESC) AS part_job_rank " +
-          "FROM latest_per_job_card" +
-          "), sample AS (" +
-          "SELECT * FROM numbered WHERE part_job_rank <= 10" +
-          "), rate_frequency AS (" +
-          "SELECT normalized_part_code, rate, COUNT(*) AS frequency, MAX(job_date) AS latest_rate_date FROM sample GROUP BY normalized_part_code, rate" +
-          "), winners AS (" +
-          "SELECT normalized_part_code, rate, frequency, ROW_NUMBER() OVER (PARTITION BY normalized_part_code ORDER BY frequency DESC, latest_rate_date DESC, rate DESC) AS rate_rank FROM rate_frequency" +
-          ") " +
-          "SELECT s.part_code, w.rate, s.job_date, w.frequency AS rate_frequency, " +
-          "(SELECT COUNT(*) FROM sample s2 WHERE s2.normalized_part_code=s.normalized_part_code) AS sample_size " +
-          "FROM sample s JOIN winners w ON w.normalized_part_code=s.normalized_part_code AND w.rate=s.rate " +
-          "WHERE w.rate_rank=1 AND s.part_job_rank=1"
-);;
+        "SELECT DISTINCT ON (UPPER(REPLACE(TRIM(sh.part_code), ' ', ''))) " +
+        "sh.part_code, sh.rate, jc.job_date " +
+        "FROM service_history sh JOIN job_cards jc ON jc.id=sh.job_card_id " +
+        "JOIN vehicles v ON v.id=jc.vehicle_id " +
+        "WHERE sh.item_category LIKE 'P002%' AND sh.part_code IS NOT NULL " +
+        "AND sh.rate IS NOT NULL AND sh.rate > 0 " +
+        "ORDER BY UPPER(REPLACE(TRIM(sh.part_code), ' ', '')), jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC"
+      );
+
+      return res.status(200).json({
+        success:true, vin, rows:result.rows, model:modelName||null,
+        modelRows, globalPartRates:rateResult.rows
+      });
+    } catch (error) {
+      console.error("Read History Error:", error);
+      return res.status(500).json({ success:false,error:error?.message||"Service history read failed" });
+    } finally { client.release(); }
+  }
+  if (req.method !== "POST") {
+    res.setHeader("Allow", "GET, POST");
+    return res.status(405).json({ success: false, error: "Method not allowed" });
+  }
+
+  const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
+
+  if (body.action === "check-job-cards") {
+    const requestedJobCards = [...new Set(
+      (Array.isArray(body.jobCards) ? body.jobCards : [])
+        .map(value => String(value ?? "").trim().toUpperCase())
+        .filter(Boolean)
+    )];
+
+    if (!requestedJobCards.length) {
+      return res.status(200).json({ success:true, newJobCards:[] });
+    }
+
+    const client = await pool.connect();
+    try {
+      const existingResult = await client.query(
+        "SELECT DISTINCT UPPER(TRIM(job_card_no)) AS job_card_no " +
+        "FROM job_cards " +
+        "WHERE UPPER(TRIM(job_card_no))=ANY($1::text[])",
+        [requestedJobCards]
+      );
+
+      const existing = new Set(existingResult.rows.map(row => String(row.job_card_no || "").trim().toUpperCase()));
+      const newJobCards = requestedJobCards.filter(jobCard => !existing.has(jobCard));
+
+      return res.status(200).json({
+        success:true,
+        newJobCards,
+        existingJobCards:requestedJobCards.filter(jobCard => existing.has(jobCard))
+      });
+    } catch (error) {
+      console.error("Job Card Check Error:", error);
+      return res.status(500).json({ success:false,error:error?.message || "Job Card duplicate check failed" });
+    } finally {
+      client.release();
+    }
+  }
+
+  const records = Array.isArray(body.records) ? body.records : [];
+  const vehicle = normalizeVehicle(body.vehicle || {});
+  const recordsNormalized = records.map(normalizeRecord);
+  const vin = String(vehicle.vin || vehicle.chassis || "").trim().toUpperCase();
+
+  if (!vin) return res.status(400).json({ success: false, error: "VIN/Chassis is required for database storage." });
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    // Store only the per-unit rate for future estimates.
+    // Ensure the temporary amount column exists so this migration is safe
+    // even if no upload happened after the earlier amount-field change.
+    await client.query(
+      "ALTER TABLE service_history ADD COLUMN IF NOT EXISTS amount NUMERIC"
+    );
+    await client.query(
+      "ALTER TABLE service_history ADD COLUMN IF NOT EXISTS rate NUMERIC"
+    );
+    await client.query(
+      "UPDATE service_history SET rate = CASE " +
+      "WHEN quantity IS NOT NULL AND quantity <> 0 AND amount IS NOT NULL " +
+      "THEN amount / quantity ELSE rate END " +
+      "WHERE rate IS NULL AND amount IS NOT NULL"
+    );
+    await client.query(
+      "ALTER TABLE service_history DROP COLUMN IF EXISTS amount"
+    );
+
+    // These job-card fields are not needed for Service Decision / Estimate
+    // storage. Keep them out of the DB to reduce unnecessary table size.
+    await client.query(
+      "ALTER TABLE job_cards " +
+      "DROP COLUMN IF EXISTS invoice_no, " +
+      "DROP COLUMN IF EXISTS reading, " +
+      "DROP COLUMN IF EXISTS reading_unit, " +
+      "DROP COLUMN IF EXISTS secondary_reading, " +
+      "DROP COLUMN IF EXISTS secondary_unit, " +
+      "DROP COLUMN IF EXISTS inward_date, " +
+      "DROP COLUMN IF EXISTS check_in_date, " +
+      "DROP COLUMN IF EXISTS start_date, " +
+      "DROP COLUMN IF EXISTS end_date"
+    );
+    await client.query(
+      "ALTER TABLE service_history DROP COLUMN IF EXISTS service_type"
+    );
+
+    const vehicleResult = await client.query(
+      "INSERT INTO vehicles (vin,registration,customer_number,customer_name,engine,model,sale_date,last_refreshed_at) " +
+      "VALUES ($1,$2,$3,$4,$5,$6,$7,NOW()) " +
+      "ON CONFLICT (vin) DO UPDATE SET " +
+      "registration=COALESCE(EXCLUDED.registration,vehicles.registration), " +
+      "customer_number=COALESCE(EXCLUDED.customer_number,vehicles.customer_number), " +
+      "customer_name=COALESCE(EXCLUDED.customer_name,vehicles.customer_name), " +
+      "engine=COALESCE(EXCLUDED.engine,vehicles.engine), " +
+      "model=COALESCE(EXCLUDED.model,vehicles.model), " +
+      "sale_date=COALESCE(EXCLUDED.sale_date,vehicles.sale_date), " +
+      "last_refreshed_at=NOW() RETURNING id",
+      [vin, clean(vehicle.registration), clean(vehicle.customerNumber), clean(vehicle.customerName),
+       clean(vehicle.engine), clean(vehicle.model), clean(vehicle.sale)]
+    );
+
+    const vehicleId = vehicleResult.rows[0].id;
+    const jobCards = new Map();
+
+    for (const record of recordsNormalized) {
+      const jobCardNo = String(record.jobCard || record.jobCardNo || "").trim();
+      if (!jobCardNo) continue;
+      if (!jobCards.has(jobCardNo)) jobCards.set(jobCardNo, []);
+      jobCards.get(jobCardNo).push(record);
+    }
+
+    const jobCardNumbers = [...jobCards.keys()];
+    let existingJobCards = new Map();
+
+    if (jobCardNumbers.length) {
+      const existingResult = await client.query(
+        "SELECT id, job_card_no, job_date, cumulative_reading, cumulative_unit, " +
+        "secondary_cumulative_reading, secondary_cumulative_unit " +
+        "FROM job_cards WHERE vehicle_id=$1 AND job_card_no=ANY($2::text[])",
+        [vehicleId, jobCardNumbers]
+      );
+      existingJobCards = new Map(existingResult.rows.map((row) => [row.job_card_no, row]));
+    }
+
+    const insertedJobCards = [];
+    const updatedJobCards = [];
+    const newJobCardRows = [];
+
+    for (const [jobCardNo, lines] of jobCards) {
+      const first = lines[0];
+      const existingJobCard = existingJobCards.get(jobCardNo);
+
+      if (existingJobCard) {
+        const updateResult = await client.query(
+          "UPDATE job_cards SET " +
+          "job_date=COALESCE($1,job_date), " +
+          "cumulative_reading=COALESCE($2,cumulative_reading), " +
+          "cumulative_unit=COALESCE($3,cumulative_unit), " +
+          "secondary_cumulative_reading=COALESCE($4,secondary_cumulative_reading), " +
+          "secondary_cumulative_unit=COALESCE($5,secondary_cumulative_unit) " +
+          "WHERE id=$6 AND (" +
+          "job_date IS DISTINCT FROM COALESCE($1,job_date) OR " +
+          "cumulative_reading IS DISTINCT FROM COALESCE($2,cumulative_reading) OR " +
+          "cumulative_unit IS DISTINCT FROM COALESCE($3,cumulative_unit) OR " +
+          "secondary_cumulative_reading IS DISTINCT FROM COALESCE($4,secondary_cumulative_reading) OR " +
+          "secondary_cumulative_unit IS DISTINCT FROM COALESCE($5,secondary_cumulative_unit)) " +
+          "RETURNING id,job_card_no",
+          [
+            clean(first.date),
+            clean(first.cumulative),
+            clean(first.cumulativeUnit),
+            clean(first.secondaryCumulative),
+            clean(first.secondaryCumulativeUnit),
+            existingJobCard.id
+          ]
+        );
         if (updateResult.rowCount) updatedJobCards.push(...updateResult.rows);
       } else {
         newJobCardRows.push([

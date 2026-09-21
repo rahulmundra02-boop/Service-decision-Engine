@@ -1222,12 +1222,31 @@ function getVisitJobCard(visit) {
 }
 
 function getVisitReading(visit, vehicle) {
-  // Reading comes from the complete visit, not only the mapped service rows.
+  // SERVICE HISTORY DISPLAY ONLY:
+  // The decision engine uses cumulative counters through getRelevantReading().
+  // The history table must show the actual KM/HR Reading recorded on the
+  // DMS visit. Older DMS exports often have the normal Reading populated
+  // while cumulative counters are blank.
+  const targetIsHrs = isTipperModel(vehicle?.model);
+
   const candidates = visit
-    .map(r => ({ record: r, reading: getRelevantReading(r, vehicle) }))
-    .filter(x => x.reading > 0);
-  if (!candidates.length) return 0;
-  return candidates[0].reading;
+    .map(record => {
+      const primary = Number(record?.reading || 0);
+      const secondary = Number(record?.secondaryReading || 0);
+
+      if (targetIsHrs) {
+        if (isHoursUnit(record?.unit) && primary > 0) return primary;
+        if (isHoursUnit(record?.secondaryUnit) && secondary > 0) return secondary;
+      } else {
+        if (isKmUnit(record?.unit) && primary > 0) return primary;
+        if (isKmUnit(record?.secondaryUnit) && secondary > 0) return secondary;
+      }
+
+      return 0;
+    })
+    .filter(reading => reading > 0);
+
+  return candidates[0] || 0;
 }
 
 function getRawHeaderValue(record, names) {

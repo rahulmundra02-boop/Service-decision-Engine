@@ -32,7 +32,14 @@ async function api(action, payload = {}, token = "") {
     body: JSON.stringify({ action, ...payload }),
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok || data.success === false) throw new Error(data.error || "Request failed.");
+  if (!response.ok || data.success === false) {
+    const error = new Error(data.error || "Request failed.");
+    if (data.sessionConflict) {
+      error.sessionConflict = true;
+      error.previousSession = data.previousSession || null;
+    }
+    throw error;
+  }
   return data;
 }
 
@@ -55,6 +62,8 @@ export default function AuthGate({ children }) {
   const [analyticsUserId, setAnalyticsUserId] = useState(null);
   const [analyticsRange, setAnalyticsRange] = useState(30);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsIncludeAdmins, setAnalyticsIncludeAdmins] = useState(true);
+  const [sessionConflict, setSessionConflict] = useState(null);
 
   useEffect(() => {
     const token = localStorage.getItem(TOKEN_KEY);
@@ -74,10 +83,23 @@ export default function AuthGate({ children }) {
     finally { setLoading(false); }
   };
 
-  const login = () => run(async () => {
+  const getDeviceName = () => {
+    const ua = navigator.userAgent || "";
+    const os = /Windows/i.test(ua) ? "Windows PC" : /Android/i.test(ua) ? "Android device" : /iPhone|iPad/i.test(ua) ? "Apple device" : /Mac/i.test(ua) ? "Mac" : "Browser device";
+    const browser = /Edg\//i.test(ua) ? "Microsoft Edge" : /Chrome\//i.test(ua) ? "Google Chrome" : /Firefox\//i.test(ua) ? "Firefox" : /Safari\//i.test(ua) ? "Safari" : "Browser";
+    return os + " · " + browser;
+  };
+
+  const login = (terminateExistingSession = false) => run(async () => {
     const identifier = document.getElementById("auth-identifier")?.value || "";
     const password = document.getElementById("auth-password")?.value || "";
-    const data = await api("login", { identifier, password });
+    const data = await api("login", {
+      identifier,
+      password,
+      terminateExistingSession,
+      deviceName: getDeviceName(),
+    });
+    setSessionConflict(null);
     localStorage.setItem(TOKEN_KEY, data.token);
     localStorage.setItem(ACTIVITY_KEY, String(Date.now()));
     setUser(normalizeLoggedInUser(data.user));
@@ -157,7 +179,7 @@ export default function AuthGate({ children }) {
   const loadAdminAnalytics = async (userId = analyticsUserId, rangeDays = analyticsRange) => {
     setAnalyticsLoading(true);
     try {
-      const payload = { rangeDays };
+      const payload = { rangeDays, includeAdmins: analyticsIncludeAdmins };
       if (userId) payload.userId = userId;
       const data = await api("admin-analytics", payload, localStorage.getItem(TOKEN_KEY));
       setAdminAnalytics(data || { summary:[], recent:[], periods:[], breakdown:[], rangeDays });
@@ -185,7 +207,7 @@ export default function AuthGate({ children }) {
 
   useEffect(() => {
     if (user?.role === "admin" && adminOpen) loadAdminUsers();
-  }, [user?.role, adminOpen]);
+  }, [user?.role, adminOpen, analyticsIncludeAdmins]);
 
   const createUser = () => run(async () => {
     if (!adminForm.userId && adminForm.password.length < 8) {
@@ -289,7 +311,26 @@ export default function AuthGate({ children }) {
           <input id="auth-identifier" placeholder="Enter your registered email" />
           <label>Password</label>
           <input id="auth-password" type="password" placeholder="Enter your password" onKeyDown={e => e.key === "Enter" && login()} />
-          <button className="auth-primary" onClick={login} disabled={loading}>Login</button>
+          <button className="auth-primary" onClick={() => login(false)} disabled={loading}>Login</button>
+
+          {sessionConflict && (
+            <div className="auth-modal-backdrop">
+              <div className="auth-modal session-conflict-modal">
+                <h2>Existing Session Found</h2>
+                <p className="auth-hint">This account is already active on another device/browser.</p>
+                <div className="session-conflict-details">
+                  <div><strong>Previous device:</strong> {sessionConflict.deviceName || "Unknown device"}</div>
+                  <div><strong>IP address:</strong> {sessionConflict.ipAddress || "Unavailable"}</div>
+                  <div><strong>Last active:</strong> {sessionConflict.lastSeenAt ? new Date(sessionConflict.lastSeenAt).toLocaleString("en-IN") : "Unavailable"}</div>
+                </div>
+                <p className="auth-hint">Do you want to terminate the previous session and continue with this login?</p>
+                <div className="auth-modal-actions">
+                  <button className="auth-secondary" onClick={() => setSessionConflict(null)}>No / Cancel</button>
+                  <button className="auth-primary" onClick={() => { setSessionConflict(null); void login(true); }}>Yes, Terminate Old Session</button>
+                </div>
+              </div>
+            </div>
+          )}
 
           <button className="auth-secondary" onClick={() => setShowAccountHelp(v => !v)}>
             {showAccountHelp ? "Hide Account Creation" : "Sign Up / Request Account"}
@@ -326,7 +367,10 @@ export default function AuthGate({ children }) {
       <div className="auth-userbar">
         <span><strong>{user.personName}</strong> · {user.dealerName}</span>
         <div className="auth-user-actions">
-          <button onClick={openProfile}>Profile & Settings</button>
+          <button className="profile-button-with-dot" onClick={openProfile}>
+            Profile & Settings
+            {!(user?.preferences?.booking1 || user?.preferences?.booking2) && <span className="profile-alert-dot" />}
+          </button>
           {user.role === "admin" && <button onClick={() => { setAdminOpen(true); setError(""); setMessage(""); }}>Admin</button>}
           <button onClick={() => { setShowPassword(true); setError(""); setMessage(""); }}>Change Password</button>
           <button className="logout-btn" onClick={logout}>Logout</button>
@@ -381,6 +425,8 @@ export default function AuthGate({ children }) {
           analyticsUserId={analyticsUserId}
           analyticsRange={analyticsRange}
           analyticsLoading={analyticsLoading}
+          analyticsIncludeAdmins={analyticsIncludeAdmins}
+          onSetAnalyticsIncludeAdmins={setAnalyticsIncludeAdmins}
           onAnalytics={loadAdminAnalytics}
         />
       ) : cloneElement(children, { user })}
@@ -395,10 +441,10 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
   const singleCols=[["date","Date"],["jobCard","Job Card"],["reading","Reading"],["plant","Plant"],["parts","Part / Service / Qty"]];
   const bulkCols=[["customerName","Customer Name"],["vin","VIN"],["reg","Reg. No."],["saleDate","Sale Date"],["model","Model"],["currentReading","Current Reading"],["services","Service To Be Completed"]];
   const editor=(group,key,label)=>{const lg=group==="singleColumns"?"singleColumnLabels":"bulkColumnLabels";return <div key={key} style={{display:"grid",gridTemplateColumns:"20px minmax(0,1fr)",gap:6,alignItems:"center",minWidth:0,marginBottom:6}}><input type="checkbox" checked={(form[group]||[]).includes(key)} onChange={e=>toggleColumn(group,key,e.target.checked)} style={{width:16,height:16,margin:0,justifySelf:"center"}}/><input value={(form[lg]||{})[key]||label} onChange={e=>setLabel(lg,key,e.target.value)} placeholder={label} style={{width:"100%",minWidth:0,boxSizing:"border-box"}}/></div>};
-  return <div className="auth-modal-backdrop"><div className="auth-modal" style={{maxWidth:820,width:"min(820px,calc(100vw - 32px))",maxHeight:"90vh",overflow:"auto",boxSizing:"border-box"}}><h2>Profile & Dashboard Settings</h2><p className="auth-hint">Ye settings sirf aapki user ID ke liye save hongi. Table width header divider ko mouse se drag karke set hogi.</p><label>Person Name</label><input value={form.personName} onChange={e=>setForm({...form,personName:e.target.value})}/><label>Dealer / Workshop Name</label><input value={form.dealerName} onChange={e=>setForm({...form,dealerName:e.target.value})}/><label>Mobile</label><input value={form.mobile} onChange={e=>setForm({...form,mobile:e.target.value})}/><label>Advance Booking Contact 1</label><input value={form.booking1} onChange={e=>setForm({...form,booking1:e.target.value})} placeholder="Optional mobile number"/><label>Advance Booking Contact 2</label><input value={form.booking2} onChange={e=>setForm({...form,booking2:e.target.value})} placeholder="Optional mobile number"/><label>WhatsApp Opening Line (Optional)</label><textarea value={form.whatsappOpeningLine} onChange={e=>setForm({...form,whatsappOpeningLine:e.target.value})} placeholder="Applies to the top of the WhatsApp due message. Leave blank if no extra line is required." rows={3} style={{minHeight:72,resize:"vertical"}}/><div className="auth-hint">This is your personal wording. It will be saved with your user ID and reused in future WhatsApp due summaries.</div><div style={{marginTop:14,fontWeight:800}}>Dashboard Colour</div><div style={{display:"flex",flexWrap:"wrap",gap:8,margin:"8px 0 14px"}}>{themes.map(([key,label])=><button type="button" key={key} onClick={()=>setForm({...form,theme:key})} className={form.theme===key?"auth-primary":"auth-secondary"}>{label}</button>)}</div><div style={{fontWeight:800}}>Single Vehicle Service History Table</div><div className="auth-hint">Checkbox = show/hide · Text box = custom heading · width by mouse drag.</div><div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:"6px 12px",margin:"8px 0 16px",minWidth:0}}>{singleCols.map(([k,l])=>editor("singleColumns",k,l))}</div><div style={{fontWeight:800}}>Bulk Vehicle Due / Service Summary Table</div><div className="auth-hint">Checkbox = show/hide · Text box = custom heading · width by mouse drag.</div><div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:"6px 12px",margin:"8px 0",minWidth:0}}>{bulkCols.map(([k,l])=>editor("bulkColumns",k,l))}<div style={{display:"grid",gridTemplateColumns:"28px 1fr",gap:7,alignItems:"center"}}><span></span><input value={(form.bulkColumnLabels||{}).serial||"S.No. / Due"} onChange={e=>setLabel("bulkColumnLabels","serial",e.target.value)} placeholder="S.No. / Due"/></div></div><div className="auth-modal-actions"><button className="auth-secondary" onClick={onClose}>Cancel</button><button className="auth-primary" onClick={onSave} disabled={loading}>Save Profile & Settings</button></div></div></div>;
+  return <div className="auth-modal-backdrop"><div className="auth-modal" style={{maxWidth:820,width:"min(820px,calc(100vw - 32px))",maxHeight:"90vh",overflow:"auto",boxSizing:"border-box"}}><h2>Profile & Dashboard Settings</h2><p className="auth-hint">Ye settings sirf aapki user ID ke liye save hongi. Table width header divider ko mouse se drag karke set hogi.</p><label>Person Name</label><input value={form.personName} onChange={e=>setForm({...form,personName:e.target.value})}/><label>Dealer / Workshop Name</label><input value={form.dealerName} onChange={e=>setForm({...form,dealerName:e.target.value})}/><label>Mobile</label><input value={form.mobile} onChange={e=>setForm({...form,mobile:e.target.value})}/><label className="booking-field-label">Advance Booking Contact 1 {!form.booking1 && <span className="booking-field-dot" />}</label><input value={form.booking1} onChange={e=>setForm({...form,booking1:e.target.value})} placeholder="Optional mobile number"/><label className="booking-field-label">Advance Booking Contact 2 {!form.booking2 && <span className="booking-field-dot" />}</label><input value={form.booking2} onChange={e=>setForm({...form,booking2:e.target.value})} placeholder="Optional mobile number"/><label>WhatsApp Opening Line (Optional)</label><textarea value={form.whatsappOpeningLine} onChange={e=>setForm({...form,whatsappOpeningLine:e.target.value})} placeholder="Applies to the top of the WhatsApp due message. Leave blank if no extra line is required." rows={3} style={{minHeight:72,resize:"vertical"}}/><div className="auth-hint">This is your personal wording. It will be saved with your user ID and reused in future WhatsApp due summaries.</div><div style={{marginTop:14,fontWeight:800}}>Dashboard Colour</div><div style={{display:"flex",flexWrap:"wrap",gap:8,margin:"8px 0 14px"}}>{themes.map(([key,label])=><button type="button" key={key} onClick={()=>setForm({...form,theme:key})} className={form.theme===key?"auth-primary":"auth-secondary"}>{label}</button>)}</div><div style={{fontWeight:800}}>Single Vehicle Service History Table</div><div className="auth-hint">Checkbox = show/hide · Text box = custom heading · width by mouse drag.</div><div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:"6px 12px",margin:"8px 0 16px",minWidth:0}}>{singleCols.map(([k,l])=>editor("singleColumns",k,l))}</div><div style={{fontWeight:800}}>Bulk Vehicle Due / Service Summary Table</div><div className="auth-hint">Checkbox = show/hide · Text box = custom heading · width by mouse drag.</div><div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:"6px 12px",margin:"8px 0",minWidth:0}}>{bulkCols.map(([k,l])=>editor("bulkColumns",k,l))}<div style={{display:"grid",gridTemplateColumns:"28px 1fr",gap:7,alignItems:"center"}}><span></span><input value={(form.bulkColumnLabels||{}).serial||"S.No. / Due"} onChange={e=>setLabel("bulkColumnLabels","serial",e.target.value)} placeholder="S.No. / Due"/></div></div><div className="auth-modal-actions"><button className="auth-secondary" onClick={onClose}>Cancel</button><button className="auth-primary" onClick={onSave} disabled={loading}>Save Profile & Settings</button></div></div></div>;
 }
 
-function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, onAnalytics }) {
+function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics }) {
   const analyticsDetailRef = useRef(null);
   const [view, setView] = useState("overview");
 
@@ -476,6 +522,10 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
         </div>
 
         <div className="admin-analytics-toolbar professional">
+          <div className="admin-dashboard-scope-tabs">
+            <button className={analyticsIncludeAdmins ? "active" : ""} onClick={() => { onSetAnalyticsIncludeAdmins(true); onAnalytics(null, analyticsRange); }}>All Statistics (Including Admin)</button>
+            <button className={!analyticsIncludeAdmins ? "active" : ""} onClick={() => { onSetAnalyticsIncludeAdmins(false); onAnalytics(null, analyticsRange); }}>Statistics Without Admin</button>
+          </div>
           <div className="admin-view-tabs">
             {[
               ["overview","Overview"],

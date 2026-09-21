@@ -2434,7 +2434,7 @@ const ESTIMATE_REFERENCE_PARTS = {
   clutchOil: ["CFD99991"],
   defInline: ["XFM00800"],
   coolant: ["C9999993"],
-  hubGrease: ["S9999997", "FJ607400", "F1721500", "F1771900", "H5001220"],
+  hubGrease: ["S9999997", "FJ607400", "F1721500", "H5001220"],
   fuelFilter: ["P5105609"],
   airFilter: ["P5105688"],
   defFilter: ["XFM00500", "PET00001"],
@@ -2879,7 +2879,15 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
   }
 
   function buildPartItemsForService(serviceKey) {
-    const references = ESTIMATE_REFERENCE_PARTS[serviceKey] || [];
+    const baseReferences = ESTIMATE_REFERENCE_PARTS[serviceKey] || [];
+    const references = serviceKey === "hubGrease"
+      ? [
+          ...baseReferences,
+          ...(vehicle.some(row => normalizePartCode(row?.part_code) === "F1771900") || modelHistory.some(row => normalizePartCode(row?.part_code) === "F1771900")
+            ? ["F1771900"]
+            : [])
+        ]
+      : baseReferences;
 
     // For services with explicit reference part numbers, process every
     // reference independently. Missing VIN lines fall back independently to

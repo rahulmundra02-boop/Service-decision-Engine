@@ -93,16 +93,24 @@ export default function AuthGate({ children }) {
   const login = (terminateExistingSession = false) => run(async () => {
     const identifier = document.getElementById("auth-identifier")?.value || "";
     const password = document.getElementById("auth-password")?.value || "";
-    const data = await api("login", {
-      identifier,
-      password,
-      terminateExistingSession,
-      deviceName: getDeviceName(),
-    });
-    setSessionConflict(null);
-    localStorage.setItem(TOKEN_KEY, data.token);
-    localStorage.setItem(ACTIVITY_KEY, String(Date.now()));
-    setUser(normalizeLoggedInUser(data.user));
+    try {
+      const data = await api("login", {
+        identifier,
+        password,
+        terminateExistingSession,
+        deviceName: getDeviceName(),
+      });
+      setSessionConflict(null);
+      localStorage.setItem(TOKEN_KEY, data.token);
+      localStorage.setItem(ACTIVITY_KEY, String(Date.now()));
+      setUser(normalizeLoggedInUser(data.user));
+    } catch (e) {
+      if (e?.sessionConflict) {
+        setSessionConflict(e.previousSession || {});
+        return;
+      }
+      throw e;
+    }
   });
 
   const logout = async () => {

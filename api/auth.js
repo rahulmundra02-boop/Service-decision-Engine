@@ -109,9 +109,15 @@ async function ensureSchema(client) {
       token_hash TEXT NOT NULL UNIQUE,
       expires_at TIMESTAMPTZ NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      device_name TEXT,
+      ip_address TEXT,
+      user_agent TEXT
     );
 
+    ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS device_name TEXT;
+    ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS ip_address TEXT;
+    ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS user_agent TEXT;
     CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id);
 
     CREATE TABLE IF NOT EXISTS user_activity (
@@ -319,6 +325,10 @@ export default async function handler(req, res) {
     if (action === "login") {
       const identifier = clean(body.identifier);
       const password = body.password;
+      const terminateExistingSession = body.terminateExistingSession === true;
+      const requestIp = clean(String(req.headers["x-forwarded-for"] || req.headers["x-real-ip"] || req.socket?.remoteAddress || "").split(",")[0]);
+      const requestUserAgent = clean(req.headers["user-agent"] || "");
+      const requestDeviceName = clean(body.deviceName) || "Unknown device";
       const email = normalizeEmail(identifier);
       const mobile = normalizeMobile(identifier);
 
@@ -338,11 +348,41 @@ export default async function handler(req, res) {
         return res.status(403).json({ success:false, error:"This account is inactive. Please contact the administrator." });
       }
 
+      // Standard users can have only one active session. Admin accounts are exempt.
+      if (user.role !== "admin") {
+        const activeSessions = await client.query(
+          "SELECT id,device_name,ip_address,user_agent,created_at,last_seen_at FROM auth_sessions WHERE user_id=$1 AND expires_at>NOW() ORDER BY last_seen_at DESC",
+          [user.id]
+        );
+
+        if (activeSessions.rows.length && !terminateExistingSession) {
+          await client.query("ROLLBACK");
+          const old = activeSessions.rows[0];
+          return res.status(409).json({
+            success:false,
+            error:"This account is already logged in on another device.",
+            sessionConflict:true,
+            previousSession:{
+              id:old.id,
+              deviceName:old.device_name || "Unknown device",
+              ipAddress:old.ip_address || "Unavailable",
+              userAgent:old.user_agent || "",
+              lastSeenAt:old.last_seen_at,
+              createdAt:old.created_at
+            }
+          });
+        }
+
+        if (activeSessions.rows.length && terminateExistingSession) {
+          await client.query("DELETE FROM auth_sessions WHERE user_id=$1",[user.id]);
+        }
+      }
+
       const token = generateToken();
       const expires = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000);
       await client.query(
-        "INSERT INTO auth_sessions (user_id,token_hash,expires_at) VALUES ($1,$2,$3)",
-        [user.id, hashValue(token), expires]
+        "INSERT INTO auth_sessions (user_id,token_hash,expires_at,device_name,ip_address,user_agent) VALUES ($1,$2,$3,$4,$5,$6)",
+        [user.id, hashValue(token), expires, requestDeviceName, requestIp || null, requestUserAgent || null]
       );
       await client.query(
         "UPDATE app_users SET last_login_at=NOW(),last_activity_at=NOW() WHERE id=$1",
@@ -429,8 +469,15 @@ export default async function handler(req, res) {
 
       const targetUserId = body.userId ? Number(body.userId) : null;
       const rangeDays = [7,30,90].includes(Number(body.rangeDays)) ? Number(body.rangeDays) : 30;
-      const userWhere = Number.isInteger(targetUserId) && targetUserId > 0 ? "WHERE u.id=$1" : "";
-      const params = userWhere ? [targetUserId] : [];
+      const includeAdmins = body.includeAdmins !== false;
+      const userConditions = [];
+      const params = [];
+      if (Number.isInteger(targetUserId) && targetUserId > 0) {
+        userConditions.push("u.id=$1");
+        params.push(targetUserId);
+      }
+      if (!includeAdmins) userConditions.push("u.role <> 'admin'");
+      const userWhere = userConditions.length ? "WHERE " + userConditions.join(" AND ") : "";
 
       const summary = await client.query(
         `SELECT
@@ -456,7 +503,7 @@ export default async function handler(req, res) {
                 a.mode,a.vehicle_count,a.file_count,a.vin,a.details
            FROM user_activity a
            JOIN app_users u ON u.id=a.user_id
-          ${targetUserId ? "WHERE a.user_id=$1" : ""}
+          WHERE ${targetUserId ? "a.user_id=$1" : ""}${targetUserId && !includeAdmins ? " AND " : ""}${!includeAdmins ? "u.role <> 'admin'" : ""}
           ORDER BY a.activity_time DESC
           LIMIT 200`,
         params
@@ -469,7 +516,7 @@ export default async function handler(req, res) {
                 COALESCE(SUM(a.vehicle_count),0)::int AS vehicles,
                 COALESCE(SUM(a.file_count),0)::int AS files
            FROM user_activity a
-          ${targetUserId ? "WHERE a.user_id=$1 AND a.activity_time >= NOW() - ($2 * INTERVAL '1 day')" : "WHERE a.activity_time >= NOW() - ($1 * INTERVAL '1 day')"}
+          WHERE ${targetUserId ? "a.user_id=$1 AND " : ""}${!includeAdmins ? "a.user_id IN (SELECT id FROM app_users WHERE role <> 'admin') AND " : ""}a.activity_time >= NOW() - (${targetUserId ? "$2" : "$1"} * INTERVAL '1 day')
           GROUP BY 1 ORDER BY 1`,
         targetUserId ? [targetUserId, rangeDays] : [rangeDays]
       );
@@ -479,7 +526,7 @@ export default async function handler(req, res) {
                 COALESCE(SUM(a.vehicle_count),0)::int AS vehicles,
                 COALESCE(SUM(a.file_count),0)::int AS files
            FROM user_activity a
-          ${targetUserId ? "WHERE a.user_id=$1 AND a.activity_time >= NOW() - ($2 * INTERVAL '1 day')" : "WHERE a.activity_time >= NOW() - ($1 * INTERVAL '1 day')"}
+          WHERE ${targetUserId ? "a.user_id=$1 AND " : ""}${!includeAdmins ? "a.user_id IN (SELECT id FROM app_users WHERE role <> 'admin') AND " : ""}a.activity_time >= NOW() - (${targetUserId ? "$2" : "$1"} * INTERVAL '1 day')
           GROUP BY a.activity_type
           ORDER BY count DESC, a.activity_type`,
         targetUserId ? [targetUserId, rangeDays] : [rangeDays]
@@ -489,6 +536,7 @@ export default async function handler(req, res) {
       return res.json({
         success:true,
         rangeDays,
+        includeAdmins,
         summary:summary.rows.map(row => ({
           ...userPayload(row),
           totalActivities:Number(row.total_activities||0),

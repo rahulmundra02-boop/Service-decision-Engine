@@ -662,8 +662,6 @@ async function loadJobCardIndexFromBrowser() {
     transaction.oncomplete = () => resolve({
       jobCards: new Set((keysRequest.result || []).map(normalizeJobCard).filter(Boolean)),
       lastId: Number(metaRequest.result?.lastId || 0),
-      globalVersion: Number(metaRequest.result?.globalVersion || 0),
-      syncedAt: Number(metaRequest.result?.syncedAt || 0),
     });
     transaction.onerror = () => reject(
       transaction.error || new Error("Unable to read Job Card cache.")
@@ -672,58 +670,6 @@ async function loadJobCardIndexFromBrowser() {
   db.close();
   jobCardIndexMemory = result;
   return result;
-}
-
-
-
-async function updateJobCardIndexMeta(meta = {}) {
-  const state = jobCardIndexMemory || { jobCards:new Set(), lastId:0, globalVersion:0, syncedAt:0 };
-  const next = {
-    ...state,
-    globalVersion: Number(meta.globalVersion ?? state.globalVersion ?? 0),
-    syncedAt: Number(meta.syncedAt ?? state.syncedAt ?? 0),
-  };
-  const db = await openJobCardIndexDb();
-  await new Promise((resolve,reject)=>{
-    const transaction = db.transaction(JOB_CARD_INDEX_META_STORE,"readwrite");
-    transaction.objectStore(JOB_CARD_INDEX_META_STORE).put({
-      key:JOB_CARD_INDEX_META_KEY,
-      lastId:next.lastId,
-      globalVersion:next.globalVersion,
-      syncedAt:next.syncedAt
-    });
-    transaction.oncomplete=resolve;
-    transaction.onerror=()=>reject(transaction.error || new Error("Unable to update Job Card cache metadata."));
-  });
-  db.close();
-  jobCardIndexMemory=next;
-  return next;
-}
-
-async function clearJobCardIndex() {
-  const db = await openJobCardIndexDb();
-  await new Promise((resolve,reject)=>{
-    const transaction=db.transaction([JOB_CARD_INDEX_STORE,JOB_CARD_INDEX_META_STORE],"readwrite");
-    transaction.objectStore(JOB_CARD_INDEX_STORE).clear();
-    transaction.objectStore(JOB_CARD_INDEX_META_STORE).clear();
-    transaction.oncomplete=resolve;
-    transaction.onerror=()=>reject(transaction.error || new Error("Unable to clear Job Card cache."));
-  });
-  db.close();
-  jobCardIndexMemory={jobCards:new Set(),lastId:0,globalVersion:0,syncedAt:0};
-}
-
-async function fetchJobCardCachePolicy() {
-  const response = await fetch("/api/auth", {
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({action:"job-card-cache-settings"})
-  });
-  const payload = await response.json().catch(()=>null);
-  if (!response.ok || !payload?.success) {
-    throw new Error(payload?.error || "Job Card cache policy check failed.");
-  }
-  return payload.settings || {enabled:true,intervalHours:24,version:1,lastRebuildAt:null};
 }
 
 async function addJobCardsToBrowserIndex(jobCards, lastId = null) {
@@ -812,31 +758,16 @@ async function getHybridNewJobCards(apiBaseUrl, jobCards, checkNewJobCardsFn) {
   if (!uniqueJobCards.length) return new Set();
 
   try {
-    const policy = await fetchJobCardCachePolicy();
+    const state = await loadJobCardIndexFromBrowser();
 
-    // Cache OFF = bypass browser cache and use Neon directly.
-    if (policy.enabled === false) {
-      return checkNewJobCardsFn(uniqueJobCards);
-    }
-
-    let state = await loadJobCardIndexFromBrowser();
-    const intervalMs = Math.max(1, Number(policy.intervalHours || 24)) * 60 * 60 * 1000;
-    const cacheAge = state.syncedAt ? Date.now() - state.syncedAt : Number.POSITIVE_INFINITY;
-    const versionChanged = Number(state.globalVersion || 0) !== Number(policy.version || 0);
-    const intervalExpired = cacheAge >= intervalMs;
-
-    // Rebuild when the admin changed the global cache version or this browser's
-    // own cache has reached the configured interval.
-    if (!state.jobCards.size || versionChanged || intervalExpired) {
-      await clearJobCardIndex();
+    // First use on a browser: build the complete local index in small pages.
+    // After that, the cache is intentionally allowed to become stale because
+    // stale cache entries can only cause extra central checks, never a missed save.
+    if (!state.jobCards.size) {
       await syncJobCardIndex(apiBaseUrl);
-      state = await updateJobCardIndexMeta({
-        globalVersion:Number(policy.version || 0),
-        syncedAt:Date.now()
-      });
     }
 
-    const cached = state.jobCards || new Set();
+    const cached = jobCardIndexMemory?.jobCards || new Set();
     const candidates = uniqueJobCards.filter(jobCard => !cached.has(jobCard));
 
     if (!candidates.length) return new Set();

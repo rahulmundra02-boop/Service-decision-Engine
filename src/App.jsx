@@ -613,77 +613,8 @@ function standardizePart(code, description) {
 // - Same VIN + different genuine history row = retain.
 // ============================================================
 
-const UPLOADED_JOB_CARDS_STORAGE_KEY = "serviceDecisionUploadedJobCardsV1";
-const uploadedJobCardsThisSession = new Set();
-const pendingJobCardsThisSession = new Set();
-
 function normalizeJobCard(value) {
   return String(value ?? "").trim().toUpperCase();
-}
-
-function loadUploadedJobCards() {
-  if (typeof window === "undefined") return new Set(uploadedJobCardsThisSession);
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(UPLOADED_JOB_CARDS_STORAGE_KEY) || "[]");
-    if (Array.isArray(stored)) {
-      for (const value of stored) {
-        const key = normalizeJobCard(value);
-        if (key) uploadedJobCardsThisSession.add(key);
-      }
-    }
-  } catch {
-    // Ignore localStorage errors; session-only tracking still works.
-  }
-  return new Set(uploadedJobCardsThisSession);
-}
-
-function rememberUploadedJobCards(jobCards) {
-  const clean = [...new Set((jobCards || []).map(normalizeJobCard).filter(Boolean))];
-  for (const key of clean) uploadedJobCardsThisSession.add(key);
-
-  if (typeof window !== "undefined") {
-    try {
-      window.localStorage.setItem(
-        UPLOADED_JOB_CARDS_STORAGE_KEY,
-        JSON.stringify([...uploadedJobCardsThisSession])
-      );
-    } catch {
-      // If storage is unavailable/full, keep the in-memory protection.
-    }
-  }
-}
-
-function filterPreviouslyUploadedJobCards(records) {
-  const known = loadUploadedJobCards();
-  const currentJobCards = new Set();
-  const filtered = [];
-  const duplicateJobCards = new Set();
-
-  for (const record of records || []) {
-    const jobCard = normalizeJobCard(record?.jobCard);
-    if (!jobCard) {
-      filtered.push(record);
-      continue;
-    }
-
-    if (known.has(jobCard) || pendingJobCardsThisSession.has(jobCard)) {
-      duplicateJobCards.add(jobCard);
-      continue;
-    }
-
-    currentJobCards.add(jobCard);
-    filtered.push(record);
-  }
-
-  for (const jobCard of currentJobCards) {
-    pendingJobCardsThisSession.add(jobCard);
-  }
-
-  return {
-    records: filtered,
-    duplicateJobCards: [...duplicateJobCards],
-    newJobCards: [...currentJobCards],
-  };
 }
 
 function makeHistoryRowKey(record) {
@@ -3471,6 +3402,34 @@ function ServiceDecisionApp({ user }) {
       ? "http://localhost:3001"
       : "");
 
+  async function checkNewJobCards(jobCards) {
+    const uniqueJobCards = [...new Set(
+      (jobCards || []).map(normalizeJobCard).filter(Boolean)
+    )];
+
+    if (!uniqueJobCards.length) return new Set();
+
+    const response = await fetch(`${API_BASE_URL}/api/save-history`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "check-job-cards",
+        jobCards: uniqueJobCards,
+      }),
+    });
+
+    let payload = null;
+    try { payload = await response.json(); } catch { payload = null; }
+
+    if (!response.ok || !payload?.success) {
+      throw new Error(payload?.error || `Job Card duplicate check failed (${response.status})`);
+    }
+
+    return new Set(
+      (payload.newJobCards || []).map(normalizeJobCard).filter(Boolean)
+    );
+  }
+
   async function saveHistoryToBackend({ records, vehicle }) {
     const response = await fetch(`${API_BASE_URL}/api/save-history`, {
       method: "POST",
@@ -3515,21 +3474,11 @@ function ServiceDecisionApp({ user }) {
         const index = nextIndex++;
         const [, vehicleRecords] = jobs[index];
         try {
-          const vehicle = deriveVehicle(vehicleRecords);
-          const payload = await saveHistoryToBackend({ records: vehicleRecords, vehicle });
-
-          // Only remember Job Cards after the complete request succeeds.
-          // This prevents a failed save from being permanently filtered out
-          // on the next upload.
-          if (payload?.success) {
-            const jobCards = vehicleRecords.map(record => normalizeJobCard(record?.jobCard));
-            for (const jobCard of jobCards) pendingJobCardsThisSession.delete(jobCard);
-            rememberUploadedJobCards(jobCards);
-          }
+          await saveHistoryToBackend({
+            records: vehicleRecords,
+            vehicle: deriveVehicle(vehicleRecords),
+          });
         } catch (error) {
-          for (const jobCard of vehicleRecords.map(record => normalizeJobCard(record?.jobCard))) {
-            pendingJobCardsThisSession.delete(jobCard);
-          }
           console.error("Background history save failed:", error);
         }
       }
@@ -3589,24 +3538,43 @@ function ServiceDecisionApp({ user }) {
             .join(" | ")
         );
       } else {
-        // IMPORTANT: filter already-successfully-uploaded Job Cards in the browser
-        // BEFORE any /api/save-history request is sent to Vercel.
-        // A Job Card is globally unique in the DMS, so Job Card Number alone is
-        // sufficient for this duplicate protection.
-        const duplicateCheck = filterPreviouslyUploadedJobCards(parsedRows);
-        const recordsForBackend = duplicateCheck.records;
+        // Service Decision always uses the complete parsed Excel data.
+        // Database persistence uses a central Job Card check so the same history
+        // is not uploaded again from another browser/device.
+        const allJobCards = parsedRows
+          .map(record => normalizeJobCard(record?.jobCard))
+          .filter(Boolean);
 
-        if (duplicateCheck.duplicateJobCards.length) {
+        const newJobCards = await checkNewJobCards(allJobCards);
+        const recordsForBackend = parsedRows.filter(record => {
+          const jobCard = normalizeJobCard(record?.jobCard);
+          return !!jobCard && newJobCards.has(jobCard);
+        });
+
+        const existingJobCardRowCount = parsedRows.filter(record => {
+          const jobCard = normalizeJobCard(record?.jobCard);
+          return !!jobCard && !newJobCards.has(jobCard);
+        }).length;
+
+        if (existingJobCardRowCount) {
           setUploadMeta(prev => ({
             ...prev,
             rowsBefore: result.totalRowsBeforeDedup,
-            duplicates: Number(prev?.duplicates || 0) + (
-              parsedRows.length - recordsForBackend.length
-            ),
+            duplicates: Number(prev?.duplicates || 0) + existingJobCardRowCount,
             rowsAfter: parsedRows.length,
-            jobCardDuplicates: duplicateCheck.duplicateJobCards.length,
+            jobCardDuplicates: new Set(
+              allJobCards.filter(jobCard => !newJobCards.has(jobCard))
+            ).size,
             backendRows: recordsForBackend.length,
           }));
+        }
+
+        // Analysis continues to use the complete uploaded Excel data exactly as before.
+        // Only DB persistence is filtered, so Service Decision calculations/UI are unchanged.
+        if (recordsForBackend.length) {
+          void saveHistoryInBackground(recordsForBackend);
+        }
+      }));
         }
 
         // Analysis continues to use the uploaded Excel data exactly as before.

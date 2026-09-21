@@ -4327,6 +4327,7 @@ function ServiceDecisionApp({ user }) {
         .history-wrap { overflow:auto; max-height:520px; border:1px solid #b7b7b7; }
         .history-table { width:100%; border-collapse:collapse; min-width:760px; }
         .history-table th { position:sticky; top:0; z-index:2; background:#4472c4; color:#fff; border:1px solid #b7b7b7; padding:5px 7px; font-size:12px; }
+        .estimate-workspace .history-table th { position:static; top:auto; z-index:auto; }
         .history-table td { border:1px solid #d0d0d0; padding:5px 7px; font-size:12px; }
         .history-table tr:nth-child(even) td { background:#fafafa; }
         .bulk-service-table { min-width: 1120px; }
@@ -4964,7 +4965,7 @@ function ServiceDecisionApp({ user }) {
 
         {estimateOpen && (
           <div className="no-print" style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-            <div style={{background:"#fff",color:"#111",width:"min(1100px,96vw)",maxHeight:"94vh",overflow:"auto",borderRadius:10,padding:18}}>
+            <div className="estimate-workspace" style={{background:"#fff",color:"#111",width:"min(1100px,96vw)",maxHeight:"94vh",overflow:"auto",borderRadius:10,padding:18}}>
               {estimateStage === "vehicle" ? (
                 <>
                   <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>

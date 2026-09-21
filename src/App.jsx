@@ -3111,18 +3111,34 @@ function emptyEstimateItem(type = "part") {
 function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResults, savedEstimates, savedEstimatesLoading, onOpenSavedEstimate }) {
   const dueVehicles = (bulkResults || []).filter(item => Array.isArray(item?.services) && item.services.length > 0).length;
   const totalVehicles = (bulkResults || []).length;
+  const savedCount = Array.isArray(savedEstimates) ? savedEstimates.length : 0;
   const cards = [
-    { key:"single", icon:"🚚", title:"Single Vehicle", text:"Check one vehicle service decision, history and due services." },
-    { key:"bulk", icon:"📊", title:"Bulk Vehicle", text:"Analyse multiple vehicles and prepare customer-wise due summaries." },
-    { key:"schedule", icon:"📅", title:"Service Schedule", text:"View service intervals and additional service windows." },
+    { key:"single", icon:"🚚", title:"Single Vehicle", text:"Check one vehicle service history, service requirements and completed work." },
+    { key:"bulk", icon:"📊", title:"Bulk Vehicle", text:"Analyse multiple vehicles and prepare customer-wise service due summaries." },
+    { key:"schedule", icon:"📅", title:"Service Schedule", text:"Review service intervals and applicable maintenance schedules." },
   ];
   return (
     <div className="portal-home">
-      <div className="portal-home-hero"><div><div className="portal-home-kicker">SERVICE DECISION WEB PORTAL</div><h1>Welcome{user?.personName ? ", " + user.personName : ""}</h1><p>Your main workflow starts with Excel upload. Upload the DMS file first, then analyse vehicles or prepare the due summary.</p></div><div style={{display:"flex",gap:8,flexWrap:"wrap"}}><button className="excel-button green portal-upload-button" onClick={onUpload}>Upload Excel &amp; Start</button><button className="excel-button" onClick={onClear}>Clear</button></div></div>
-      <div className="portal-kpi-grid"><div className="portal-kpi"><span>Vehicles in Current Upload</span><strong>{totalVehicles}</strong><small>Current session only</small></div><div className="portal-kpi"><span>Due Vehicles in Current Upload</span><strong>{dueVehicles}</strong><small>Current session only</small></div><div className="portal-kpi"><span>Portal Mode</span><strong>Beta</strong><small>Testing &amp; feedback</small></div></div>
-      <div className="portal-section-title">What would you like to do?</div>
+      <div className="portal-home-hero">
+        <div>
+          <div className="portal-home-kicker">VEHICLE SERVICE MANAGEMENT</div>
+          <h1>Welcome{user?.personName ? ", " + user.personName : ""}</h1>
+          <p>Manage vehicle service history, service requirements, due schedules and estimates from one place.</p>
+        </div>
+        <div className="portal-home-hero-actions">
+          <button className="excel-button green portal-upload-button" onClick={onUpload}>Upload DMS Excel</button>
+          <button className="excel-button portal-upload-button" onClick={() => onNavigate("estimate")}>Prepare Estimate</button>
+          <button className="excel-button" onClick={onClear}>Clear</button>
+        </div>
+      </div>
+      <div className="portal-kpi-grid">
+        <div className="portal-kpi"><span>Vehicles in Current Upload</span><strong>{totalVehicles}</strong><small>Current session</small></div>
+        <div className="portal-kpi"><span>Due Vehicles</span><strong>{dueVehicles}</strong><small>Current upload</small></div>
+        <div className="portal-kpi"><span>Saved Estimates</span><strong>{savedCount}</strong><small>Available to open</small></div>
+      </div>
+      <div className="portal-section-title">Quick Actions</div>
       <div className="portal-action-grid">{cards.map(card => <button key={card.key} className="portal-action-card" onClick={() => onNavigate(card.key)}><span className="portal-action-icon">{card.icon}</span><span className="portal-action-title">{card.title}</span><span className="portal-action-text">{card.text}</span><span className="portal-action-link">Open →</span></button>)}
-        <button className="portal-action-card" onClick={() => onNavigate("estimate")}><span className="portal-action-icon">🧾</span><span className="portal-action-title">Prepare Estimate</span><span className="portal-action-text">Prepare an estimate directly from Home. Enter Vehicle No. first; DB details and parts can be loaded automatically or entered manually.</span><span className="portal-action-link">Open Estimate →</span></button>
+        <button className="portal-action-card" onClick={() => onNavigate("estimate")}><span className="portal-action-icon">🧾</span><span className="portal-action-title">Service Estimate</span><span className="portal-action-text">Prepare an estimate directly from Home. Vehicle details and parts can be loaded from the database or entered manually.</span><span className="portal-action-link">Open Estimate →</span></button>
       </div>
       <div className="home-estimate-preview" onClick={() => onNavigate("estimate")} role="button" tabIndex={0} onKeyDown={event => { if(event.key==="Enter" || event.key===" ") onNavigate("estimate"); }}>
         <div className="home-estimate-preview-head">
@@ -3153,7 +3169,7 @@ function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResu
           <div className="small-note">No saved estimates yet.</div>
         )}
       </div>
-      <div className="portal-workflow"><div><b>Recommended workflow</b><span>Upload Excel → Analyse → Review Service Decision → Prepare Estimate / Share Due Summary</span></div><div><b>Personalise</b><span>Theme, columns, custom names and table widths are saved in Profile &amp; Settings.</span></div></div>
+      <div className="portal-workflow"><div><b>Workflow</b><span>Upload DMS Excel → Analyse → Review Service History → Prepare Estimate / Share Due Summary</span></div><div><b>Personalisation</b><span>Theme, columns, custom names and table widths are saved in Profile &amp; Settings.</span></div></div>
     </div>
   );
 }

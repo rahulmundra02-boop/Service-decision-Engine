@@ -2434,7 +2434,7 @@ const ESTIMATE_REFERENCE_PARTS = {
   clutchOil: ["CFD99991"],
   defInline: ["XFM00800"],
   coolant: ["C9999993"],
-  hubGrease: ["S9999997", "FJ607400", "F1721500", "F1771990", "H5001220"],
+  hubGrease: ["S9999997", "FJ607400", "F1721500", "F1771900", "H5001220"],
   fuelFilter: ["P5105609"],
   airFilter: ["P5105688"],
   defFilter: ["XFM00500", "PET00001"],
@@ -2445,7 +2445,7 @@ const HUB_GREASE_STANDARD_CODES = new Set([
   "S9999997",
   "FJ607400",
   "F1721500",
-  "F1771990",
+  "F1771900",
   "H5001220",
 ]);
 

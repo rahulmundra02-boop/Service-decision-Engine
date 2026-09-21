@@ -3904,18 +3904,21 @@ function ServiceDecisionApp({ user }) {
       const response=await fetch("/api/save-history?registration="+encodeURIComponent(registration));
       const data=await response.json().catch(()=>({}));
       const rows=Array.isArray(data?.rows)?data.rows:[];
-      if(rows.length){
-        const first=rows[0];
+      const dbVehicle=data?.vehicle || rows[0] || null;
+      if(dbVehicle){
         setEstimateVehicle({
-          customerName:first?.customer_name||"",
-          reg:String(first?.registration||registration).replace(/\s+/g,"").toUpperCase(),
-          vin:String(first?.vin||"").trim().toUpperCase(),
-          engine:first?.engine||"",
-          model:first?.model||"",
-          sale:first?.sale_date?new Date(first.sale_date):null
+          customerName:dbVehicle?.customer_name||"",
+          reg:String(dbVehicle?.registration||registration).replace(/\s+/g,"").toUpperCase(),
+          vin:String(dbVehicle?.vin||"").trim().toUpperCase(),
+          engine:dbVehicle?.engine||"",
+          model:dbVehicle?.model||"",
+          sale:dbVehicle?.sale_date?new Date(dbVehicle.sale_date):null
         });
         setEstimateHistory({vehicleRows:rows,modelRows:Array.isArray(data?.modelRows)?data.modelRows:[],globalPartRates:Array.isArray(data?.globalPartRates)?data.globalPartRates:[]});
-        setEstimateVehicleLookupMessage("Vehicle found in DB. Details loaded automatically.");
+        setEstimateVehicleLookupMessage(rows.length
+          ? "Vehicle found in DB. Details loaded automatically."
+          : "Vehicle found in DB. No service history is available; enter estimate lines manually.");
+
       } else {
         setEstimateVehicle(prev=>({...prev,reg:registration,vin:""}));
         setEstimateHistory({vehicleRows:[],modelRows:[],globalPartRates:[]});
@@ -5006,13 +5009,11 @@ function ServiceDecisionApp({ user }) {
                     <span style={{marginLeft:"auto",fontWeight:700}}>{user?.dealerName || "Workshop"}</span>
                     <button className="excel-button no-print" onClick={()=>setEstimateOpen(false)}>Close</button>
                   </div>
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:8,marginBottom:12}}>
                    <div style={{display:"grid",gridTemplateColumns:"repeat(5,minmax(0,1fr))",gap:8,marginBottom:12}}>
                      {[["Customer","customerName"],["Reg. No.","reg"],["Chassis / VIN","vin"],["Engine No.","engine"],["Model","model"]].map(([label,key]) => (
                        <div key={key}><b>{label}</b><input className="excel-input" value={estimateVehicle?.[key] || ""} onChange={e=>setEstimateVehicle(prev=>({...prev,[key]:e.target.value}))} /></div>
                      ))}
                    </div>
-                  </div>
                   <div style={{fontWeight:800,margin:"10px 0 6px"}}>Selected Aggregate Services</div>
                   <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>{BULK_SERVICE_LABELS.filter(([,key])=>estimateSelectedServices.includes(key)).map(([label])=><span key={label} style={{border:"1px solid #bbb",padding:"5px 8px",borderRadius:5,fontSize:12,background:"#f7f7f7"}}>{label}</span>)}</div>
                   <div style={{fontWeight:800,margin:"10px 0 6px"}}>Parts</div>

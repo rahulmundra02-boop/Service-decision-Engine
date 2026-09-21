@@ -126,23 +126,76 @@ tr:last-child td { border-bottom:0; }
 
 
 /* Single Vehicle Service Summary: give the history/parts column more room. */
-.single-service-summary {
-  table-layout: fixed;
-  min-width: 760px;
-}
-.single-service-summary th:nth-child(1),
-.single-service-summary td:nth-child(1) { width: 4%; }
-.single-service-summary th:nth-child(2),
-.single-service-summary td:nth-child(2) { width: 6%; }
-.single-service-summary th:nth-child(3),
-.single-service-summary td:nth-child(3) { width: 6%; }
-.single-service-summary th:nth-child(4),
-.single-service-summary td:nth-child(4) { width: 13%; }
-.single-service-summary th:nth-child(5),
-.single-service-summary td:nth-child(5) { width: 71%; }
-
-.single-service-summary td:nth-child(4) {
-  overflow-wrap: anywhere;
-}
+.single-service-summary { table-layout:fixed; min-width:760px; width:100%; }
+.dashboard-resizable-table { table-layout:fixed; width:100%; min-width:760px; }
+.dashboard-resizable-table th, .dashboard-resizable-table td { position:relative; min-width:0; overflow-wrap:anywhere; }
+.dashboard-th-content { display:block; padding-right:10px; }
+.column-resizer { position:absolute; top:0; right:-1px; width:7px; height:100%; cursor:col-resize; z-index:5; touch-action:none; }
+.column-resizer:hover { background:rgba(255,255,255,.45); }
+.dashboard-resizable-table th { user-select:none; }
 
 /* Trigger preview redeploy after environment variable update. */
+
+
+/* Beta portal workflow polish */
+.bulk-overview-card-button {
+  appearance:none;
+  -webkit-appearance:none;
+  width:100%;
+  text-align:left;
+  font:inherit;
+  cursor:pointer;
+  transition:transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+}
+.bulk-overview-card-button:hover {
+  transform:translateY(-1px);
+  box-shadow:0 2px 8px rgba(0,0,0,.08);
+}
+.bulk-overview-card-button.active {
+  border-color:#217346;
+  box-shadow:inset 0 0 0 1px #217346;
+}
+.bulk-overview-card small {
+  display:block;
+  margin-top:4px;
+  color:#74808b;
+  font-size:10px;
+  font-weight:500;
+}
+.bulk-overview-card-button.active small {
+  color:#217346;
+  font-weight:700;
+}
+.bulk-control-labels {
+  display:flex;
+  gap:18px;
+  margin:8px 0 2px;
+  color:#74808b;
+  font-size:10px;
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.35px;
+}
+.bulk-control-labels span:first-child { min-width:360px; }
+.single-empty-state {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex-direction:column;
+  gap:6px;
+  min-height:150px;
+  padding:24px;
+  text-align:center;
+  color:#697680;
+  background:#fafbfc;
+  border:1px dashed #cbd4da;
+  border-radius:8px;
+}
+.single-empty-state b { color:#26323c; font-size:14px; }
+.single-empty-state span { font-size:12px; margin-bottom:5px; }
+.column-resizer { touch-action:none; }
+@media (max-width:600px) {
+  .bulk-control-labels { display:none; }
+  .bulk-overview-card-button { min-height:82px; }
+  .single-empty-state { min-height:135px; }
+}

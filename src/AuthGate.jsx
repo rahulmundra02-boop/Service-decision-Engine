@@ -2,6 +2,8 @@ import { cloneElement, useEffect, useRef, useState } from "react";
 import "./AuthGate.css";
 
 const TOKEN_KEY = "serviceDecisionAuthToken";
+const ACTIVITY_KEY = "serviceDecisionLastActivity";
+const INACTIVITY_MS = 12 * 60 * 60 * 1000;
 const ADMIN_CONTACT_EMAIL = "rahul.mundra02@gmail.com";
 const ADMIN_CONTACT_MOBILE = "9461768278";
 const ADMIN_DEALER_FALLBACK = "Kandla Motors";
@@ -46,7 +48,9 @@ export default function AuthGate({ children }) {
   const [adminOpen, setAdminOpen] = useState(false);
   const [adminUsers, setAdminUsers] = useState([]);
   const [adminLoading, setAdminLoading] = useState(false);
-  const [adminForm, setAdminForm] = useState({ personName:"", dealerName:"", email:"", mobile:"", password:"" });
+  const [adminForm, setAdminForm] = useState({ userId:null, personName:"", dealerName:"", email:"", mobile:"", password:"" });
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileForm, setProfileForm] = useState({ personName:"", dealerName:"", mobile:"", booking1:"", booking2:"", theme:"blue", singleColumns:["date","jobCard","reading","plant","parts"], bulkColumns:["customerName","vin","reg","saleDate","model","currentReading","services"], singleColumnLabels:{date:"Date",jobCard:"Job Card",reading:"Reading",plant:"Plant",parts:"Part No. / Service / Qty"}, bulkColumnLabels:{serial:"S.No. / Due",customerName:"Customer Name",vin:"VIN",reg:"Reg. No.",saleDate:"Sale Date",model:"Model",currentReading:"Current Reading",services:"Service To Be Completed"} });
   const [adminAnalytics, setAdminAnalytics] = useState({ summary:[], recent:[], periods:[] });
   const [analyticsUserId, setAnalyticsUserId] = useState(null);
   const [analyticsRange, setAnalyticsRange] = useState(30);
@@ -75,6 +79,7 @@ export default function AuthGate({ children }) {
     const password = document.getElementById("auth-password")?.value || "";
     const data = await api("login", { identifier, password });
     localStorage.setItem(TOKEN_KEY, data.token);
+    localStorage.setItem(ACTIVITY_KEY, String(Date.now()));
     setUser(normalizeLoggedInUser(data.user));
   });
 
@@ -82,9 +87,59 @@ export default function AuthGate({ children }) {
     const token = localStorage.getItem(TOKEN_KEY);
     try { await api("logout", {}, token); } catch {}
     localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(ACTIVITY_KEY);
     setUser(null);
     setAdminOpen(false);
   };
+
+  useEffect(() => {
+    if (!user) return;
+
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) return;
+
+    if (!localStorage.getItem(ACTIVITY_KEY)) {
+      const serverActivity = user?.lastActivityAt ? new Date(user.lastActivityAt).getTime() : Date.now();
+      localStorage.setItem(ACTIVITY_KEY, String(serverActivity || Date.now()));
+    }
+
+    let lastPing = 0;
+    const touch = () => {
+      const now = Date.now();
+      const last = Number(localStorage.getItem(ACTIVITY_KEY) || 0);
+      if (last && now - last >= INACTIVITY_MS) return;
+      localStorage.setItem(ACTIVITY_KEY, String(now));
+
+      if (now - lastPing >= 60 * 1000) {
+        lastPing = now;
+        api("me", {}, token).catch(() => {
+          localStorage.removeItem(TOKEN_KEY);
+          localStorage.removeItem(ACTIVITY_KEY);
+          setUser(null);
+          setAdminOpen(false);
+        });
+      }
+    };
+
+    const events = ["click","keydown","mousemove","scroll","touchstart"];
+    events.forEach(name => window.addEventListener(name, touch, { passive:true }));
+
+    const timer = window.setInterval(() => {
+      const last = Number(localStorage.getItem(ACTIVITY_KEY) || 0);
+      if (!last || Date.now() - last < INACTIVITY_MS) return;
+
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(ACTIVITY_KEY);
+      setAdminOpen(false);
+      setUser(null);
+      setMessage("Session expired after 12 hours of inactivity. Please login again.");
+    }, 60 * 1000);
+
+    return () => {
+      events.forEach(name => window.removeEventListener(name, touch));
+      window.clearInterval(timer);
+    };
+  }, [user?.id]);
 
   const changePassword = () => run(async () => {
     if (passwordForm.newPassword !== passwordForm.confirmPassword) throw new Error("New passwords do not match.");
@@ -133,12 +188,71 @@ export default function AuthGate({ children }) {
   }, [user?.role, adminOpen]);
 
   const createUser = () => run(async () => {
-    if (adminForm.password.length < 8) throw new Error("Password must be at least 8 characters.");
+    if (!adminForm.userId && adminForm.password.length < 8) {
+      throw new Error("Password must be at least 8 characters for a new user.");
+    }
+    if (adminForm.password && adminForm.password.length < 8) {
+      throw new Error("Password must be at least 8 characters.");
+    }
     const data = await api("admin-create-user", adminForm, localStorage.getItem(TOKEN_KEY));
-    setAdminForm({ personName:"", dealerName:"", email:"", mobile:"", password:"" });
-    setMessage(data.message || "User account created successfully.");
+    setAdminForm({ userId:null, personName:"", dealerName:"", email:"", mobile:"", password:"" });
+    setMessage(data.message || (adminForm.userId ? "User account updated successfully." : "User account created successfully."));
     await loadAdminUsers();
   });
+
+  const editUser = (target) => {
+    setAdminForm({
+      userId: target.id,
+      personName: target.personName || "",
+      dealerName: target.dealerName || "",
+      email: target.email || "",
+      mobile: target.mobile || "",
+      password: "",
+    });
+    setMessage("");
+    setError("");
+  };
+
+  const saveProfile = () => run(async () => {
+    const data = await api("update-profile", {
+      personName: profileForm.personName,
+      dealerName: profileForm.dealerName,
+      mobile: profileForm.mobile,
+      preferences: {
+        booking1: profileForm.booking1,
+        booking2: profileForm.booking2,
+        whatsappOpeningLine: profileForm.whatsappOpeningLine,
+        theme: profileForm.theme,
+        singleColumns: profileForm.singleColumns,
+        bulkColumns: profileForm.bulkColumns,
+        singleColumnLabels: profileForm.singleColumnLabels,
+        bulkColumnLabels: profileForm.bulkColumnLabels,
+      }
+    }, localStorage.getItem(TOKEN_KEY));
+    setUser(normalizeLoggedInUser(data.user));
+    setProfileOpen(false);
+    setMessage("Profile and dashboard preferences saved.");
+  });
+
+  const openProfile = () => {
+    const p = user?.preferences || {};
+    setProfileForm({
+      personName:user?.personName || "",
+      dealerName:user?.dealerName || "",
+      mobile:user?.mobile || "",
+      booking1:p.booking1 || "",
+      booking2:p.booking2 || "",
+      whatsappOpeningLine:p.whatsappOpeningLine || "",
+      theme:p.theme || "blue",
+      singleColumns:Array.isArray(p.singleColumns) && p.singleColumns.length ? p.singleColumns : ["date","jobCard","reading","plant","parts"],
+      bulkColumns:Array.isArray(p.bulkColumns) && p.bulkColumns.length ? p.bulkColumns : ["customerName","vin","reg","saleDate","model","currentReading","services"],
+      singleColumnLabels:{date:"Date",jobCard:"Job Card",reading:"Reading",plant:"Plant",parts:"Part No. / Service / Qty",...(p.singleColumnLabels || {})},
+      bulkColumnLabels:{serial:"S.No. / Due",customerName:"Customer Name",vin:"VIN",reg:"Reg. No.",saleDate:"Sale Date",model:"Model",currentReading:"Current Reading",services:"Service To Be Completed",...(p.bulkColumnLabels || {})},
+    });
+    setProfileOpen(true);
+    setError("");
+    setMessage("");
+  };
 
   const resetUserPassword = (target) => {
     const newPassword = window.prompt(`Enter new password for ${target.personName} (minimum 8 characters):`);
@@ -212,6 +326,7 @@ export default function AuthGate({ children }) {
       <div className="auth-userbar">
         <span><strong>{user.personName}</strong> · {user.dealerName}</span>
         <div className="auth-user-actions">
+          <button onClick={openProfile}>Profile & Settings</button>
           {user.role === "admin" && <button onClick={() => { setAdminOpen(true); setError(""); setMessage(""); }}>Admin</button>}
           <button onClick={() => { setShowPassword(true); setError(""); setMessage(""); }}>Change Password</button>
           <button className="logout-btn" onClick={logout}>Logout</button>
@@ -240,6 +355,16 @@ export default function AuthGate({ children }) {
         </div>
       )}
 
+      {profileOpen && (
+        <ProfileSettingsModal
+          form={profileForm}
+          setForm={setProfileForm}
+          onSave={saveProfile}
+          onClose={()=>setProfileOpen(false)}
+          loading={loading}
+        />
+      )}
+
       {adminOpen && user.role === "admin" ? (
         <AdminPanel
           users={adminUsers}
@@ -247,6 +372,7 @@ export default function AuthGate({ children }) {
           setForm={setAdminForm}
           loading={adminLoading || loading}
           onCreate={createUser}
+          onEdit={editUser}
           onRefresh={loadAdminUsers}
           onReset={resetUserPassword}
           onToggleStatus={toggleUserStatus}
@@ -262,7 +388,17 @@ export default function AuthGate({ children }) {
   );
 }
 
-function AdminPanel({ users, form, setForm, loading, onCreate, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, onAnalytics }) {
+function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
+  const toggleColumn=(key,value,checked)=>{const list=Array.isArray(form[key])?form[key]:[];setForm({...form,[key]:checked?[...new Set([...list,value])]:list.filter(x=>x!==value)});};
+  const setLabel=(group,key,value)=>setForm({...form,[group]:{...(form[group]||{}),[key]:value}});
+  const themes=[["blue","Classic Blue"],["green","Excel Green"],["navy","Navy"],["teal","Teal"],["purple","Purple"]];
+  const singleCols=[["date","Date"],["jobCard","Job Card"],["reading","Reading"],["plant","Plant"],["parts","Part / Service / Qty"]];
+  const bulkCols=[["customerName","Customer Name"],["vin","VIN"],["reg","Reg. No."],["saleDate","Sale Date"],["model","Model"],["currentReading","Current Reading"],["services","Service To Be Completed"]];
+  const editor=(group,key,label)=>{const lg=group==="singleColumns"?"singleColumnLabels":"bulkColumnLabels";return <div key={key} style={{display:"grid",gridTemplateColumns:"20px minmax(0,1fr)",gap:6,alignItems:"center",minWidth:0,marginBottom:6}}><input type="checkbox" checked={(form[group]||[]).includes(key)} onChange={e=>toggleColumn(group,key,e.target.checked)} style={{width:16,height:16,margin:0,justifySelf:"center"}}/><input value={(form[lg]||{})[key]||label} onChange={e=>setLabel(lg,key,e.target.value)} placeholder={label} style={{width:"100%",minWidth:0,boxSizing:"border-box"}}/></div>};
+  return <div className="auth-modal-backdrop"><div className="auth-modal" style={{maxWidth:820,width:"min(820px,calc(100vw - 32px))",maxHeight:"90vh",overflow:"auto",boxSizing:"border-box"}}><h2>Profile & Dashboard Settings</h2><p className="auth-hint">Ye settings sirf aapki user ID ke liye save hongi. Table width header divider ko mouse se drag karke set hogi.</p><label>Person Name</label><input value={form.personName} onChange={e=>setForm({...form,personName:e.target.value})}/><label>Dealer / Workshop Name</label><input value={form.dealerName} onChange={e=>setForm({...form,dealerName:e.target.value})}/><label>Mobile</label><input value={form.mobile} onChange={e=>setForm({...form,mobile:e.target.value})}/><label>Advance Booking Contact 1</label><input value={form.booking1} onChange={e=>setForm({...form,booking1:e.target.value})} placeholder="Optional mobile number"/><label>Advance Booking Contact 2</label><input value={form.booking2} onChange={e=>setForm({...form,booking2:e.target.value})} placeholder="Optional mobile number"/><label>WhatsApp Opening Line (Optional)</label><textarea value={form.whatsappOpeningLine} onChange={e=>setForm({...form,whatsappOpeningLine:e.target.value})} placeholder="Applies to the top of the WhatsApp due message. Leave blank if no extra line is required." rows={3} style={{minHeight:72,resize:"vertical"}}/><div className="auth-hint">This is your personal wording. It will be saved with your user ID and reused in future WhatsApp due summaries.</div><div style={{marginTop:14,fontWeight:800}}>Dashboard Colour</div><div style={{display:"flex",flexWrap:"wrap",gap:8,margin:"8px 0 14px"}}>{themes.map(([key,label])=><button type="button" key={key} onClick={()=>setForm({...form,theme:key})} className={form.theme===key?"auth-primary":"auth-secondary"}>{label}</button>)}</div><div style={{fontWeight:800}}>Single Vehicle Service History Table</div><div className="auth-hint">Checkbox = show/hide · Text box = custom heading · width by mouse drag.</div><div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:"6px 12px",margin:"8px 0 16px",minWidth:0}}>{singleCols.map(([k,l])=>editor("singleColumns",k,l))}</div><div style={{fontWeight:800}}>Bulk Vehicle Due / Service Summary Table</div><div className="auth-hint">Checkbox = show/hide · Text box = custom heading · width by mouse drag.</div><div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:"6px 12px",margin:"8px 0",minWidth:0}}>{bulkCols.map(([k,l])=>editor("bulkColumns",k,l))}<div style={{display:"grid",gridTemplateColumns:"28px 1fr",gap:7,alignItems:"center"}}><span></span><input value={(form.bulkColumnLabels||{}).serial||"S.No. / Due"} onChange={e=>setLabel("bulkColumnLabels","serial",e.target.value)} placeholder="S.No. / Due"/></div></div><div className="auth-modal-actions"><button className="auth-secondary" onClick={onClose}>Cancel</button><button className="auth-primary" onClick={onSave} disabled={loading}>Save Profile & Settings</button></div></div></div>;
+}
+
+function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, onAnalytics }) {
   const analyticsDetailRef = useRef(null);
   const [view, setView] = useState("overview");
 
@@ -507,7 +643,7 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onRefresh, onRese
             <div className="admin-section-title">User Management</div>
             <div className="admin-grid admin-management-grid">
               <div className="admin-form-card">
-                <h3>User Account</h3>
+                <h3>{form.userId ? "Edit User Account" : "Create User Account"}</h3>
                 <label>Person Name *</label>
                 <input value={form.personName} onChange={e=>setForm({...form,personName:e.target.value})} />
                 <label>Dealer Name *</label>
@@ -516,9 +652,10 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onRefresh, onRese
                 <input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} />
                 <label>Mobile (optional)</label>
                 <input value={form.mobile} onChange={e=>setForm({...form,mobile:e.target.value})} placeholder="10 digit mobile" />
-                <label>Password *</label>
-                <input type="password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder="Minimum 8 characters" />
-                <button className="auth-primary" onClick={onCreate} disabled={loading}>Create / Update User</button>
+                <label>Password {form.userId ? "(optional)" : "*"}</label>
+                <input type="password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder={form.userId ? "Leave blank to keep current password" : "Minimum 8 characters"} />
+                <button className="auth-primary" onClick={onCreate} disabled={loading}>{form.userId ? "Save User Changes" : "Create User"}</button>
+                {form.userId && <button className="auth-secondary" onClick={()=>setForm({userId:null,personName:"",dealerName:"",email:"",mobile:"",password:""})}>Cancel Edit</button>}
               </div>
 
               <div className="admin-users-card">
@@ -533,7 +670,11 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onRefresh, onRese
                         <td>{u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : "Never"}</td>
                         <td>{u.lastActivityAt ? new Date(u.lastActivityAt).toLocaleString() : "—"}</td>
                         <td><button className="admin-analytics-btn" onClick={()=>onAnalytics(Number(u.id),analyticsRange)}>View</button></td>
-                        <td>{u.role !== "admin" && <div className="admin-row-actions"><button onClick={()=>onReset(u)}>Reset Password</button><button onClick={()=>onToggleStatus(u)}>{u.status === "active" ? "Deactivate" : "Activate"}</button></div>}</td>
+                        <td><div className="admin-row-actions">
+                          {u.role !== "admin" && <button onClick={()=>onEdit(u)}>Edit</button>}
+                          {u.role !== "admin" && <button onClick={()=>onReset(u)}>Reset Password</button>}
+                          {u.role !== "admin" && <button onClick={()=>onToggleStatus(u)}>{u.status === "active" ? "Deactivate" : "Activate"}</button>}
+                        </div></td>
                       </tr>)}
                       {!users.length && <tr><td colSpan="9" className="admin-empty">No users found.</td></tr>}
                     </tbody>

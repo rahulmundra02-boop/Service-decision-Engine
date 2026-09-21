@@ -169,7 +169,6 @@ const PART_STANDARDIZATION = {
   'FS0500': 'Body Building Checkup',
   'FL100290': 'Cluster Meter',
   'FL100390': 'Cluster Meter',
-  'CF000001': 'Clutch Oil',
   'CFD99991': 'Clutch Oil',
   'CLA99994': 'Clutch Oil',
   'U9999995': 'Clutch Oil',
@@ -201,6 +200,7 @@ const PART_STANDARDIZATION = {
   'EN6A9991': 'Engine Oil',
   'EN6A9992': 'Engine Oil',
   'F7A01500': 'Engine Oil Filter',
+  'ENB99998': 'Engine Oil',
   'F7A05000': 'Engine Oil Filter',
   'FPA00300': 'Engine Oil Filter',
   'P7A00029': 'Engine Oil Filter',
@@ -262,6 +262,7 @@ const PART_STANDARDIZATION = {
   'P5104332': 'Fuel Filter',
   'P5104480': 'Fuel Filter',
   'P5104481': 'Fuel Filter',
+  'X8820800': 'Fuel Filter',
   'P7A00031': 'Fuel Filter',
   'P7A00090': 'Fuel Filter',
   'P7B00002': 'Fuel Filter',
@@ -325,6 +326,7 @@ const PART_STANDARDIZATION = {
   'P5104737': 'Fuel Filter Kit',
   'P5105606': 'Fuel Filter Kit',
   'P5105609': 'Fuel Filter Kit',
+  'P5104720': 'Fuel Filter Kit',
   'P5105703': 'Fuel Filter Kit',
   'P7A00042': 'Fuel Filter Kit',
   'G9999994': 'Gear Oil',
@@ -332,6 +334,7 @@ const PART_STANDARDIZATION = {
   'G9999998': 'Gear Oil',
   'G9999997': 'Hub Grease',
   'S9999997': 'Hub Grease',
+  'S9999999': 'Hub Grease',
   'FS0H1D': 'Hub grease 10 Hub',
   'FS0H1A': 'Hub grease 4 Hub',
   'FS0H1B': 'Hub grease 6 Hub',
@@ -851,6 +854,11 @@ function parseExcelPaste(text) {
     qty: headerIndex(headers,
       ["quantity"], ["quantity"]),
 
+    // DMS Net Value is the total line value before tax.
+    // Store only the derived per-unit rate in DB: Net Value / Quantity.
+    netValue: headerIndex(headers,
+      ["net value"]),
+
     inward: headerIndex(headers,
       ["inward date"], ["inward date"]),
 
@@ -1026,6 +1034,8 @@ function parseExcelPaste(text) {
       part: cell(col.part),
       standardizedPart: standardizePart(cell(col.partCode), cell(col.part)),
       qty: parseNumber(cell(col.qty)),
+      // Net Value is retained only for rate calculation before DB storage.
+      netValue: col.netValue >= 0 ? parseNumber(cell(col.netValue)) : null,
       inward: parseDate(cell(col.inward)),
 
       reg: cell(col.reg),
@@ -1615,6 +1625,30 @@ function isBSVIApplicable(vehicle){
   const sale = vehicle?.sale;
   return !!(sale && sale > new Date(2020, 2, 31));
 }
+const CLUTCH_OIL_DECISION_PART_CODES = new Set([
+  "CFD99991",
+  "CLA99994",
+  "U9999995",
+  "U9999999",
+]);
+
+function latestValidClutchOilPart(records, vehicle) {
+  const valid = (records || [])
+    .filter(record => {
+      const code = normalizePartCode(record?.partCode);
+      const qty = Number(record?.qty || 0);
+      return CLUTCH_OIL_DECISION_PART_CODES.has(code) && qty >= 0.5;
+    })
+    .sort((a, b) => (b.date || 0) - (a.date || 0));
+  if (!valid.length) return null;
+  const selected = valid[0];
+  return {
+    ...selected,
+    serviceQty: Number(selected.qty || 0),
+    relevantReading: vehicle ? getRelevantReading(selected, vehicle) : (selected.reading || 0),
+  };
+}
+
 function decideAggregate(records, vehicle, running, key, analysisDate){
   // DEF Filter and APDA Filter are BS-VI-only. Do not run their due logic for BS-IV.
   if ((key === 'defFilter' || key === 'apdaFilter') && !isBSVIApplicable(vehicle)) return false;
@@ -1639,12 +1673,43 @@ function decideAggregate(records, vehicle, running, key, analysisDate){
   }
   const cfg=DECISION_RULES[key]; if(!cfg) return false;
   let base=null;
+  if (key === 'clutchOil') {
+    base = latestValidClutchOilPart(records, vehicle);
+    if(tip){
+      const tr=TIP_RULES[key];
+      return tr ? dueByHours(running.current,base,tr[0],tr[1],analysisDate,sale,vehicle) : false;
+    }
+    return dueNormalWithSale(running.current,base,cfg[0],cfg[1],analysisDate,sale,running.mode,vehicle);
+  }
   if(key==='airFilter') base=latestFilter(records,'AIR FILTER','AIR FILTER KIT',vehicle);
   else if(key==='fuelFilter') base=latestFuelFilter(records,vehicle);
   else if(key==='defFilter') base=latestDefFilter(records,vehicle);
+  else if(key==='clutchOil') base=latestClutchOilPart(records,vehicle);
   else base=serviceBase(records,[keyToPart(key)],cfg[2],false,vehicle);
   if(tip){ const tr=TIP_RULES[key]; return tr ? dueByHours(running.current,base,tr[0],tr[1],analysisDate,sale,vehicle) : false; }
   return dueNormalWithSale(running.current,base,cfg[0],cfg[1],analysisDate,sale,running.mode,vehicle);
+}
+function latestClutchOilPart(records, vehicle = null) {
+  // Clutch Oil decision is based ONLY on these approved clutch-oil PART codes.
+  // Labour codes/descriptions such as CLH125 must never create or reset the
+  // Clutch Oil service base.
+  const allowedCodes = new Set(['CFD99991', 'CLA99994', 'U9999995', 'U9999999']);
+
+  const matches = records
+    .filter(r => {
+      const code = normalizePartCode(r?.partCode);
+      return allowedCodes.has(code) && Number(r?.qty || 0) >= 0.5 && r?.date;
+    })
+    .sort((a, b) => b.date - a.date);
+
+  const latest = matches[0] || null;
+  return latest
+    ? {
+        ...latest,
+        serviceQty: Number(latest.qty || 0),
+        relevantReading: vehicle ? getRelevantReading(latest, vehicle) : (latest.reading || 0)
+      }
+    : null;
 }
 function keyToPart(key){ return ({coolant:'COOLANT',gearOil:'GEAR OIL',hubGrease:'HUB GREASE',axleOil:'AXLE OIL',clutchOil:'CLUTCH OIL',apdaFilter:'APDA FILTER',defInline:'DEF INLINE FILTER'})[key]||''; }
 function latestDefFilter(records, vehicle){
@@ -1963,7 +2028,7 @@ function escapeHtml(value) {
     .replace(/"/g,'&quot;').replace(/'/g,'&#039;');
 }
 
-function buildCustomerWhatsAppText(group) {
+function buildCustomerWhatsAppText(group, preferences = {}) {
   const dueVehicles = (group?.vehicles || []).filter(v => Array.isArray(v.services) && v.services.length > 0);
   const count = dueVehicles.length;
   const lines = dueVehicles.map((v, i) => {
@@ -1975,14 +2040,20 @@ function buildCustomerWhatsAppText(group) {
   const workshopName = dealerName
     ? (dealerName.toLowerCase().includes("workshop") ? dealerName : `${dealerName} Workshop`)
     : "your workshop";
-  const intro = `Dear Sir, ${count} vehicles have service due. Kindly send below the due vehicles to ${workshopName} for the required service. If any of your vehicles are not available in this list, please provide the vehicle number for regular updates on the service schedule. Please refer to the Detailed Service History PDF for vehicle-wise details.`;
+  const booking1 = String(preferences?.booking1 || "").trim();
+  const booking2 = String(preferences?.booking2 || "").trim();
+  const bookingNumbers = [booking1, booking2].filter(Boolean).join(" & ");
+  const bookingLine = bookingNumbers ? `\n\nFor advance booking, kindly call to mobile no ${bookingNumbers}` : "";
+  const openingLine = String(preferences?.whatsappOpeningLine || "").trim();
+  const openingLineText = openingLine ? `\n\n${openingLine}` : "";
+  const intro = `Dear Sir, ${count} vehicles have service due. Kindly send below the due vehicles to ${workshopName} for the required service.${openingLineText}${bookingLine}`;
   return `${intro}\n\n${lines.join('\\n')}`.replace(/\\n/g, '\n');
 }
 
-async function copyCustomerSummary(group, dealerName = "") {
+async function copyCustomerSummary(group, dealerName = "", preferences = {}) {
   try {
     const effectiveGroup = group?.dealerName ? group : { ...group, dealerName: String(dealerName || "").trim() };
-    const text = buildCustomerWhatsAppText(effectiveGroup);
+    const text = buildCustomerWhatsAppText(effectiveGroup, preferences);
     if (!text.trim()) throw new Error('Copy karne ke liye summary available nahi hai.');
 
     if (navigator.clipboard && window.isSecureContext) {
@@ -2336,13 +2407,763 @@ function ExcelFilterDropdown({
   );
 }
 
+// Estimate source-of-truth mapping.
+// Parts are selected from the standardised DMS part family first. Historical
+// vehicle data is then used only to identify the applicable part and its
+// quantity/rate. Quantities from different job cards are NEVER added together.
+const ESTIMATE_STANDARD_PARTS = {
+  engineOil: ["ENGINE OIL", "ENGINE OIL FILTER", "FUEL FILTER & ENGINE OIL FILTER KIT"],
+  coolant: ["COOLANT"],
+  gearOil: ["GEAR OIL"],
+  hubGrease: ["HUB GREASE"],
+  axleOil: ["AXLE OIL"],
+  fuelFilter: ["FUEL FILTER"],
+  steeringOil: ["STEERING OIL"],
+  airFilter: ["AIR FILTER"],
+  clutchOil: ["CLUTCH OIL"],
+  defFilter: ["DEF FILTER"],
+  defInline: ["DEF INLINE FILTER"],
+  apdaFilter: ["APDA FILTER"],
+};
+
+const ESTIMATE_REFERENCE_PARTS = {
+  engineOil: ["EN699991", "F7A01500"],
+  gearOil: ["G9999994"],
+  axleOil: ["GB699991"],
+  steeringOil: ["PSB99994", "PD600391"],
+  clutchOil: ["CFD99991"],
+  defInline: ["XFM00800"],
+  coolant: ["C9999993"],
+  hubGrease: ["S9999997", "FJ607400", "F1721500", "H5001220"],
+  fuelFilter: ["P5105609"],
+  airFilter: ["P5105688"],
+  defFilter: ["XFM00500", "PET00001"],
+  apdaFilter: ["PD600968"],
+};
+
+const HUB_GREASE_STANDARD_CODES = new Set([
+  "S9999997",
+  "FJ607400",
+  "F1721500",
+  "H5001220",
+]);
+
+const ESTIMATE_LABOUR_REFERENCE = {
+  airFilter: [{ code:"AIS110", description:"R and R Air Filter And Replace Element" }],
+  defFilter: [{ code:"ATS455Z", description:"R & R DEF tank suction filter" }],
+  coolant: [{ code:"CLG125", description:"Drain and Refill Coolant" }],
+  clutchOil: [{ code:"CLH125", description:"Drain and Refill Clutch Oil and Bleed Sy" }],
+  engineOil: [{ code:"ELS105", description:"Drain and Refill Engine Oil and Filter" }],
+  fuelFilter: [{ code:"FUL110", description:"R and R Fuel Filter / Pre Filter" }],
+  gearOil: [{ code:"GBX130", description:"Drain oil in Gearbox and Refill" }],
+  axleOil: [{ code:"RAX145", description:"Drain and Refill oil in Rear Axle" }],
+  steeringOil: [{ code:"STH110", description:"Drain and Refill Steering Box oil" }],
+  apdaFilter: [{ code:"AIR165Z", description:"R & R APDA Desiccant Cartridges" }],
+  hubGrease: [
+    { code:"WHL165A", description:"Hub Greasing - Front Axle - 2 Hubs" },
+    { code:"WHL165C", description:"Hub Greasing - Front Axle - 4 Hubs" },
+    { code:"WHL170A", description:"Hub Greasing - Rear Axle - 2 Hubs" },
+    { code:"WHL170C", description:"Hub Greasing - Rear Axle - 4 Hubs" },
+    { code:"WHL175A", description:"Hub Greasing - STLA - 2 Hubs" },
+    { code:"WHL180A", description:"Hub Greasing - DTLA - 2 Hubs" },
+  ],
+};
+
+const ESTIMATE_LABOUR_RULES = [
+  { key:"engineOil", test:t => t.includes("ENGINE OIL") && (t.includes("FILTER") || t.includes("REFILL") || t.includes("DRAIN") || t.includes("DRAI")) },
+  { key:"gearOil", test:t => (t.includes("GEARBOX") || t.includes("GEAR BOX") || t.includes("GEAR OIL")) },
+  { key:"axleOil", test:t => (t.includes("REAR AXLE") || t.includes("REAR AXEL") || t.includes("AXLE OIL")) },
+  { key:"steeringOil", test:t => t.includes("STEERING") && (t.includes("OIL") || t.includes("BOX") || t.includes("FLUID") || t.includes("FILTER")) },
+  { key:"clutchOil", test:t => t.includes("CLUTCH") && (t.includes("OIL") || t.includes("BLEED") || t.includes("REFILL") || t.includes("DRAIN")) },
+  { key:"coolant", test:t => t.includes("COOLANT") },
+  { key:"fuelFilter", test:t => t.includes("FUEL") && t.includes("FILTER") },
+  { key:"hubGrease", test:t => t.includes("HUB") && t.includes("GREAS") },
+  { key:"airFilter", test:t => t.includes("AIR") && t.includes("FILTER") && (t.includes("ELEMENT") || t.includes("R AND R") || t.includes("R R") || t.includes("REPLACE")) },
+  { key:"defFilter", test:t => t.includes("DEF") && (t.includes("SUCTION") || (t.includes("FILTER") && t.includes("AIR"))) },
+  { key:"defInline", test:t => t.includes("DEF") && t.includes("INLINE") && t.includes("FILTER") },
+  { key:"apdaFilter", test:t => t.includes("APDA") || (t.includes("DESICCANT") && t.includes("CARTRIDGE")) || (t.includes("APDA") && t.includes("CARTRIDGE")) },
+]
+
+function estimateCategory(row = {}) {
+  const category = String(row?.item_category || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, " ");
+
+  // DMS source-of-truth categories:
+  // P001 = Labour Value, P002 = Part.
+  // Accept the category code even when the DMS export appends a description.
+  if (/(^|[^A-Z0-9])P001([^A-Z0-9]|$)/.test(category)) return "labour";
+  if (/(^|[^A-Z0-9])P002([^A-Z0-9]|$)/.test(category)) return "part";
+  return "";
+}
+
+function estimateStandardPartName(row = {}) {
+  const code = normalizePartCode(row.part_code);
+  if (code && PART_STANDARDIZATION[code]) {
+    return String(PART_STANDARDIZATION[code]).trim().toUpperCase();
+  }
+  return String(row.standardized_part || row.part_description || "").trim().toUpperCase();
+}
+
+function estimateLabourText(row = {}) {
+  return [
+    row.part_description,
+    row.standardized_part,
+    row.repair_line_item_type,
+    row.repair_type,
+    row.part_code,
+    row.complaint_code,
+  ].join(" ").toUpperCase().replace(/[^A-Z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function estimatePartMatchesService(row = {}, serviceKey = "") {
+  if (estimateCategory(row) !== "part") return false;
+
+  const code = normalizePartCode(row.part_code);
+  const referenceCodes = (ESTIMATE_REFERENCE_PARTS[serviceKey] || []).map(normalizePartCode);
+
+  // User-provided reference part numbers are authoritative identifiers for
+  // the estimate. If the exact reference exists in DB, it is always included.
+  if (code && referenceCodes.includes(code)) return true;
+
+  if (serviceKey === "hubGrease") {
+    if (HUB_GREASE_STANDARD_CODES.has(code)) return true;
+    return estimateStandardPartName(row).includes("HUB GREASE");
+  }
+
+  const name = estimateStandardPartName(row);
+  const families = ESTIMATE_STANDARD_PARTS[serviceKey] || [];
+  return families.some(family => {
+    if (serviceKey === "defFilter" && name.includes("INLINE")) return false;
+    return name.includes(family);
+  });
+}
+
+function estimatePreferredReferenceCode(serviceKey = "", standardName = "", candidates = []) {
+  const references = ESTIMATE_REFERENCE_PARTS[serviceKey] || [];
+  if (!references.length) return "";
+
+  const candidateCodes = new Set(
+    candidates.map(row => normalizePartCode(row?.part_code)).filter(Boolean)
+  );
+  const matchingReference = references.find(code => candidateCodes.has(normalizePartCode(code)));
+  if (matchingReference) return matchingReference;
+
+  const name = String(standardName || "").toUpperCase();
+  if (serviceKey === "engineOil") {
+    return name.includes("FILTER") ? "F7A01500" : "EN699991";
+  }
+  if (serviceKey === "steeringOil") {
+    return name.includes("FILTER") ? "PD600391" : "PSB99994";
+  }
+  if (serviceKey === "defFilter") {
+    if (name.includes("SUCTION")) return "PET00001";
+    return "XFM00500";
+  }
+  return references[0];
+}
+
+function estimateLabourMatchesService(row = {}, serviceKey = "") {
+  if (estimateCategory(row) !== "labour") return false;
+
+  const text = estimateLabourText(row);
+  const referenceRows = ESTIMATE_LABOUR_REFERENCE[serviceKey] || [];
+
+  // Prefer an exact historical labour operation code when the DMS provides it.
+  if (referenceRows.some(reference =>
+    reference.code && text.includes(normalizePartCode(reference.code))
+  )) {
+    return true;
+  }
+
+  // Hub greasing remains model/axle/hub-count specific.
+  if (serviceKey === "hubGrease") {
+    return referenceRows.some(reference => {
+      if (reference.code && text.includes(normalizePartCode(reference.code))) return true;
+      if (reference.code === "WHL165A") return text.includes("FRONT") && text.includes("2") && text.includes("HUB");
+      if (reference.code === "WHL165C") return text.includes("FRONT") && text.includes("4") && text.includes("HUB");
+      if (reference.code === "WHL170A") return text.includes("REAR") && text.includes("2") && text.includes("HUB");
+      if (reference.code === "WHL170C") return text.includes("REAR") && text.includes("4") && text.includes("HUB");
+      if (reference.code === "WHL175A") return text.includes("STLA") && text.includes("2") && text.includes("HUB");
+      if (reference.code === "WHL180A") return text.includes("DTLA") && text.includes("2") && text.includes("HUB");
+      return false;
+    });
+  }
+
+  // Match the historical DMS operation text independently of the exact
+  // spelling used in the master labour description. This is intentionally
+  // based only on P001 rows; P002 parts can never become labour.
+  const rule = ESTIMATE_LABOUR_RULES.find(item => item.key === serviceKey);
+  if (rule?.test(text)) return true;
+
+  // Final explicit checks for known DMS wording variations.
+  switch (serviceKey) {
+    case "coolant":
+      return text.includes("COOLANT");
+    case "axleOil":
+      return text.includes("REAR AXLE") || text.includes("REAR AXEL");
+    case "clutchOil":
+      return text.includes("CLUTCH");
+    case "defFilter":
+      return text.includes("DEF") && (text.includes("SUCTION") || text.includes("DEF FILTER"));
+    case "defInline":
+      return text.includes("DEF") && text.includes("INLINE") && text.includes("FILTER");
+    case "apdaFilter":
+      return text.includes("APDA") || (text.includes("DESICCANT") && text.includes("CARTRIDGE"));
+    default:
+      return false;
+  }
+}
+
+function estimateServiceKeyFromText(value = "") {
+  const t = String(value).toUpperCase();
+  for (const [serviceKey, families] of Object.entries(ESTIMATE_STANDARD_PARTS)) {
+    if (families.some(family => t.includes(family))) return serviceKey;
+  }
+  return "";
+}
+
+function estimateIsLabour(row = {}) {
+  return estimateCategory(row) === "labour";
+}
+
+function estimateRowRank(row = {}, index = 0) {
+  const time = row?.job_date ? new Date(row.job_date).getTime() : NaN;
+  return Number.isFinite(time) ? time : -index;
+}
+
+function estimateChooseBestQuantity(rows = []) {
+  const candidates = rows
+    .map((row, index) => ({
+      row,
+      index,
+      qty: Number(row?.quantity),
+      rank: estimateRowRank(row, index),
+    }))
+    .filter(item => Number.isFinite(item.qty) && item.qty > 0);
+
+  if (!candidates.length) return null;
+
+  candidates.sort((a, b) => b.rank - a.rank);
+  return {
+    qty: candidates[0].qty,
+    count: 1,
+    latestRank: candidates[0].rank,
+    latestRow: candidates[0].row,
+  };
+}
+
+function estimateChooseBestRate(rows = []) {
+  const valid = rows
+    .map((row, index) => ({
+      row,
+      rate: Number(row?.rate),
+      rank: estimateRowRank(row, index),
+    }))
+    .filter(item => Number.isFinite(item.rate) && item.rate > 0);
+
+  if (!valid.length) return 0;
+  valid.sort((a, b) => b.rank - a.rank);
+  return valid[0].rate;
+}
+
+function estimateBuildHistoricalItem(type, serviceKey, rows, code = "") {
+  if (!rows.length) return null;
+
+  const qtyChoice = estimateChooseBestQuantity(rows);
+  // Labour operations are normally one job operation. Some DMS exports do not
+  // carry a usable quantity on P001 rows, so do not hide a valid historical
+  // labour operation just because quantity is blank/zero.
+  const effectiveQtyChoice = qtyChoice || {
+    qty: type === "labour" ? 1 : 0,
+    count: 1,
+    latestRank: -1,
+    latestRow: rows[0],
+  };
+  if (effectiveQtyChoice.qty <= 0) return null;
+
+  const rate = estimateChooseBestRate(rows);
+  const sourceRow = rows
+    .slice()
+    .sort((a, b) => estimateRowRank(b, 0) - estimateRowRank(a, 0))[0];
+
+  const partNo = String(code || sourceRow.part_code || "").trim();
+  const description = String(
+    sourceRow.part_description || sourceRow.standardized_part || ""
+  ).trim();
+
+  const customerRate = Number.isFinite(rate) && rate > 0
+    ? Number((rate * 1.18).toFixed(2))
+    : 0;
+
+  return {
+    id: type + "-" + serviceKey + "-" + partNo + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7),
+    type,
+    serviceKey,
+    partNo,
+    description,
+    qty: effectiveQtyChoice.qty,
+    rate: customerRate,
+    baseRate: rate,
+    source: "Historical DB (18% GST added)",
+    latestRow: sourceRow,
+  };
+}
+
+function estimateJobCardKey(row = {}) {
+  const jc = String(row?.job_card || row?.job_card_no || "").trim();
+  return jc ? "JC|" + jc.toUpperCase() : "DATE|" + String(row?.job_date || "").slice(0, 10);
+}
+
+function estimateRowsForJobCard(rows = [], key = "") {
+  return rows.filter(row => estimateJobCardKey(row) === key);
+}
+
+function estimatePartRows(rows = [], serviceKey = "") {
+  return rows.filter(row =>
+    estimateCategory(row) === "part" &&
+    estimatePartMatchesService(row, serviceKey) &&
+    Number(row?.quantity || 0) > 0
+  );
+}
+
+function estimateHasPart(rows = [], standardNames = [], minQty = 1) {
+  const matches = rows.filter(row => {
+    if (estimateCategory(row) !== "part") return false;
+    const name = estimateStandardPartName(row).toUpperCase();
+    return standardNames.some(item => name === item || name.includes(item));
+  });
+  return matches.reduce((sum, row) => sum + Math.max(0, Number(row?.quantity || 0)), 0) >= minQty;
+}
+
+// These rules are used only to prefer a complete replacement history row when
+// available. They must NEVER make a selected aggregate disappear from the
+// estimate. If no qualifying job card exists, the estimate falls back to all
+// matching vehicle-history rows.
+function estimateEligibleJobCards(rows = [], serviceKey = "") {
+  const keys = [...new Set(rows.map(estimateJobCardKey))];
+  const eligible = new Set();
+
+  for (const key of keys) {
+    const jcRows = estimateRowsForJobCard(rows, key);
+    const parts = estimatePartRows(jcRows, serviceKey);
+    if (!parts.length) continue;
+
+    if (serviceKey === "axleOil") {
+      if (parts.some(row => Number(row?.quantity || 0) >= 12)) eligible.add(key);
+      continue;
+    }
+
+    if (serviceKey === "steeringOil") {
+      const steeringQty = estimatePartRows(jcRows, "steeringOil")
+        .reduce((sum, row) => sum + Math.max(0, Number(row?.quantity || 0)), 0);
+      const filterQty = estimateHasPart(jcRows, ["STEERING OIL FILTER"], 1);
+      if (steeringQty >= 1 && filterQty) eligible.add(key);
+      continue;
+    }
+
+    if (serviceKey === "engineOil") {
+      const engineQty = estimatePartRows(jcRows, "engineOil")
+        .filter(row => !estimateStandardPartName(row).includes("FILTER"))
+        .reduce((sum, row) => sum + Math.max(0, Number(row?.quantity || 0)), 0);
+      const oilFilter = estimateHasPart(jcRows, ["ENGINE OIL FILTER"], 1);
+      const fuelFilterPair = estimateHasPart(jcRows, ["FUEL FILTER"], 2);
+      const fuelFilterKit = estimateHasPart(
+        jcRows,
+        ["FUEL FILTER KIT", "FUEL FILTER & ENGINE OIL FILTER KIT"],
+        1
+      );
+      if (engineQty >= 12 && oilFilter && (fuelFilterPair || fuelFilterKit)) eligible.add(key);
+      continue;
+    }
+
+    if (serviceKey === "defFilter") {
+      const defKit = estimateHasPart(jcRows, ["DEF FILTER KIT"], 1);
+      const defAir = estimateHasPart(jcRows, ["DEF FILTER AIR"], 1);
+      const defSuction = estimateHasPart(jcRows, ["DEF FILTER SUCTION"], 1);
+      if (defKit || (defAir && defSuction)) eligible.add(key);
+      continue;
+    }
+
+    if (parts.some(row => Number(row?.quantity || 0) > 0)) eligible.add(key);
+  }
+
+  return eligible;
+}
+
+function estimateRowsForCompleteService(rows = [], serviceKey = "") {
+  const allRows = estimatePartRows(rows, serviceKey);
+  const eligibleKeys = estimateEligibleJobCards(rows, serviceKey);
+
+  // First preference: the same service part from a job card that looks like a
+  // complete replacement. Second preference: any matching historical part for
+  // this VIN. This prevents a missing/misnamed line on one job card from
+  // making a selected aggregate disappear.
+  const preferredRows = eligibleKeys.size
+    ? allRows.filter(row => eligibleKeys.has(estimateJobCardKey(row)))
+    : [];
+  if (preferredRows.length) return preferredRows;
+  if (allRows.length) return allRows;
+
+  // Final fallback: when the DMS history contains the labour operation for the
+  // selected service but the part line has an unknown/mismatched description,
+  // use P002 rows from the same job card as the historical quantity/rate source.
+  // The displayed part number will then come from the user-provided reference
+  // list. This is deliberately a fallback only; unrelated vehicle-history
+  // parts from other job cards are never used.
+  const labourJobKeys = new Set(
+    rows
+      .filter(row =>
+        estimateLabourMatchesService(row, serviceKey) &&
+        Number(row?.quantity || 0) > 0
+      )
+      .map(row => estimateJobCardKey(row))
+  );
+
+  return rows.filter(row =>
+    labourJobKeys.has(estimateJobCardKey(row)) &&
+    estimateCategory(row) === "part" &&
+    Number(row?.quantity || 0) > 0
+  );
+}
+
+function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows = [], globalPartRates = []) {
+  const vehicle = Array.isArray(vehicleRows) ? vehicleRows : [];
+  const modelHistory = Array.isArray(modelRows) ? modelRows : [];
+  const allModelRates = Array.isArray(globalPartRates) ? globalPartRates : [];
+
+  function latestGlobalPartRate(partCode) {
+    const code = normalizePartCode(partCode);
+    if (!code) return 0;
+    const row = allModelRates.find(item =>
+      normalizePartCode(item?.part_code) === code &&
+      Number(item?.rate) > 0
+    );
+    return Number(row?.rate || 0);
+  }
+
+  function applyGlobalPartRate(item) {
+    if (!item || item.type !== "part") return item;
+    const globalRate = latestGlobalPartRate(item.partNo);
+    if (!(globalRate > 0)) return item;
+    item.baseRate = globalRate;
+    item.rate = Number((globalRate * 1.18).toFixed(2));
+    item.source = "Historical DB (Qty from same-model history; Rate from matching part history, 18% GST added)";
+    return item;
+  }
+
+  // Per-line source selection: vehicle history always wins for the same
+  // reference part/labour operation. Same-model DB history is only used when
+  // that line is not available for this VIN.
+  function rowsByReferenceOrService(sourceRows, serviceKey) {
+    return sourceRows.filter(row =>
+      estimateCategory(row) === "part" &&
+      estimatePartMatchesService(row, serviceKey) &&
+      Number(row?.quantity || 0) > 0
+    );
+  }
+
+  function modelFallbackPartRows(serviceKey) {
+    const direct = rowsByReferenceOrService(modelHistory, serviceKey);
+    if (direct.length) return direct;
+
+    // If the exact reference part code is not present in the model history,
+    // use the same model's matching service family as the quantity/rate source.
+    return modelHistory.filter(row =>
+      estimateCategory(row) === "part" &&
+      estimatePartMatchesService(row, serviceKey) &&
+      Number(row?.quantity || 0) > 0
+    );
+  }
+
+  function buildPartItemsForService(serviceKey) {
+    const baseReferences = ESTIMATE_REFERENCE_PARTS[serviceKey] || [];
+
+    // F1771900 is a model/variant-dependent hub-grease part.
+    // It must NEVER be introduced from same-model history or a generic
+    // reference list because the same model name can cover different
+    // axle/part configurations. Only the exact vehicle history can prove
+    // that this vehicle uses F1771900.
+    const hasVehicleSpecificF1771900 = serviceKey === "hubGrease" && vehicle.some(row =>
+      estimateCategory(row) === "part" &&
+      normalizePartCode(row?.part_code) === "F1771900" &&
+      Number(row?.quantity || 0) > 0
+    );
+
+    const references = serviceKey === "hubGrease"
+      ? [
+          ...baseReferences,
+          ...(hasVehicleSpecificF1771900 ? ["F1771900"] : [])
+        ]
+      : baseReferences;
+
+    // For services with explicit reference part numbers, process every
+    // reference independently. Missing VIN lines fall back independently to
+    // same-model history.
+    if (references.length) {
+      const result = [];
+
+      for (const reference of references) {
+        const referenceCode = normalizePartCode(reference);
+        const vinExact = vehicle.filter(row =>
+          estimateCategory(row) === "part" &&
+          normalizePartCode(row?.part_code) === referenceCode &&
+          Number(row?.quantity || 0) > 0
+        );
+
+        const modelExact = modelHistory.filter(row =>
+          estimateCategory(row) === "part" &&
+          normalizePartCode(row?.part_code) === referenceCode &&
+          Number(row?.quantity || 0) > 0
+        );
+
+        let candidates = vinExact.length ? vinExact : modelExact;
+
+        // Explicit reference part numbers must exist as the exact part
+        // code in the vehicle history or the same-model history. Never
+        // fabricate/display a reference part number by borrowing quantity/rate
+        // from another part in the same service family.
+        if (!candidates.length) continue;
+
+        // Engine Oil / Axle Oil: prefer a full replacement quantity when
+        // available, but never combine quantities from different job cards.
+        if (serviceKey === "engineOil" && referenceCode === "EN699991") {
+          const full = candidates.filter(row =>
+            !estimateStandardPartName(row).includes("FILTER") &&
+            Number(row?.quantity || 0) >= 12
+          );
+          if (full.length) candidates = full;
+        }
+        if (serviceKey === "axleOil") {
+          const full = candidates.filter(row => Number(row?.quantity || 0) >= 12);
+          if (full.length) candidates = full;
+        }
+
+        const standard = estimateStandardPartName(candidates[0]);
+        const item = estimateBuildHistoricalItem(
+          "part",
+          serviceKey,
+          candidates,
+          referenceCode
+        );
+        if (item) {
+          // Part number is authoritative. Quantity comes from same-model
+          // history, while rate is allowed to come from any vehicle/model
+          // carrying the exact same part number.
+          item.partNo = referenceCode;
+          if (!item.description) item.description = standard;
+          result.push(applyGlobalPartRate(item));
+        }
+      }
+
+      return result;
+    }
+
+    const candidates = rowsByReferenceOrService(vehicle, serviceKey).length
+      ? rowsByReferenceOrService(vehicle, serviceKey)
+      : modelFallbackPartRows(serviceKey);
+
+    if (!candidates.length) return [];
+
+    const byStandard = new Map();
+    for (const row of candidates) {
+      const standard = estimateStandardPartName(row) || normalizePartCode(row.part_code);
+      if (!standard) continue;
+      if (!byStandard.has(standard)) byStandard.set(standard, []);
+      byStandard.get(standard).push(row);
+    }
+
+    const result = [];
+    for (const [standard, standardRows] of byStandard) {
+      const winner = standardRows.slice().sort((a,b) =>
+        estimateRowRank(b,0) - estimateRowRank(a,0)
+      )[0];
+      const item = estimateBuildHistoricalItem(
+        "part",
+        serviceKey,
+        standardRows,
+        estimatePreferredReferenceCode(serviceKey, standard, standardRows) || winner?.part_code || ""
+      );
+      if (item) result.push(applyGlobalPartRate(item));
+    }
+    return result;
+  }
+
+  const items = [];
+
+  for (const serviceKey of selectedKeys) {
+    // Parts are resolved independently; one VIN line cannot block other
+    // required reference parts.
+    items.push(...buildPartItemsForService(serviceKey));
+
+    // Labour follows the same source priority: exact VIN labour first,
+    // then same-model labour when the VIN has no matching operation.
+    const vehicleLabour = vehicle.filter(row =>
+      estimateLabourMatchesService(row, serviceKey)
+    );
+    const modelLabour = modelHistory.filter(row =>
+      estimateLabourMatchesService(row, serviceKey)
+    );
+    const labourRows = vehicleLabour.length ? vehicleLabour : modelLabour;
+
+    if (serviceKey === "hubGrease") {
+      const referenceRows = ESTIMATE_LABOUR_REFERENCE.hubGrease || [];
+
+      // Hub configuration is position-specific. For a 4-hub vehicle the
+      // applicable operations are Front Axle - 2 Hubs + Rear Axle - 2 Hubs.
+      // Front/Rear - 4 Hubs must NOT be added as extra operations.
+      const selectedHubReferences = referenceRows.filter(reference => {
+        if (reference.code === "WHL165C" || reference.code === "WHL170C") return false;
+        return true;
+      });
+
+      const seenHubPositions = new Set();
+      for (const reference of selectedHubReferences) {
+        const matches = labourRows.filter(row => {
+          const text = estimateLabourText(row);
+          if (text.includes(normalizePartCode(reference.code))) return true;
+          if (reference.code === "WHL165A") return text.includes("FRONT") && text.includes("2") && text.includes("HUB");
+          if (reference.code === "WHL170A") return text.includes("REAR") && text.includes("2") && text.includes("HUB");
+          if (reference.code === "WHL175A") return text.includes("STLA") && text.includes("2") && text.includes("HUB");
+          if (reference.code === "WHL180A") return text.includes("DTLA") && text.includes("2") && text.includes("HUB");
+          return false;
+        });
+
+        if (!matches.length) continue;
+
+        const positionKey =
+          reference.code === "WHL165A" ? "FRONT" :
+          reference.code === "WHL170A" ? "REAR" :
+          reference.code === "WHL175A" ? "STLA" :
+          reference.code === "WHL180A" ? "DTLA" :
+          reference.code;
+
+        if (seenHubPositions.has(positionKey)) continue;
+        seenHubPositions.add(positionKey);
+
+        const labourItem = estimateBuildHistoricalItem(
+          "labour",
+          serviceKey,
+          matches,
+          reference.code
+        );
+        if (labourItem) {
+          labourItem.description = reference.description;
+          labourItem.partNo = reference.code;
+          items.push(labourItem);
+        }
+      }
+    } else {
+      const labourItem = estimateBuildHistoricalItem(
+        "labour",
+        serviceKey,
+        labourRows,
+        ESTIMATE_LABOUR_REFERENCE[serviceKey]?.[0]?.code || ""
+      );
+
+      if (labourItem) {
+        const reference = ESTIMATE_LABOUR_REFERENCE[serviceKey]?.[0];
+        if (reference) labourItem.description = reference.description;
+        items.push(labourItem);
+      }
+    }
+  }
+
+  // Keep one estimate line per final reference part number within each
+  // aggregate. If the same reference was sourced from VIN history, it remains
+  // preferred over a model fallback.
+  const uniqueParts = new Map();
+  const finalItems = [];
+
+  for (const item of items) {
+    if (item.type !== "part") {
+      finalItems.push(item);
+      continue;
+    }
+
+    const key = item.serviceKey + "|" + normalizePartCode(item.partNo);
+    if (!normalizePartCode(item.partNo)) {
+      finalItems.push(item);
+      continue;
+    }
+
+    if (!uniqueParts.has(key)) {
+      uniqueParts.set(key, item);
+      finalItems.push(item);
+    } else {
+      const previous = uniqueParts.get(key);
+      const previousRank = estimateRowRank(previous.latestRow || {}, 0);
+      const currentRank = estimateRowRank(item.latestRow || {}, 0);
+      if (currentRank > previousRank) {
+        const index = finalItems.indexOf(previous);
+        if (index >= 0) finalItems[index] = item;
+        uniqueParts.set(key, item);
+      }
+    }
+  }
+
+  return finalItems;
+}
+function emptyEstimateItem(type = "part") {
+  return { id: type + "-" + Date.now() + "-" + Math.random().toString(36).slice(2,8), type, partNo:"", description:"", qty:"", rate:0, source:"Manual" };
+}
+function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResults, savedEstimates, savedEstimatesLoading, onOpenSavedEstimate }) {
+  const dueVehicles = (bulkResults || []).filter(item => Array.isArray(item?.services) && item.services.length > 0).length;
+  const totalVehicles = (bulkResults || []).length;
+  const cards = [
+    { key:"single", icon:"🚚", title:"Single Vehicle", text:"Check one vehicle service decision, history and due services." },
+    { key:"bulk", icon:"📊", title:"Bulk Vehicle", text:"Analyse multiple vehicles and prepare customer-wise due summaries." },
+    { key:"schedule", icon:"📅", title:"Service Schedule", text:"View service intervals and additional service windows." },
+  ];
+  return (
+    <div className="portal-home">
+      <div className="portal-home-hero"><div><div className="portal-home-kicker">SERVICE DECISION WEB PORTAL</div><h1>Welcome{user?.personName ? ", " + user.personName : ""}</h1><p>Your main workflow starts with Excel upload. Upload the DMS file first, then analyse vehicles or prepare the due summary.</p></div><div style={{display:"flex",gap:8,flexWrap:"wrap"}}><button className="excel-button green portal-upload-button" onClick={onUpload}>Upload Excel &amp; Start</button><button className="excel-button" onClick={onClear}>Clear</button></div></div>
+      <div className="portal-kpi-grid"><div className="portal-kpi"><span>Vehicles in Current Upload</span><strong>{totalVehicles}</strong><small>Current session only</small></div><div className="portal-kpi"><span>Due Vehicles in Current Upload</span><strong>{dueVehicles}</strong><small>Current session only</small></div><div className="portal-kpi"><span>Portal Mode</span><strong>Beta</strong><small>Testing &amp; feedback</small></div></div>
+      <div className="portal-section-title">What would you like to do?</div>
+      <div className="portal-action-grid">{cards.map(card => <button key={card.key} className="portal-action-card" onClick={() => onNavigate(card.key)}><span className="portal-action-icon">{card.icon}</span><span className="portal-action-title">{card.title}</span><span className="portal-action-text">{card.text}</span><span className="portal-action-link">Open →</span></button>)}
+        <button className="portal-action-card" onClick={() => onNavigate("estimate")}><span className="portal-action-icon">🧾</span><span className="portal-action-title">Prepare Estimate</span><span className="portal-action-text">Prepare an estimate directly from Home. Enter Vehicle No. first; DB details and parts can be loaded automatically or entered manually.</span><span className="portal-action-link">Open Estimate →</span></button>
+      </div>
+      <div className="home-estimate-preview" onClick={() => onNavigate("estimate")} role="button" tabIndex={0} onKeyDown={event => { if(event.key==="Enter" || event.key===" ") onNavigate("estimate"); }}>
+        <div className="home-estimate-preview-head">
+          <div><strong>SERVICE ESTIMATE</strong><span>Same estimate format • Click to open</span></div>
+          <button type="button" className="excel-button green no-print" onClick={event => { event.stopPropagation(); onNavigate("estimate"); }}>Open Estimate</button>
+        </div>
+        <div className="home-estimate-preview-grid">
+          <div><b>Vehicle No.</b><span>Vehicle number → DB lookup</span></div>
+          <div><b>Vehicle Details</b><span>Customer, Model, Engine, Chassis / VIN</span></div>
+          <div><b>Parts</b><span>Part No. → Description + MRP / Rate</span></div>
+          <div><b>Qty / Rate / Amount</b><span>Editable estimate lines and totals</span></div>
+        </div>
+      </div>
+      <div className="home-saved-estimates">
+        <div className="portal-section-title">Saved Estimates</div>
+        {savedEstimatesLoading ? (
+          <div className="small-note">Loading saved estimates...</div>
+        ) : savedEstimates.length ? (
+          <div className="saved-estimate-list">
+            {savedEstimates.map(item => (
+              <button key={item.id} type="button" className="saved-estimate-row" onClick={() => onOpenSavedEstimate(item.id)}>
+                <span><b>{item.estimate_no}</b><small>{item.vehicle_no || "Vehicle No. not entered"}</small></span>
+                <span>Open →</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="small-note">No saved estimates yet.</div>
+        )}
+      </div>
+      <div className="portal-workflow"><div><b>Recommended workflow</b><span>Upload Excel → Analyse → Review Service Decision → Prepare Estimate / Share Due Summary</span></div><div><b>Personalise</b><span>Theme, columns, custom names and table widths are saved in Profile &amp; Settings.</span></div></div>
+    </div>
+  );
+}
 function ServiceDecisionApp({ user }) {
   const [excelData, setExcelData] = useState("");
   const [analysis, setAnalysis] = useState(null);
   const [error, setError] = useState("");
   const [overrideReading, setOverrideReading] = useState("");
   const [appliedOverride, setAppliedOverride] = useState(null);
-  const [mode, setMode] = useState("single");
+  const [mode, setMode] = useState("home");
   const [bulkResults, setBulkResults] = useState([]);
   const [bulkMeta, setBulkMeta] = useState(null);
   const [customerGroups, setCustomerGroups] = useState([]);
@@ -2352,6 +3173,133 @@ function ServiceDecisionApp({ user }) {
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadMeta, setUploadMeta] = useState(null);
   const [uploadParsedRecords, setUploadParsedRecords] = useState([]);
+  const [estimateOpen, setEstimateOpen] = useState(false);
+  const [estimateStage, setEstimateStage] = useState("select");
+  const [estimateHistory, setEstimateHistory] = useState([]);
+  const [estimateVehicle, setEstimateVehicle] = useState({ customerName:"", reg:"", vin:"", engine:"", model:"", sale:null });
+  const [estimateVehicleNo, setEstimateVehicleNo] = useState("");
+  const [estimateVehicleLookupBusy, setEstimateVehicleLookupBusy] = useState(false);
+  const [estimateVehicleLookupMessage, setEstimateVehicleLookupMessage] = useState("");
+  const [estimateLoading, setEstimateLoading] = useState(false);
+  const [estimateSelectedServices, setEstimateSelectedServices] = useState([]);
+  const [estimateParts, setEstimateParts] = useState([]);
+  const [estimateLabour, setEstimateLabour] = useState([]);
+  const [estimateNotice, setEstimateNotice] = useState("");
+  const [estimateNumber, setEstimateNumber] = useState("");
+  const [estimateSavedId, setEstimateSavedId] = useState(null);
+  const [savedEstimates, setSavedEstimates] = useState([]);
+  const [savedEstimatesLoading, setSavedEstimatesLoading] = useState(false);
+  const [estimateSaveBusy, setEstimateSaveBusy] = useState(false);
+  const [bulkSearch, setBulkSearch] = useState("");
+  const [bulkQuickFilter, setBulkQuickFilter] = useState("all");
+  const [manualPartLookupBusy, setManualPartLookupBusy] = useState({});
+  const defaultSingleColumns = ["date","jobCard","reading","plant","parts"];
+  const defaultBulkColumns = ["customerName","vin","reg","saleDate","model","currentReading","services"];
+  const defaultSingleLabels = { date:"Date", jobCard:"Job Card", reading:"Reading", plant:"Plant", parts:"Part No. / Service / Qty" };
+  const defaultBulkLabels = { customerName:"Customer Name", vin:"VIN", reg:"Reg. No.", saleDate:"Sale Date", model:"Model", currentReading:"Current Reading", services:"Service To Be Completed" };
+  const defaultSingleWidths = { date:8, jobCard:10, reading:10, plant:12, parts:60 };
+  const defaultBulkWidths = { serial:6, customerName:15, vin:12, reg:11, saleDate:10, model:12, currentReading:12, services:22 };
+  const normalizeWidthMap = (widths, keys) => {
+    const source = { ...widths };
+    const values = keys.map(key => Math.max(1, Number(source[key] || 0)));
+    const total = values.reduce((sum, value) => sum + value, 0) || 1;
+    const factor = 100 / total;
+    const normalized = {};
+    let running = 0;
+    keys.forEach((key, index) => {
+      if (index === keys.length - 1) {
+        normalized[key] = Number((100 - running).toFixed(2));
+      } else {
+        normalized[key] = Number((values[index] * factor).toFixed(2));
+        running += normalized[key];
+      }
+    });
+    return normalized;
+  };
+  const normalizeDashboardPrefs = (preferences = {}) => {
+    const singleColumns = Array.isArray(preferences.singleColumns) && preferences.singleColumns.length ? preferences.singleColumns : defaultSingleColumns;
+    const bulkColumns = Array.isArray(preferences.bulkColumns) && preferences.bulkColumns.length ? preferences.bulkColumns : defaultBulkColumns;
+    const singleWidthKeys = singleColumns;
+    const bulkWidthKeys = ["serial", ...bulkColumns];
+    return {
+      ...preferences,
+      singleColumns,
+      bulkColumns,
+      singleColumnLabels: { ...defaultSingleLabels, ...(preferences.singleColumnLabels || {}) },
+      bulkColumnLabels: { ...defaultBulkLabels, ...(preferences.bulkColumnLabels || {}) },
+      singleColumnWidths: normalizeWidthMap({ ...defaultSingleWidths, ...(preferences.singleColumnWidths || {}) }, singleWidthKeys),
+      bulkColumnWidths: normalizeWidthMap({ ...defaultBulkWidths, ...(preferences.bulkColumnWidths || {}) }, bulkWidthKeys),
+    };
+  };
+  const [dashboardPrefs, setDashboardPrefs] = useState(() => normalizeDashboardPrefs(user?.preferences || {}));
+  useEffect(() => { setDashboardPrefs(normalizeDashboardPrefs(user?.preferences || {})); }, [user?.id, user?.preferences]);
+  const singleTableColumns = dashboardPrefs.singleColumns;
+  const bulkTableColumns = dashboardPrefs.bulkColumns;
+  const singleColumnLabels = dashboardPrefs.singleColumnLabels;
+  const bulkColumnLabels = dashboardPrefs.bulkColumnLabels;
+  const singleColumnWidths = dashboardPrefs.singleColumnWidths;
+  const bulkColumnWidths = dashboardPrefs.bulkColumnWidths;
+  const isSingleColumnVisible = key => singleTableColumns.includes(key);
+  const isBulkColumnVisible = key => bulkTableColumns.includes(key);
+  const persistDashboardPrefs = async (nextPrefs) => {
+    setDashboardPrefs(nextPrefs);
+    const token = localStorage.getItem("serviceDecisionAuthToken");
+    if (!token) return;
+    try {
+      const response = await fetch("/api/auth", { method:"POST", headers:{ "Content-Type":"application/json", Authorization:`Bearer ${token}` }, body:JSON.stringify({ action:"update-profile", personName:user?.personName || "", dealerName:user?.dealerName || "", mobile:user?.mobile || "", preferences:nextPrefs }) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.success === false) throw new Error(data.error || "Unable to save table preferences.");
+    } catch (error) { console.error("Dashboard preference save failed:", error); }
+  };
+  const resizeTableColumn = (tableType, key, event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const th = event.currentTarget.parentElement;
+    const table = th?.closest("table");
+    if (!th || !table) return;
+
+    const visibleKeys = tableType === "single"
+      ? singleTableColumns.filter(isSingleColumnVisible)
+      : ["serial", ...bulkTableColumns.filter(isBulkColumnVisible)];
+    const lastKey = visibleKeys[visibleKeys.length - 1];
+    if (!lastKey || key === lastKey) return;
+
+    const startX = event.clientX;
+    const tableWidth = Math.max(1, table.getBoundingClientRect().width);
+    const sourceKey = tableType === "single" ? "singleColumnWidths" : "bulkColumnWidths";
+    let latestWidths = tableType === "single" ? { ...singleColumnWidths } : { ...bulkColumnWidths };
+    const startSourcePct = Number(latestWidths[key] || 10);
+    const startLastPct = Number(latestWidths[lastKey] || 10);
+    const minPct = 3;
+
+    const onMove = (moveEvent) => {
+      const deltaPct = ((moveEvent.clientX - startX) / tableWidth) * 100;
+      const sourcePct = Math.max(minPct, Math.min(90, startSourcePct + deltaPct));
+      const actualDelta = sourcePct - startSourcePct;
+      const lastPct = Math.max(minPct, startLastPct - actualDelta);
+      latestWidths = {
+        ...latestWidths,
+        [key]: Number(sourcePct.toFixed(2)),
+        [lastKey]: Number(lastPct.toFixed(2)),
+      };
+      setDashboardPrefs(prev => ({ ...prev, [sourceKey]: latestWidths }));
+    };
+
+    const onUp = () => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      void persistDashboardPrefs({ ...dashboardPrefs, [sourceKey]: latestWidths });
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+  };
+  const tableColumnStyle = (tableType, key) => ({ width:`${Number((tableType === "single" ? singleColumnWidths[key] : bulkColumnWidths[key]) || 10)}%` });
+
   const [bulkTableSort, setBulkTableSort] = useState({ key: "dueCount", direction: "desc" });
   const [bulkTableFilters, setBulkTableFilters] = useState({
     customerName: "",
@@ -2496,6 +3444,12 @@ function ServiceDecisionApp({ user }) {
       setCustomerGroups([]);
       setSelectedCustomers([]);
       setUploadParsedRecords(parsedRows);
+      if (parsedRows.length) {
+        const uploadedVins = new Set(
+          parsedRows.map(r => String(r?.vin || "").trim().toUpperCase()).filter(Boolean)
+        );
+        setMode(uploadedVins.size > 1 ? "bulk" : "single");
+      }
       if (parsedRows.length) {
         logUsage("Excel Upload", {
           fileCount: acceptedFiles.length,
@@ -2762,8 +3716,14 @@ function ServiceDecisionApp({ user }) {
   }, [bulkResults]);
 
   const bulkSummaryRows = useMemo(() => {
+    const search = bulkSearch.trim().toLowerCase();
     const rows = bulkResults
-      .filter(item => Array.isArray(item.services) && item.services.length > 0)
+      .filter(item => bulkQuickFilter === "all" || (Array.isArray(item.services) && item.services.length > 0))
+      .filter(item => {
+        if (!search) return true;
+        const values = getBulkDisplayValues(item);
+        return Object.values(values).some(value => String(value ?? "").toLowerCase().includes(search));
+      })
       .filter(item => {
         const values = getBulkDisplayValues(item);
 
@@ -2789,7 +3749,7 @@ function ServiceDecisionApp({ user }) {
     });
 
     return sorted;
-  }, [bulkResults, bulkFilterSelections, bulkTableSort]);
+  }, [bulkResults, bulkFilterSelections, bulkTableSort, bulkSearch, bulkQuickFilter]);
 
   const openBulkFilterMenu = (key, event) => {
     event.preventDefault();
@@ -2832,6 +3792,34 @@ function ServiceDecisionApp({ user }) {
     setOpenBulkFilter(null);
   };
 
+  const downloadBulkCsv = () => {
+    const exportColumns = [
+      ["serial", "S.No."],
+      ["customerName", bulkColumnLabels.customerName || "Customer Name"],
+      ["vin", bulkColumnLabels.vin || "VIN"],
+      ["reg", bulkColumnLabels.reg || "Reg. No."],
+      ["saleDate", bulkColumnLabels.saleDate || "Sale Date"],
+      ["model", bulkColumnLabels.model || "Model"],
+      ["currentReading", bulkColumnLabels.currentReading || "Current Reading"],
+      ["services", bulkColumnLabels.services || "Service To Be Completed"],
+    ].filter(([key]) => key === "serial" || isBulkColumnVisible(key));
+
+    const rows = bulkSummaryRows.map((item, index) => {
+      const values = getBulkDisplayValues(item);
+      return Object.fromEntries(
+        exportColumns.map(([key, label]) => [
+          label,
+          key === "serial" ? index + 1 : (values[key] === "-" ? "" : values[key]),
+        ])
+      );
+    });
+
+    const sheet = XLSX.utils.json_to_sheet(rows);
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, sheet, "Due Summary");
+    XLSX.writeFile(book, "Service_Due_Summary.xlsx");
+  };
+
   const clearAllBulkFilters = () => {
     setBulkFilterSelections({
       customerName: [],
@@ -2843,6 +3831,8 @@ function ServiceDecisionApp({ user }) {
       services: [],
     });
     setBulkTableSort({ key: "dueCount", direction: "desc" });
+    setBulkSearch("");
+    setBulkQuickFilter("all");
     setOpenBulkFilter(null);
   };
 
@@ -2851,6 +3841,7 @@ function ServiceDecisionApp({ user }) {
   };
 
   const clear = () => {
+    if ((analysis || bulkResults.length || uploadedFiles.length) && !window.confirm("Clear the current vehicle data and analysis?")) return;
     logUsage("Clear", { mode, details:{ hadAnalysis:Boolean(analysis), uploadedFiles:uploadedFiles.length } });
     setExcelData("");
     setAnalysis(null);
@@ -2867,6 +3858,8 @@ function ServiceDecisionApp({ user }) {
     setUploadMeta(null);
     setUploadParsedRecords([]);
     setBulkTableSort({ key: "dueCount", direction: "desc" });
+    setBulkSearch("");
+    setBulkQuickFilter("all");
     setBulkTableFilters({
       customerName: "",
       vin: "",
@@ -2924,12 +3917,485 @@ function ServiceDecisionApp({ user }) {
     return () => window.removeEventListener("keydown", handleEscapeNavigation, true);
   }, [mode, openBulkFilter, analysis, uploadParsedRecords.length]);
 
+  async function loadEstimateHistoryByVin(vin) {
+    const response = await fetch("/api/save-history?vin=" + encodeURIComponent(vin));
+    const data = await response.json();
+    return { vehicleRows:Array.isArray(data?.rows)?data.rows:[], modelRows:Array.isArray(data?.modelRows)?data.modelRows:[], globalPartRates:Array.isArray(data?.globalPartRates)?data.globalPartRates:[] };
+  }
+
+  async function openEstimate() {
+    if (!analysis?.vehicle?.vin) return;
+    const dueKeys = BULK_SERVICE_LABELS.filter(([, key]) => analysis?.decision?.result?.[key]).map(([, key]) => key);
+    setEstimateVehicle({ customerName:analysis?.vehicle?.customerName||"", reg:analysis?.vehicle?.reg||"", vin:analysis?.vehicle?.vin||"", engine:analysis?.vehicle?.engine||"", model:analysis?.vehicle?.model||"", sale:analysis?.vehicle?.sale||null });
+    setEstimateVehicleNo(analysis?.vehicle?.reg||"");
+    setEstimateSelectedServices(dueKeys);
+    setEstimateSavedId(null);
+    setEstimateNumber("EST-" + new Date().getFullYear() + String(new Date().getMonth()+1).padStart(2,"0") + String(new Date().getDate()).padStart(2,"0") + "-" + String(Date.now()).slice(-5));
+    setEstimateParts([]); setEstimateLabour([]); setEstimateNotice(""); setEstimateVehicleLookupMessage("");
+    setEstimateStage("select"); setEstimateOpen(true); setEstimateLoading(true);
+    try {
+      const history=await loadEstimateHistoryByVin(analysis.vehicle.vin);
+      setEstimateHistory(history);
+      setEstimateNotice(history.vehicleRows.length||history.modelRows.length ? "Vehicle history loaded. Missing items will be sourced from the same model history in DB." : "No historical service data found. Estimate items can be entered manually.");
+    } catch {
+      setEstimateHistory({vehicleRows:[],modelRows:[],globalPartRates:[]});
+      setEstimateNotice("Historical data could not be loaded. Manual estimate entry is available.");
+    } finally { setEstimateLoading(false); }
+  }
+
+  function openStandaloneEstimate() {
+    setEstimateVehicle({customerName:"",reg:"",vin:"",engine:"",model:"",sale:null});
+    setEstimateVehicleNo("");
+    setEstimateHistory({vehicleRows:[],modelRows:[],globalPartRates:[]});
+    setEstimateSelectedServices([]); setEstimateParts([]); setEstimateLabour([]);
+    setEstimateNotice(""); setEstimateVehicleLookupMessage("");
+    setEstimateSavedId(null);
+    setEstimateNumber("EST-" + new Date().getFullYear() + String(new Date().getMonth()+1).padStart(2,"0") + String(new Date().getDate()).padStart(2,"0") + "-" + String(Date.now()).slice(-5));
+    setEstimateStage("vehicle"); setEstimateOpen(true);
+  }
+
+  async function loadSavedEstimates() {
+    setSavedEstimatesLoading(true);
+    try {
+      const token = localStorage.getItem("serviceDecisionAuthToken");
+      if (!token) return;
+      const response = await fetch("/api/estimates", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json", Authorization:`Bearer ${token}` },
+        body:JSON.stringify({ action:"list" }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data.success) setSavedEstimates(Array.isArray(data.estimates) ? data.estimates : []);
+    } catch (error) {
+      console.warn("Saved estimate list load failed:", error);
+    } finally {
+      setSavedEstimatesLoading(false);
+    }
+  }
+
+  async function saveEstimateToDb() {
+    const vehicleNo = String(estimateVehicle?.reg || estimateVehicleNo || "").replace(/\s+/g,"").trim().toUpperCase();
+    if (!vehicleNo) {
+      setEstimateNotice("Vehicle No. is required before saving the estimate.");
+      return;
+    }
+    if (!estimateNumber) {
+      setEstimateNotice("Estimate number is missing. Please start a new estimate.");
+      return;
+    }
+
+    setEstimateSaveBusy(true);
+    try {
+      const token = localStorage.getItem("serviceDecisionAuthToken");
+      const response = await fetch("/api/estimates", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json", Authorization:`Bearer ${token}` },
+        body:JSON.stringify({
+          action:"save",
+          estimateNo:estimateNumber,
+          vehicleNo,
+          vehicle:{
+            ...estimateVehicle,
+            sale:estimateVehicle?.sale instanceof Date ? estimateVehicle.sale.toISOString() : estimateVehicle?.sale || null,
+          },
+          selectedServices:estimateSelectedServices,
+          parts:estimateParts,
+          labour:estimateLabour,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.success) throw new Error(data.error || "Unable to save estimate.");
+      setEstimateSavedId(data.estimate?.id || estimateSavedId);
+      setEstimateNotice(`Estimate ${estimateNumber} saved successfully. Future saves will update the same estimate number.`);
+      await loadSavedEstimates();
+    } catch (error) {
+      setEstimateNotice(error.message || "Unable to save estimate.");
+    } finally {
+      setEstimateSaveBusy(false);
+    }
+  }
+
+  async function openSavedEstimate(id) {
+    setEstimateLoading(true);
+    setEstimateOpen(true);
+    try {
+      const token = localStorage.getItem("serviceDecisionAuthToken");
+      const response = await fetch("/api/estimates", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json", Authorization:`Bearer ${token}` },
+        body:JSON.stringify({ action:"get", id }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.success || !data.estimate) throw new Error(data.error || "Unable to load saved estimate.");
+
+      const saved = data.estimate;
+      const vehicle = saved.vehicle_data || {};
+      setEstimateSavedId(saved.id);
+      setEstimateNumber(saved.estimate_no || "");
+      setEstimateVehicleNo(String(saved.vehicle_no || vehicle.reg || "").replace(/\s+/g,"").toUpperCase());
+      setEstimateVehicle({
+        customerName:vehicle.customerName || "",
+        reg:String(vehicle.reg || saved.vehicle_no || "").replace(/\s+/g,"").toUpperCase(),
+        vin:vehicle.vin || "",
+        engine:vehicle.engine || "",
+        model:vehicle.model || "",
+        sale:vehicle.sale ? new Date(vehicle.sale) : null,
+      });
+      setEstimateSelectedServices(Array.isArray(saved.selected_services) ? saved.selected_services : []);
+      setEstimateParts(Array.isArray(saved.parts) ? saved.parts : []);
+      setEstimateLabour(Array.isArray(saved.labour) ? saved.labour : []);
+      setEstimateHistory({vehicleRows:[],modelRows:[],globalPartRates:[]});
+      setEstimateNotice("Saved estimate loaded. You can edit it and save again; the estimate number will remain unchanged.");
+      setEstimateStage("estimate");
+    } catch (error) {
+      setEstimateOpen(false);
+      setError(error.message || "Unable to load saved estimate.");
+    } finally {
+      setEstimateLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (user?.id) void loadSavedEstimates();
+  }, [user?.id]);
+
+  async function lookupEstimateVehicle() {
+    const registration=String(estimateVehicleNo||"").replace(/\s+/g,"").trim().toUpperCase();
+    setEstimateVehicleNo(registration);
+    if(!registration){ setEstimateVehicleLookupMessage("Please enter Vehicle No."); return; }
+    setEstimateVehicleLookupBusy(true); setEstimateVehicleLookupMessage("");
+    try {
+      const response=await fetch("/api/save-history?registration="+encodeURIComponent(registration));
+      const data=await response.json().catch(()=>({}));
+      const rows=Array.isArray(data?.rows)?data.rows:[];
+      const dbVehicle=data?.vehicle || rows[0] || null;
+      if(dbVehicle){
+        setEstimateVehicle({
+          customerName:dbVehicle?.customer_name||"",
+          reg:String(dbVehicle?.registration||registration).replace(/\s+/g,"").toUpperCase(),
+          vin:String(dbVehicle?.vin||"").trim().toUpperCase(),
+          engine:dbVehicle?.engine||"",
+          model:dbVehicle?.model||"",
+          sale:dbVehicle?.sale_date?new Date(dbVehicle.sale_date):null
+        });
+        setEstimateHistory({vehicleRows:rows,modelRows:Array.isArray(data?.modelRows)?data.modelRows:[],globalPartRates:Array.isArray(data?.globalPartRates)?data.globalPartRates:[]});
+        setEstimateVehicleLookupMessage(rows.length
+          ? "Vehicle found in DB. Details loaded automatically."
+          : "Vehicle found in DB. No service history is available; enter estimate lines manually.");
+
+      } else {
+        setEstimateVehicle(prev=>({...prev,reg:registration,vin:""}));
+        setEstimateHistory({vehicleRows:[],modelRows:[],globalPartRates:[]});
+        setEstimateVehicleLookupMessage("Vehicle not found in DB. Enter the vehicle/customer details manually below.");
+      }
+    } catch {
+      setEstimateVehicle(prev=>({...prev,reg:registration,vin:""}));
+      setEstimateHistory({vehicleRows:[],modelRows:[],globalPartRates:[]});
+      setEstimateVehicleLookupMessage("DB lookup failed. You can continue with manual vehicle details.");
+    } finally {
+      setEstimateVehicleLookupBusy(false);
+      setEstimateStage("estimate");
+    }
+  }
+
+  function prepareEstimate() {
+    const history = Array.isArray(estimateHistory)
+      ? { vehicleRows: estimateHistory, modelRows: [] }
+      : (estimateHistory || { vehicleRows: [], modelRows: [] });
+
+    // A saved estimate already contains its edited parts/labour. Changing
+    // aggregate-service selection must not rebuild and erase those saved edits.
+    if (estimateSavedId && !(history.vehicleRows?.length || history.modelRows?.length)) {
+      setEstimateNotice("Aggregate service selection updated. Your existing saved estimate lines are retained.");
+      setEstimateStage("estimate");
+      return;
+    }
+
+    const items = estimateHistoryToItems(
+      history.vehicleRows || [],
+      estimateSelectedServices,
+      history.modelRows || [],
+      history.globalPartRates || []
+    );
+    setEstimateParts(items.filter(item => item.type === "part"));
+    setEstimateLabour(items.filter(item => item.type === "labour"));
+    setEstimateNotice(
+      (history.vehicleRows?.length || history.modelRows?.length)
+        ? "Estimate prepared from vehicle history and same-model DB fallback. You can edit every line or add missing items manually."
+        : "No historical estimate items found. Please add the required items manually."
+    );
+    setEstimateStage("estimate");
+  }
+  function reviseEstimateServices() { setEstimateStage("select"); }
+  function updateEstimateItem(type, id, field, value) {
+    const setter = type === "labour" ? setEstimateLabour : setEstimateParts;
+    setter(prev => prev.map(item => item.id === id ? { ...item, [field]: value, source:"Manual" } : item));
+  }
+
+  function normalizeEstimateQuantities() {
+    setEstimateParts(prev => prev.map(item => ({ ...item, qty:String(item.qty ?? "").trim()==="" ? 1 : Number(item.qty) || 0 })));
+    setEstimateLabour(prev => prev.map(item => ({ ...item, qty:String(item.qty ?? "").trim()==="" ? 1 : Number(item.qty) || 0 })));
+  }
+  async function lookupManualEstimatePart(id, partNo) {
+    const code = String(partNo || "").replace(/\s+/g,"").trim().toUpperCase();
+    if (!code) return;
+    setManualPartLookupBusy(prev => ({...prev,[id]:true}));
+    try {
+      const response = await fetch("/api/save-history?partNo=" + encodeURIComponent(code));
+      const data = await response.json().catch(() => ({}));
+      if (data.part) setEstimateParts(prev => prev.map(item => item.id === id ? {...item,partNo:data.part.partNo||code,description:data.part.description||item.description,rate:Number(data.part.rateInclGst||0),baseRate:Number(data.part.rate||0),source:"Historical DB - exact Part No."} : item));
+    } catch (err) { console.warn("Manual estimate part lookup:",err); }
+    finally { setManualPartLookupBusy(prev => ({...prev,[id]:false})); }
+  }
+  function addEstimateItem(type) { (type === "labour" ? setEstimateLabour : setEstimateParts)(prev => [...prev, emptyEstimateItem(type)]); }
+  function removeEstimateItem(type, id) {
+    (type === "labour" ? setEstimateLabour : setEstimateParts)(prev => prev.filter(item => item.id !== id));
+  }
+  const estimatePartsTotal = estimateParts.reduce((sum,item)=>sum+Number(item.qty||0)*Number(item.rate||0),0);
+  const estimateLabourBase = estimateLabour.reduce((sum,item)=>sum+Number(item.qty||0)*Number(item.rate||0),0);
+  const estimateLabourGst = estimateLabourBase*0.18;
+  const estimateLabourTotal = estimateLabourBase+estimateLabourGst;
+  const estimateGrandTotal = estimatePartsTotal+estimateLabourTotal;
+  function buildEstimatePdf(autoPrint = false) {
+    const pdf = new jsPDF({ unit:"mm", format:"a4", orientation:"portrait", compress:true });
+    const margin = 10;
+    const width = 190;
+    const vehicle = estimateVehicle || analysis?.vehicle || {};
+    const workshop = String(user?.dealerName || "Workshop").trim();
+
+    // jsPDF's built-in Helvetica does not render the ₹ glyph reliably.
+    // Use plain ASCII "INR" in the PDF so Adobe/Edge do not show broken
+    // characters or artificial digit spacing.
+    const money = value => {
+      const n = Number(value || 0);
+      return "INR " + n.toLocaleString("en-IN", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+    };
+
+    pdf.setFont("helvetica","bold");
+    pdf.setFontSize(17);
+    pdf.text("SERVICE ESTIMATE",105,14,{align:"center"});
+    pdf.setFontSize(10);
+    pdf.text(workshop,105,21,{align:"center"});
+    pdf.setFont("helvetica","normal");
+    pdf.setFontSize(8.5);
+    pdf.text("Estimate only - subject to actual inspection and applicable rates.",105,25,{align:"center"});
+    pdf.setFontSize(8);
+    pdf.text("Estimate No. (Session): " + (estimateNumber || "-"),margin,30);
+    pdf.text("Prepared: " + formatDate(new Date()),width + margin,30,{align:"right"});
+
+    autoTable(pdf,{
+      startY:35,
+      margin:{left:margin,right:margin},
+      tableWidth:width,
+      theme:"grid",
+      styles:{
+        font:"helvetica",
+        fontSize:8.5,
+        cellPadding:3,
+        lineColor:[150,150,150],
+        lineWidth:0.2
+      },
+      body:[
+        ["Customer\n"+(vehicle.customerName||"-"),"Reg. No.\n"+(vehicle.reg||"-"),"VIN\n"+(vehicle.vin||"-")],
+        ["Model\n"+(vehicle.model||"-"),"Current Reading\n"+(analysis?.running?.current ? formatNumber(analysis.running.current)+" "+(analysis.running.unit||getTargetUnit(vehicle)) : "-"),"Date\n"+formatDate(new Date())]
+      ]
+    });
+
+    let y=(pdf.lastAutoTable?.finalY||58)+7;
+    pdf.setFont("helvetica","bold");
+    pdf.setFontSize(10);
+    pdf.text("Selected Aggregate Services",margin,y);
+    y+=4;
+
+    const selectedNames=BULK_SERVICE_LABELS
+      .filter(([,key])=>estimateSelectedServices.includes(key))
+      .map(([name])=>name);
+
+    pdf.setFont("helvetica","normal");
+    pdf.setFontSize(8.5);
+    pdf.text(
+      selectedNames.length ? selectedNames.join(", ") : "No aggregate service selected",
+      margin,
+      y+3,
+      {maxWidth:width}
+    );
+    y+=selectedNames.length?9:7;
+
+    autoTable(pdf,{
+      startY:y,
+      margin:{left:margin,right:margin},
+      tableWidth:width,
+      theme:"grid",
+      styles:{
+        font:"helvetica",
+        fontSize:8,
+        cellPadding:2.5,
+        lineColor:[150,150,150],
+        lineWidth:0.2,
+        overflow:"linebreak"
+      },
+      head:[["Part No.","Description","Qty","Rate (Incl. GST)","Amount"]],
+      body:estimateParts.length
+        ? estimateParts.map(item=>[
+            item.partNo||"-",
+            item.description||"-",
+            formatQty(item.qty),
+            money(item.rate),
+            money(Number(item.qty||0)*Number(item.rate||0))
+          ])
+        : [["-","No parts added","-","-",money(0)]],
+      columnStyles:{
+        0:{cellWidth:28},
+        1:{cellWidth:82},
+        2:{cellWidth:18},
+        3:{cellWidth:27},
+        4:{cellWidth:35}
+      }
+    });
+
+    y=(pdf.lastAutoTable?.finalY||y+20)+7;
+    pdf.setFont("helvetica","bold");
+    pdf.text("Labour",margin,y);
+    y+=4;
+
+    autoTable(pdf,{
+      startY:y,
+      margin:{left:margin,right:margin},
+      tableWidth:width,
+      theme:"grid",
+      styles:{
+        font:"helvetica",
+        fontSize:8,
+        cellPadding:2.5,
+        lineColor:[150,150,150],
+        lineWidth:0.2,
+        overflow:"linebreak"
+      },
+      head:[["Description","Qty","Rate","Amount"]],
+      body:estimateLabour.length
+        ? estimateLabour.map(item=>[
+            item.description||"-",
+            formatQty(item.qty),
+            money(item.rate),
+            money(Number(item.qty||0)*Number(item.rate||0))
+          ])
+        : [["No labour added","-","-",money(0)]],
+      columnStyles:{
+        0:{cellWidth:110},
+        1:{cellWidth:20},
+        2:{cellWidth:25},
+        3:{cellWidth:35}
+      }
+    });
+
+    y=(pdf.lastAutoTable?.finalY||y+20)+7;
+
+    autoTable(pdf,{
+      startY:y,
+      margin:{left:120,right:margin},
+      tableWidth:80,
+      theme:"grid",
+      styles:{
+        font:"helvetica",
+        fontSize:8.5,
+        cellPadding:3,
+        lineColor:[150,150,150],
+        lineWidth:0.2
+      },
+      body:[
+        ["Parts Total (GST Incl.)",money(estimatePartsTotal)],
+        ["Labour Subtotal",money(estimateLabourBase)],
+        ["GST on Labour (18%)",money(estimateLabourGst)],
+        ["Grand Total",money(estimateGrandTotal)]
+      ],
+      columnStyles:{
+        0:{cellWidth:45,fontStyle:"bold"},
+        1:{cellWidth:35,halign:"right"}
+      }
+    });
+
+    y=(pdf.lastAutoTable?.finalY||y+25)+12;
+    pdf.setFont("helvetica","normal");
+    pdf.setFontSize(8);
+    pdf.line(140,y-2,190,y-2);
+    pdf.text("Authorized Signatory",165,y,{align:"center"});
+
+    if(autoPrint){
+      pdf.autoPrint();
+      window.open(pdf.output("bloburl"),"_blank");
+    } else {
+      const fileName=("Service_Estimate_"+(vehicle.reg||vehicle.vin||"Vehicle")+".pdf")
+        .replace(/[^a-z0-9_.-]+/gi,"_");
+      pdf.save(fileName);
+    }
+  }
   return (
     <>
       <style>{`
         * { box-sizing: border-box; }
         body { margin: 0; background: #d9e2f3; font-family: Calibri, Arial, sans-serif; color: #1f1f1f; }
         .excel-app { min-height: 100vh; background: #d9e2f3; }
+        .table-width-compact { min-width:560px !important; }.table-width-normal { min-width:760px !important; }.table-width-wide { min-width:100% !important;}
+        .theme-green .excel-titlebar,.theme-green .section-title {background:#217346 !important}.theme-navy .excel-titlebar,.theme-navy .section-title {background:#17365d !important}.theme-teal .excel-titlebar,.theme-teal .section-title {background:#0f766e !important}.theme-purple .excel-titlebar,.theme-purple .section-title {background:#6b46c1 !important}
+        .theme-green .decision-table th,.theme-green .history-table th {background:#217346 !important}.theme-navy .decision-table th,.theme-navy .history-table th {background:#17365d !important}.theme-teal .decision-table th,.theme-teal .history-table th {background:#0f766e !important}.theme-purple .decision-table th,.theme-purple .history-table th {background:#6b46c1 !important}
+
+        .estimate-meta { margin-left:auto; font-size:11px; color:#666; }
+        .portal-home { padding:18px 8px 28px; }
+        .portal-home-hero { display:flex; justify-content:space-between; gap:20px; align-items:center; padding:24px; border:1px solid #b7b7b7; background:linear-gradient(135deg,#f7fbff,#eef5fb); border-radius:6px; }
+        .portal-home-kicker { color:#1f4e78; font-size:11px; font-weight:800; letter-spacing:1px; }
+        .portal-home-hero h1 { margin:5px 0 4px; font-size:27px; color:#1f1f1f; }
+        .portal-home-hero p { margin:0; color:#5f6b75; font-size:13px; }
+        .portal-upload-button { white-space:nowrap; min-height:38px; }
+        .portal-kpi-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:12px 0; }
+        .portal-kpi,.bulk-overview-card { border:1px solid #c7d1da; background:#fff; padding:13px; border-radius:5px; }
+        .portal-kpi span,.bulk-overview-card span { display:block; color:#66737d; font-size:11px; }
+        .portal-kpi strong,.bulk-overview-card strong { display:block; font-size:24px; color:#1f4e78; margin-top:4px; }
+        .portal-kpi small { color:#8a969f; }
+        .portal-section-title { background:#4472c4; color:#fff; padding:8px 10px; font-weight:700; font-size:14px; margin-top:16px; }
+        .portal-action-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:10px; }
+         .home-estimate-preview { margin-top:14px; border:2px solid #5b9bd5; background:#fff; color:#1f2937; border-radius:8px; padding:12px; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,.08); }
+         .home-estimate-preview:hover { box-shadow:0 3px 10px rgba(0,0,0,.12); }
+         .home-estimate-preview-head { display:flex; align-items:center; gap:12px; border-bottom:1px solid #d5d5d5; padding-bottom:9px; }
+         .home-estimate-preview-head strong { display:block; font-size:17px; }
+         .home-estimate-preview-head span { display:block; font-size:11px; color:#666; margin-top:2px; }
+         .home-estimate-preview-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-top:10px; }
+         .home-estimate-preview-grid > div { border:1px solid #d5d5d5; padding:9px; border-radius:6px; min-height:58px; }
+         .home-estimate-preview-grid b { display:block; font-size:12px; }
+         .home-estimate-preview-grid span { display:block; font-size:11px; color:#666; margin-top:5px; }
+        .portal-action-card { text-align:left; border:1px solid #c7d1da; background:#fff; padding:16px; min-height:155px; display:flex; flex-direction:column; align-items:flex-start; gap:7px; border-radius:5px; }
+        .portal-action-card:hover:not(:disabled) { border-color:#70ad47; box-shadow:0 2px 8px rgba(0,0,0,.08); }
+        .portal-action-card.disabled { opacity:.5; cursor:not-allowed; }
+        .portal-action-icon { font-size:25px; }
+        .portal-action-title { font-weight:800; font-size:15px; color:#1f4e78; }
+        .portal-action-text { color:#66737d; font-size:12px; line-height:1.45; }
+        .portal-action-link { margin-top:auto; color:#217346; font-size:12px; font-weight:800; }
+        .portal-workflow { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
+        .portal-workflow div { border:1px solid #d7dee4; background:#f8fafc; padding:11px 13px; font-size:12px; }
+        .portal-workflow b { display:block; color:#1f4e78; margin-bottom:4px; }
+        .portal-workflow span { color:#66737d; }
+        .professional-section-title { margin-top:12px; }
+        .decision-status-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:7px; margin-top:7px; }
+        .decision-status-card { border:1px solid #b7b7b7; padding:9px; background:#f7f7f7; min-height:56px; }
+        .decision-status-card span { display:block; font-size:11px; color:#58646d; line-height:1.2; }
+        .decision-status-card strong { display:inline-block; margin-top:5px; font-size:12px; }
+        .decision-status-card.is-due { background:#e2f0d9; border-color:#70ad47; }
+        .decision-status-card.is-due strong { color:#006100; }
+        .decision-status-card.is-not-due strong { color:#666; }
+        .decision-basis { margin-top:8px; border:1px solid #c7d1da; background:#f8fafc; }
+        .decision-basis summary { cursor:pointer; padding:8px 10px; font-weight:700; color:#1f4e78; }
+        .decision-basis-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; padding:0 10px 8px; }
+        .decision-basis-grid div { background:#fff; border:1px solid #dfe5e9; padding:8px; }
+        .decision-basis-grid b { display:block; font-size:10px; color:#74808b; }
+        .decision-basis-grid span { display:block; margin-top:4px; font-size:12px; font-weight:700; }
+        .bulk-overview-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:8px; }
+        .bulk-overview-card.due { background:#e2f0d9; border-color:#70ad47; }
+        .bulk-overview-card.due strong { color:#006100; }
+        .bulk-search-input { max-width:360px; min-height:31px; }
+        @media (max-width:900px) { .portal-action-grid{grid-template-columns:repeat(2,1fr)} .decision-status-grid{grid-template-columns:repeat(2,1fr)} .decision-basis-grid{grid-template-columns:repeat(2,1fr)} .bulk-overview-grid{grid-template-columns:repeat(2,1fr)} }
+        @media (max-width:600px) { .portal-home-hero{flex-direction:column;align-items:flex-start}.portal-kpi-grid,.portal-workflow{grid-template-columns:1fr}.portal-action-grid{grid-template-columns:1fr}.decision-basis-grid{grid-template-columns:1fr}.bulk-overview-grid{grid-template-columns:1fr}.bulk-search-input{max-width:none;width:100%} }
         .excel-window { width: min(1500px, 100%); margin: 0 auto; background: #fff; min-height: 100vh; box-shadow: 0 0 0 1px #9e9e9e; }
         .excel-titlebar { height: 34px; background: #217346; color: #fff; display:flex; align-items:center; justify-content:center; padding:0 12px; font-size:14px; }
         .excel-title { font-weight:700; text-align:center; flex:1; }
@@ -3020,7 +4486,18 @@ function ServiceDecisionApp({ user }) {
         .section-title { margin-top:12px; background:#5b9bd5; color:#fff; border:1px solid #2f75b5; padding:6px 9px; font-weight:700; font-size:13px; }
         .history-wrap { overflow:auto; max-height:520px; border:1px solid #b7b7b7; }
         .history-table { width:100%; border-collapse:collapse; min-width:760px; }
+        .dashboard-resizable-table { table-layout:fixed; }
+        .dashboard-resizable-table col,
+        .dashboard-resizable-table th,
+        .dashboard-resizable-table td { box-sizing:border-box; }
+        .saved-estimate-list { display:flex; flex-direction:column; gap:6px; }
+        .saved-estimate-row { width:100%; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 12px; border:1px solid #cbd5df; border-radius:7px; background:#fff; color:#1f1f1f; cursor:pointer; text-align:left; }
+        .saved-estimate-row:hover { border-color:#217346; background:#f5fbf7; }
+        .saved-estimate-row span:first-child { display:flex; flex-direction:column; gap:3px; }
+        .saved-estimate-row small { color:#687681; }
+
         .history-table th { position:sticky; top:0; z-index:2; background:#4472c4; color:#fff; border:1px solid #b7b7b7; padding:5px 7px; font-size:12px; }
+        .estimate-workspace .history-table th { position:static; top:auto; z-index:auto; }
         .history-table td { border:1px solid #d0d0d0; padding:5px 7px; font-size:12px; }
         .history-table tr:nth-child(even) td { background:#fafafa; }
         .bulk-service-table { min-width: 1120px; }
@@ -3281,11 +4758,8 @@ function ServiceDecisionApp({ user }) {
           font-weight:700;
         }
         .single-service-summary { min-width:760px; width:100%; table-layout:fixed; }
-        .single-service-summary th:nth-child(1), .single-service-summary td:nth-child(1) { width:7% !important; min-width:0; white-space:normal; overflow-wrap:anywhere; }
-        .single-service-summary th:nth-child(2), .single-service-summary td:nth-child(2) { width:8% !important; min-width:0; white-space:normal; overflow-wrap:anywhere; }
-        .single-service-summary th:nth-child(3), .single-service-summary td:nth-child(3) { width:6% !important; min-width:0; white-space:normal; overflow-wrap:anywhere; }
-        .single-service-summary th:nth-child(4), .single-service-summary td:nth-child(4) { width:10% !important; min-width:0; white-space:normal; overflow-wrap:anywhere; }
-        .single-service-summary th:nth-child(5), .single-service-summary td:nth-child(5) { width:69% !important; min-width:0; }
+        .single-service-summary th, .single-service-summary td { min-width:0; white-space:normal; overflow-wrap:anywhere; }
+        .single-service-summary th:last-child, .single-service-summary td:last-child { overflow-wrap:anywhere; }
         .service-summary-note { padding:5px 8px; margin-top:4px; }
         .service-summary-title {
           background:#2f75b5;
@@ -3383,21 +4857,21 @@ function ServiceDecisionApp({ user }) {
         }
       `}</style>
 
-      <div className="excel-app">
+      <div className={`excel-app theme-${dashboardPrefs.theme || "blue"}`}>
         <div className="excel-window">
           <div className="excel-titlebar">
             <div className="excel-title">Vehicle Service Decision &amp; Maintenance Dashboard</div>
-            <div className="excel-title-right">Excel Web Version</div>
           </div>
 
           <div className="excel-ribbon no-print">
             <div className="excel-tabs">
-              <div className={`excel-tab ${mode === "single" ? "active" : ""}`} onClick={() => { setMode("single"); setError(""); setBulkResults([]); setBulkMeta(null); }}>Single Vehicle</div>
+              <div className={"excel-tab " + (mode === "home" ? "active" : "")} onClick={() => setMode("home")}>Home</div>
+              <div className={"excel-tab " + (mode === "single" ? "active" : "")} onClick={() => { setMode("single"); setError(""); setBulkResults([]); setBulkMeta(null); }}>Single Vehicle</div>
               <div className={`excel-tab ${mode === "bulk" ? "active" : ""}`} onClick={() => { setMode("bulk"); setError(""); setAnalysis(null); }}>Bulk Vehicle</div>
               <div className={`excel-tab ${mode === "schedule" ? "active" : ""}`} onClick={() => { setMode("schedule"); setError(""); logUsage("Service Schedule Viewed", { mode:"schedule" }); }}>Service Schedule Chart</div>
             </div>
             <div className="excel-toolbar">
-              {mode !== "schedule" && <>
+              {mode !== "schedule" && mode !== "home" && <>
                 <button className="excel-button green" onClick={() => document.getElementById("excel-file-input")?.click()} disabled={uploadBusy}>Upload Excel</button>
                 <button className="excel-button" onClick={clear}>Clear</button>
                 <button className="excel-button green" onClick={mode === "bulk" ? analyzeBulk : analyze} disabled={uploadBusy || (!excelData.trim() && !uploadParsedRecords.length)}>{mode === "bulk" ? "Analyze All Vehicles" : "Analyze Vehicle"}</button>
@@ -3440,7 +4914,16 @@ function ServiceDecisionApp({ user }) {
           <input id="excel-file-input" className="no-print" type="file" accept=".xlsx,.xls,.xlsm,.csv" multiple style={{display:"none"}} onChange={handleExcelUpload} disabled={uploadBusy} />
 
           <main className="excel-sheet">
-            {mode === "single" ? (analysis ? (
+            {mode === "home" ? (
+              <PortalHome user={user} hasAnalysis={Boolean(analysis)} bulkResults={bulkResults}
+                savedEstimates={savedEstimates}
+                savedEstimatesLoading={savedEstimatesLoading}
+                onNavigate={(nextMode) => { if (nextMode === "estimate") { if (analysis) void openEstimate(); else openStandaloneEstimate(); } else setMode(nextMode); }}
+                onUpload={() => document.getElementById("excel-file-input")?.click()}
+                onClear={clear}
+                onOpenSavedEstimate={openSavedEstimate}
+              />
+            ) : mode === "single" ? (analysis ? (
               <>
                 <div className="sheet-heading" style={{marginTop:10}}>VEHICLE SCHEDULE SERVICE HISTORY FROM LAST 3 YEARS AS ON DATE - {todayDisplay}</div>
 
@@ -3461,7 +4944,7 @@ function ServiceDecisionApp({ user }) {
                   </div>
 
                   <div className="customer-output-panel">
-                    <div className="section-title">Customer Output — Service To Be Completed</div>
+                    <div className="section-title" style={{display:"flex",alignItems:"center",gap:10}}><span>Customer Output — Service To Be Completed</span><button className="excel-button no-print" style={{marginLeft:"auto"}} onClick={openEstimate}>Generate Estimate</button></div>
                     <div className="due-box">
                       {analysis ? (() => {
                         const aggregateNames = BULK_SERVICE_LABELS
@@ -3475,36 +4958,31 @@ function ServiceDecisionApp({ user }) {
                           ...(analysis.decision.additionalServices || []).filter(name => !String(name).toLowerCase().includes('free service'))
                         ];
                         return names.length ? names.map(name => <span className="due-chip" key={name}>{name}</span>) : <div className="no-due">No service to be completed at the current reading.</div>;
-                      })() : <div className="small-note">Analyse vehicle to display customer-facing service due.</div>}
+                      })() : <div className="single-empty-state"><b>No vehicle analysis yet</b><span>Upload the DMS Excel file to start the service decision.</span><button className="excel-button green no-print" onClick={() => document.getElementById("excel-file-input")?.click()}>Upload Excel &amp; Start</button></div>}
                     </div>
                   </div>
                 </div>
+
 
                 {error && <div className="error-line no-print">{error}</div>}
 
                 <div className="section-title service-summary-title">Service Summary — Complete Vehicle History</div>
                 <div className="history-wrap">
-                  <table className="history-table single-service-summary">
-                    <thead><tr><th>Date</th><th>Job Card</th><th>Reading</th><th>Plant</th><th>Part No. / Service / Qty</th></tr></thead>
-                    <tbody>
-                      {analysis?.visits?.length ? analysis.visits.map((visit,i) => {
-                        const visitDate=getVisitDate(visit), jobCard=getVisitJobCard(visit), visitReading=getVisitReading(visit,analysis.vehicle), parts=getVisitParts(visit,analysis.vehicle,analysis.decision);
-                        return <tr key={i}>
-                          <td>{formatDateShort(visitDate)}</td>
-                          <td>{jobCard}</td>
-                          <td>{visitReading ? `${formatNumber(visitReading)} ${getTargetUnit(analysis.vehicle)}` : "-"}</td>
-                          <td>{[...new Set(visit.map(r => String(r?.plantName || r?.salesOrgName || "").trim()).filter(Boolean))].join(", ") || "-"}</td>
-                          <td>
-                            {parts.length ? parts.map((part,index) => (
-                              <span key={index} className={part.eligible ? "history-part eligible" : "history-part"} title={part.eligible ? "Eligible service-calculation record" : "History record"}>
-                                {part.text}
-                              </span>
-                            )) : "-"}
-                          </td>
-                        </tr>;
-                      }) : <tr><td colSpan="5" className="small-note">No service history loaded.</td></tr>}
-                    </tbody>
-                  </table>
+                  <table className="history-table single-service-summary dashboard-resizable-table"><thead><tr>
+{singleTableColumns.map((key,index) => (
+  <th key={key} style={tableColumnStyle("single",key)}>
+    <span className="dashboard-th-content">{singleColumnLabels[key] || key}</span>
+    {index < singleTableColumns.length - 1 && <span className="column-resizer" onPointerDown={e=>resizeTableColumn("single",key,e)} />}
+  </th>
+))}</tr></thead><tbody>
+{analysis?.visits?.length ? analysis.visits.map((visit,i)=>{const visitDate=getVisitDate(visit),jobCard=getVisitJobCard(visit),visitReading=getVisitReading(visit,analysis.vehicle),parts=getVisitParts(visit,analysis.vehicle,analysis.decision);return <tr key={i}>
+{isSingleColumnVisible("date")&&<td style={tableColumnStyle("single","date")}>{formatDateShort(visitDate)}</td>}
+{isSingleColumnVisible("jobCard")&&<td style={tableColumnStyle("single","jobCard")}>{jobCard}</td>}
+{isSingleColumnVisible("reading")&&<td style={tableColumnStyle("single","reading")}>{visitReading?`${formatNumber(visitReading)} ${getTargetUnit(analysis.vehicle)}`:"-"}</td>}
+{isSingleColumnVisible("plant")&&<td style={tableColumnStyle("single","plant")}>{[...new Set(visit.map(r=>String(r?.plantName||r?.salesOrgName||"").trim()).filter(Boolean))].join(", ")||"-"}</td>}
+{isSingleColumnVisible("parts")&&<td style={tableColumnStyle("single","parts")}>{parts.length?parts.map((part,index)=><span key={index} className={part.eligible?"history-part eligible":"history-part"} title={part.eligible?"Eligible service-calculation record":"History record"}>{part.text}</span>):"-"}</td>}
+</tr>}) : <tr><td colSpan={Math.max(1,singleTableColumns.length)} className="small-note">No service history loaded.</td></tr>}
+</tbody></table>
                 </div>
               </>
             ) : (
@@ -3526,10 +5004,18 @@ function ServiceDecisionApp({ user }) {
                   </div></div>
 
                   <div className="section-title">Customer-wise Output</div>
-                  {customerGroups.map(group=>{const dueVehicles=group.vehicles.filter(v=>v.services.length>0);return <div className="bulk-card" key={group.id}><div className="bulk-card-head"><div className="action-row"><strong>{group.name}</strong><span className="small-note">{group.vehicles.length} vehicles · {dueVehicles.length} due</span><span className="spacer"/><button className="excel-button no-print" onClick={()=>copyCustomerSummary(group, user?.dealerName)}>Copy WhatsApp Summary</button><button className="excel-button no-print" onClick={()=>printCustomerReport(group,true)}>Print Detailed PDF</button></div></div></div>})}
+                  {customerGroups.map(group=>{const dueVehicles=group.vehicles.filter(v=>v.services.length>0);return <div className="bulk-card" key={group.id}><div className="bulk-card-head"><div className="action-row"><strong>{group.name}</strong><span className="small-note">{group.vehicles.length} vehicles · {dueVehicles.length} due</span><span className="spacer"/><button className="excel-button no-print" onClick={()=>copyCustomerSummary(group, user?.dealerName, user?.preferences || {})}>Copy WhatsApp Summary</button><button className="excel-button no-print" onClick={()=>printCustomerReport(group,true)}>Print Detailed PDF</button></div></div></div>})}
 
+                  <div className="bulk-overview-grid">
+                    <button type="button" className={"bulk-overview-card bulk-overview-card-button " + (bulkQuickFilter === "all" ? "active" : "")} onClick={() => setBulkQuickFilter("all")}><span>Total Vehicles</span><strong>{bulkResults.length}</strong><small>Show all vehicles</small></button>
+                    <button type="button" className={"bulk-overview-card bulk-overview-card-button " + (bulkQuickFilter === "due" ? "active" : "")} onClick={() => setBulkQuickFilter("due")}><span>Service Due</span><strong>{bulkResults.filter(item => item.services?.length > 0).length}</strong><small>Show due vehicles</small></button>
+                    <button type="button" className={"bulk-overview-card bulk-overview-card-button " + (bulkQuickFilter === "due" ? "active" : "")} onClick={() => setBulkQuickFilter("due")}><span>Due Services</span><strong>{bulkResults.reduce((sum,item)=>sum + (item.services?.length || 0),0)}</strong><small>Show due service items</small></button>
+                    <div className="bulk-overview-card"><span>Currently Shown</span><strong>{bulkSummaryRows.length}</strong><small>After search / Excel filters</small></div>
+                  </div>
                   <div className="section-title">Service Summary</div>
+                  <div className="bulk-control-labels no-print"><span>Search</span><span>Excel Filter / Sort</span><span>Export</span></div>
                   <div className="action-row no-print" style={{margin:"6px 0"}}>
+                    <input className="excel-input bulk-search-input" value={bulkSearch} onChange={e=>setBulkSearch(e.target.value)} placeholder="Search VIN, Reg. No., Customer, Model or Service..." aria-label="Search bulk vehicle summary" />
                     <span className="small-note">
                       {bulkSummaryRows.length} vehicle{bulkSummaryRows.length === 1 ? "" : "s"} shown
                       {bulkResults.filter(item=>item.services.length>0).length !== bulkSummaryRows.length
@@ -3538,32 +5024,24 @@ function ServiceDecisionApp({ user }) {
                     </span>
                     <span className="spacer"/>
                     <button className="excel-button" onClick={clearAllBulkFilters}>Reset Sort / Filter</button>
+                    <button className="excel-button" onClick={downloadBulkCsv}>Download Excel</button>
                   </div>
                   <div className="history-wrap">
-                    <table className="history-table bulk-service-table">
-                      <thead>
-                        <tr>
-                          <th>
-                            <div className="bulk-th">
-                              <div className="bulk-th-top">
-                                <button className="bulk-sort-btn" onClick={() => setBulkSort("dueCount")} title="Sort by number of due services">S.No. / Due</button>
-                                <span className="bulk-sort-indicator">{bulkTableSort.key === "dueCount" ? (bulkTableSort.direction === "asc" ? "▲" : "▼") : ""}</span>
-                              </div>
-                            </div>
-                          </th>
+                    <table className="history-table bulk-service-table dashboard-resizable-table"><thead><tr>
+<th style={tableColumnStyle("bulk","serial")}><div className="bulk-th"><div className="bulk-th-top"><button className="bulk-sort-btn" onClick={()=>setBulkSort("dueCount")} title="Sort by number of due services">{dashboardPrefs.bulkColumnLabels?.serial||"S.No. / Due"}</button><span className="bulk-sort-indicator">{bulkTableSort.key==="dueCount"?(bulkTableSort.direction==="asc"?"▲":"▼"):""}</span></div></div><span className="column-resizer" onPointerDown={e=>resizeTableColumn("bulk","serial",e)}/></th>
                           {[
-                            ["Customer Name","customerName"],
-                            ["VIN","vin"],
-                            ["Reg. No.","reg"],
-                            ["Sale Date","saleDate"],
-                            ["Model","model"],
-                            ["Current Reading","currentReading"],
-                            ["Service To Be Completed","services"],
-                          ].map(([label,key]) => {
+                            [bulkColumnLabels.customerName||"Customer Name","customerName"],
+                            [bulkColumnLabels.vin||"VIN","vin"],
+                            [bulkColumnLabels.reg||"Reg. No.","reg"],
+                            [bulkColumnLabels.saleDate||"Sale Date","saleDate"],
+                            [bulkColumnLabels.model||"Model","model"],
+                            [bulkColumnLabels.currentReading||"Current Reading","currentReading"],
+                            [bulkColumnLabels.services||"Service To Be Completed","services"],
+                          ].filter(([,key]) => isBulkColumnVisible(key)).map(([label,key]) => {
                             const active = bulkFilterSelections[key]?.length > 0;
                             const sortActive = bulkTableSort.key === key;
                             return (
-                              <th key={key}>
+                              <th key={key} style={tableColumnStyle("bulk",key)}>
                                 <div className={`bulk-th ${active ? "bulk-th-filtered" : ""}`}>
                                   <div className="bulk-th-top">
                                     <span className="bulk-column-title">{label}</span>
@@ -3583,13 +5061,12 @@ function ServiceDecisionApp({ user }) {
                                       ▼
                                     </button>
                                   </div>
-                                  <div className={`bulk-filter-status ${active ? "active" : ""}`}>
-                                    {active
-                                      ? `${bulkFilterSelections[key].length} selected`
-                                      : "Filter"}
-                                  </div>
-                                </div>
-                              </th>
+                                  {active && (
+                                    <div className="bulk-filter-status active">
+                                      {bulkFilterSelections[key].length} selected
+                                    </div>
+                                  )}
+                                </div><span className="column-resizer" onPointerDown={e=>resizeTableColumn("bulk",key,e)}/></th>
                             );
                           })}
                         </tr>
@@ -3597,14 +5074,8 @@ function ServiceDecisionApp({ user }) {
                       <tbody>
                         {bulkSummaryRows.map((item,index) => (
                           <tr key={item.vin || index}>
-                            <td>{index + 1}</td>
-                            <td>{item.vehicle.customerName || "-"}</td>
-                            <td>{item.vin || item.vehicle.vin || "-"}</td>
-                            <td>{item.vehicle.reg || "-"}</td>
-                            <td>{item.vehicle.sale ? formatDateShort(item.vehicle.sale) : "-"}</td>
-                            <td>{item.vehicle.model || "-"}</td>
-                            <td>{item.running?.current ? `${formatNumber(item.running.current)} ${item.running.unit || getTargetUnit(item.vehicle)}` : "-"}</td>
-                            <td>{item.services.join(", ")}</td>
+                            <td style={tableColumnStyle("bulk","serial")}>{index + 1}</td>
+                            {isBulkColumnVisible("customerName") && <td style={tableColumnStyle("bulk","customerName")}>{item.vehicle.customerName || "-"}</td>}{isBulkColumnVisible("vin") && <td style={tableColumnStyle("bulk","vin")}>{item.vin || item.vehicle.vin || "-"}</td>}{isBulkColumnVisible("reg") && <td style={tableColumnStyle("bulk","reg")}>{item.vehicle.reg || "-"}</td>}{isBulkColumnVisible("saleDate") && <td style={tableColumnStyle("bulk","saleDate")}>{item.vehicle.sale ? formatDateShort(item.vehicle.sale) : "-"}</td>}{isBulkColumnVisible("model") && <td style={tableColumnStyle("bulk","model")}>{item.vehicle.model || "-"}</td>}{isBulkColumnVisible("currentReading") && <td style={tableColumnStyle("bulk","currentReading")}>{item.running?.current ? `${formatNumber(item.running.current)} ${item.running.unit || getTargetUnit(item.vehicle)}` : "-"}</td>}{isBulkColumnVisible("services") && <td style={tableColumnStyle("bulk","services")}>{item.services.join(", ")}</td>}
                           </tr>
                         ))}
                         {!bulkSummaryRows.length && (
@@ -3661,6 +5132,84 @@ function ServiceDecisionApp({ user }) {
               </>
             )}
           </main>
+
+        {estimateOpen && (
+          <div className="no-print" style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+            <div className="estimate-workspace" style={{background:"#fff",color:"#111",width:"min(1100px,96vw)",maxHeight:"94vh",overflow:"auto",borderRadius:10,padding:18}}>
+              {estimateStage === "vehicle" ? (
+                <>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
+                    <div style={{fontSize:22,fontWeight:800}}>SERVICE ESTIMATE</div>
+                    <div className="estimate-meta">Estimate No. (Session): <b>{estimateNumber || "-"}</b> · Date: <b>{formatDate(new Date())}</b></div>
+                    <button className="excel-button" style={{marginLeft:"auto"}} onClick={()=>setEstimateOpen(false)}>Cancel</button>
+                  </div>
+                  <div style={{border:"1px solid #d5d5d5",borderRadius:8,padding:14}}>
+                    <div style={{fontWeight:800,fontSize:16,marginBottom:10}}>1. Vehicle Details</div>
+                    <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) auto",gap:8,alignItems:"end"}}>
+                      <div>
+                        <label style={{fontWeight:700}}>Vehicle No.</label>
+                        <input className="excel-input" value={estimateVehicleNo} onChange={e=>setEstimateVehicleNo(e.target.value)} onKeyDown={e=>{if(e.key==="Enter") void lookupEstimateVehicle();}} placeholder="e.g. GJ12BZ7541" autoFocus />
+                      </div>
+                      <button className="excel-button green" disabled={estimateVehicleLookupBusy} onClick={()=>void lookupEstimateVehicle()}>{estimateVehicleLookupBusy ? "Checking DB..." : "Next"}</button>
+                    </div>
+                    <div className="small-note" style={{marginTop:8}}>Spaces are removed automatically before DB lookup.</div>
+                  </div>
+                </>
+              ) : estimateStage === "select" ? (
+                <>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
+                    <div style={{fontSize:22,fontWeight:800}}>SELECT AGGREGATE SERVICES</div><div className="estimate-meta">Estimate No. (Session): <b>{estimateNumber || "-"}</b> · Date: <b>{formatDate(new Date())}</b></div>
+                    <span style={{fontSize:12,color:"#666"}}>Single Vehicle Estimate</span>
+                    <button className="excel-button" style={{marginLeft:"auto"}} onClick={()=>setEstimateOpen(false)}>Cancel</button>
+                  </div>
+                  <div style={{border:"1px solid #d5d5d5",borderRadius:8,padding:14}}>
+                    <div style={{fontWeight:800,fontSize:16,marginBottom:10}}>Which services should be included in the estimate?</div>
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:8}}>
+                      {BULK_SERVICE_LABELS.map(([label,key])=>{
+                        const due=!!analysis?.decision?.result?.[key], checked=estimateSelectedServices.includes(key);
+                        return <label key={key} style={{display:"flex",alignItems:"center",gap:9,border:"1px solid #ddd",padding:"10px 12px",borderRadius:7,cursor:"pointer",fontSize:15}}>
+                          <input type="checkbox" checked={checked} onChange={e=>setEstimateSelectedServices(e.target.checked?[...estimateSelectedServices,key]:estimateSelectedServices.filter(x=>x!==key))}/>
+                          <span>{label}</span><small style={{marginLeft:"auto",color:due?"#217346":"#777"}}>{due?"Due":"Not Due"}</small>
+                        </label>;
+                      })}
+                    </div>
+                  </div>
+                  {estimateLoading && <div style={{marginTop:12,padding:10,textAlign:"center",background:"#f5f5f5",borderRadius:7}}>Loading vehicle history...</div>}
+                  {!estimateLoading && estimateNotice && <div style={{marginTop:12,padding:10,background:"#f5f5f5",borderRadius:7}}>{estimateNotice}</div>}
+                  <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:16}}>
+                    <button className="excel-button" onClick={()=>setEstimateOpen(false)}>Cancel</button>
+                    <button className="excel-button green" disabled={estimateLoading} onClick={prepareEstimate}>OK / Prepare Estimate</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,borderBottom:"1px solid #ddd",paddingBottom:10}}>
+                    <div style={{fontSize:22,fontWeight:800}}>SERVICE ESTIMATE</div><div className="estimate-meta">Estimate No. (Session): <b>{estimateNumber || "-"}</b> · Date: <b>{formatDate(new Date())}</b></div>
+                    <span style={{fontSize:12,color:"#666"}}>Single Vehicle Only</span>
+                    <span style={{marginLeft:"auto",fontWeight:700}}>{user?.dealerName || "Workshop"}</span>
+                    <button className="excel-button no-print" onClick={()=>setEstimateOpen(false)}>Close</button>
+                  </div>
+                   <div style={{display:"grid",gridTemplateColumns:"repeat(5,minmax(0,1fr))",gap:8,marginBottom:12}}>
+                     {[["Customer","customerName"],["Reg. No.","reg"],["Chassis / VIN","vin"],["Engine No.","engine"],["Model","model"]].map(([label,key]) => (
+                       <div key={key}><b>{label}</b><input className="excel-input" value={estimateVehicle?.[key] || ""} onChange={e=>setEstimateVehicle(prev=>({...prev,[key]:e.target.value}))} /></div>
+                     ))}
+                   </div>
+                  <div style={{fontWeight:800,margin:"10px 0 6px"}}>Selected Aggregate Services</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>{BULK_SERVICE_LABELS.filter(([,key])=>estimateSelectedServices.includes(key)).map(([label])=><span key={label} style={{border:"1px solid #bbb",padding:"5px 8px",borderRadius:5,fontSize:12,background:"#f7f7f7"}}>{label}</span>)}</div>
+                  <div style={{fontWeight:800,margin:"10px 0 6px"}}>Parts</div>
+                  <table className="history-table"><thead><tr><th>Part No.</th><th>Description</th><th>Qty</th><th>Rate (Incl. GST)</th><th>Amount</th><th></th></tr></thead><tbody>{estimateParts.map(item=><tr key={item.id}><td><input value={item.partNo} onChange={e=>updateEstimateItem("part",item.id,"partNo",e.target.value)} onBlur={e=>lookupManualEstimatePart(item.id,e.target.value)} title="Enter Part No. and leave the field to auto-fill description and rate"/></td><td><input value={item.description} onChange={e=>updateEstimateItem("part",item.id,"description",e.target.value)}/></td><td><input type="number" min="0" step="0.01" value={item.qty ?? ""} placeholder="Qty" onChange={e=>updateEstimateItem("part",item.id,"qty",e.target.value)} onBlur={normalizeEstimateQuantities} onKeyDown={e=>{if(e.key==="Enter") normalizeEstimateQuantities();}} style={{width:80}}/></td><td><input type="number" min="0" step="0.01" value={item.rate} onChange={e=>updateEstimateItem("part",item.id,"rate",e.target.value)} style={{width:110}}/></td><td>{formatNumber(item.qty*item.rate)}</td><td><button className="excel-button no-print" onClick={()=>removeEstimateItem("part",item.id)}>Delete</button></td></tr>)}{!estimateParts.length&&<tr><td colSpan="6">No historical part found. Add manually.</td></tr>}</tbody></table>
+                  <div style={{margin:"8px 0"}}><button className="excel-button no-print" onClick={()=>addEstimateItem("part")}>+ Add Part</button></div>
+                  <div style={{fontWeight:800,margin:"14px 0 6px"}}>Labour</div>
+                  <table className="history-table"><thead><tr><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th><th></th></tr></thead><tbody>{estimateLabour.map(item=><tr key={item.id}><td><input value={item.description} onChange={e=>updateEstimateItem("labour",item.id,"description",e.target.value)}/></td><td><input type="number" min="0" step="0.01" value={item.qty ?? ""} onChange={e=>updateEstimateItem("labour",item.id,"qty",e.target.value)} onBlur={normalizeEstimateQuantities} onKeyDown={e=>{if(e.key==="Enter") normalizeEstimateQuantities();}} style={{width:80}}/></td><td><input type="number" min="0" step="0.01" value={item.rate} onChange={e=>updateEstimateItem("labour",item.id,"rate",e.target.value)} style={{width:110}}/></td><td>{formatNumber(item.qty*item.rate)}</td><td><button className="excel-button no-print" onClick={()=>removeEstimateItem("labour",item.id)}>Delete</button></td></tr>)}{!estimateLabour.length&&<tr><td colSpan="5">No historical labour found. Add manually.</td></tr>}</tbody></table>
+                  <div style={{margin:"8px 0"}}><button className="excel-button no-print" onClick={()=>addEstimateItem("labour")}>+ Add Labour</button></div>
+                  <div style={{marginTop:16,marginLeft:"auto",maxWidth:380,borderTop:"2px solid #222",paddingTop:10}}><div style={{display:"flex",justifyContent:"space-between"}}><span>Parts Total</span><b>₹ {formatNumber(estimatePartsTotal)}</b></div><div style={{display:"flex",justifyContent:"space-between"}}><span>Labour Subtotal</span><b>₹ {formatNumber(estimateLabourBase)}</b></div><div style={{display:"flex",justifyContent:"space-between"}}><span>GST on Labour (18%)</span><b>₹ {formatNumber(estimateLabourGst)}</b></div><div style={{display:"flex",justifyContent:"space-between",fontSize:18,marginTop:6}}><span>Grand Total</span><b>₹ {formatNumber(estimateGrandTotal)}</b></div></div>
+                  <div className="no-print" style={{display:"flex",flexWrap:"wrap",justifyContent:"flex-end",gap:8,marginTop:18,paddingTop:12,borderTop:"1px solid #ddd"}}><button className="excel-button" onClick={reviseEstimateServices}>Revise Aggregate Service</button><button className="excel-button green" disabled={estimateSaveBusy} onClick={saveEstimateToDb}>{estimateSaveBusy ? "Saving..." : "Save Estimate"}</button><button className="excel-button" onClick={()=>buildEstimatePdf(true)}>Print A4</button><button className="excel-button green" onClick={()=>buildEstimatePdf(false)}>Download PDF</button></div>
+                  <div style={{marginTop:8,fontSize:12,color:"#666"}}>Estimate only. Historical DB rates are without GST; 18% GST is added to historical part rates shown above. Missing items/rates can be entered manually using GST-inclusive rates.</div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
         </div>
       </div>
     </>

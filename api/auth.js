@@ -517,9 +517,18 @@ export default async function handler(req, res) {
         return res.status(400).json({success:false,error:"Name and dealer name are required."});
       }
 
+      // Merge incoming preferences with the user's existing preferences instead of
+      // replacing the entire JSON object. This prevents fields such as booking
+      // contacts from being lost when an older/newer UI sends only part of the
+      // preference set.
+      const mergedPreferences = {
+        ...(sessionUser.preferences && typeof sessionUser.preferences === "object" ? sessionUser.preferences : {}),
+        ...preferences,
+      };
+
       const updated = await client.query(
         "UPDATE app_users SET person_name=$1,dealer_name=$2,mobile=$3,preferences=$4::jsonb WHERE id=$5 RETURNING *",
-        [personName,dealerName,mobile || null,JSON.stringify(preferences),sessionUser.id]
+        [personName,dealerName,mobile || null,JSON.stringify(mergedPreferences),sessionUser.id]
       );
       await client.query("COMMIT");
       return res.json({success:true,user:userPayload(updated.rows[0]),message:"Profile and preferences saved."});

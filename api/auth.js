@@ -8,6 +8,7 @@ const pool = new Pool({
 });
 
 const SESSION_DAYS = 30;
+const SESSION_INACTIVITY_HOURS = 12;
 const DEFAULT_ADMIN_EMAIL = "rahul.mundra02@gmail.com";
 const DEFAULT_ADMIN_MOBILE = "9461768278";
 const DEFAULT_ADMIN_NAME = "Rahul Mundra";
@@ -170,13 +171,20 @@ async function getUserByToken(client, token) {
   const tokenHash = hashValue(token);
   const result = await client.query(
     `SELECT u.id,u.person_name,u.dealer_name,u.email,u.mobile,u.role,u.status,
-            u.email_verified,u.mobile_verified,u.created_at,u.last_login_at,u.last_activity_at
+            u.email_verified,u.mobile_verified,u.created_at,u.last_login_at,u.last_activity_at,
+            s.last_seen_at
        FROM auth_sessions s
        JOIN app_users u ON u.id=s.user_id
       WHERE s.token_hash=$1 AND s.expires_at>NOW() AND u.status='active'`,
     [tokenHash]
   );
   if (!result.rows[0]) return null;
+
+  const lastSeen = result.rows[0].last_seen_at ? new Date(result.rows[0].last_seen_at).getTime() : 0;
+  if (!lastSeen || Date.now() - lastSeen > SESSION_INACTIVITY_HOURS * 60 * 60 * 1000) {
+    await client.query("DELETE FROM auth_sessions WHERE token_hash=$1", [tokenHash]);
+    return null;
+  }
 
   await client.query("UPDATE auth_sessions SET last_seen_at=NOW() WHERE token_hash=$1", [tokenHash]);
   await client.query("UPDATE app_users SET last_activity_at=NOW() WHERE id=$1", [result.rows[0].id]);

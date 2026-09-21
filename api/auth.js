@@ -567,11 +567,12 @@ export default async function handler(req, res) {
       const personName = clean(body.personName);
       const dealerName = clean(body.dealerName);
       const mobile = normalizeMobile(body.mobile);
+      const dashboardOnly = body.dashboardOnly === true;
       const preferences = body.preferences && typeof body.preferences === "object"
         ? body.preferences
         : {};
 
-      if (!personName || !dealerName) {
+      if (!dashboardOnly && (!personName || !dealerName)) {
         await client.query("ROLLBACK");
         return res.status(400).json({success:false,error:"Name and dealer name are required."});
       }
@@ -580,15 +581,27 @@ export default async function handler(req, res) {
       // replacing the entire JSON object. This prevents fields such as booking
       // contacts from being lost when an older/newer UI sends only part of the
       // preference set.
-      const mergedPreferences = {
-        ...(sessionUser.preferences && typeof sessionUser.preferences === "object" ? sessionUser.preferences : {}),
-        ...preferences,
-      };
+      const existingPreferences = sessionUser.preferences && typeof sessionUser.preferences === "object"
+        ? sessionUser.preferences
+        : {};
 
-      const updated = await client.query(
-        "UPDATE app_users SET person_name=$1,dealer_name=$2,mobile=$3,preferences=$4::jsonb WHERE id=$5 RETURNING *",
-        [personName,dealerName,mobile || null,JSON.stringify(mergedPreferences),sessionUser.id]
-      );
+      // Dashboard autosave is intentionally restricted to dashboard settings.
+      // It must never overwrite profile-only fields such as booking contacts.
+      const mergedPreferences = dashboardOnly
+        ? { ...existingPreferences, ...preferences,
+            booking1: existingPreferences.booking1 || "",
+            booking2: existingPreferences.booking2 || "" }
+        : { ...existingPreferences, ...preferences };
+
+      const updated = dashboardOnly
+        ? await client.query(
+            "UPDATE app_users SET preferences=$1::jsonb WHERE id=$2 RETURNING *",
+            [JSON.stringify(mergedPreferences),sessionUser.id]
+          )
+        : await client.query(
+            "UPDATE app_users SET person_name=$1,dealer_name=$2,mobile=$3,preferences=$4::jsonb WHERE id=$5 RETURNING *",
+            [personName,dealerName,mobile || null,JSON.stringify(mergedPreferences),sessionUser.id]
+          );
       await client.query("COMMIT");
       return res.json({success:true,user:userPayload(updated.rows[0]),message:"Profile and preferences saved."});
     }

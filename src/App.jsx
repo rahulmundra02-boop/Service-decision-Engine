@@ -3660,8 +3660,7 @@ function ServiceDecisionApp({ user }) {
   const bulkSummaryRows = useMemo(() => {
     const search = bulkSearch.trim().toLowerCase();
     const rows = bulkResults
-      .filter(item => Array.isArray(item.services) && item.services.length > 0)
-      .filter(item => bulkQuickFilter === "all" || bulkQuickFilter === "due")
+      .filter(item => bulkQuickFilter === "all" || (Array.isArray(item.services) && item.services.length > 0))
       .filter(item => {
         if (!search) return true;
         const values = getBulkDisplayValues(item);
@@ -4827,9 +4826,9 @@ function ServiceDecisionApp({ user }) {
                   {customerGroups.map(group=>{const dueVehicles=group.vehicles.filter(v=>v.services.length>0);return <div className="bulk-card" key={group.id}><div className="bulk-card-head"><div className="action-row"><strong>{group.name}</strong><span className="small-note">{group.vehicles.length} vehicles · {dueVehicles.length} due</span><span className="spacer"/><button className="excel-button no-print" onClick={()=>copyCustomerSummary(group, user?.dealerName, user?.preferences || {})}>Copy WhatsApp Summary</button><button className="excel-button no-print" onClick={()=>printCustomerReport(group,true)}>Print Detailed PDF</button></div></div></div>})}
 
                   <div className="bulk-overview-grid">
-                    <button type="button" className={"bulk-overview-card bulk-overview-card-button " + (bulkQuickFilter === "all" ? "active" : "")} onClick={() => setBulkQuickFilter("all")}><span>Total Vehicles</span><strong>{bulkResults.length}</strong><small>Show all due vehicles</small></button>
+                    <button type="button" className={"bulk-overview-card bulk-overview-card-button " + (bulkQuickFilter === "all" ? "active" : "")} onClick={() => setBulkQuickFilter("all")}><span>Total Vehicles</span><strong>{bulkResults.length}</strong><small>Show all vehicles</small></button>
                     <button type="button" className={"bulk-overview-card bulk-overview-card-button " + (bulkQuickFilter === "due" ? "active" : "")} onClick={() => setBulkQuickFilter("due")}><span>Service Due</span><strong>{bulkResults.filter(item => item.services?.length > 0).length}</strong><small>Show due vehicles</small></button>
-                    <div className="bulk-overview-card"><span>Due Services</span><strong>{bulkResults.reduce((sum,item)=>sum + (item.services?.length || 0),0)}</strong><small>Total due service items</small></div>
+                    <button type="button" className={"bulk-overview-card bulk-overview-card-button " + (bulkQuickFilter === "due" ? "active" : "")} onClick={() => setBulkQuickFilter("due")}><span>Due Services</span><strong>{bulkResults.reduce((sum,item)=>sum + (item.services?.length || 0),0)}</strong><small>Show due service items</small></button>
                     <div className="bulk-overview-card"><span>Currently Shown</span><strong>{bulkSummaryRows.length}</strong><small>After search / Excel filters</small></div>
                   </div>
                   <div className="section-title">Service Summary</div>
@@ -4881,11 +4880,11 @@ function ServiceDecisionApp({ user }) {
                                       ▼
                                     </button>
                                   </div>
-                                  <div className={`bulk-filter-status ${active ? "active" : ""}`}>
-                                    {active
-                                      ? `${bulkFilterSelections[key].length} selected`
-                                      : "Filter"}
-                                  </div>
+                                  {active && (
+                                    <div className="bulk-filter-status active">
+                                      {bulkFilterSelections[key].length} selected
+                                    </div>
+                                  )}
                                 </div><span className="column-resizer" onPointerDown={e=>resizeTableColumn("bulk",key,e)}/></th>
                             );
                           })}

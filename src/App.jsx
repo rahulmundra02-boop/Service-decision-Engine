@@ -3274,7 +3274,7 @@ function ServiceDecisionApp({ user }) {
     const token = localStorage.getItem("serviceDecisionAuthToken");
     if (!token) return;
     try {
-      const response = await fetch("/api/auth", { method:"POST", headers:{ "Content-Type":"application/json", Authorization:`Bearer ${token}` }, body:JSON.stringify({ action:"update-profile", personName:user?.personName || "", dealerName:user?.dealerName || "", mobile:user?.mobile || "", preferences:nextPrefs }) });
+      const response = await fetch("/api/auth", { method:"POST", headers:{ "Content-Type":"application/json", Authorization:`Bearer ${token}` }, body:JSON.stringify({ action:"update-profile", dashboardOnly:true, preferences:nextPrefs }) });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || data.success === false) throw new Error(data.error || "Unable to save table preferences.");
     } catch (error) { console.error("Dashboard preference save failed:", error); }

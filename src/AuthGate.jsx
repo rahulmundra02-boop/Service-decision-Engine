@@ -187,6 +187,9 @@ export default function AuthGate({ children }) {
 
 
   const loadAdminAnalytics = async (userId = analyticsUserId, rangeDays = analyticsRange) => {
+    // Update the selected range immediately so the UI does not remain on the
+    // previous tab while the analytics request is loading.
+    setAnalyticsRange(rangeDays);
     setAnalyticsLoading(true);
     try {
       const payload = { rangeDays, includeAdmins: analyticsIncludeAdmins };

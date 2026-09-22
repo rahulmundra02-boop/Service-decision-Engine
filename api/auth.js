@@ -527,6 +527,10 @@ export default async function handler(req, res) {
         params
       );
 
+      const analyticsQueryParams = rangeDays === 1
+        ? (targetUserId ? [targetUserId] : [])
+        : (targetUserId ? [targetUserId, rangeDays] : [rangeDays]);
+
       const periods = await client.query(
         `SELECT (a.activity_time AT TIME ZONE 'Asia/Kolkata')::date AS activity_date,
                 COUNT(*)::int AS activities,
@@ -536,7 +540,7 @@ export default async function handler(req, res) {
            FROM user_activity a
           WHERE ${targetUserId ? "a.user_id=$1 AND " : ""}${!includeAdmins ? "a.user_id IN (SELECT id FROM app_users WHERE role <> 'admin') AND " : ""}${rangeDays === 1 ? "(a.activity_time AT TIME ZONE 'Asia/Kolkata')::date = (NOW() AT TIME ZONE 'Asia/Kolkata')::date" : "a.activity_time >= NOW() - (" + (targetUserId ? "$2" : "$1") + " * INTERVAL '1 day')"}
           GROUP BY 1 ORDER BY 1`,
-        targetUserId ? [targetUserId, rangeDays] : [rangeDays]
+        analyticsQueryParams
       );
 
       const breakdown = await client.query(
@@ -547,7 +551,7 @@ export default async function handler(req, res) {
           WHERE ${targetUserId ? "a.user_id=$1 AND " : ""}${!includeAdmins ? "a.user_id IN (SELECT id FROM app_users WHERE role <> 'admin') AND " : ""}${rangeDays === 1 ? "(a.activity_time AT TIME ZONE 'Asia/Kolkata')::date = (NOW() AT TIME ZONE 'Asia/Kolkata')::date" : "a.activity_time >= NOW() - (" + (targetUserId ? "$2" : "$1") + " * INTERVAL '1 day')"}
           GROUP BY a.activity_type
           ORDER BY count DESC, a.activity_type`,
-        targetUserId ? [targetUserId, rangeDays] : [rangeDays]
+        analyticsQueryParams
       );
 
       await client.query("COMMIT");

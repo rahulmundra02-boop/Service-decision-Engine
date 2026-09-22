@@ -544,7 +544,7 @@ export default async function handler(req, res) {
                 COALESCE(SUM(a.vehicle_count),0)::int AS vehicles,
                 COALESCE(SUM(a.file_count),0)::int AS files
            FROM user_activity a
-          WHERE ${targetUserId ? "a.user_id=$1 AND " : ""}${!includeAdmins ? "a.user_id IN (SELECT id FROM app_users WHERE role <> 'admin') AND " : ""}a.activity_time >= NOW() - (${targetUserId ? "$2" : "$1"} * INTERVAL '1 day')
+          WHERE ${targetUserId ? "a.user_id=$1 AND " : ""}${!includeAdmins ? "a.user_id IN (SELECT id FROM app_users WHERE role <> 'admin') AND " : ""}${rangeDays === 1 ? "(a.activity_time AT TIME ZONE 'Asia/Kolkata')::date = (NOW() AT TIME ZONE 'Asia/Kolkata')::date" : "a.activity_time >= NOW() - (" + (targetUserId ? "$2" : "$1") + " * INTERVAL '1 day')"}
           GROUP BY a.activity_type
           ORDER BY count DESC, a.activity_type`,
         targetUserId ? [targetUserId, rangeDays] : [rangeDays]

@@ -144,6 +144,10 @@ async function ensureSchema(client) {
     INSERT INTO app_settings (setting_key, setting_value)
     VALUES ('job_card_cache', '{"enabled":true,"intervalHours":24,"version":1,"lastRebuildAt":null}'::jsonb)
     ON CONFLICT (setting_key) DO NOTHING;
+
+    INSERT INTO app_settings (setting_key, setting_value)
+    VALUES ('emergency_db_upload_cutoff', '{"enabled":false}'::jsonb)
+    ON CONFLICT (setting_key) DO NOTHING;
   `);
 }
 
@@ -593,6 +597,37 @@ export default async function handler(req, res) {
           cachedJobCards: Number(countResult.rows[0]?.count || 0),
           updatedAt: result.rows[0]?.updated_at || null
         }
+      });
+    }
+
+    if (action === "emergency-db-upload-cutoff-settings") {
+      const result = await client.query(
+        "SELECT setting_value, updated_at FROM app_settings WHERE setting_key='emergency_db_upload_cutoff' LIMIT 1"
+      );
+      const settings = result.rows[0]?.setting_value || { enabled:false };
+      await client.query("COMMIT");
+      return res.json({ success:true, settings:{ enabled:settings.enabled === true, updatedAt:result.rows[0]?.updated_at || null } });
+    }
+
+    if (action === "admin-emergency-db-upload-cutoff") {
+      const admin = await requireAdmin(client, req);
+      if (admin.error) {
+        await client.query("ROLLBACK");
+        return res.status(admin.status).json({success:false,error:admin.error});
+      }
+      const enabled = body.enabled === true;
+      await client.query(
+        "INSERT INTO app_settings (setting_key,setting_value,updated_at) " +
+        "VALUES ('emergency_db_upload_cutoff',$1::jsonb,NOW()) " +
+        "ON CONFLICT (setting_key) DO UPDATE SET setting_value=EXCLUDED.setting_value,updated_at=NOW()",
+        [JSON.stringify({enabled})]
+      );
+      await logActivity(client, admin.user.id, "Emergency DB Upload Cutoff", { details:{ enabled } });
+      await client.query("COMMIT");
+      return res.json({
+        success:true,
+        settings:{enabled,updatedAt:new Date().toISOString()},
+        message:enabled ? "Emergency DB Upload Cutoff is now ON. New Excel history uploads are paused." : "Emergency DB Upload Cutoff is now OFF. Excel history uploads are active again."
       });
     }
 

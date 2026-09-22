@@ -486,7 +486,7 @@ export default async function handler(req, res) {
       }
 
       const targetUserId = body.userId ? Number(body.userId) : null;
-      const rangeDays = [7,30,90].includes(Number(body.rangeDays)) ? Number(body.rangeDays) : 30;
+      const rangeDays = [1,7,30,90].includes(Number(body.rangeDays)) ? Number(body.rangeDays) : 30;
       const includeAdmins = body.includeAdmins !== false;
       const userConditions = [];
       const params = [];
@@ -534,7 +534,7 @@ export default async function handler(req, res) {
                 COALESCE(SUM(a.vehicle_count),0)::int AS vehicles,
                 COALESCE(SUM(a.file_count),0)::int AS files
            FROM user_activity a
-          WHERE ${targetUserId ? "a.user_id=$1 AND " : ""}${!includeAdmins ? "a.user_id IN (SELECT id FROM app_users WHERE role <> 'admin') AND " : ""}a.activity_time >= NOW() - (${targetUserId ? "$2" : "$1"} * INTERVAL '1 day')
+          WHERE ${targetUserId ? "a.user_id=$1 AND " : ""}${!includeAdmins ? "a.user_id IN (SELECT id FROM app_users WHERE role <> 'admin') AND " : ""}${rangeDays === 1 ? "(a.activity_time AT TIME ZONE 'Asia/Kolkata')::date = (NOW() AT TIME ZONE 'Asia/Kolkata')::date" : "a.activity_time >= NOW() - (" + (targetUserId ? "$2" : "$1") + " * INTERVAL '1 day')"}
           GROUP BY 1 ORDER BY 1`,
         targetUserId ? [targetUserId, rangeDays] : [rangeDays]
       );

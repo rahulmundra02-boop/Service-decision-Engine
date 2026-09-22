@@ -3723,6 +3723,24 @@ function ServiceDecisionApp({ user }) {
       ? "http://localhost:3001"
       : "");
 
+  async function fetchEmergencyDbUploadCutoff() {
+    try {
+      const response = await fetch("/api/auth", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body:JSON.stringify({ action:"emergency-db-upload-cutoff-settings" })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data?.success === false) {
+        throw new Error(data?.error || "Emergency DB upload cutoff status unavailable.");
+      }
+      return { enabled:data?.settings?.enabled === true, statusAvailable:true };
+    } catch (error) {
+      console.warn("Emergency DB upload cutoff status unavailable; pausing DB history save for safety.", error);
+      return { enabled:true, statusAvailable:false };
+    }
+  }
+
   async function checkNewJobCards(apiBaseUrl, jobCards) {
     const uniqueJobCards = [...new Set(
       (jobCards || []).map(normalizeJobCard).filter(Boolean)
@@ -3866,44 +3884,36 @@ function ServiceDecisionApp({ user }) {
         );
       } else {
         // Service Decision always uses the complete parsed Excel data.
-        // Database persistence uses a central Job Card check so the same history
-        // is not uploaded again from another browser/device.
-        const allJobCards = parsedRows
-          .map(record => normalizeJobCard(record?.jobCard))
-          .filter(Boolean);
+        // Emergency cutoff affects only DB persistence.
+        if (parsedRows.length) {
+          const cutoff = await fetchEmergencyDbUploadCutoff();
 
-        const newJobCards = await getHybridNewJobCards(
-          API_BASE_URL,
-          allJobCards,
-          (candidateJobCards) => checkNewJobCards(API_BASE_URL, candidateJobCards)
-        );
-        const recordsForBackend = parsedRows.filter(record => {
-          const jobCard = normalizeJobCard(record?.jobCard);
-          return !!jobCard && newJobCards.has(jobCard);
-        });
+          if (cutoff.enabled) {
+            console.warn(
+              cutoff.statusAvailable
+                ? "Emergency DB Upload Cutoff is active. Skipping DB history persistence."
+                : "Emergency DB Upload Cutoff status unavailable. DB history persistence is paused for safety."
+            );
+          } else {
+            const allJobCards = parsedRows
+              .map(record => normalizeJobCard(record?.jobCard))
+              .filter(Boolean);
 
-        const existingJobCardRowCount = parsedRows.filter(record => {
-          const jobCard = normalizeJobCard(record?.jobCard);
-          return !!jobCard && !newJobCards.has(jobCard);
-        }).length;
+            const newJobCards = await getHybridNewJobCards(
+              API_BASE_URL,
+              allJobCards,
+              (candidateJobCards) => checkNewJobCards(API_BASE_URL, candidateJobCards)
+            );
 
-        if (existingJobCardRowCount) {
-          setUploadMeta(prev => ({
-            ...prev,
-            rowsBefore: result.totalRowsBeforeDedup,
-            duplicates: Number(prev?.duplicates || 0) + existingJobCardRowCount,
-            rowsAfter: parsedRows.length,
-            jobCardDuplicates: new Set(
-              allJobCards.filter(jobCard => !newJobCards.has(jobCard))
-            ).size,
-            backendRows: recordsForBackend.length,
-          }));
-        }
+            const recordsForBackend = parsedRows.filter(record => {
+              const jobCard = normalizeJobCard(record?.jobCard);
+              return !!jobCard && newJobCards.has(jobCard);
+            });
 
-        // Analysis continues to use the complete uploaded Excel data exactly as before.
-        // Only DB persistence is filtered, so Service Decision calculations/UI are unchanged.
-        if (recordsForBackend.length) {
-          void saveHistoryInBackground(recordsForBackend);
+            if (recordsForBackend.length) {
+              void saveHistoryInBackground(recordsForBackend);
+            }
+          }
         }
       }
     } catch (err) {

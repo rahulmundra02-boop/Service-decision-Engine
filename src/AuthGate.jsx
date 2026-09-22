@@ -64,6 +64,7 @@ export default function AuthGate({ children }) {
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsIncludeAdmins, setAnalyticsIncludeAdmins] = useState(true);
   const [jobCardCacheSettings, setJobCardCacheSettings] = useState({ enabled:true, intervalHours:24, version:1, lastRebuildAt:null, nextRebuildAt:null, cachedJobCards:0 });
+  const [emergencyDbUploadCutoff, setEmergencyDbUploadCutoff] = useState(false);
   const [sessionConflict, setSessionConflict] = useState(null);
 
   useEffect(() => {
@@ -216,6 +217,25 @@ export default function AuthGate({ children }) {
     setMessage(data.message || "Job Card cache settings updated.");
   });
 
+  const loadEmergencyDbUploadCutoff = async () => {
+    try {
+      const data = await api("emergency-db-upload-cutoff-settings");
+      setEmergencyDbUploadCutoff(data?.settings?.enabled === true);
+    } catch (e) {
+      setError(e.message || "Unable to load emergency DB upload cutoff settings.");
+    }
+  };
+
+  const updateEmergencyDbUploadCutoff = (enabled) => run(async () => {
+    const data = await api(
+      "admin-emergency-db-upload-cutoff",
+      { enabled: enabled === true },
+      localStorage.getItem(TOKEN_KEY)
+    );
+    setEmergencyDbUploadCutoff(data?.settings?.enabled === true);
+    setMessage(data.message || "Emergency DB upload cutoff updated.");
+  });
+
   const loadAdminUsers = async () => {
     setAdminLoading(true);
     try {
@@ -233,6 +253,7 @@ export default function AuthGate({ children }) {
     if (user?.role === "admin" && adminOpen) {
       loadAdminUsers();
       loadJobCardCacheSettings();
+      loadEmergencyDbUploadCutoff();
     }
   }, [user?.role, adminOpen, analyticsIncludeAdmins]);
 
@@ -455,6 +476,8 @@ export default function AuthGate({ children }) {
           onAnalytics={loadAdminAnalytics}
           jobCardCacheSettings={jobCardCacheSettings}
           onJobCardCacheSettings={updateJobCardCacheSettings}
+          emergencyDbUploadCutoff={emergencyDbUploadCutoff}
+          onEmergencyDbUploadCutoff={updateEmergencyDbUploadCutoff}
         />
       ) : cloneElement(children, { user })}
     </div>
@@ -470,7 +493,7 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
   return <div className="auth-modal-backdrop"><div className="auth-modal" style={{maxWidth:820,width:"min(820px,calc(100vw - 32px))",maxHeight:"90vh",overflow:"auto",boxSizing:"border-box"}}><h2>Profile & Dashboard Settings</h2><p className="auth-hint">Ye settings sirf aapki user ID ke liye save hongi. Table width header divider ko mouse se drag karke set hogi.</p><label>Person Name</label><input value={form.personName} onChange={e=>setForm({...form,personName:e.target.value})}/><label>Dealer / Workshop Name</label><input value={form.dealerName} onChange={e=>setForm({...form,dealerName:e.target.value})}/><label>Mobile</label><input value={form.mobile} onChange={e=>setForm({...form,mobile:e.target.value})}/><label className="booking-field-label">Advance Booking Contact 1 {!form.booking1 && <span className="booking-field-dot" />}</label><input value={form.booking1} onChange={e=>setForm({...form,booking1:e.target.value})} placeholder="Optional mobile number"/><label className="booking-field-label">Advance Booking Contact 2 {!form.booking2 && <span className="booking-field-dot" />}</label><input value={form.booking2} onChange={e=>setForm({...form,booking2:e.target.value})} placeholder="Optional mobile number"/><label>WhatsApp Opening Line (Optional)</label><textarea value={form.whatsappOpeningLine} onChange={e=>setForm({...form,whatsappOpeningLine:e.target.value})} placeholder="Applies to the top of the WhatsApp due message. Leave blank if no extra line is required." rows={3} style={{minHeight:72,resize:"vertical"}}/><div className="auth-hint">This is your personal wording. It will be saved with your user ID and reused in future WhatsApp due summaries.</div><div style={{fontWeight:800}}>Single Vehicle Service History Table</div><div className="auth-hint">Checkbox = show/hide · Text box = custom heading · width by mouse drag.</div><div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:"6px 12px",margin:"8px 0 16px",minWidth:0}}>{singleCols.map(([k,l])=>editor("singleColumns",k,l))}</div><div style={{fontWeight:800}}>Bulk Vehicle Due / Service Summary Table</div><div className="auth-hint">Checkbox = show/hide · Text box = custom heading · width by mouse drag.</div><div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:"6px 12px",margin:"8px 0",minWidth:0}}>{bulkCols.map(([k,l])=>editor("bulkColumns",k,l))}<div style={{display:"grid",gridTemplateColumns:"28px 1fr",gap:7,alignItems:"center"}}><span></span><input value={(form.bulkColumnLabels||{}).serial||"S.No. / Due"} onChange={e=>setLabel("bulkColumnLabels","serial",e.target.value)} placeholder="S.No. / Due"/></div></div><div className="auth-modal-actions"><button className="auth-secondary" onClick={onClose}>Cancel</button><button className="auth-primary" onClick={onSave} disabled={loading}>Save Profile & Settings</button></div></div></div>;
 }
 
-function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings }) {
+function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff }) {
   const analyticsDetailRef = useRef(null);
   const [view, setView] = useState("overview");
 
@@ -572,6 +595,32 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
           <div style={{display:"flex",gap:10,marginTop:16,flexWrap:"wrap"}}>
             <button className="auth-primary" onClick={()=>onJobCardCacheSettings({operation:"rebuild"})}>Rebuild Cache Now</button>
             <button className="auth-secondary" onClick={()=>onJobCardCacheSettings({operation:"reset"})}>Clear Cache Policy</button>
+          </div>
+        </div>
+
+        <div className="admin-panel-card" style={{marginTop:16,padding:"18px 20px",border:"2px solid #dc2626",background:"#fff7f7"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
+            <div>
+              <div className="admin-panel-card-title" style={{color:"#b91c1c"}}>Emergency DB Upload Cutoff</div>
+              <div className="admin-panel-card-sub">Stops new Excel history uploads to Neon. Service Decision calculations continue locally in the browser.</div>
+            </div>
+            <label style={{display:"flex",alignItems:"center",gap:8,fontWeight:800,color:emergencyDbUploadCutoff ? "#b91c1c" : "#166534"}}>
+              <span>{emergencyDbUploadCutoff ? "CUTOFF ACTIVE" : "DB UPLOAD ACTIVE"}</span>
+              <input
+                type="checkbox"
+                checked={emergencyDbUploadCutoff}
+                onChange={e => {
+                  const enabled = e.target.checked;
+                  if (enabled && !window.confirm("Enable Emergency DB Upload Cutoff? New Excel history data will NOT be saved to Neon until you turn this OFF.")) return;
+                  onEmergencyDbUploadCutoff(enabled);
+                }}
+              />
+            </label>
+          </div>
+          <div style={{marginTop:12,padding:"10px 12px",borderRadius:8,background:emergencyDbUploadCutoff ? "#fee2e2" : "#ecfdf5",color:emergencyDbUploadCutoff ? "#991b1b" : "#166534",fontWeight:700}}>
+            {emergencyDbUploadCutoff
+              ? "Emergency mode ON: Excel upload + Service Decision remain available, but history persistence is paused."
+              : "Normal mode: new Excel Job Cards are saved using the hybrid browser-cache + Neon duplicate-check system."}
           </div>
         </div>
 

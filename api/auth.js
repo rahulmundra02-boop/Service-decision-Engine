@@ -497,6 +497,13 @@ export default async function handler(req, res) {
       if (!includeAdmins) userConditions.push("u.role <> 'admin'");
       const userWhere = userConditions.length ? "WHERE " + userConditions.join(" AND ") : "";
 
+      const summaryActivityFilter = rangeDays === 1
+        ? "(a.activity_time AT TIME ZONE 'Asia/Kolkata')::date = (NOW() AT TIME ZONE 'Asia/Kolkata')::date"
+        : "a.activity_time >= NOW() - (" + (targetUserId ? "$2" : "$1") + " * INTERVAL '1 day')";
+      const summaryQueryParams = rangeDays === 1
+        ? (targetUserId ? [targetUserId] : [])
+        : params;
+
       const summary = await client.query(
         `SELECT
            u.id,u.person_name,u.dealer_name,u.email,u.mobile,u.role,u.status,u.created_at,u.last_login_at,u.last_activity_at,
@@ -509,11 +516,11 @@ export default async function handler(req, res) {
            COUNT(*) FILTER (WHERE a.activity_type='Bulk Vehicle Analysis')::int AS bulk_analyses,
            COUNT(*) FILTER (WHERE a.activity_type='Service Schedule Viewed')::int AS schedule_views
          FROM app_users u
-         LEFT JOIN user_activity a ON a.user_id=u.id
+         LEFT JOIN user_activity a ON a.user_id=u.id AND ${summaryActivityFilter}
          ${userWhere}
          GROUP BY u.id
          ORDER BY u.role DESC,u.created_at DESC`,
-        params
+        summaryQueryParams
       );
 
       const recent = await client.query(

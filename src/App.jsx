@@ -3521,70 +3521,6 @@ function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResu
   );
 }
 
-function isTipperOrRmcHistoryModel(model) {
-  return /TIPPER|RMC|TRANSIT MIXER|MIXER/.test(String(model || "").toUpperCase());
-}
-function buildCustomerServiceHistoryPreview(records) {
-  const grouped = new Map();
-  for (const record of Array.isArray(records) ? records : []) {
-    const vin = String(record?.vin || "").trim();
-    const reg = String(record?.reg || "").trim();
-    const jobCard = String(record?.jobCard || "").trim();
-    if (!jobCard || (!vin && !reg)) continue;
-    const vehicleKey = vin.toUpperCase() || reg.toUpperCase();
-    if (!grouped.has(vehicleKey)) grouped.set(vehicleKey, { vin, reg, customerName:String(record?.customerName||"").trim(), model:String(record?.model||"").trim(), sale:record?.sale||null, records:[] });
-    const vehicle=grouped.get(vehicleKey);
-    if (!vehicle.customerName && record?.customerName) vehicle.customerName=String(record.customerName).trim();
-    if (!vehicle.model && record?.model) vehicle.model=String(record.model).trim();
-    if (!vehicle.sale && record?.sale) vehicle.sale=record.sale;
-    vehicle.records.push(record);
-  }
-  return [...grouped.values()].map(vehicle=>{
-    const jobCards=new Map();
-    for(const record of vehicle.records){
-      const jobCard=String(record?.jobCard||"").trim();
-      if(!jobCard) continue;
-      if(!jobCards.has(jobCard)) jobCards.set(jobCard,{jobCard,date:record?.date||null,reading:Number(record?.cumulative||record?.secondaryCumulativeReading||record?.reading||0),serviceType:String(record?.serviceType||"").trim(),items:new Set()});
-      const visit=jobCards.get(jobCard);
-      if(record?.date && (!visit.date || record.date<visit.date)) visit.date=record.date;
-      const reading=Number(record?.cumulative||record?.secondaryCumulativeReading||record?.reading||0);
-      if(reading>visit.reading) visit.reading=reading;
-      if(!visit.serviceType && record?.serviceType) visit.serviceType=String(record.serviceType).trim();
-      const standardized=String(record?.standardizedPart||"").trim();
-      if(standardized) visit.items.add(standardized);
-    }
-    const visits=[...jobCards.values()].filter(v=>v.date||v.reading>0).sort((a,b)=>(a.date?.getTime()||0)-(b.date?.getTime()||0)||a.reading-b.reading);
-    let lastService=null;
-    const classified=visits.map(visit=>{
-      const items=[...visit.items];
-      const explicitService=items.some(item=>/^(1st Free service|2nd Free Service|3rd Free Service)$/i.test(item));
-      const serviceParts=items.filter(item=>/ENGINE OIL|ENGINE OIL FILTER|FUEL FILTER|AIR FILTER|GEAR OIL|AXLE OIL|STEERING OIL|CLUTCH OIL|COOLANT|DEF FILTER|APDA FILTER|HUB GREASE/i.test(item));
-      const tipperRmc=isTipperOrRmcHistoryModel(vehicle.model);
-      const currentDate=visit.date, currentReading=Number(visit.reading||0);
-      let monthsFromPrevious=null, readingFromPrevious=null, dueScore=0;
-      if(lastService){
-        if(currentDate&&lastService.date) monthsFromPrevious=Math.round(((currentDate-lastService.date)/(30.4375*86400000))*10)/10;
-        if(currentReading>0&&lastService.reading>0) readingFromPrevious=currentReading-lastService.reading;
-        if(!tipperRmc){
-          if(readingFromPrevious!=null&&readingFromPrevious>=30000&&readingFromPrevious<=50000) dueScore+=2;
-          if(monthsFromPrevious!=null&&monthsFromPrevious>=4&&monthsFromPrevious<=8) dueScore+=2;
-        }
-      }else if(vehicle.sale&&!tipperRmc){
-        const monthsFromSale=currentDate?((currentDate-vehicle.sale)/(30.4375*86400000)):null;
-        const readingFromSale=currentReading>0?currentReading:null;
-        if(readingFromSale!=null&&readingFromSale>=30000&&readingFromSale<=50000) dueScore+=2;
-        if(monthsFromSale!=null&&monthsFromSale>=4&&monthsFromSale<=8) dueScore+=2;
-      }
-      const serviceCandidate=explicitService||(!tipperRmc&&serviceParts.length>=2&&dueScore>=2);
-      const classification=explicitService?"Confirmed by service marker":serviceCandidate?"Service candidate":serviceParts.length?"Maintenance / repair candidate":"Other job";
-      const result={...visit,items,serviceParts,explicitService,serviceCandidate,classification,monthsFromPrevious,readingFromPrevious,dueScore};
-      if(serviceCandidate) lastService=result;
-      return result;
-    });
-    return {...vehicle,visits:classified,serviceVisits:classified.filter(v=>v.serviceCandidate)};
-  }).sort((a,b)=>String(a.reg||a.vin).localeCompare(String(b.reg||b.vin)));
-}
-
 function ServiceDecisionApp({ user }) {
   const [excelData, setExcelData] = useState("");
   const [analysis, setAnalysis] = useState(null);
@@ -3621,8 +3557,6 @@ function ServiceDecisionApp({ user }) {
   const [bulkSearch, setBulkSearch] = useState("");
   const [bulkQuickFilter, setBulkQuickFilter] = useState("all");
   const [manualPartLookupBusy, setManualPartLookupBusy] = useState({});
-  const [serviceHistoryCustomer, setServiceHistoryCustomer] = useState("");
-  const [serviceHistoryVehicle, setServiceHistoryVehicle] = useState("");
   const defaultSingleColumns = ["date","jobCard","reading","plant","parts"];
   const defaultBulkColumns = ["customerName","vin","reg","saleDate","model","currentReading","services"];
   const defaultSingleLabels = { date:"Date", jobCard:"Job Card", reading:"Reading", plant:"Plant", parts:"Part No. / Service / Qty" };
@@ -5427,7 +5361,6 @@ function ServiceDecisionApp({ user }) {
               <div className={"excel-tab " + (mode === "single" ? "active" : "")} onClick={() => { setMode("single"); setError(""); setBulkResults([]); setBulkMeta(null); }}>Single Vehicle</div>
               <div className={`excel-tab ${mode === "bulk" ? "active" : ""}`} onClick={() => { setMode("bulk"); setError(""); setAnalysis(null); }}>Bulk Vehicle</div>
               <div className={`excel-tab ${mode === "schedule" ? "active" : ""}`} onClick={() => { setMode("schedule"); setError(""); logUsage("Service Schedule Viewed", { mode:"schedule" }); }}>Service Schedule Chart</div>
-              <div className={`excel-tab ${mode === "serviceHistory" ? "active" : ""}`} onClick={() => { setMode("serviceHistory"); setError(""); setAnalysis(null); }}>Customer Service History</div>
             </div>
             <div className="excel-toolbar">
               {mode !== "schedule" && mode !== "home" && <>
@@ -5666,37 +5599,6 @@ function ServiceDecisionApp({ user }) {
                     />
                   )}
                 </>}
-              </>
-            ) : mode === "serviceHistory" ? (
-              <>
-              <div className="section-title" style={{marginTop:12}}>CUSTOMER SERVICE HISTORY — BETA PREVIEW</div>
-              <div className="sheet-subheading">This Beta preview groups DMS rows by Job Card, uses the existing standardized part-code mapping, and checks the 40,000 KM / 6-month rule for normal vehicles. Tipper/RMC are excluded from this preliminary rule.</div>
-              {(() => {
-                const historyVehicles = buildCustomerServiceHistoryPreview(uploadParsedRecords);
-                const customers = [...new Set(historyVehicles.map(v => v.customerName).filter(Boolean))].sort();
-                const filtered = serviceHistoryCustomer ? historyVehicles.filter(v => v.customerName === serviceHistoryCustomer) : historyVehicles;
-                const selected = filtered.find(v => (v.vin || v.reg) === serviceHistoryVehicle) || null;
-                return <>
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:10,margin:"12px 0"}}>
-                    <div><b>Customer</b><select className="excel-input" value={serviceHistoryCustomer} onChange={e=>{setServiceHistoryCustomer(e.target.value);setServiceHistoryVehicle("");}}><option value="">All Customers</option>{customers.map(name=><option key={name} value={name}>{name}</option>)}</select></div>
-                    <div><b>Vehicle</b><select className="excel-input" value={serviceHistoryVehicle} onChange={e=>setServiceHistoryVehicle(e.target.value)}><option value="">Select Vehicle</option>{filtered.map(v=>{const key=v.vin||v.reg;return <option key={key} value={key}>{v.reg||v.vin} — {v.model||"Model not available"}</option>;})}</select></div>
-                  </div>
-                  {!uploadParsedRecords.length ? <div className="small-note">Upload a DMS Excel first. This preview uses the same parsed records and standardized part-code mapping already used by Service Decision.</div> : selected ? <>
-                    <div className="sheet-grid" style={{marginBottom:12}}><div className="cell label">Reg No</div><div className="cell value">{selected.reg||"-"}</div><div className="cell label">VIN</div><div className="cell value">{selected.vin||"-"}</div><div className="cell label">Model</div><div className="cell value">{selected.model||"-"}</div><div className="cell label">Sale Date</div><div className="cell value">{selected.sale?formatDateShort(selected.sale):"-"}</div></div>
-                    <div className="section-title">Actual Job Cards / Preliminary Identification</div>
-                    <div className="history-wrap" style={{maxHeight:"none"}}><table className="history-table"><thead><tr><th>Date</th><th>Reading</th><th>Job Card</th><th>Service Type</th><th>Standardized Items</th><th>Gap</th><th>Classification</th></tr></thead><tbody>
-                      {selected.visits.map((v,i)=><tr key={v.jobCard||i}><td>{v.date?formatDateShort(v.date):"-"}</td><td>{v.reading?formatNumber(v.reading):"-"}</td><td>{v.jobCard}</td><td>{v.serviceType||"-"}</td><td>{v.items.length?v.items.join(", "):"-"}</td><td>{v.readingFromPrevious!=null?formatNumber(v.readingFromPrevious)+" KM":"-"}{v.monthsFromPrevious!=null?" / "+v.monthsFromPrevious+" mo":""}</td><td><b>{v.classification}</b></td></tr>)}
-                      {!selected.visits.length&&<tr><td colSpan="7">No Job Card history found.</td></tr>}
-                    </tbody></table></div>
-                    <div className="section-title" style={{marginTop:14}}>Preliminary Service Sequence</div>
-                    <div className="history-wrap" style={{maxHeight:"none"}}><table className="history-table"><thead><tr><th>Candidate</th><th>KM</th><th>Date</th><th>Job Card</th><th>Basis</th></tr></thead><tbody>
-                      {selected.serviceVisits.map((v,i)=><tr key={v.jobCard||i}><td className="service-name">{i+1}{i===0?"st":i===1?"nd":i===2?"rd":"th"} Service Candidate</td><td>{formatNumber(v.reading)}</td><td>{v.date?formatDateShort(v.date):"-"}</td><td>{v.jobCard}</td><td>{v.explicitService?"Explicit service marker":"Standardized maintenance items + 40K/6-month interval"}</td></tr>)}
-                      {!selected.serviceVisits.length&&<tr><td colSpan="5">No preliminary service candidate identified.</td></tr>}
-                    </tbody></table></div>
-                    <div className="small-note" style={{marginTop:8}}>Beta preview only — service numbering is intentionally not final yet; use this screen to validate the logic against real DMS history.</div>
-                  </> : <div className="history-wrap" style={{maxHeight:"none"}}><table className="history-table"><thead><tr><th>Customer</th><th>Reg No</th><th>VIN</th><th>Model</th><th>Sale Date</th><th>Candidates</th></tr></thead><tbody>{filtered.map((v,i)=><tr key={v.vin||v.reg||i}><td>{v.customerName||"-"}</td><td>{v.reg||"-"}</td><td>{v.vin||"-"}</td><td>{v.model||"-"}</td><td>{v.sale?formatDateShort(v.sale):"-"}</td><td>{v.serviceVisits.length}</td></tr>)}{!filtered.length&&<tr><td colSpan="6">No vehicle data available.</td></tr>}</tbody></table></div>}
-                </>;
-              })()}
               </>
             ) : (
               <>

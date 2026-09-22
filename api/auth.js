@@ -534,40 +534,81 @@ export default async function handler(req, res) {
         params
       );
 
-      const analyticsQueryParams = targetUserId ? [targetUserId, rangeDays] : [rangeDays];
-      const rangeParam = targetUserId ? "$2" : "$1";
+      // Today uses a dedicated SQL path with no artificial $1/$2 range parameter.
+      // This prevents PostgreSQL placeholder errors and keeps 7D/30D/90D logic unchanged.
+      let periods;
+      let breakdown;
 
-      const analyticsRangeCondition = rangeDays === 1
-        ? `(a.activity_time AT TIME ZONE 'Asia/Kolkata')::date = (NOW() AT TIME ZONE 'Asia/Kolkata')::date AND ${rangeParam}=1`
-        : `a.activity_time >= NOW() - (${rangeParam} * INTERVAL '1 day')`;
+      if (rangeDays === 1) {
+        const todayConditions = [
+          "(a.activity_time AT TIME ZONE 'Asia/Kolkata')::date = (NOW() AT TIME ZONE 'Asia/Kolkata')::date"
+        ];
+        const todayParams = [];
 
-      const scopedAnalyticsCondition = `
-        ${targetUserId ? "a.user_id=$1 AND " : ""}
-        ${!includeAdmins ? "a.user_id IN (SELECT id FROM app_users WHERE role <> 'admin') AND " : ""}
-        ${analyticsRangeCondition}`.replace(/\s+/g, " ").trim();
+        if (targetUserId) {
+          todayConditions.unshift("a.user_id=$1");
+          todayParams.push(targetUserId);
+        }
+        if (!includeAdmins) {
+          todayConditions.push("a.user_id IN (SELECT id FROM app_users WHERE role <> 'admin')");
+        }
 
-      const periods = await client.query(
-        `SELECT (a.activity_time AT TIME ZONE 'Asia/Kolkata')::date AS activity_date,
-                COUNT(*)::int AS activities,
-                COUNT(*) FILTER (WHERE a.activity_type='Login')::int AS logins,
-                COALESCE(SUM(a.vehicle_count),0)::int AS vehicles,
-                COALESCE(SUM(a.file_count),0)::int AS files
-           FROM user_activity a
-          WHERE ${scopedAnalyticsCondition}
-          GROUP BY 1 ORDER BY 1`,
-        analyticsQueryParams
-      );
+        const todayWhere = todayConditions.join(" AND ");
 
-      const breakdown = await client.query(
-        `SELECT a.activity_type, COUNT(*)::int AS count,
-                COALESCE(SUM(a.vehicle_count),0)::int AS vehicles,
-                COALESCE(SUM(a.file_count),0)::int AS files
-           FROM user_activity a
-          WHERE ${scopedAnalyticsCondition}
-          GROUP BY a.activity_type
-          ORDER BY count DESC, a.activity_type`,
-        analyticsQueryParams
-      );
+        periods = await client.query(
+          `SELECT (a.activity_time AT TIME ZONE 'Asia/Kolkata')::date AS activity_date,
+                  COUNT(*)::int AS activities,
+                  COUNT(*) FILTER (WHERE a.activity_type='Login')::int AS logins,
+                  COALESCE(SUM(a.vehicle_count),0)::int AS vehicles,
+                  COALESCE(SUM(a.file_count),0)::int AS files
+             FROM user_activity a
+            WHERE ${todayWhere}
+            GROUP BY 1 ORDER BY 1`,
+          todayParams
+        );
+
+        breakdown = await client.query(
+          `SELECT a.activity_type, COUNT(*)::int AS count,
+                  COALESCE(SUM(a.vehicle_count),0)::int AS vehicles,
+                  COALESCE(SUM(a.file_count),0)::int AS files
+             FROM user_activity a
+            WHERE ${todayWhere}
+            GROUP BY a.activity_type
+            ORDER BY count DESC, a.activity_type`,
+          todayParams
+        );
+      } else {
+        const analyticsQueryParams = targetUserId ? [targetUserId, rangeDays] : [rangeDays];
+        const rangeParam = targetUserId ? "$2" : "$1";
+
+        const scopedAnalyticsCondition = `
+          ${targetUserId ? "a.user_id=$1 AND " : ""}
+          ${!includeAdmins ? "a.user_id IN (SELECT id FROM app_users WHERE role <> 'admin') AND " : ""}
+          a.activity_time >= NOW() - (${rangeParam} * INTERVAL '1 day')`.replace(/\s+/g, " ").trim();
+
+        periods = await client.query(
+          `SELECT (a.activity_time AT TIME ZONE 'Asia/Kolkata')::date AS activity_date,
+                  COUNT(*)::int AS activities,
+                  COUNT(*) FILTER (WHERE a.activity_type='Login')::int AS logins,
+                  COALESCE(SUM(a.vehicle_count),0)::int AS vehicles,
+                  COALESCE(SUM(a.file_count),0)::int AS files
+             FROM user_activity a
+            WHERE ${scopedAnalyticsCondition}
+            GROUP BY 1 ORDER BY 1`,
+          analyticsQueryParams
+        );
+
+        breakdown = await client.query(
+          `SELECT a.activity_type, COUNT(*)::int AS count,
+                  COALESCE(SUM(a.vehicle_count),0)::int AS vehicles,
+                  COALESCE(SUM(a.file_count),0)::int AS files
+             FROM user_activity a
+            WHERE ${scopedAnalyticsCondition}
+            GROUP BY a.activity_type
+            ORDER BY count DESC, a.activity_type`,
+          analyticsQueryParams
+        );
+      }
 
       await client.query("COMMIT");
       return res.json({

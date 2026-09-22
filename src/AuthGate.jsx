@@ -630,8 +630,10 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
             )}
           </div>
           <div className="admin-range-tabs">
-            {[7,30,90].map(days=>
-              <button key={days} className={analyticsRange===days ? "active" : ""} onClick={()=>onAnalytics(analyticsUserId,days)}>{days}D</button>
+            {[1,7,30,90].map(days=>
+              <button key={days} className={analyticsRange===days ? "active" : ""} onClick={()=>onAnalytics(analyticsUserId,days)}>
+                {days === 1 ? "Today" : `${days}D`}
+              </button>
             )}
           </div>
           {analyticsLoading && <span className="admin-loading-pill">Updating...</span>}

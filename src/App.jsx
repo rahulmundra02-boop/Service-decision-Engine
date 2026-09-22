@@ -3520,6 +3520,71 @@ function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResu
     </div>
   );
 }
+
+function isTipperOrRmcHistoryModel(model) {
+  return /TIPPER|RMC|TRANSIT MIXER|MIXER/.test(String(model || "").toUpperCase());
+}
+function buildCustomerServiceHistoryPreview(records) {
+  const grouped = new Map();
+  for (const record of Array.isArray(records) ? records : []) {
+    const vin = String(record?.vin || "").trim();
+    const reg = String(record?.reg || "").trim();
+    const jobCard = String(record?.jobCard || "").trim();
+    if (!jobCard || (!vin && !reg)) continue;
+    const vehicleKey = vin.toUpperCase() || reg.toUpperCase();
+    if (!grouped.has(vehicleKey)) grouped.set(vehicleKey, { vin, reg, customerName:String(record?.customerName||"").trim(), model:String(record?.model||"").trim(), sale:record?.sale||null, records:[] });
+    const vehicle=grouped.get(vehicleKey);
+    if (!vehicle.customerName && record?.customerName) vehicle.customerName=String(record.customerName).trim();
+    if (!vehicle.model && record?.model) vehicle.model=String(record.model).trim();
+    if (!vehicle.sale && record?.sale) vehicle.sale=record.sale;
+    vehicle.records.push(record);
+  }
+  return [...grouped.values()].map(vehicle=>{
+    const jobCards=new Map();
+    for(const record of vehicle.records){
+      const jobCard=String(record?.jobCard||"").trim();
+      if(!jobCard) continue;
+      if(!jobCards.has(jobCard)) jobCards.set(jobCard,{jobCard,date:record?.date||null,reading:Number(record?.cumulative||record?.secondaryCumulativeReading||record?.reading||0),serviceType:String(record?.serviceType||"").trim(),items:new Set()});
+      const visit=jobCards.get(jobCard);
+      if(record?.date && (!visit.date || record.date<visit.date)) visit.date=record.date;
+      const reading=Number(record?.cumulative||record?.secondaryCumulativeReading||record?.reading||0);
+      if(reading>visit.reading) visit.reading=reading;
+      if(!visit.serviceType && record?.serviceType) visit.serviceType=String(record.serviceType).trim();
+      const standardized=String(record?.standardizedPart||"").trim();
+      if(standardized) visit.items.add(standardized);
+    }
+    const visits=[...jobCards.values()].filter(v=>v.date||v.reading>0).sort((a,b)=>(a.date?.getTime()||0)-(b.date?.getTime()||0)||a.reading-b.reading);
+    let lastService=null;
+    const classified=visits.map(visit=>{
+      const items=[...visit.items];
+      const explicitService=items.some(item=>/^(1st Free service|2nd Free Service|3rd Free Service)$/i.test(item));
+      const serviceParts=items.filter(item=>/ENGINE OIL|ENGINE OIL FILTER|FUEL FILTER|AIR FILTER|GEAR OIL|AXLE OIL|STEERING OIL|CLUTCH OIL|COOLANT|DEF FILTER|APDA FILTER|HUB GREASE/i.test(item));
+      const tipperRmc=isTipperOrRmcHistoryModel(vehicle.model);
+      const currentDate=visit.date, currentReading=Number(visit.reading||0);
+      let monthsFromPrevious=null, readingFromPrevious=null, dueScore=0;
+      if(lastService){
+        if(currentDate&&lastService.date) monthsFromPrevious=Math.round(((currentDate-lastService.date)/(30.4375*86400000))*10)/10;
+        if(currentReading>0&&lastService.reading>0) readingFromPrevious=currentReading-lastService.reading;
+        if(!tipperRmc){
+          if(readingFromPrevious!=null&&readingFromPrevious>=30000&&readingFromPrevious<=50000) dueScore+=2;
+          if(monthsFromPrevious!=null&&monthsFromPrevious>=4&&monthsFromPrevious<=8) dueScore+=2;
+        }
+      }else if(vehicle.sale&&!tipperRmc){
+        const monthsFromSale=currentDate?((currentDate-vehicle.sale)/(30.4375*86400000)):null;
+        const readingFromSale=currentReading>0?currentReading:null;
+        if(readingFromSale!=null&&readingFromSale>=30000&&readingFromSale<=50000) dueScore+=2;
+        if(monthsFromSale!=null&&monthsFromSale>=4&&monthsFromSale<=8) dueScore+=2;
+      }
+      const serviceCandidate=explicitService||(!tipperRmc&&serviceParts.length>=2&&dueScore>=2);
+      const classification=explicitService?"Confirmed by service marker":serviceCandidate?"Service candidate":serviceParts.length?"Maintenance / repair candidate":"Other job";
+      const result={...visit,items,serviceParts,explicitService,serviceCandidate,classification,monthsFromPrevious,readingFromPrevious,dueScore};
+      if(serviceCandidate) lastService=result;
+      return result;
+    });
+    return {...vehicle,visits:classified,serviceVisits:classified.filter(v=>v.serviceCandidate)};
+  }).sort((a,b)=>String(a.reg||a.vin).localeCompare(String(b.reg||b.vin)));
+}
+
 function ServiceDecisionApp({ user }) {
   const [excelData, setExcelData] = useState("");
   const [analysis, setAnalysis] = useState(null);
@@ -3556,6 +3621,8 @@ function ServiceDecisionApp({ user }) {
   const [bulkSearch, setBulkSearch] = useState("");
   const [bulkQuickFilter, setBulkQuickFilter] = useState("all");
   const [manualPartLookupBusy, setManualPartLookupBusy] = useState({});
+  const [serviceHistoryCustomer, setServiceHistoryCustomer] = useState("");
+  const [serviceHistoryVehicle, setServiceHistoryVehicle] = useState("");
   const defaultSingleColumns = ["date","jobCard","reading","plant","parts"];
   const defaultBulkColumns = ["customerName","vin","reg","saleDate","model","currentReading","services"];
   const defaultSingleLabels = { date:"Date", jobCard:"Job Card", reading:"Reading", plant:"Plant", parts:"Part No. / Service / Qty" };
@@ -5360,6 +5427,7 @@ function ServiceDecisionApp({ user }) {
               <div className={"excel-tab " + (mode === "single" ? "active" : "")} onClick={() => { setMode("single"); setError(""); setBulkResults([]); setBulkMeta(null); }}>Single Vehicle</div>
               <div className={`excel-tab ${mode === "bulk" ? "active" : ""}`} onClick={() => { setMode("bulk"); setError(""); setAnalysis(null); }}>Bulk Vehicle</div>
               <div className={`excel-tab ${mode === "schedule" ? "active" : ""}`} onClick={() => { setMode("schedule"); setError(""); logUsage("Service Schedule Viewed", { mode:"schedule" }); }}>Service Schedule Chart</div>
+              <div className={`excel-tab ${mode === "serviceHistory" ? "active" : ""}`} onClick={() => { setMode("serviceHistory"); setError(""); setAnalysis(null); }}>Customer Service History</div>
             </div>
             <div className="excel-toolbar">
               {mode !== "schedule" && mode !== "home" && <>

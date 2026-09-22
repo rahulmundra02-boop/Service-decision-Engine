@@ -129,6 +129,7 @@ export default async function handler(req, res) {
         const historyResult = await client.query(
           "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
           "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
+          "jc.driver_phone, jc.service_contact_person_phone, " +
           "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
           "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
           "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
@@ -143,6 +144,7 @@ export default async function handler(req, res) {
           const modelResult = await client.query(
             "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
             "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
+          "jc.driver_phone, jc.service_contact_person_phone, " +
             "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
             "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
             "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
@@ -177,6 +179,7 @@ export default async function handler(req, res) {
       const result = await client.query(
         "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
         "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
+          "jc.driver_phone, jc.service_contact_person_phone, " +
         "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
         "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
         "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
@@ -191,6 +194,7 @@ export default async function handler(req, res) {
         const modelResult = await client.query(
           "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, " +
           "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
+          "jc.driver_phone, jc.service_contact_person_phone, " +
           "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
           "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
           "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
@@ -332,6 +336,13 @@ export default async function handler(req, res) {
     // Ensure the temporary amount column exists so this migration is safe
     // even if no upload happened after the earlier amount-field change.
     await client.query(
+      "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS driver_phone TEXT"
+    );
+    await client.query(
+      "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS service_contact_person_phone TEXT"
+    );
+
+    await client.query(
       "ALTER TABLE service_history ADD COLUMN IF NOT EXISTS amount NUMERIC"
     );
     await client.query(
@@ -396,7 +407,8 @@ export default async function handler(req, res) {
     if (jobCardNumbers.length) {
       const existingResult = await client.query(
         "SELECT id, job_card_no, job_date, cumulative_reading, cumulative_unit, " +
-        "secondary_cumulative_reading, secondary_cumulative_unit " +
+        "secondary_cumulative_reading, secondary_cumulative_unit, " +
+        "driver_phone, service_contact_person_phone " +
         "FROM job_cards WHERE vehicle_id=$1 AND job_card_no=ANY($2::text[])",
         [vehicleId, jobCardNumbers]
       );
@@ -418,13 +430,17 @@ export default async function handler(req, res) {
           "cumulative_reading=COALESCE($2,cumulative_reading), " +
           "cumulative_unit=COALESCE($3,cumulative_unit), " +
           "secondary_cumulative_reading=COALESCE($4,secondary_cumulative_reading), " +
-          "secondary_cumulative_unit=COALESCE($5,secondary_cumulative_unit) " +
-          "WHERE id=$6 AND (" +
+          "secondary_cumulative_unit=COALESCE($5,secondary_cumulative_unit), " +
+          "driver_phone=COALESCE($6,driver_phone), " +
+          "service_contact_person_phone=COALESCE($7,service_contact_person_phone) " +
+          "WHERE id=$8 AND (" +
           "job_date IS DISTINCT FROM COALESCE($1,job_date) OR " +
           "cumulative_reading IS DISTINCT FROM COALESCE($2,cumulative_reading) OR " +
           "cumulative_unit IS DISTINCT FROM COALESCE($3,cumulative_unit) OR " +
           "secondary_cumulative_reading IS DISTINCT FROM COALESCE($4,secondary_cumulative_reading) OR " +
-          "secondary_cumulative_unit IS DISTINCT FROM COALESCE($5,secondary_cumulative_unit)) " +
+          "secondary_cumulative_unit IS DISTINCT FROM COALESCE($5,secondary_cumulative_unit) OR " +
+          "driver_phone IS DISTINCT FROM COALESCE($6,driver_phone) OR " +
+          "service_contact_person_phone IS DISTINCT FROM COALESCE($7,service_contact_person_phone)) " +
           "RETURNING id,job_card_no",
           [
             clean(first.date),
@@ -432,6 +448,8 @@ export default async function handler(req, res) {
             clean(first.cumulativeUnit),
             clean(first.secondaryCumulative),
             clean(first.secondaryCumulativeUnit),
+            clean(first.driverPhone),
+            clean(first.serviceContactPhone),
             existingJobCard.id
           ]
         );
@@ -441,7 +459,8 @@ export default async function handler(req, res) {
           vehicleId, jobCardNo,
           clean(first.date),
           clean(first.cumulative), clean(first.cumulativeUnit),
-          clean(first.secondaryCumulative), clean(first.secondaryCumulativeUnit)
+          clean(first.secondaryCumulative), clean(first.secondaryCumulativeUnit),
+          clean(first.driverPhone), clean(first.serviceContactPhone)
         ]);
       }
     }
@@ -458,7 +477,8 @@ export default async function handler(req, res) {
       const result = await client.query(
         "INSERT INTO job_cards " +
         "(vehicle_id,job_card_no,job_date,cumulative_reading,cumulative_unit," +
-        "secondary_cumulative_reading,secondary_cumulative_unit) " +
+        "secondary_cumulative_reading,secondary_cumulative_unit," +
+        "driver_phone,service_contact_person_phone) " +
         "VALUES " + placeholders.join(",") +
         " ON CONFLICT (vehicle_id,job_card_no) DO NOTHING RETURNING id,job_card_no",
         values

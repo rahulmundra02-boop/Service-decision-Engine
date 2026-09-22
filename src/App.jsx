@@ -5667,6 +5667,37 @@ function ServiceDecisionApp({ user }) {
                   )}
                 </>}
               </>
+            ) : mode === "serviceHistory" ? (
+              <>
+              <div className="section-title" style={{marginTop:12}}>CUSTOMER SERVICE HISTORY — BETA PREVIEW</div>
+              <div className="sheet-subheading">This Beta preview groups DMS rows by Job Card, uses the existing standardized part-code mapping, and checks the 40,000 KM / 6-month rule for normal vehicles. Tipper/RMC are excluded from this preliminary rule.</div>
+              {(() => {
+                const historyVehicles = buildCustomerServiceHistoryPreview(uploadParsedRecords);
+                const customers = [...new Set(historyVehicles.map(v => v.customerName).filter(Boolean))].sort();
+                const filtered = serviceHistoryCustomer ? historyVehicles.filter(v => v.customerName === serviceHistoryCustomer) : historyVehicles;
+                const selected = filtered.find(v => (v.vin || v.reg) === serviceHistoryVehicle) || null;
+                return <>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:10,margin:"12px 0"}}>
+                    <div><b>Customer</b><select className="excel-input" value={serviceHistoryCustomer} onChange={e=>{setServiceHistoryCustomer(e.target.value);setServiceHistoryVehicle("");}}><option value="">All Customers</option>{customers.map(name=><option key={name} value={name}>{name}</option>)}</select></div>
+                    <div><b>Vehicle</b><select className="excel-input" value={serviceHistoryVehicle} onChange={e=>setServiceHistoryVehicle(e.target.value)}><option value="">Select Vehicle</option>{filtered.map(v=>{const key=v.vin||v.reg;return <option key={key} value={key}>{v.reg||v.vin} — {v.model||"Model not available"}</option>;})}</select></div>
+                  </div>
+                  {!uploadParsedRecords.length ? <div className="small-note">Upload a DMS Excel first. This preview uses the same parsed records and standardized part-code mapping already used by Service Decision.</div> : selected ? <>
+                    <div className="sheet-grid" style={{marginBottom:12}}><div className="cell label">Reg No</div><div className="cell value">{selected.reg||"-"}</div><div className="cell label">VIN</div><div className="cell value">{selected.vin||"-"}</div><div className="cell label">Model</div><div className="cell value">{selected.model||"-"}</div><div className="cell label">Sale Date</div><div className="cell value">{selected.sale?formatDateShort(selected.sale):"-"}</div></div>
+                    <div className="section-title">Actual Job Cards / Preliminary Identification</div>
+                    <div className="history-wrap" style={{maxHeight:"none"}}><table className="history-table"><thead><tr><th>Date</th><th>Reading</th><th>Job Card</th><th>Service Type</th><th>Standardized Items</th><th>Gap</th><th>Classification</th></tr></thead><tbody>
+                      {selected.visits.map((v,i)=><tr key={v.jobCard||i}><td>{v.date?formatDateShort(v.date):"-"}</td><td>{v.reading?formatNumber(v.reading):"-"}</td><td>{v.jobCard}</td><td>{v.serviceType||"-"}</td><td>{v.items.length?v.items.join(", "):"-"}</td><td>{v.readingFromPrevious!=null?formatNumber(v.readingFromPrevious)+" KM":"-"}{v.monthsFromPrevious!=null?" / "+v.monthsFromPrevious+" mo":""}</td><td><b>{v.classification}</b></td></tr>)}
+                      {!selected.visits.length&&<tr><td colSpan="7">No Job Card history found.</td></tr>}
+                    </tbody></table></div>
+                    <div className="section-title" style={{marginTop:14}}>Preliminary Service Sequence</div>
+                    <div className="history-wrap" style={{maxHeight:"none"}}><table className="history-table"><thead><tr><th>Candidate</th><th>KM</th><th>Date</th><th>Job Card</th><th>Basis</th></tr></thead><tbody>
+                      {selected.serviceVisits.map((v,i)=><tr key={v.jobCard||i}><td className="service-name">{i+1}{i===0?"st":i===1?"nd":i===2?"rd":"th"} Service Candidate</td><td>{formatNumber(v.reading)}</td><td>{v.date?formatDateShort(v.date):"-"}</td><td>{v.jobCard}</td><td>{v.explicitService?"Explicit service marker":"Standardized maintenance items + 40K/6-month interval"}</td></tr>)}
+                      {!selected.serviceVisits.length&&<tr><td colSpan="5">No preliminary service candidate identified.</td></tr>}
+                    </tbody></table></div>
+                    <div className="small-note" style={{marginTop:8}}>Beta preview only — service numbering is intentionally not final yet; use this screen to validate the logic against real DMS history.</div>
+                  </> : <div className="history-wrap" style={{maxHeight:"none"}}><table className="history-table"><thead><tr><th>Customer</th><th>Reg No</th><th>VIN</th><th>Model</th><th>Sale Date</th><th>Candidates</th></tr></thead><tbody>{filtered.map((v,i)=><tr key={v.vin||v.reg||i}><td>{v.customerName||"-"}</td><td>{v.reg||"-"}</td><td>{v.vin||"-"}</td><td>{v.model||"-"}</td><td>{v.sale?formatDateShort(v.sale):"-"}</td><td>{v.serviceVisits.length}</td></tr>)}{!filtered.length&&<tr><td colSpan="6">No vehicle data available.</td></tr>}</tbody></table></div>}
+                </>;
+              })()}
+              </>
             ) : (
               <>
                 <div className="sheet-heading">SERVICE SCHEDULE CHART</div>

@@ -502,7 +502,7 @@ export default async function handler(req, res) {
         : "a.activity_time >= NOW() - (" + (targetUserId ? "$2" : "$1") + " * INTERVAL '1 day')";
       const summaryQueryParams = rangeDays === 1
         ? (targetUserId ? [targetUserId] : [])
-        : params;
+        : (targetUserId ? [targetUserId, rangeDays] : [rangeDays]);
 
       const summary = await client.query(
         `SELECT

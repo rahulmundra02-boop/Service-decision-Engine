@@ -228,6 +228,18 @@ export default async function handler(req, res) {
 
   const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
 
+  // Defense-in-depth: block all DB-related POST operations while the admin emergency cutoff is active.
+  // Existing GET history remains available for estimates/history.
+  const cutoffResult = await pool.query(
+    "SELECT setting_value FROM app_settings WHERE setting_key='emergency_db_upload_cutoff' LIMIT 1"
+  );
+  if (cutoffResult.rows[0]?.setting_value?.enabled === true) {
+    return res.status(503).json({
+      success:false,
+      error:"Emergency DB Upload Cutoff is active. Database history upload is temporarily disabled."
+    });
+  }
+
   if (body.action === "get-job-card-index") {
     const afterId = Math.max(0, Number(body.afterId || 0));
     const requestedLimit = Number(body.limit || 5000);

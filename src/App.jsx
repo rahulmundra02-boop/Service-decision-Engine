@@ -1339,6 +1339,8 @@ function parseExcelPaste(text) {
     ["Vehicle Identification Number", col.vin],
     ["Secondary Cumulative Reading", col.secondaryCumulativeReading],
     ["Secondary Cumulative Unit", col.secondaryCumulativeUnit],
+    ["Driver Phone number", col.driverPhone],
+    ["Service Contact Person Phone Number", col.serviceContactPhone],
   ].filter(([, index]) => index < 0);
 
   if (missing.length) {

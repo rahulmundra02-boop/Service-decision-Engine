@@ -1442,7 +1442,7 @@ function deriveVehicle(records) {
   const firstCustomerName = records.find((r) => isUsableCustomerName(r.customerName))?.customerName || "";
   const saleDates = records.map((r) => r.sale).filter(Boolean).sort((a, b) => a - b);
   const lastServiceUnderAmc = records.some((record) =>
-    String(record?.repairTypeLine ?? "").trim().toLowerCase() === "amc order"
+    String(record?.repairTypeLine ?? "").trim().toLowerCase().includes("amc order")
   );
 
   return {
@@ -4867,6 +4867,23 @@ function ServiceDecisionApp({ user }) {
       clone.style.boxSizing = "border-box";
       clone.style.zIndex = "-1";
 
+      const originalControls = source.querySelectorAll("input, textarea, select");
+      const clonedControls = clone.querySelectorAll("input, textarea, select");
+      originalControls.forEach((originalControl, index) => {
+        const clonedControl = clonedControls[index];
+        if (!clonedControl) return;
+        if (originalControl instanceof HTMLInputElement) {
+          clonedControl.value = originalControl.value;
+          clonedControl.checked = originalControl.checked;
+        } else if (originalControl instanceof HTMLTextAreaElement) {
+          clonedControl.value = originalControl.value;
+          clonedControl.textContent = originalControl.value;
+          clonedControl.style.height = originalControl.getBoundingClientRect().height + "px";
+        } else if (originalControl instanceof HTMLSelectElement) {
+          clonedControl.value = originalControl.value;
+        }
+      });
+
       document.body.appendChild(clone);
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
@@ -5509,6 +5526,7 @@ function ServiceDecisionApp({ user }) {
           text-align: center;
           white-space: pre-wrap;
           overflow-wrap: anywhere;
+          overflow: hidden;
           color: #111827;
           background: #fff;
         }
@@ -5695,10 +5713,18 @@ function ServiceDecisionApp({ user }) {
                     <textarea
                       className="single-customer-voice"
                       value={customerVoice}
-                      onChange={(event) => setCustomerVoice(event.target.value)}
+                      onChange={(event) => {
+                        setCustomerVoice(event.target.value);
+                        event.target.style.height = "auto";
+                        event.target.style.height = event.target.scrollHeight + "px";
+                      }}
                       placeholder="Enter customer voice..."
                       rows={2}
                       aria-label="Customer Voice"
+                      onInput={(event) => {
+                        event.currentTarget.style.height = "auto";
+                        event.currentTarget.style.height = event.currentTarget.scrollHeight + "px";
+                      }
                     />
                   </div>
                 </div>

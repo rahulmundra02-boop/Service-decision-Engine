@@ -4824,7 +4824,7 @@ function ServiceDecisionApp({ user }) {
       const heading = source.querySelector(".sheet-heading");
       const captureStart = heading || source.firstElementChild || source;
       const viewportHeight = Math.max(window.innerHeight || 700, 700);
-      const maxCaptureHeight = viewportHeight * 4;
+      const maxCaptureHeight = Math.round(viewportHeight * 2.5);
       const sourceRect = source.getBoundingClientRect();
       const headingRect = captureStart.getBoundingClientRect();
       const sourceWidth = Math.max(1, Math.ceil(sourceRect.width));
@@ -4847,7 +4847,7 @@ function ServiceDecisionApp({ user }) {
       clone.style.overflow = "hidden";
       clone.style.margin = "0";
       clone.style.boxSizing = "border-box";
-      clone.style.zIndex = "-1";
+      clone.style.zIndex = "999999";
       clone.style.transform = "none";
       clone.style.transformOrigin = "top left";
 
@@ -4872,7 +4872,7 @@ function ServiceDecisionApp({ user }) {
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
       const canvas = await html2canvas(clone, {
-        backgroundColor: null,
+        backgroundColor: "#1f2937",
         useCORS: true,
         scale: 2.5,
         width: sourceWidth,

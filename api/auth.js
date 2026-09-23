@@ -655,6 +655,42 @@ export default async function handler(req, res) {
       });
     }
 
+    if (action === "campaigns-by-vin") {
+      const user = await getUserByToken(client, authToken(req));
+      if (!user) {
+        await client.query("ROLLBACK");
+        return res.status(401).json({success:false,error:"Session expired."});
+      }
+
+      const vin = clean(body.vin);
+      if (!vin) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({success:false,error:"VIN is required."});
+      }
+
+      const result = await client.query(
+        `SELECT campaign_number,campaign_desc,from_date,to_date,item,quantity
+           FROM campaign_records
+          WHERE UPPER(TRIM(chassis_number)) = UPPER(TRIM($1))
+          ORDER BY from_date ASC NULLS LAST, campaign_number ASC, id ASC`,
+        [vin]
+      );
+
+      await client.query("COMMIT");
+      return res.json({
+        success:true,
+        vin,
+        campaigns:result.rows.map(row => ({
+          campaignNumber:row.campaign_number || "",
+          campaignDesc:row.campaign_desc || "",
+          fromDate:row.from_date || null,
+          toDate:row.to_date || null,
+          item:row.item || "",
+          quantity:row.quantity || "",
+        }))
+      });
+    }
+
     if (action === "admin-campaign-meta") {
       const admin = await requireAdmin(client, req);
       if (admin.error) {

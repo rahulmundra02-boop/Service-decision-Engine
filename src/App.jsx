@@ -4885,13 +4885,45 @@ clone.style.transformOrigin = "top left";
         if (originalControl instanceof HTMLInputElement) {
           clonedControl.value = originalControl.value;
           clonedControl.checked = originalControl.checked;
-        } else if (originalControl instanceof HTMLTextAreaElement) {
-          clonedControl.value = originalControl.value;
-          clonedControl.textContent = originalControl.value;
-          clonedControl.style.height = originalControl.getBoundingClientRect().height + "px";
-        } else if (originalControl instanceof HTMLSelectElement) {
-          clonedControl.value = originalControl.value;
-        }
+      } else if (originalControl instanceof HTMLTextAreaElement) {
+  const value = originalControl.value;
+
+  clonedControl.value = value;
+  clonedControl.textContent = value;
+
+  const rect = originalControl.getBoundingClientRect();
+  clonedControl.style.height = rect.height + "px";
+  clonedControl.style.whiteSpace = "pre-wrap";
+  clonedControl.style.overflowWrap = "anywhere";
+  clonedControl.style.wordBreak = "break-word";
+
+  const lineBreakOverlay = document.createElement("div");
+  lineBreakOverlay.textContent = value;
+  lineBreakOverlay.style.position = "absolute";
+  lineBreakOverlay.style.left = rect.left + "px";
+  lineBreakOverlay.style.top = rect.top + "px";
+  lineBreakOverlay.style.width = rect.width + "px";
+  lineBreakOverlay.style.height = rect.height + "px";
+  lineBreakOverlay.style.boxSizing = "border-box";
+  lineBreakOverlay.style.padding = window.getComputedStyle(originalControl).padding;
+  lineBreakOverlay.style.font = window.getComputedStyle(originalControl).font;
+  lineBreakOverlay.style.lineHeight = window.getComputedStyle(originalControl).lineHeight;
+  lineBreakOverlay.style.textAlign = window.getComputedStyle(originalControl).textAlign;
+  lineBreakOverlay.style.color = window.getComputedStyle(originalControl).color;
+  lineBreakOverlay.style.background = "transparent";
+  lineBreakOverlay.style.whiteSpace = "pre-wrap";
+  lineBreakOverlay.style.overflowWrap = "anywhere";
+  lineBreakOverlay.style.wordBreak = "break-word";
+  lineBreakOverlay.style.pointerEvents = "none";
+  lineBreakOverlay.style.zIndex = "1000000";
+
+  clonedControl.style.color = "transparent";
+  clonedControl.style.caretColor = "transparent";
+
+  clone.appendChild(lineBreakOverlay);
+} else if (originalControl instanceof HTMLSelectElement) {
+  clonedControl.value = originalControl.value;
+}
       });
 
       document.body.appendChild(clone);

@@ -5721,10 +5721,6 @@ function ServiceDecisionApp({ user }) {
                       placeholder="Enter customer voice..."
                       rows={2}
                       aria-label="Customer Voice"
-                      onInput={(event) => {
-                        event.currentTarget.style.height = "auto";
-                        event.currentTarget.style.height = event.currentTarget.scrollHeight + "px";
-                      }
                     />
                   </div>
                 </div>

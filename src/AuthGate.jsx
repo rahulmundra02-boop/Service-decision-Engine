@@ -1,4 +1,5 @@
 import { cloneElement, useEffect, useRef, useState } from "react";
+import * as XLSX from "xlsx";
 import "./AuthGate.css";
 
 const TOKEN_KEY = "serviceDecisionAuthToken";
@@ -66,6 +67,10 @@ export default function AuthGate({ children }) {
   const [jobCardCacheSettings, setJobCardCacheSettings] = useState({ enabled:true, intervalHours:24, version:1, lastRebuildAt:null, nextRebuildAt:null, cachedJobCards:0 });
   const [emergencyDbUploadCutoff, setEmergencyDbUploadCutoff] = useState(false);
   const [sessionConflict, setSessionConflict] = useState(null);
+  const [campaignMeta, setCampaignMeta] = useState({ rows:0, vehicles:0, fileName:"", uploadedAt:null });
+  const [campaignUploadBusy, setCampaignUploadBusy] = useState(false);
+  const [campaignUploadMessage, setCampaignUploadMessage] = useState("");
+  const [campaignUploadError, setCampaignUploadError] = useState("");
 
   useEffect(() => {
     const token = localStorage.getItem(TOKEN_KEY);
@@ -239,6 +244,140 @@ export default function AuthGate({ children }) {
     setMessage(data.message || "Emergency DB upload cutoff updated.");
   });
 
+  const loadCampaignMeta = async () => {
+    try {
+      const data = await api("admin-campaign-meta", {}, localStorage.getItem(TOKEN_KEY));
+      setCampaignMeta(data?.meta || { rows:0, vehicles:0, fileName:"", uploadedAt:null });
+    } catch (e) {
+      setCampaignUploadError(e.message || "Unable to load campaign data status.");
+    }
+  };
+
+  const uploadCampaignExcel = async (file) => {
+    if (!file) return;
+
+    setCampaignUploadBusy(true);
+    setCampaignUploadMessage("");
+    setCampaignUploadError("");
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type:"array", cellDates:true, raw:true });
+      const allRows = [];
+
+      const cleanHeader = (value) =>
+        String(value ?? "")
+          .trim()
+          .toLowerCase()
+          .replace(/[\s_\-]+/g, "");
+
+      const headerMap = {
+        chassisnumber: "chassisNumber",
+        engine: "engine",
+        registrationnumber: "registrationNumber",
+        campaignnumber: "campaignNumber",
+        campaigndesc: "campaignDesc",
+        fromdate: "fromDate",
+        todate: "toDate",
+        item: "item",
+        quantity: "quantity",
+      };
+
+      const toDateValue = (value) => {
+        if (value instanceof Date && !Number.isNaN(value.getTime())) {
+          return value.toISOString().slice(0,10);
+        }
+        if (typeof value === "number") {
+          const parsed = XLSX.SSF.parse_date_code(value);
+          if (parsed?.y && parsed?.m && parsed?.d) {
+            return String(parsed.y).padStart(4,"0") + "-" +
+              String(parsed.m).padStart(2,"0") + "-" +
+              String(parsed.d).padStart(2,"0");
+          }
+        }
+        const text = String(value ?? "").trim();
+        if (!text) return "";
+        const m = text.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/);
+        if (m) {
+          const year = m[3].length === 2 ? "20" + m[3] : m[3];
+          return year + "-" + String(m[2]).padStart(2,"0") + "-" + String(m[1]).padStart(2,"0");
+        }
+        return text;
+      };
+
+      for (const sheetName of workbook.SheetNames) {
+        const sheet = workbook.Sheets[sheetName];
+        if (!sheet) continue;
+
+        const rows = XLSX.utils.sheet_to_json(sheet, {
+          header:1,
+          raw:true,
+          defval:"",
+          blankrows:false,
+        });
+        if (!rows.length) continue;
+
+        const headers = rows[0].map(cleanHeader);
+        const indexes = {};
+        headers.forEach((header, index) => {
+          if (headerMap[header] && indexes[headerMap[header]] === undefined) {
+            indexes[headerMap[header]] = index;
+          }
+        });
+
+        if (indexes.chassisNumber === undefined || indexes.campaignDesc === undefined) {
+          continue;
+        }
+
+        for (const row of rows.slice(1)) {
+          const get = (key) => indexes[key] === undefined ? "" : row[indexes[key]];
+          const chassisNumber = String(get("chassisNumber") ?? "").trim();
+          const campaignDesc = String(get("campaignDesc") ?? "").trim();
+          if (!chassisNumber || !campaignDesc) continue;
+
+          allRows.push({
+            chassisNumber,
+            engine: String(get("engine") ?? "").trim(),
+            registrationNumber: String(get("registrationNumber") ?? "").trim(),
+            campaignNumber: String(get("campaignNumber") ?? "").trim(),
+            campaignDesc,
+            fromDate: toDateValue(get("fromDate")),
+            toDate: toDateValue(get("toDate")),
+            item: String(get("item") ?? "").trim(),
+            quantity: String(get("quantity") ?? "").trim(),
+          });
+        }
+      }
+
+      if (!allRows.length) {
+        throw new Error("Valid campaign rows nahi mile. Excel headers check karein: Chassis Number, Campaign Desc etc.");
+      }
+
+      const uploadId = "campaign-" + Date.now();
+      const batchSize = 250;
+      for (let start = 0; start < allRows.length; start += batchSize) {
+        const batch = allRows.slice(start, start + batchSize);
+        const data = await api("admin-upload-campaign-batch", {
+          uploadId,
+          fileName:file.name,
+          replace:start === 0,
+          rows:batch,
+        }, localStorage.getItem(TOKEN_KEY));
+        if (!data?.success) throw new Error(data?.error || "Campaign upload failed.");
+        setCampaignUploadMessage("Uploading campaign data… " + Math.min(start + batch.length, allRows.length) + " / " + allRows.length);
+      }
+
+      await loadCampaignMeta();
+      setCampaignUploadMessage(
+        allRows.length.toLocaleString("en-IN") + " campaign rows uploaded successfully."
+      );
+    } catch (e) {
+      setCampaignUploadError(e.message || "Campaign Excel upload failed.");
+    } finally {
+      setCampaignUploadBusy(false);
+    }
+  };
+
   const loadAdminUsers = async () => {
     setAdminLoading(true);
     try {
@@ -257,6 +396,7 @@ export default function AuthGate({ children }) {
       loadAdminUsers();
       loadJobCardCacheSettings();
       loadEmergencyDbUploadCutoff();
+      loadCampaignMeta();
     }
   }, [user?.role, adminOpen, analyticsIncludeAdmins]);
 
@@ -624,6 +764,77 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
             {emergencyDbUploadCutoff
               ? "Emergency mode ON: Excel upload + Service Decision remain available, but history persistence is paused."
               : "Normal mode: new Excel Job Cards are saved using the hybrid browser-cache + Neon duplicate-check system."}
+          </div>
+        </div>
+
+        <div className="admin-panel-card" style={{marginTop:16,padding:"18px 20px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
+            <div>
+              <div className="admin-panel-card-title">Vehicle Campaign Master</div>
+              <div className="admin-panel-card-sub">
+                Upload the current campaign Excel. Chassis Number = VIN. A new upload replaces the previous campaign master.
+              </div>
+            </div>
+            <button
+              className="auth-primary"
+              type="button"
+              onClick={() => document.getElementById("admin-campaign-excel-input")?.click()}
+              disabled={campaignUploadBusy}
+            >
+              {campaignUploadBusy ? "Uploading..." : "Upload Campaign Excel"}
+            </button>
+          </div>
+
+          <input
+            id="admin-campaign-excel-input"
+            type="file"
+            accept=".xlsx,.xls,.xlsm,.csv"
+            style={{display:"none"}}
+            onChange={e => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) {
+                if (window.confirm("Current campaign master replace karke selected Excel upload karein?")) {
+                  void uploadCampaignExcel(file);
+                }
+              }
+            }}
+          />
+
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:12,marginTop:16}}>
+            <div>
+              <div className="admin-panel-card-sub">Campaign Rows</div>
+              <strong>{Number(campaignMeta?.rows || 0).toLocaleString("en-IN")}</strong>
+            </div>
+            <div>
+              <div className="admin-panel-card-sub">Vehicles with Campaign</div>
+              <strong>{Number(campaignMeta?.vehicles || 0).toLocaleString("en-IN")}</strong>
+            </div>
+            <div>
+              <div className="admin-panel-card-sub">Last Uploaded File</div>
+              <strong>{campaignMeta?.fileName || "Not uploaded"}</strong>
+            </div>
+            <div>
+              <div className="admin-panel-card-sub">Last Updated</div>
+              <strong>{campaignMeta?.uploadedAt ? new Date(campaignMeta.uploadedAt).toLocaleString("en-IN") : "Not uploaded"}</strong>
+            </div>
+          </div>
+
+          {(campaignUploadMessage || campaignUploadError) && (
+            <div style={{
+              marginTop:12,
+              padding:"10px 12px",
+              borderRadius:8,
+              background:campaignUploadError ? "#fff1f2" : "#ecfdf5",
+              color:campaignUploadError ? "#b91c1c" : "#166534",
+              fontWeight:700
+            }}>
+              {campaignUploadError || campaignUploadMessage}
+            </div>
+          )}
+
+          <div style={{marginTop:12,fontSize:11,color:"#6b7280"}}>
+            Required headers: Chassis Number, Engine, Registration Number, Campaign Number, Campaign Desc, From Date, To Date, Item, Quantity.
           </div>
         </div>
 

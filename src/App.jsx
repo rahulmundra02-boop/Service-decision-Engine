@@ -1437,6 +1437,46 @@ function parseExcelPaste(text) {
   return { headers, records: valid, headerMap: col };
 }
 
+function getActiveCampaignGroups(campaigns) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const toDate = (value) => {
+    if (!value) return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    date.setHours(0, 0, 0, 0);
+    return date;
+  };
+
+  const grouped = new Map();
+  for (const campaign of Array.isArray(campaigns) ? campaigns : []) {
+    const from = toDate(campaign?.fromDate);
+    const to = toDate(campaign?.toDate);
+    if ((from && from > today) || (to && to < today)) continue;
+
+    const key = String(campaign?.campaignNumber || campaign?.campaignDesc || "").trim().toUpperCase();
+    if (!key) continue;
+
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        campaignNumber: campaign?.campaignNumber || "",
+        campaignDesc: campaign?.campaignDesc || "",
+        fromDate: campaign?.fromDate || null,
+        toDate: campaign?.toDate || null,
+        items: [],
+      });
+    }
+
+    grouped.get(key).items.push({
+      item: campaign?.item || "",
+      quantity: campaign?.quantity || "",
+    });
+  }
+
+  return [...grouped.values()];
+}
+
 function deriveVehicle(records) {
   const firstNonEmpty = (key) => records.find((r) => String(r[key] ?? "").trim())?.[key] || "";
   const firstCustomerName = records.find((r) => isUsableCustomerName(r.customerName))?.customerName || "";
@@ -5795,63 +5835,33 @@ function ServiceDecisionApp({ user }) {
                     <div className="single-note-value">
                       {campaignLoading ? (
                         <span className="campaign-loading-text">Checking active campaigns…</span>
-                      ) : campaigns.length ? (
-                        <div className="campaign-list">
-                          {(() => {
-                            const today = new Date();
-                            today.setHours(0,0,0,0);
-                            const toDate = value => {
-                              if (!value) return null;
-                              const d = new Date(value);
-                              if (Number.isNaN(d.getTime())) return null;
-                              d.setHours(0,0,0,0);
-                              return d;
-                            };
-                            const active = campaigns.filter(item => {
-                              const from = toDate(item.fromDate);
-                              const to = toDate(item.toDate);
-                              return (!from || from <= today) && (!to || to >= today);
-                            });
-                            const grouped = new Map();
-                            active.forEach(item => {
-                              const key = String(item.campaignNumber || item.campaignDesc || "").trim().toUpperCase();
-                              if (!key) return;
-                              if (!grouped.has(key)) grouped.set(key, { ...item, items: [] });
-                              const group = grouped.get(key);
-                              group.items.push({
-                                item:item.item || "",
-                                quantity:item.quantity || "",
-                              });
-                            });
-                            const rows = [...grouped.values()];
-                            if (!rows.length) return <span></span>;
-                            return rows.map((campaign,index) => (
-                              <div className="campaign-remark-row" key={String(campaign.campaignNumber || campaign.campaignDesc) + "-" + index}>
-                                <span className="campaign-remark-text">{campaign.campaignDesc}</span>
-                                <span className="campaign-info-wrap">
-                                  <button type="button" className="campaign-info-button" aria-label="Campaign details">i</button>
-                                  <span className="campaign-info-popover">
-                                    <strong>Campaign Number:</strong> {campaign.campaignNumber || "-"}<br/>
-                                    <strong>From Date:</strong> {campaign.fromDate ? formatDate(campaign.fromDate) : "-"}<br/>
-                                    <strong>To Date:</strong> {campaign.toDate ? formatDate(campaign.toDate) : "-"}<br/>
-                                    <strong>Items:</strong>
-                                    {campaign.items.length ? (
-                                      <span className="campaign-item-list">
-                                        {campaign.items.map((item,itemIndex) => (
-                                          <span key={itemIndex}>
-                                            {item.item || "-"} — Qty {item.quantity || "-"}
-                                          </span>
-                                        ))}
-                                      </span>
-                                    ) : <span className="campaign-item-list"><span>-</span></span>}
-                                  </span>
-                                </span>
-                              </div>
-                            ));
-                          })()}
-                        </div>
                       ) : (
-                        <span>{remark}</span>
+                        (() => {
+                          const activeCampaigns = getActiveCampaignGroups(campaigns);
+                          return activeCampaigns.length ? (
+                            <div className="campaign-list">
+                              {activeCampaigns.map((campaign, index) => (
+                                <div className="campaign-remark-row" key={String(campaign.campaignNumber || campaign.campaignDesc) + "-" + index}>
+                                  <span className="campaign-remark-text">{campaign.campaignDesc}</span>
+                                  <span className="campaign-info-wrap">
+                                    <button type="button" className="campaign-info-button" aria-label="Campaign details">i</button>
+                                    <span className="campaign-info-popover">
+                                      <strong>Campaign Number:</strong> {campaign.campaignNumber || "-"}<br />
+                                      <strong>From Date:</strong> {campaign.fromDate ? formatDate(campaign.fromDate) : "-"}<br />
+                                      <strong>To Date:</strong> {campaign.toDate ? formatDate(campaign.toDate) : "-"}<br />
+                                      <strong>Items:</strong>
+                                      <span className="campaign-item-list">
+                                        {campaign.items.length ? campaign.items.map((item, itemIndex) => (
+                                          <span key={itemIndex}>{item.item || "-"} — Qty {item.quantity || "-"}</span>
+                                        )) : <span>-</span>}
+                                      </span>
+                                    </span>
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : <span>{remark}</span>;
+                        })()
                       )}
                     </div>
                   </div>

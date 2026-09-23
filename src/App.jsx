@@ -1559,39 +1559,9 @@ function aggregateHistory(records) {
     });
 }
 
-function isScheduledHistoryVisit(visit) {
-  const rows = Array.isArray(visit) ? visit : [];
-
-  return rows.some((record) => {
-    const code = normalizePartCode(record?.partCode);
-    const standardized = String(record?.standardizedPart || "").trim().toUpperCase();
-    const serviceType = String(record?.serviceType || "").trim().toUpperCase();
-
-    if (/^FS\d{4,}$/.test(code) || /^PS\d{4,}$/.test(code)) return true;
-    if (standardized.includes("FREE SERVICE")) return true;
-    if (serviceType.includes("SERVICE")) return true;
-
-    const scheduledPartPrefixes = [
-      "ENGINE OIL",
-      "ENGINE OIL FILTER",
-      "GEAR OIL",
-      "AXLE OIL",
-      "STEERING OIL",
-      "STEERING OIL FILTER",
-      "CLUTCH OIL",
-      "COOLANT",
-      "FUEL FILTER",
-      "AIR FILTER",
-      "APDA FILTER",
-      "DEF FILTER",
-      "DEF INLINE FILTER",
-      "HUB GREASE",
-    ];
-
-    return scheduledPartPrefixes.some((prefix) =>
-      standardized === prefix || standardized.startsWith(prefix + " ")
-    );
-  });
+function isScheduledHistoryVisit(visit, vehicle, decision) {
+  if (!Array.isArray(visit) || !visit.length) return false;
+  return getVisitParts(visit, vehicle, decision).some((part) => part.eligible);
 }
 
 function isMappedServiceLine(record) {
@@ -4049,6 +4019,7 @@ function ServiceDecisionApp({ user }) {
       setAnalysis({ ...parsed, vehicle, running, visits, decision });
       setRemark("");
       setCustomerVoice("");
+      setHistoryViewMode("schedule");
       logUsage("Single Vehicle Analysis", {
         mode:"single",
         vehicleCount:1,
@@ -4347,6 +4318,7 @@ function ServiceDecisionApp({ user }) {
     setError("");
     setOverrideReading("");
     setAppliedOverride(null);
+    setHistoryViewMode("schedule");
     setBulkResults([]);
     setBulkMeta(null);
     setCustomerGroups([]);
@@ -4832,7 +4804,7 @@ function ServiceDecisionApp({ user }) {
     }
   }
   const visibleSingleVisits = analysis?.visits?.filter((visit) =>
-    historyViewMode === "full" ? true : isScheduledHistoryVisit(visit)
+    historyViewMode === "full" || isScheduledHistoryVisit(visit, analysis.vehicle, analysis.decision)
   ) || [];
 
   const captureSingleScreenshot = async () => {
@@ -4849,10 +4821,20 @@ function ServiceDecisionApp({ user }) {
 
     let clone = null;
     try {
+      const heading = source.querySelector(".sheet-heading");
+      const captureStart = heading || source.firstElementChild || source;
       const viewportHeight = Math.max(window.innerHeight || 700, 700);
       const maxCaptureHeight = viewportHeight * 4;
-      const sourceWidth = Math.max(1, Math.ceil(source.getBoundingClientRect().width));
-      const sourceHeight = Math.max(1, Math.min(source.scrollHeight, maxCaptureHeight));
+      const sourceRect = source.getBoundingClientRect();
+      const headingRect = captureStart.getBoundingClientRect();
+      const sourceWidth = Math.max(1, Math.ceil(sourceRect.width));
+      const sourceHeight = Math.max(
+        1,
+        Math.min(
+          Math.max(source.scrollHeight, headingRect.bottom - sourceRect.top),
+          maxCaptureHeight
+        )
+      );
 
       clone = source.cloneNode(true);
       clone.removeAttribute("id");
@@ -4866,6 +4848,8 @@ function ServiceDecisionApp({ user }) {
       clone.style.margin = "0";
       clone.style.boxSizing = "border-box";
       clone.style.zIndex = "-1";
+      clone.style.transform = "none";
+      clone.style.transformOrigin = "top left";
 
       const originalControls = source.querySelectorAll("input, textarea, select");
       const clonedControls = clone.querySelectorAll("input, textarea, select");
@@ -4890,7 +4874,7 @@ function ServiceDecisionApp({ user }) {
       const canvas = await html2canvas(clone, {
         backgroundColor: null,
         useCORS: true,
-        scale: Math.min(1.5, Math.max(1, window.devicePixelRatio || 1)),
+        scale: 2.5,
         width: sourceWidth,
         height: sourceHeight,
         windowWidth: sourceWidth,
@@ -5760,12 +5744,12 @@ function ServiceDecisionApp({ user }) {
     {index < singleTableColumns.length - 1 && <span className="column-resizer" onPointerDown={e=>resizeTableColumn("single",key,e)} />}
   </th>
 ))}</tr></thead><tbody>
-{visibleSingleVisits.length ? visibleSingleVisits.map((visit,i)=>{const visitDate=getVisitDate(visit),jobCard=getVisitJobCard(visit),visitReading=getVisitReading(visit,analysis.vehicle),parts=getVisitParts(visit,analysis.vehicle,analysis.decision);return <tr key={i}>
+{visibleSingleVisits.length ? visibleSingleVisits.map((visit,i)=>{const visitDate=getVisitDate(visit),jobCard=getVisitJobCard(visit),visitReading=getVisitReading(visit,analysis.vehicle),allParts=getVisitParts(visit,analysis.vehicle,analysis.decision),parts=historyViewMode === "full" ? allParts : allParts.filter(part => part.eligible);return <tr key={i}>
 {isSingleColumnVisible("date")&&<td style={tableColumnStyle("single","date")}>{formatDateShort(visitDate)}</td>}
 {isSingleColumnVisible("jobCard")&&<td style={tableColumnStyle("single","jobCard")}>{jobCard}</td>}
 {isSingleColumnVisible("reading")&&<td style={tableColumnStyle("single","reading")}>{visitReading?`${formatNumber(visitReading)} ${getTargetUnit(analysis.vehicle)}`:"-"}</td>}
 {isSingleColumnVisible("plant")&&<td style={tableColumnStyle("single","plant")}>{[...new Set(visit.map(r=>String(r?.plantName||r?.salesOrgName||"").trim()).filter(Boolean))].join(", ")||"-"}</td>}
-{isSingleColumnVisible("parts")&&<td style={tableColumnStyle("single","parts")}>{parts.length?parts.map((part,index)=><span key={index} className={part.eligible?"history-part eligible":"history-part"} title={part.eligible?"Eligible service-calculation record":"History record"}>{part.text}</span>):"-"}</td>}
+{isSingleColumnVisible("parts")&&<td style={tableColumnStyle("single","parts")}>{parts.length?parts.map((part,index)=><span key={index} className={historyViewMode === "full" && part.eligible ? "history-part eligible" : "history-part"} title={historyViewMode === "full" && part.eligible ? "Eligible service-calculation record" : "History record"}>{part.text}</span>):"-"}</td>}
 </tr>}) : <tr><td colSpan={Math.max(1,singleTableColumns.length)} className="small-note">No service history loaded.</td></tr>}
 </tbody></table>
                 </div>

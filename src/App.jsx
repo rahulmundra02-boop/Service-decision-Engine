@@ -533,7 +533,9 @@ function parseNumber(value) {
 
 function formatDate(date) {
   if (!date) return "-";
-  return date.toLocaleDateString("en-GB");
+  const value = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(value.getTime())) return "-";
+  return value.toLocaleDateString("en-GB");
 }
 
 function formatDateShort(date) {

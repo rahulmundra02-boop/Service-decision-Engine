@@ -533,7 +533,9 @@ function parseNumber(value) {
 
 function formatDate(date) {
   if (!date) return "-";
-  return date.toLocaleDateString("en-GB");
+  const value = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(value.getTime())) return "-";
+  return value.toLocaleDateString("en-GB");
 }
 
 function formatDateShort(date) {
@@ -1352,10 +1354,54 @@ function parseExcelPaste(text) {
   return { headers, records: valid, headerMap: col };
 }
 
+function getActiveCampaignGroups(campaigns) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const toDate = (value) => {
+    if (!value) return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    date.setHours(0, 0, 0, 0);
+    return date;
+  };
+
+  const grouped = new Map();
+  for (const campaign of Array.isArray(campaigns) ? campaigns : []) {
+    const from = toDate(campaign?.fromDate);
+    const to = toDate(campaign?.toDate);
+    if ((from && from > today) || (to && to < today)) continue;
+
+    const key = String(campaign?.campaignNumber || campaign?.campaignDesc || "").trim().toUpperCase();
+    if (!key) continue;
+
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        campaignNumber: campaign?.campaignNumber || "",
+        campaignDesc: campaign?.campaignDesc || "",
+        fromDate: campaign?.fromDate || null,
+        toDate: campaign?.toDate || null,
+        items: [],
+      });
+    }
+
+    grouped.get(key).items.push({
+      item: campaign?.item || "",
+      quantity: campaign?.quantity || "",
+    });
+  }
+
+  return [...grouped.values()];
+}
+
 function deriveVehicle(records) {
   const firstNonEmpty = (key) => records.find((r) => String(r[key] ?? "").trim())?.[key] || "";
   const firstCustomerName = records.find((r) => isUsableCustomerName(r.customerName))?.customerName || "";
   const saleDates = records.map((r) => r.sale).filter(Boolean).sort((a, b) => a - b);
+  const lastServiceUnderAmc = records.some((record) =>
+    String(record?.repairTypeLine ?? "").trim().toLowerCase().includes("amc order")
+  );
+
   return {
     reg: firstNonEmpty("reg"),
     customerNumber: records.find((r) => isUsableCustomerNumber(r.customerNumber))?.customerNumber || "",
@@ -1364,6 +1410,7 @@ function deriveVehicle(records) {
     model: firstNonEmpty("model"),
     vin: firstNonEmpty("vin"),
     sale: saleDates[0] || null,
+    lastServiceUnderAmc,
   };
 }
 
@@ -1467,6 +1514,11 @@ function aggregateHistory(records) {
       const db = getVisitDate(b)?.getTime() || 0;
       return db - da;
     });
+}
+
+function isScheduledHistoryVisit(visit, vehicle, decision) {
+  if (!Array.isArray(visit) || !visit.length) return false;
+  return getVisitParts(visit, vehicle, decision).some((part) => part.eligible);
 }
 
 function isMappedServiceLine(record) {
@@ -3493,6 +3545,14 @@ function ServiceDecisionApp({ user }) {
   const [bulkSearch, setBulkSearch] = useState("");
   const [bulkQuickFilter, setBulkQuickFilter] = useState("all");
   const [manualPartLookupBusy, setManualPartLookupBusy] = useState({});
+  const [customerVoice, setCustomerVoice] = useState("");
+  const [remark, setRemark] = useState("");
+  const [campaigns, setCampaigns] = useState([]);
+  const [campaignLoading, setCampaignLoading] = useState(false);
+  const [historyViewMode, setHistoryViewMode] = useState("schedule");
+  const [screenshotBusy, setScreenshotBusy] = useState(false);
+  const [screenshotStatus, setScreenshotStatus] = useState("");
+
   const defaultSingleColumns = ["date","jobCard","reading","plant","parts"];
   const defaultBulkColumns = ["customerName","vin","reg","saleDate","model","currentReading","services"];
   const defaultSingleLabels = { date:"Date", jobCard:"Job Card", reading:"Reading", plant:"Plant", parts:"Part No. / Service / Qty" };
@@ -3929,9 +3989,41 @@ function ServiceDecisionApp({ user }) {
       const running = deriveRunningReading(parsed.records, vehicle);
       const visits = aggregateHistory(parsed.records);
       const decision = calculateDecisions(parsed.records, vehicle, running);
+      const vinForCampaign = String(vehicle?.vin || parsed.records?.[0]?.vin || "").trim().toUpperCase();
+      setCampaigns([]);
+      if (vinForCampaign) {
+        setCampaignLoading(true);
+        void fetch("/api/auth", {
+          method:"POST",
+          headers:{
+            "Content-Type":"application/json",
+            ...(localStorage.getItem("serviceDecisionAuthToken")
+              ? {Authorization:`Bearer ${localStorage.getItem("serviceDecisionAuthToken")}`}
+              : {})
+          },
+          body:JSON.stringify({action:"campaigns-by-vin",vin:vinForCampaign})
+        })
+          .then(response => response.json().then(data => ({response,data})))
+          .then(({response,data}) => {
+            if (!response.ok || data?.success === false) {
+              throw new Error(data?.error || "Campaign lookup failed.");
+            }
+            setCampaigns(Array.isArray(data?.campaigns) ? data.campaigns : []);
+          })
+          .catch(error => {
+            console.warn("Campaign lookup failed:", error);
+            setCampaigns([]);
+          })
+          .finally(() => setCampaignLoading(false));
+      } else {
+        setCampaignLoading(false);
+      }
       setOverrideReading("");
       setAppliedOverride(null);
       setAnalysis({ ...parsed, vehicle, running, visits, decision });
+      setRemark("");
+      setCustomerVoice("");
+      setHistoryViewMode("schedule");
       logUsage("Single Vehicle Analysis", {
         mode:"single",
         vehicleCount:1,
@@ -4230,6 +4322,7 @@ function ServiceDecisionApp({ user }) {
     setError("");
     setOverrideReading("");
     setAppliedOverride(null);
+    setHistoryViewMode("schedule");
     setBulkResults([]);
     setBulkMeta(null);
     setCustomerGroups([]);
@@ -4261,6 +4354,8 @@ function ServiceDecisionApp({ user }) {
       services: [],
     });
     setOpenBulkFilter(null);
+    setCampaigns([]);
+    setCampaignLoading(false);
   };
 
   // App-style Escape navigation:
@@ -4714,6 +4809,110 @@ function ServiceDecisionApp({ user }) {
       pdf.save(fileName);
     }
   }
+  const visibleSingleVisits = analysis?.visits?.filter((visit) =>
+    historyViewMode === "full" || isScheduledHistoryVisit(visit, analysis.vehicle, analysis.decision)
+  ) || [];
+
+  const captureSingleScreenshot = async () => {
+    if (screenshotBusy) return;
+
+    const source = document.getElementById("single-screenshot-area");
+    if (!source) {
+      setScreenshotStatus("Analyze a vehicle first.");
+      return;
+    }
+
+    setScreenshotBusy(true);
+    setScreenshotStatus("Preparing screenshot...");
+
+    let clone = null;
+    try {
+      const heading = source.querySelector(".sheet-heading");
+      const captureStart = heading || source.firstElementChild || source;
+      const viewportHeight = Math.max(window.innerHeight || 700, 700);
+      const maxCaptureHeight = Math.round(viewportHeight * 2.5);
+      const sourceRect = source.getBoundingClientRect();
+      const headingRect = captureStart.getBoundingClientRect();
+      const sourceWidth = Math.max(1, Math.ceil(sourceRect.width));
+      const sourceHeight = Math.max(
+        1,
+        Math.min(
+          Math.max(source.scrollHeight, headingRect.bottom - sourceRect.top),
+          maxCaptureHeight
+        )
+      );
+
+      clone = source.cloneNode(true);
+      clone.removeAttribute("id");
+      clone.style.position = "absolute";
+      clone.style.left = "-100000px";
+      clone.style.top = "0";
+      clone.style.width = sourceWidth + "px";
+      clone.style.height = sourceHeight + "px";
+      clone.style.maxHeight = sourceHeight + "px";
+      clone.style.overflow = "hidden";
+      clone.style.margin = "0";
+      clone.style.boxSizing = "border-box";
+      clone.style.zIndex = "999999";
+      clone.style.transform = "none";
+      clone.style.transformOrigin = "top left";
+
+      const originalControls = source.querySelectorAll("input, textarea, select");
+      const clonedControls = clone.querySelectorAll("input, textarea, select");
+      originalControls.forEach((originalControl, index) => {
+        const clonedControl = clonedControls[index];
+        if (!clonedControl) return;
+        if (originalControl instanceof HTMLInputElement) {
+          clonedControl.value = originalControl.value;
+          clonedControl.checked = originalControl.checked;
+        } else if (originalControl instanceof HTMLTextAreaElement) {
+          clonedControl.value = originalControl.value;
+          clonedControl.textContent = originalControl.value;
+          clonedControl.style.height = originalControl.getBoundingClientRect().height + "px";
+        } else if (originalControl instanceof HTMLSelectElement) {
+          clonedControl.value = originalControl.value;
+        }
+      });
+
+      document.body.appendChild(clone);
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+      const canvas = await html2canvas(clone, {
+        backgroundColor: "#1f2937",
+        useCORS: true,
+        scale: 2.5,
+        width: sourceWidth,
+        height: sourceHeight,
+        windowWidth: sourceWidth,
+        windowHeight: sourceHeight,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const blob = await new Promise((resolve, reject) => {
+        canvas.toBlob((value) => value ? resolve(value) : reject(new Error("Unable to create PNG.")), "image/png");
+      });
+
+      if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
+        throw new Error("Image clipboard is not supported by this browser.");
+      }
+
+      await navigator.clipboard.write([
+        new ClipboardItem({ "image/png": blob })
+      ]);
+
+      setScreenshotStatus("Screenshot copied to clipboard.");
+      window.setTimeout(() => setScreenshotStatus(""), 2500);
+    } catch (error) {
+      console.error("Single vehicle screenshot failed:", error);
+      setScreenshotStatus("Screenshot could not be copied. Please allow clipboard access and try again.");
+      window.setTimeout(() => setScreenshotStatus(""), 5000);
+    } finally {
+      if (clone?.parentNode) clone.parentNode.removeChild(clone);
+      setScreenshotBusy(false);
+    }
+  };
+
   return (
     <>
       <style>{`
@@ -5269,6 +5468,165 @@ function ServiceDecisionApp({ user }) {
           .status-yes { background:#285b35 !important; border-color:#70ad47; color:#f0fff2 !important; }
           .status-no { background:#3a4555 !important; border-color:#8291a8; color:#ffffff !important; }
         }
+        .single-screenshot-area {
+          width: 100%;
+          overflow: visible;
+        }
+        .campaign-list {
+  width:100%;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  align-items:stretch;
+}
+.campaign-remark-row {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:7px;
+  width:100%;
+  text-align:center;
+}
+.campaign-remark-text {
+  overflow-wrap:anywhere;
+  line-height:1.35;
+}
+.campaign-info-wrap {
+  position:relative;
+  display:inline-flex;
+  flex:0 0 auto;
+}
+.campaign-info-button {
+  width:18px;
+  height:18px;
+  padding:0;
+  border-radius:50%;
+  border:1px solid #d1d5db;
+  background:#374151;
+  color:#fff;
+  font-size:11px;
+  font-weight:800;
+  line-height:16px;
+  cursor:help;
+}
+.campaign-info-popover {
+  display:none;
+  position:absolute;
+  left:50%;
+  bottom:calc(100% + 8px);
+  transform:translateX(-50%);
+  width:280px;
+  max-width:min(280px, 70vw);
+  padding:10px 12px;
+  border-radius:8px;
+  border:1px solid #64748b;
+  background:#111827;
+  color:#f8fafc;
+  box-shadow:0 8px 24px rgba(0,0,0,.35);
+  text-align:left;
+  font-size:11px;
+  line-height:1.5;
+  z-index:50;
+}
+.campaign-info-wrap:hover .campaign-info-popover,
+.campaign-info-wrap:focus-within .campaign-info-popover {
+  display:block;
+}
+.campaign-item-list {
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  margin-top:3px;
+}
+.campaign-loading-text {
+  opacity:.75;
+}
+.single-note-grid {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+          gap: 10px;
+          margin: 10px 0;
+          align-items: stretch;
+        }
+        .single-note-card {
+          border: 1px solid #5c748d;
+          background: #253b53;
+          min-width: 0;
+        }
+        .single-note-title {
+          background: #117f79;
+          color: #fff;
+          font-weight: 800;
+          text-align: center;
+          padding: 8px 10px;
+        }
+        .single-note-value {
+          min-height: 64px;
+          padding: 12px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
+          white-space: pre-wrap;
+          overflow-wrap: anywhere;
+          color: #f8fafc;
+          background: #1f2937;
+        }
+        .single-customer-voice {
+          display: block;
+          width: 100%;
+          min-height: 64px;
+          resize: vertical;
+          box-sizing: border-box;
+          border: 0;
+          outline: 0;
+          padding: 12px;
+          font: inherit;
+          line-height: 1.35;
+          text-align: center;
+          white-space: pre-wrap;
+          overflow-wrap: anywhere;
+          overflow: hidden;
+          color: #111827;
+          background: #fff;
+        }
+        .single-history-toggle {
+          margin-left: auto;
+          display: inline-flex;
+          align-items: center;
+          gap: 12px;
+          flex-wrap: wrap;
+          font-size: 12px;
+          font-weight: 700;
+          background: rgba(255,255,255,.08);
+          border: 1px solid rgba(255,255,255,.25);
+          padding: 6px 9px;
+        }
+        .single-history-toggle label {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          cursor: pointer;
+          white-space: nowrap;
+        }
+        .single-history-toggle input {
+          accent-color: #2f9e44;
+        }
+        .single-history-wrap {
+          max-height: none !important;
+          height: auto !important;
+          overflow: visible !important;
+        }
+        @media (max-width: 800px) {
+          .single-note-grid {
+            grid-template-columns: 1fr;
+          }
+          .single-history-toggle {
+            margin-left: 0;
+            width: 100%;
+          }
+        }
+
         @media print {
           body, .excel-app, .excel-window { background:#fff !important; }
           .excel-titlebar, .excel-ribbon, .no-print { display:none !important; }
@@ -5330,6 +5688,20 @@ function ServiceDecisionApp({ user }) {
                   ))}
                 </div>
               )}
+              {mode === "single" && analysis && (
+                <div className="no-print" style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
+                  <button
+                    type="button"
+                    className="excel-button green"
+                    onClick={captureSingleScreenshot}
+                    disabled={screenshotBusy}
+                    title="Copy the vehicle report area to clipboard"
+                  >
+                    {screenshotBusy ? "Preparing..." : "Screenshot"}
+                  </button>
+                  {screenshotStatus && <span className="small-note">{screenshotStatus}</span>}
+                </div>
+              )}
             </div>
           </div>
 
@@ -5347,6 +5719,7 @@ function ServiceDecisionApp({ user }) {
               />
             ) : mode === "single" ? (analysis ? (
               <>
+                <div id="single-screenshot-area" className="single-screenshot-area">
                 <div className="sheet-heading" style={{marginTop:10}}>VEHICLE SCHEDULE SERVICE HISTORY FROM LAST 3 YEARS AS ON DATE - {todayDisplay}</div>
 
                 <div className="vehicle-output-layout" style={{marginTop:10}}>
@@ -5355,13 +5728,13 @@ function ServiceDecisionApp({ user }) {
                     <div className="sheet-grid">
                       <div className="cell label">Customer Name</div><div className="cell value">{analysis?.vehicle?.customerName || ""}</div>
                       <div className="cell label">Reg No</div><div className="cell value">{analysis?.vehicle?.reg || ""}</div>
-                      <div className="cell label">Engine No</div><div className="cell value">{analysis?.vehicle?.engine || ""}</div>
+                      <div className="cell label">VIN No</div><div className="cell value">{analysis?.vehicle?.vin || ""}</div>
                       <div className="cell label">Sale Date</div><div className="cell value">{analysis ? formatDate(analysis.vehicle.sale) : ""}</div>
                       <div className="cell label">Vehicle Age</div><div className="cell value">{analysis?.vehicle?.sale ? formatVehicleAge(analysis.vehicle.sale) : ""}</div>
                       <div className="cell label">Model</div><div className="cell value">{analysis?.vehicle?.model || ""}</div>
                       <div className="cell label">Last Odometer recorded/date</div><div className="cell value">{analysis?.running?.last ? `${formatNumber(getRelevantReading(analysis.running.last, analysis.vehicle))} / ${formatDate(analysis.running.last.date)}` : ""}</div>
                       <div className="cell label">Current Reading</div><div className="cell value">{analysis?.running?.current ? `${formatNumber(analysis.running.current)} ${analysis.running.unit || "KM"}${appliedOverride === null ? " (Approx.)" : ""}` : ""}</div>
-                      <div className="cell label">VIN</div><div className="cell value">{analysis?.vehicle?.vin || ""}</div>
+                      <div className="cell label">Last service under AMC?</div><div className="cell value">{analysis?.vehicle?.lastServiceUnderAmc ? "Yes" : "No"}</div>
                     </div>
                   </div>
 
@@ -5386,10 +5759,87 @@ function ServiceDecisionApp({ user }) {
                 </div>
 
 
+                <div className="single-note-grid">
+                  <div className="single-note-card">
+                    <div className="single-note-title">Remark</div>
+                    <div className="single-note-value">
+                      {campaignLoading ? (
+                        <span className="campaign-loading-text">Checking active campaigns…</span>
+                      ) : (
+                        (() => {
+                          const activeCampaigns = getActiveCampaignGroups(campaigns);
+                          return activeCampaigns.length ? (
+                            <div className="campaign-list">
+                              {activeCampaigns.map((campaign, index) => (
+                                <div className="campaign-remark-row" key={String(campaign.campaignNumber || campaign.campaignDesc) + "-" + index}>
+                                  <span className="campaign-remark-text">{campaign.campaignDesc}</span>
+                                  <span className="campaign-info-wrap">
+                                    <button type="button" className="campaign-info-button" aria-label="Campaign details">i</button>
+                                    <span className="campaign-info-popover">
+                                      <strong>Campaign Number:</strong> {campaign.campaignNumber || "-"}<br />
+                                      <strong>From Date:</strong> {campaign.fromDate ? formatDate(campaign.fromDate) : "-"}<br />
+                                      <strong>To Date:</strong> {campaign.toDate ? formatDate(campaign.toDate) : "-"}<br />
+                                      <strong>Items:</strong>
+                                      <span className="campaign-item-list">
+                                        {campaign.items.length ? campaign.items.map((item, itemIndex) => (
+                                          <span key={itemIndex}>{item.item || "-"} — Qty {item.quantity || "-"}</span>
+                                        )) : <span>-</span>}
+                                      </span>
+                                    </span>
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : <span>{remark}</span>;
+                        })()
+                      )}
+                    </div>
+                  </div>
+                  <div className="single-note-card">
+                    <div className="single-note-title">Customer Voice</div>
+                    <textarea
+                      className="single-customer-voice"
+                      value={customerVoice}
+                      onChange={(event) => {
+                        setCustomerVoice(event.target.value);
+                        event.target.style.height = "auto";
+                        event.target.style.height = event.target.scrollHeight + "px";
+                      }}
+                      placeholder="Enter customer voice..."
+                      rows={2}
+                      aria-label="Customer Voice"
+                    />
+                  </div>
+                </div>
+
                 {error && <div className="error-line no-print">{error}</div>}
 
-                <div className="section-title service-summary-title">Service Summary — Complete Vehicle History</div>
-                <div className="history-wrap">
+                <div className="section-title service-summary-title" style={{display:"flex",alignItems:"center",gap:10}}>
+                  <span>Service Summary — Complete Vehicle History</span>
+                  <div className="single-history-toggle no-print" role="group" aria-label="Service history view">
+                    <label>
+                      <input
+                        type="radio"
+                        name="single-history-view"
+                        value="schedule"
+                        checked={historyViewMode === "schedule"}
+                        onChange={() => setHistoryViewMode("schedule")}
+                      />
+                      Only Schedule Service History
+                    </label>
+                    <label>
+                      <input
+                        type="radio"
+                        name="single-history-view"
+                        value="full"
+                        checked={historyViewMode === "full"}
+                        onChange={() => setHistoryViewMode("full")}
+                      />
+                      Full History
+                    </label>
+                  </div>
+                </div>
+                <div className="history-wrap single-history-wrap" style={{maxHeight:"none",height:"auto",overflow:"visible"}}>
                   <table className="history-table single-service-summary dashboard-resizable-table"><thead><tr>
 {singleTableColumns.map((key,index) => (
   <th key={key} style={tableColumnStyle("single",key)}>
@@ -5397,14 +5847,15 @@ function ServiceDecisionApp({ user }) {
     {index < singleTableColumns.length - 1 && <span className="column-resizer" onPointerDown={e=>resizeTableColumn("single",key,e)} />}
   </th>
 ))}</tr></thead><tbody>
-{analysis?.visits?.length ? analysis.visits.map((visit,i)=>{const visitDate=getVisitDate(visit),jobCard=getVisitJobCard(visit),visitReading=getVisitReading(visit,analysis.vehicle),parts=getVisitParts(visit,analysis.vehicle,analysis.decision);return <tr key={i}>
+{visibleSingleVisits.length ? visibleSingleVisits.map((visit,i)=>{const visitDate=getVisitDate(visit),jobCard=getVisitJobCard(visit),visitReading=getVisitReading(visit,analysis.vehicle),allParts=getVisitParts(visit,analysis.vehicle,analysis.decision),parts=historyViewMode === "full" ? allParts : allParts.filter(part => part.eligible);return <tr key={i}>
 {isSingleColumnVisible("date")&&<td style={tableColumnStyle("single","date")}>{formatDateShort(visitDate)}</td>}
 {isSingleColumnVisible("jobCard")&&<td style={tableColumnStyle("single","jobCard")}>{jobCard}</td>}
 {isSingleColumnVisible("reading")&&<td style={tableColumnStyle("single","reading")}>{visitReading?`${formatNumber(visitReading)} ${getTargetUnit(analysis.vehicle)}`:"-"}</td>}
 {isSingleColumnVisible("plant")&&<td style={tableColumnStyle("single","plant")}>{[...new Set(visit.map(r=>String(r?.plantName||r?.salesOrgName||"").trim()).filter(Boolean))].join(", ")||"-"}</td>}
-{isSingleColumnVisible("parts")&&<td style={tableColumnStyle("single","parts")}>{parts.length?parts.map((part,index)=><span key={index} className={part.eligible?"history-part eligible":"history-part"} title={part.eligible?"Eligible service-calculation record":"History record"}>{part.text}</span>):"-"}</td>}
+{isSingleColumnVisible("parts")&&<td style={tableColumnStyle("single","parts")}>{parts.length?parts.map((part,index)=><span key={index} className={historyViewMode === "full" && part.eligible ? "history-part eligible" : "history-part"} title={historyViewMode === "full" && part.eligible ? "Eligible service-calculation record" : "History record"}>{part.text}</span>):"-"}</td>}
 </tr>}) : <tr><td colSpan={Math.max(1,singleTableColumns.length)} className="small-note">No service history loaded.</td></tr>}
 </tbody></table>
+                </div>
                 </div>
               </>
             ) : (
@@ -5647,4 +6098,4 @@ function App() {
   return <AuthGate><ServiceDecisionApp /></AuthGate>;
 }
 
-export default App;
+export default App\n    setCampaigns([]);\n    setCampaignLoading(false);;

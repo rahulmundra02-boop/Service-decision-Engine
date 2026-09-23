@@ -4843,19 +4843,39 @@ function ServiceDecisionApp({ user }) {
       );
 
       clone = source.cloneNode(true);
-      clone.removeAttribute("id");
-      clone.style.position = "absolute";
-      clone.style.left = "-100000px";
-      clone.style.top = "0";
-      clone.style.width = sourceWidth + "px";
-      clone.style.height = sourceHeight + "px";
-      clone.style.maxHeight = sourceHeight + "px";
-      clone.style.overflow = "hidden";
-      clone.style.margin = "0";
-      clone.style.boxSizing = "border-box";
-      clone.style.zIndex = "999999";
-      clone.style.transform = "none";
-      clone.style.transformOrigin = "top left";
+clone.removeAttribute("id");
+
+const themeRoot = source.closest(".excel-app");
+if (themeRoot) {
+  const themeClass = Array.from(themeRoot.classList).find((className) =>
+    className.startsWith("theme-")
+  );
+
+  if (themeClass) {
+    clone.classList.add(themeClass);
+  }
+
+  const computedTheme = window.getComputedStyle(themeRoot);
+  ["--theme", "--theme-dark", "--theme-soft", "--theme-bg", "--theme-accent"].forEach((property) => {
+    const value = computedTheme.getPropertyValue(property).trim();
+    if (value) {
+      clone.style.setProperty(property, value);
+    }
+  });
+}
+
+clone.style.position = "absolute";
+clone.style.left = "-100000px";
+clone.style.top = "0";
+clone.style.width = sourceWidth + "px";
+clone.style.height = sourceHeight + "px";
+clone.style.maxHeight = sourceHeight + "px";
+clone.style.overflow = "hidden";
+clone.style.margin = "0";
+clone.style.boxSizing = "border-box";
+clone.style.zIndex = "999999";
+clone.style.transform = "none";
+clone.style.transformOrigin = "top left";
 
       const originalControls = source.querySelectorAll("input, textarea, select");
       const clonedControls = clone.querySelectorAll("input, textarea, select");
@@ -4878,7 +4898,7 @@ function ServiceDecisionApp({ user }) {
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
       const canvas = await html2canvas(clone, {
-        backgroundColor: "#1f2937",
+        backgroundColor: "#ffffff",
         useCORS: true,
         scale: 2.5,
         width: sourceWidth,
@@ -5383,13 +5403,37 @@ function ServiceDecisionApp({ user }) {
         .single-service-summary th:last-child, .single-service-summary td:last-child { overflow-wrap:anywhere; }
         .service-summary-note { padding:5px 8px; margin-top:4px; }
         .service-summary-title {
-          background:#2f75b5;
-          color:#fff;
-          border-color:#255e91;
-          margin-top:10px;
-          box-shadow:0 1px 2px rgba(0,0,0,.18);
-          letter-spacing:.1px;
-        }
+  position:relative;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  background:#2f75b5;
+  color:#fff;
+  border-color:#255e91;
+  margin-top:10px;
+  min-height:44px;
+  padding:8px 190px 8px 12px;
+  box-shadow:0 1px 2px rgba(0,0,0,.18);
+  letter-spacing:.1px;
+}
+
+.vehicle-profile-panel > .section-title {
+  text-align:center;
+}
+
+.service-summary-title > span {
+  width:100%;
+  text-align:center;
+}
+
+.service-summary-title .single-history-toggle {
+  position:absolute;
+  right:8px;
+  top:50%;
+  transform:translateY(-50%);
+  margin-left:0;
+}
 
         .history-part { display:inline-block; margin:2px 4px 2px 0; padding:3px 6px; border:1px solid transparent; }
         .history-part.eligible { background:#e2f0d9; color:#006100; border-color:#70ad47; font-weight:700; border-radius:2px; }

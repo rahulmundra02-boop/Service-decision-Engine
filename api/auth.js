@@ -662,15 +662,15 @@ export default async function handler(req, res) {
         return res.status(admin.status).json({success:false,error:admin.error});
       }
 
-      const result = await client.query(\x60SELECT
+      const result = await client.query(`SELECT
            COUNT(*)::int AS rows,
            COUNT(DISTINCT UPPER(TRIM(chassis_number)))::int AS vehicles,
            MAX(uploaded_at) AS uploaded_at
-         FROM campaign_records\x60);
-      const latest = await client.query(\x60SELECT file_name
+         FROM campaign_records`);
+      const latest = await client.query(`SELECT file_name
            FROM campaign_records
           ORDER BY uploaded_at DESC, id DESC
-          LIMIT 1\x60);
+          LIMIT 1`);
 
       await client.query("COMMIT");
       return res.json({
@@ -715,9 +715,9 @@ export default async function handler(req, res) {
         if (!chassis || !campaignDesc) continue;
 
         await client.query(
-          \x60INSERT INTO campaign_records
+          `INSERT INTO campaign_records
             (upload_id,file_name,chassis_number,engine,registration_number,campaign_number,campaign_desc,from_date,to_date,item,quantity,uploaded_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8::date,$9::date,$10,$11,$12)\x60,
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8::date,$9::date,$10,$11,$12)`,
           [
             uploadId,
             fileName,

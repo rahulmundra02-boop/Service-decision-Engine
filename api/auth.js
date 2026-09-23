@@ -135,6 +135,29 @@ async function ensureSchema(client) {
     CREATE INDEX IF NOT EXISTS idx_user_activity_user_time ON user_activity(user_id, activity_time DESC);
     CREATE INDEX IF NOT EXISTS idx_user_activity_type ON user_activity(activity_type);
 
+    CREATE TABLE IF NOT EXISTS campaign_records (
+      id BIGSERIAL PRIMARY KEY,
+      upload_id TEXT NOT NULL,
+      file_name TEXT NOT NULL,
+      chassis_number TEXT NOT NULL,
+      engine TEXT,
+      registration_number TEXT,
+      campaign_number TEXT,
+      campaign_desc TEXT NOT NULL,
+      from_date DATE,
+      to_date DATE,
+      item TEXT,
+      quantity TEXT,
+      uploaded_by BIGINT REFERENCES app_users(id) ON DELETE SET NULL,
+      uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_campaign_records_chassis
+      ON campaign_records(UPPER(TRIM(chassis_number)));
+
+    CREATE INDEX IF NOT EXISTS idx_campaign_records_campaign_desc
+      ON campaign_records(campaign_desc);
+
     CREATE TABLE IF NOT EXISTS app_settings (
       setting_key TEXT PRIMARY KEY,
       setting_value JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -629,6 +652,135 @@ export default async function handler(req, res) {
         recent:recent.rows,
         periods:periods.rows,
         breakdown:breakdown.rows
+      });
+    }
+
+    if (action === "campaigns-by-vin") {
+      const user = await getUserByToken(client, authToken(req));
+      if (!user) {
+        await client.query("ROLLBACK");
+        return res.status(401).json({success:false,error:"Session expired."});
+      }
+
+      const vin = clean(body.vin);
+      if (!vin) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({success:false,error:"VIN is required."});
+      }
+
+      const result = await client.query(
+        `SELECT campaign_number,campaign_desc,from_date,to_date,item,quantity
+           FROM campaign_records
+          WHERE UPPER(TRIM(chassis_number)) = UPPER(TRIM($1))
+          ORDER BY from_date ASC NULLS LAST, campaign_number ASC, id ASC`,
+        [vin]
+      );
+
+      await client.query("COMMIT");
+      return res.json({
+        success:true,
+        vin,
+        campaigns:result.rows.map(row => ({
+          campaignNumber:row.campaign_number || "",
+          campaignDesc:row.campaign_desc || "",
+          fromDate:row.from_date || null,
+          toDate:row.to_date || null,
+          item:row.item || "",
+          quantity:row.quantity || "",
+        }))
+      });
+    }
+
+    if (action === "admin-campaign-meta") {
+      const admin = await requireAdmin(client, req);
+      if (admin.error) {
+        await client.query("ROLLBACK");
+        return res.status(admin.status).json({success:false,error:admin.error});
+      }
+
+      const result = await client.query(`SELECT
+           COUNT(*)::int AS rows,
+           COUNT(DISTINCT UPPER(TRIM(chassis_number)))::int AS vehicles,
+           MAX(uploaded_at) AS uploaded_at
+         FROM campaign_records`);
+      const latest = await client.query(`SELECT file_name
+           FROM campaign_records
+          ORDER BY uploaded_at DESC, id DESC
+          LIMIT 1`);
+
+      await client.query("COMMIT");
+      return res.json({
+        success:true,
+        meta:{
+          rows:Number(result.rows[0]?.rows || 0),
+          vehicles:Number(result.rows[0]?.vehicles || 0),
+          uploadedAt:result.rows[0]?.uploaded_at || null,
+          fileName:latest.rows[0]?.file_name || ""
+        }
+      });
+    }
+
+    if (action === "admin-upload-campaign-batch") {
+      const admin = await requireAdmin(client, req);
+      if (admin.error) {
+        await client.query("ROLLBACK");
+        return res.status(admin.status).json({success:false,error:admin.error});
+      }
+
+      const rows = Array.isArray(body.rows) ? body.rows : [];
+      const uploadId = clean(body.uploadId);
+      const fileName = clean(body.fileName) || "Campaign Master";
+      const replace = body.replace === true;
+
+      if (!uploadId || !rows.length) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({success:false,error:"Campaign upload batch is empty."});
+      }
+      if (rows.length > 250) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({success:false,error:"Campaign batch is too large."});
+      }
+
+      if (replace) {
+        await client.query("DELETE FROM campaign_records");
+      }
+
+      for (const row of rows) {
+        const chassis = clean(row?.chassisNumber);
+        const campaignDesc = clean(row?.campaignDesc);
+        if (!chassis || !campaignDesc) continue;
+
+        await client.query(
+          `INSERT INTO campaign_records
+            (upload_id,file_name,chassis_number,engine,registration_number,campaign_number,campaign_desc,from_date,to_date,item,quantity,uploaded_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8::date,$9::date,$10,$11,$12)`,
+          [
+            uploadId,
+            fileName,
+            chassis,
+            clean(row?.engine) || null,
+            clean(row?.registrationNumber) || null,
+            clean(row?.campaignNumber) || null,
+            campaignDesc,
+            clean(row?.fromDate) || null,
+            clean(row?.toDate) || null,
+            clean(row?.item) || null,
+            clean(row?.quantity) || null,
+            admin.user.id
+          ]
+        );
+      }
+
+      await logActivity(client, admin.user.id, "Admin Campaign Master Upload", {
+        details:{ fileName, uploadId, rows:rows.length, replace }
+      });
+
+      await client.query("COMMIT");
+      return res.json({
+        success:true,
+        rows:rows.length,
+        uploadId,
+        message:replace ? "Campaign master replaced and upload started." : "Campaign batch uploaded."
       });
     }
 

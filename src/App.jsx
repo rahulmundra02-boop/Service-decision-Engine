@@ -3571,6 +3571,8 @@ function ServiceDecisionApp({ user }) {
   const [manualPartLookupBusy, setManualPartLookupBusy] = useState({});
   const [customerVoice, setCustomerVoice] = useState("");
   const [remark, setRemark] = useState("");
+  const [campaigns, setCampaigns] = useState([]);
+  const [campaignLoading, setCampaignLoading] = useState(false);
   const [historyViewMode, setHistoryViewMode] = useState("schedule");
   const [screenshotBusy, setScreenshotBusy] = useState(false);
   const [screenshotStatus, setScreenshotStatus] = useState("");
@@ -4014,6 +4016,35 @@ function ServiceDecisionApp({ user }) {
       const running = deriveRunningReading(parsed.records, vehicle);
       const visits = aggregateHistory(parsed.records);
       const decision = calculateDecisions(parsed.records, vehicle, running);
+      const vinForCampaign = String(vehicle?.vin || parsed.records?.[0]?.vin || "").trim().toUpperCase();
+      setCampaigns([]);
+      if (vinForCampaign) {
+        setCampaignLoading(true);
+        void fetch("/api/auth", {
+          method:"POST",
+          headers:{
+            "Content-Type":"application/json",
+            ...(localStorage.getItem("serviceDecisionAuthToken")
+              ? {Authorization:`Bearer ${localStorage.getItem("serviceDecisionAuthToken")}`}
+              : {})
+          },
+          body:JSON.stringify({action:"campaigns-by-vin",vin:vinForCampaign})
+        })
+          .then(response => response.json().then(data => ({response,data})))
+          .then(({response,data}) => {
+            if (!response.ok || data?.success === false) {
+              throw new Error(data?.error || "Campaign lookup failed.");
+            }
+            setCampaigns(Array.isArray(data?.campaigns) ? data.campaigns : []);
+          })
+          .catch(error => {
+            console.warn("Campaign lookup failed:", error);
+            setCampaigns([]);
+          })
+          .finally(() => setCampaignLoading(false));
+      } else {
+        setCampaignLoading(false);
+      }
       setOverrideReading("");
       setAppliedOverride(null);
       setAnalysis({ ...parsed, vehicle, running, visits, decision });
@@ -5465,7 +5496,76 @@ function ServiceDecisionApp({ user }) {
           width: 100%;
           overflow: visible;
         }
-        .single-note-grid {
+        .campaign-list {
+  width:100%;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  align-items:stretch;
+}
+.campaign-remark-row {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:7px;
+  width:100%;
+  text-align:center;
+}
+.campaign-remark-text {
+  overflow-wrap:anywhere;
+  line-height:1.35;
+}
+.campaign-info-wrap {
+  position:relative;
+  display:inline-flex;
+  flex:0 0 auto;
+}
+.campaign-info-button {
+  width:18px;
+  height:18px;
+  padding:0;
+  border-radius:50%;
+  border:1px solid #d1d5db;
+  background:#374151;
+  color:#fff;
+  font-size:11px;
+  font-weight:800;
+  line-height:16px;
+  cursor:help;
+}
+.campaign-info-popover {
+  display:none;
+  position:absolute;
+  left:50%;
+  bottom:calc(100% + 8px);
+  transform:translateX(-50%);
+  width:280px;
+  max-width:min(280px, 70vw);
+  padding:10px 12px;
+  border-radius:8px;
+  border:1px solid #64748b;
+  background:#111827;
+  color:#f8fafc;
+  box-shadow:0 8px 24px rgba(0,0,0,.35);
+  text-align:left;
+  font-size:11px;
+  line-height:1.5;
+  z-index:50;
+}
+.campaign-info-wrap:hover .campaign-info-popover,
+.campaign-info-wrap:focus-within .campaign-info-popover {
+  display:block;
+}
+.campaign-item-list {
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  margin-top:3px;
+}
+.campaign-loading-text {
+  opacity:.75;
+}
+.single-note-grid {
           display: grid;
           grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
           gap: 10px;
@@ -5690,7 +5790,68 @@ function ServiceDecisionApp({ user }) {
                 <div className="single-note-grid">
                   <div className="single-note-card">
                     <div className="single-note-title">Remark</div>
-                    <div className="single-note-value">{remark}</div>
+                    <div className="single-note-value">
+                      {campaignLoading ? (
+                        <span className="campaign-loading-text">Checking active campaigns…</span>
+                      ) : campaigns.length ? (
+                        <div className="campaign-list">
+                          {(() => {
+                            const today = new Date();
+                            today.setHours(0,0,0,0);
+                            const toDate = value => {
+                              if (!value) return null;
+                              const d = new Date(value);
+                              if (Number.isNaN(d.getTime())) return null;
+                              d.setHours(0,0,0,0);
+                              return d;
+                            };
+                            const active = campaigns.filter(item => {
+                              const from = toDate(item.fromDate);
+                              const to = toDate(item.toDate);
+                              return (!from || from <= today) && (!to || to >= today);
+                            });
+                            const grouped = new Map();
+                            active.forEach(item => {
+                              const key = String(item.campaignNumber || item.campaignDesc || "").trim().toUpperCase();
+                              if (!key) return;
+                              if (!grouped.has(key)) grouped.set(key, { ...item, items: [] });
+                              const group = grouped.get(key);
+                              group.items.push({
+                                item:item.item || "",
+                                quantity:item.quantity || "",
+                              });
+                            });
+                            const rows = [...grouped.values()];
+                            if (!rows.length) return <span></span>;
+                            return rows.map((campaign,index) => (
+                              <div className="campaign-remark-row" key={String(campaign.campaignNumber || campaign.campaignDesc) + "-" + index}>
+                                <span className="campaign-remark-text">{campaign.campaignDesc}</span>
+                                <span className="campaign-info-wrap">
+                                  <button type="button" className="campaign-info-button" aria-label="Campaign details">i</button>
+                                  <span className="campaign-info-popover">
+                                    <strong>Campaign Number:</strong> {campaign.campaignNumber || "-"}<br/>
+                                    <strong>From Date:</strong> {campaign.fromDate ? formatDate(campaign.fromDate) : "-"}<br/>
+                                    <strong>To Date:</strong> {campaign.toDate ? formatDate(campaign.toDate) : "-"}<br/>
+                                    <strong>Items:</strong>
+                                    {campaign.items.length ? (
+                                      <span className="campaign-item-list">
+                                        {campaign.items.map((item,itemIndex) => (
+                                          <span key={itemIndex}>
+                                            {item.item || "-"} — Qty {item.quantity || "-"}
+                                          </span>
+                                        ))}
+                                      </span>
+                                    ) : <span className="campaign-item-list"><span>-</span></span>}
+                                  </span>
+                                </span>
+                              </div>
+                            ));
+                          })()}
+                        </div>
+                      ) : (
+                        <span>{remark}</span>
+                      )}
+                    </div>
                   </div>
                   <div className="single-note-card">
                     <div className="single-note-title">Customer Voice</div>
@@ -5995,4 +6156,4 @@ function App() {
   return <AuthGate><ServiceDecisionApp /></AuthGate>;
 }
 
-export default App;
+export default App\n    setCampaigns([]);\n    setCampaignLoading(false);;

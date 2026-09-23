@@ -4381,6 +4381,8 @@ function ServiceDecisionApp({ user }) {
       services: [],
     });
     setOpenBulkFilter(null);
+    setCampaigns([]);
+    setCampaignLoading(false);
   };
 
   // App-style Escape navigation:

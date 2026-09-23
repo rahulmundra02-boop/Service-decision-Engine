@@ -6098,4 +6098,4 @@ function App() {
   return <AuthGate><ServiceDecisionApp /></AuthGate>;
 }
 
-export default App\n    setCampaigns([]);\n    setCampaignLoading(false);;
+export default App;

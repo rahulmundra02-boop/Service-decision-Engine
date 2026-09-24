@@ -171,11 +171,6 @@ async function ensureSchema(client) {
     INSERT INTO app_settings (setting_key, setting_value)
     VALUES ('emergency_db_upload_cutoff', '{"enabled":false}'::jsonb)
     ON CONFLICT (setting_key) DO NOTHING;
-
-    INSERT INTO app_settings (setting_key, setting_value)
-    VALUES ('part_decision_mapping', '{}'::jsonb)
-    ON CONFLICT (setting_key) DO NOTHING;
-
   `);
 }
 
@@ -789,61 +784,6 @@ export default async function handler(req, res) {
       });
     }
 
-    if (action === "part-decision-mapping") {
-      const user = await getUserByToken(client, authToken(req));
-      if (!user) {
-        await client.query("ROLLBACK");
-        return res.status(401).json({success:false,error:"Session expired."});
-      }
-      const result = await client.query(
-        "SELECT setting_value, updated_at FROM app_settings WHERE setting_key='part_decision_mapping' LIMIT 1"
-      );
-      await client.query("COMMIT");
-      return res.json({
-        success:true,
-        mapping: result.rows[0]?.setting_value || {},
-        updatedAt: result.rows[0]?.updated_at || null
-      });
-    }
-
-    if (action === "admin-save-part-decision-mapping") {
-      const admin = await requireAdmin(client, req);
-      if (admin.error) {
-        await client.query("ROLLBACK");
-        return res.status(admin.status).json({success:false,error:admin.error});
-      }
-
-      const incoming = body.mapping && typeof body.mapping === "object" ? body.mapping : {};
-      const categories = [
-        "engineOil","engineOilFilter","fuelFilter","fuelFilterKit",
-        "airFilter","airFilterKit","steeringOil","steeringOilFilter",
-        "defFilterSuction","defFilterAir","defFilterKit","defInlineFilter",
-        "gearOil","apdaFilter","coolant","hubGrease","axleOil","clutchOil"
-      ];
-      const mapping = {};
-      for (const key of categories) {
-        const values = Array.isArray(incoming[key]) ? incoming[key] : [];
-        mapping[key] = [...new Set(values.map(v => clean(v).toUpperCase()).filter(Boolean))];
-      }
-
-      await client.query(
-        "INSERT INTO app_settings (setting_key,setting_value,updated_at) " +
-        "VALUES ('part_decision_mapping',$1::jsonb,NOW()) " +
-        "ON CONFLICT (setting_key) DO UPDATE SET setting_value=EXCLUDED.setting_value,updated_at=NOW()",
-        [JSON.stringify(mapping)]
-      );
-      await logActivity(client, admin.user.id, "Admin Part Decision Mapping", {
-        details:{ categories: categories.reduce((acc,key) => ({...acc,[key]:mapping[key].length}), {}) }
-      });
-      await client.query("COMMIT");
-      return res.json({
-        success:true,
-        mapping,
-        updatedAt:new Date().toISOString(),
-        message:"Part Decision mapping saved to database."
-      });
-    }
-
     if (action === "job-card-cache-settings") {
       const result = await client.query(
         "SELECT setting_value, updated_at FROM app_settings WHERE setting_key='job_card_cache' LIMIT 1"
@@ -878,13 +818,7 @@ export default async function handler(req, res) {
       );
       const settings = result.rows[0]?.setting_value || { enabled:false };
       await client.query("COMMIT");
-      return res.json({
-        success:true,
-        settings:{
-          enabled: settings.enabled === true,
-          updatedAt: result.rows[0]?.updated_at || null
-        }
-      });
+      return res.json({ success:true, settings:{ enabled:settings.enabled === true, updatedAt:result.rows[0]?.updated_at || null } });
     }
 
     if (action === "admin-emergency-db-upload-cutoff") {
@@ -893,7 +827,6 @@ export default async function handler(req, res) {
         await client.query("ROLLBACK");
         return res.status(admin.status).json({success:false,error:admin.error});
       }
-
       const enabled = body.enabled === true;
       await client.query(
         "INSERT INTO app_settings (setting_key,setting_value,updated_at) " +
@@ -901,16 +834,12 @@ export default async function handler(req, res) {
         "ON CONFLICT (setting_key) DO UPDATE SET setting_value=EXCLUDED.setting_value,updated_at=NOW()",
         [JSON.stringify({enabled})]
       );
-      await logActivity(client, admin.user.id, "Emergency DB Upload Cutoff", {
-        details:{ enabled }
-      });
+      await logActivity(client, admin.user.id, "Emergency DB Upload Cutoff", { details:{ enabled } });
       await client.query("COMMIT");
       return res.json({
         success:true,
-        settings:{ enabled, updatedAt:new Date().toISOString() },
-        message: enabled
-          ? "Emergency DB Upload Cutoff is now ON. New Excel history uploads are paused."
-          : "Emergency DB Upload Cutoff is now OFF. Excel history uploads are active again."
+        settings:{enabled,updatedAt:new Date().toISOString()},
+        message:enabled ? "Emergency DB Upload Cutoff is now ON. New Excel history uploads are paused." : "Emergency DB Upload Cutoff is now OFF. Excel history uploads are active again."
       });
     }
 

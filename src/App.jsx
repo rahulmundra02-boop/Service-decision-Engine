@@ -1981,6 +1981,14 @@ function latestFuelFilter(records, vehicle = null) {
 
   return null;
 }
+function normalizeDecisionBase(base, decisionBasis, vehicle) {
+  if (!base || !decisionBasis || decisionBasis === "AUTO") return base;
+  return {
+    ...base,
+    relevantReading: getRelevantReadingForBasis(base, decisionBasis),
+  };
+}
+
 function dueNormalWithSale(current, base, interval, months, analysisDate, sale, mode, vehicle) {
   const baseKm = base ? (base.relevantReading ?? getRelevantReading(base, vehicle)) : 0;
   const baseDate = base ? base.date : sale;
@@ -2030,11 +2038,12 @@ function latestValidClutchOilPart(records, vehicle) {
   };
 }
 
-function decideAggregate(records, vehicle, running, key, analysisDate){
+function decideAggregate(records, vehicle, running, key, analysisDate, decisionBasis = "AUTO"){
   // DEF Filter and APDA Filter are BS-VI-only. Do not run their due logic for BS-IV.
   if ((key === 'defFilter' || key === 'apdaFilter') && !isBSVIApplicable(vehicle)) return false;
 
   const tip=isTipperModel(vehicle.model);
+  const useHours = decisionBasis === "HRS" ? true : decisionBasis === "KM" ? false : tip;
   const sale=vehicle.sale;
   if(key==='engineOil'){
     const base=serviceBase(records,['ENGINE OIL'],12,true,vehicle,'ENGINE OIL FILTER',true);
@@ -2042,7 +2051,7 @@ function decideAggregate(records, vehicle, running, key, analysisDate){
     if(isH4Model(vehicle.model)) interval=40000;
     else if(isA4Model(vehicle.model)) interval=base && base.serviceQty>=19 ? 80000 : 40000;
     else if(isH6Model(vehicle.model)) interval=80000;
-    if(tip){ let hrs=1500; if(isA4Model(vehicle.model)||isH4Model(vehicle.model)||isH6Model(vehicle.model)) hrs=1000; return dueByHours(running.current,base,hrs,18,analysisDate,sale,vehicle); }
+    if(useHours){ let hrs=1500; if(isA4Model(vehicle.model)||isH4Model(vehicle.model)||isH6Model(vehicle.model)) hrs=1000; return dueByHours(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),hrs,18,analysisDate,sale,vehicle); }
     return dueNormalWithSale(running.current,base,interval,18,analysisDate,sale,running.mode,vehicle);
   }
   if(key==='steeringOil'){
@@ -2050,25 +2059,25 @@ function decideAggregate(records, vehicle, running, key, analysisDate){
     // recorded on the same job card. Entries from separate job cards must not
     // be paired together.
     const base=serviceBase(records,['STEERING OIL'],1,true,vehicle,'STEERING OIL FILTER',true);
-    return tip ? dueByHours(running.current,base,4000,24,analysisDate,sale) : dueNormalWithSale(running.current,base,160000,24,analysisDate,sale,running.mode,vehicle);
+    return useHours ? dueByHours(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),4000,24,analysisDate,sale) : dueNormalWithSale(running.current,base,160000,24,analysisDate,sale,running.mode,vehicle);
   }
   const cfg=DECISION_RULES[key]; if(!cfg) return false;
   let base=null;
   if (key === 'clutchOil') {
     base = latestValidClutchOilPart(records, vehicle);
-    if(tip){
+    if(useHours){
       const tr=TIP_RULES[key];
-      return tr ? dueByHours(running.current,base,tr[0],tr[1],analysisDate,sale,vehicle) : false;
+      return tr ? dueByHours(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),tr[0],tr[1],analysisDate,sale,vehicle) : false;
     }
-    return dueNormalWithSale(running.current,base,cfg[0],cfg[1],analysisDate,sale,running.mode,vehicle);
+    return dueNormalWithSale(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),cfg[0],cfg[1],analysisDate,sale,running.mode,vehicle);
   }
   if(key==='airFilter') base=latestFilter(records,'AIR FILTER','AIR FILTER KIT',vehicle);
   else if(key==='fuelFilter') base=latestFuelFilter(records,vehicle);
   else if(key==='defFilter') base=latestDefFilter(records,vehicle);
   else if(key==='clutchOil') base=latestClutchOilPart(records,vehicle);
   else base=serviceBase(records,[keyToPart(key)],cfg[2],false,vehicle);
-  if(tip){ const tr=TIP_RULES[key]; return tr ? dueByHours(running.current,base,tr[0],tr[1],analysisDate,sale,vehicle) : false; }
-  return dueNormalWithSale(running.current,base,cfg[0],cfg[1],analysisDate,sale,running.mode,vehicle);
+  if(useHours){ const tr=TIP_RULES[key]; return tr ? dueByHours(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),tr[0],tr[1],analysisDate,sale,vehicle) : false; }
+  return dueNormalWithSale(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),cfg[0],cfg[1],analysisDate,sale,running.mode,vehicle);
 }
 function latestClutchOilPart(records, vehicle = null) {
   // Clutch Oil decision is based ONLY on these approved clutch-oil PART codes.
@@ -2173,11 +2182,12 @@ function defInlineDecision(records,vehicle,running,analysisDate){
     vehicle
   );
 }
-function freeService(records,vehicle,running,analysisDate){
+function freeService(records,vehicle,running,analysisDate,decisionBasis = "AUTO"){
   const tip=isTipperModel(vehicle.model);
+  const useHours = decisionBasis === "HRS" ? true : decisionBasis === "KM" ? false : tip;
 
   // Normal vehicles retain the existing KM/time windows.
-  if(!tip){
+  if(!useHours){
     const checks=[
       ['1ST FREE SERVICE',37000,43000,5,7,'1st free service'],
       ['2ND FREE SERVICE',77000,83000,11,13,'2nd free service'],
@@ -2224,7 +2234,7 @@ function hasFreeServiceHistory(records, serviceName){
   return records.some(r => serviceTextForRecord(r).includes(target));
 }
 
-function additionalServiceEligibility(records, vehicle, running, analysisDate){
+function additionalServiceEligibility(records, vehicle, running, analysisDate, decisionBasis = "AUTO"){
   const services=[];
 
   // Wheel Alignment: preserve the existing 4-digit model eligibility list.
@@ -2239,7 +2249,7 @@ function additionalServiceEligibility(records, vehicle, running, analysisDate){
   });
 
   if(isWheelModel){
-    const tip=isTipperModel(vehicle.model);
+    const tip=decisionBasis === "HRS" ? true : decisionBasis === "KM" ? false : isTipperModel(vehicle.model);
     const isRmc=String(vehicle.model||'').toUpperCase().includes('RMC');
     let wheelService='';
 
@@ -2288,14 +2298,14 @@ function additionalServiceEligibility(records, vehicle, running, analysisDate){
   return services;
 }
 
-function calculateDecisions(records,vehicle,running){
+function calculateDecisions(records,vehicle,running,decisionBasis = "AUTO"){
   const analysisDate=new Date(); analysisDate.setHours(0,0,0,0);
   const keys=['engineOil','coolant','gearOil','hubGrease','axleOil','fuelFilter','steeringOil','airFilter','clutchOil','defFilter','apdaFilter'];
   const result={};
-  for(const k of keys) result[k]=decideAggregate(records,vehicle,running,k,analysisDate);
+  for(const k of keys) result[k]=decideAggregate(records,vehicle,running,k,analysisDate,decisionBasis);
   result.defInline=defInlineDecision(records,vehicle,running,analysisDate);
-  const free=freeService(records,vehicle,running,analysisDate);
-  const additional=additionalServiceEligibility(records,vehicle,running,analysisDate);
+  const free=freeService(records,vehicle,running,analysisDate,decisionBasis);
+  const additional=additionalServiceEligibility(records,vehicle,running,analysisDate,decisionBasis);
   return {result, freeService:free, additionalServices:additional};
 }
 
@@ -4152,7 +4162,7 @@ function ServiceDecisionApp({ user }) {
     const baseRunning = deriveRunningReadingForBasis(analysis.records, analysis.vehicle, basis);
 
     if (!raw) {
-      const decision = calculateDecisions(analysis.records, analysis.vehicle, baseRunning);
+      const decision = calculateDecisions(analysis.records, analysis.vehicle, baseRunning, basis);
       setAppliedOverride(null);
       setAnalysis(prev => ({ ...prev, running: baseRunning, decision }));
       return;
@@ -4186,7 +4196,7 @@ function ServiceDecisionApp({ user }) {
       mode: "User override",
       unit: basis
     };
-    const decision = calculateDecisions(analysis.records, analysis.vehicle, overriddenRunning);
+    const decision = calculateDecisions(analysis.records, analysis.vehicle, overriddenRunning, basis);
     setAppliedOverride(value);
     setAnalysis(prev => ({ ...prev, running: overriddenRunning, decision }));
   };
@@ -4204,7 +4214,7 @@ function ServiceDecisionApp({ user }) {
     // override reading, use the automatically derived running reading for
     // the selected basis.
     const running = deriveRunningReadingForBasis(analysis.records, analysis.vehicle, basis);
-    const decision = calculateDecisions(analysis.records, analysis.vehicle, running);
+    const decision = calculateDecisions(analysis.records, analysis.vehicle, running, basis);
     setAnalysis(prev => ({ ...prev, running, decision }));
   };
 

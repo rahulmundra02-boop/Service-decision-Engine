@@ -1805,7 +1805,19 @@ const SERVICE_SCHEDULE_ROWS = [
 ];
 function monthsAfter(date, months){ const d=new Date(date); d.setMonth(d.getMonth()+months); return d; }
 function daysBetween(a,b){ return Math.floor((b-a)/86400000); }
-function isTipperModel(model){ const t=String(model||'').toUpperCase(); return t.includes('TIP') || t.includes('RMC'); }
+function is4825Model(model){
+  const t=String(model||'').toUpperCase();
+  return /(?:^|[^0-9])4825(?:[^0-9]|$)/.test(t);
+}
+function isTipperModel(model){
+  if(is4825Model(model)) return false;
+  const t=String(model||'').toUpperCase();
+  return t.includes('TIP') || t.includes('RMC');
+}
+function getEffectiveDecisionBasis(vehicle, basis){
+  if(is4825Model(vehicle?.model)) return "KM";
+  return String(basis||"").toUpperCase() === "HRS" ? "HRS" : "KM";
+}
 function isH4Model(model){ return ["1015","1115","1215","1315","1415","1615","1815","1915"].some(x=>String(model||'').toUpperCase().includes(x)); }
 function isA4Model(model){ return /\d{4}N/.test(String(model||'').toUpperCase()); }
 function isH6Model(model){
@@ -2303,12 +2315,15 @@ function additionalServiceEligibility(records, vehicle, running, analysisDate, d
 
 function calculateDecisions(records,vehicle,running,decisionBasis = "AUTO"){
   const analysisDate=new Date(); analysisDate.setHours(0,0,0,0);
+  const effectiveBasis = decisionBasis === "AUTO"
+    ? (isTipperModel(vehicle?.model) ? "HRS" : "KM")
+    : getEffectiveDecisionBasis(vehicle, decisionBasis);
   const keys=['engineOil','coolant','gearOil','hubGrease','axleOil','fuelFilter','steeringOil','airFilter','clutchOil','defFilter','apdaFilter'];
   const result={};
-  for(const k of keys) result[k]=decideAggregate(records,vehicle,running,k,analysisDate,decisionBasis);
-  result.defInline=defInlineDecision(records,vehicle,running,analysisDate,decisionBasis);
-  const free=freeService(records,vehicle,running,analysisDate,decisionBasis);
-  const additional=additionalServiceEligibility(records,vehicle,running,analysisDate,decisionBasis);
+  for(const k of keys) result[k]=decideAggregate(records,vehicle,running,k,analysisDate,effectiveBasis);
+  result.defInline=defInlineDecision(records,vehicle,running,analysisDate,effectiveBasis);
+  const free=freeService(records,vehicle,running,analysisDate,effectiveBasis);
+  const additional=additionalServiceEligibility(records,vehicle,running,analysisDate,effectiveBasis);
   return {result, freeService:free, additionalServices:additional};
 }
 
@@ -4153,7 +4168,7 @@ function ServiceDecisionApp({ user }) {
   const recalculateWithOverride = () => {
     if (!analysis) return;
 
-    const basis = decisionBasis === "HRS" ? "HRS" : "KM";
+    const basis = getEffectiveDecisionBasis(analysis.vehicle, decisionBasis);
     logUsage("Reading / Decision Basis Override", {
       mode:"single",
       vehicleCount:1,
@@ -4205,7 +4220,7 @@ function ServiceDecisionApp({ user }) {
   };
 
   const changeDecisionBasis = (nextBasis) => {
-    const basis = nextBasis === "HRS" ? "HRS" : "KM";
+    const basis = getEffectiveDecisionBasis(analysis?.vehicle, nextBasis);
     setDecisionBasis(basis);
     setOverrideReading("");
     setAppliedOverride(null);

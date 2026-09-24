@@ -1092,3 +1092,5 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
     </div>
   );
 }
+
+// Beta reset: kept identical to Stable master.

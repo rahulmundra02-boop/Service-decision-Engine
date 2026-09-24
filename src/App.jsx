@@ -4192,6 +4192,23 @@ function ServiceDecisionApp({ user }) {
     setAnalysis(prev => ({ ...prev, running: overriddenRunning, decision }));
   };
 
+  const changeDecisionBasis = (nextBasis) => {
+    const basis = nextBasis === "HRS" ? "HRS" : "KM";
+    setDecisionBasis(basis);
+    setOverrideReading("");
+    setAppliedOverride(null);
+    setError("");
+
+    if (!analysis) return;
+
+    // When the user changes only the decision basis and does not enter an
+    // override reading, use the automatically derived running reading for
+    // the selected basis.
+    const running = deriveRunningReadingForBasis(analysis.records, analysis.vehicle, basis);
+    const decision = calculateDecisions(analysis.records, analysis.vehicle, running);
+    setAnalysis(prev => ({ ...prev, running, decision }));
+  };
+
   const getBulkSortValue = (item, key) => {
     const vehicle = item?.vehicle || {};
     switch (key) {
@@ -5806,7 +5823,7 @@ clone.style.transformOrigin = "top left";
                   <select
                     className="excel-input"
                     value={decisionBasis}
-                    onChange={(e)=>setDecisionBasis(e.target.value)}
+                    onChange={(e)=>changeDecisionBasis(e.target.value)}
                     style={{height:30,padding:"3px 6px",width:82,fontSize:11}}
                     aria-label="Decision Basis"
                   >

@@ -1815,7 +1815,6 @@ function isTipperModel(model){
   return t.includes('TIP') || t.includes('RMC');
 }
 function getEffectiveDecisionBasis(vehicle, basis){
-  if(is4825Model(vehicle?.model)) return "KM";
   return String(basis||"").toUpperCase() === "HRS" ? "HRS" : "KM";
 }
 function isH4Model(model){ return ["1015","1115","1215","1315","1415","1615","1815","1915"].some(x=>String(model||'').toUpperCase().includes(x)); }

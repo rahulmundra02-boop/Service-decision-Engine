@@ -2174,9 +2174,9 @@ function defInlineDecision(records,vehicle,running,analysisDate,decisionBasis = 
     return dueByHours(running.current, decisionBase, 1500, 12, analysisDate, sale, vehicle);
   }
 
-  return dueNormalWithSale(running.current, decisionBase,
+  return dueNormalWithSale(
     running.current,
-    base,
+    decisionBase,
     80000,
     12,
     analysisDate,

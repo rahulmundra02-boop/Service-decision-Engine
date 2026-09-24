@@ -3570,7 +3570,8 @@ function ServiceDecisionApp({ user }) {
   const [analysis, setAnalysis] = useState(null);
   const [error, setError] = useState("");
   const [overrideReading, setOverrideReading] = useState("");
-  const [appliedOverride, setAppliedOverride] = useState(null);\n  const [decisionBasis, setDecisionBasis] = useState("AUTO");
+  const [appliedOverride, setAppliedOverride] = useState(null);
+  const [decisionBasis, setDecisionBasis] = useState("AUTO");
   const [mode, setMode] = useState("home");
   const [bulkResults, setBulkResults] = useState([]);
   const [bulkMeta, setBulkMeta] = useState(null);

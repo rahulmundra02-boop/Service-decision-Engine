@@ -67,6 +67,7 @@ export default function AuthGate({ children }) {
   const [jobCardCacheSettings, setJobCardCacheSettings] = useState({ enabled:true, intervalHours:24, version:1, lastRebuildAt:null, nextRebuildAt:null, cachedJobCards:0 });
   const [emergencyDbUploadCutoff, setEmergencyDbUploadCutoff] = useState(false);
   const [sessionConflict, setSessionConflict] = useState(null);
+  const [pendingLoginCredentials, setPendingLoginCredentials] = useState(null);
   const [campaignMeta, setCampaignMeta] = useState({ rows:0, vehicles:0, fileName:"", uploadedAt:null });
   const [campaignUploadBusy, setCampaignUploadBusy] = useState(false);
   const [campaignUploadMessage, setCampaignUploadMessage] = useState("");
@@ -97,22 +98,25 @@ export default function AuthGate({ children }) {
     return os + " · " + browser;
   };
 
-  const login = (terminateExistingSession = false) => run(async () => {
-    const identifier = document.getElementById("auth-identifier")?.value || "";
-    const password = document.getElementById("auth-password")?.value || "";
+  const login = (terminateExistingSession = false, credentials = null) => run(async () => {
+    const identifier = credentials?.identifier ?? document.getElementById("auth-identifier")?.value ?? "";
+    const password = credentials?.password ?? document.getElementById("auth-password")?.value ?? "";
+    const loginCredentials = { identifier, password };
+
     try {
       const data = await api("login", {
-        identifier,
-        password,
+        ...loginCredentials,
         terminateExistingSession,
         deviceName: getDeviceName(),
       });
       setSessionConflict(null);
+      setPendingLoginCredentials(null);
       localStorage.setItem(TOKEN_KEY, data.token);
       localStorage.setItem(ACTIVITY_KEY, String(Date.now()));
       setUser(normalizeLoggedInUser(data.user));
     } catch (e) {
       if (e?.sessionConflict) {
+        setPendingLoginCredentials(loginCredentials);
         setSessionConflict(e.previousSession || {});
         return;
       }
@@ -496,7 +500,7 @@ export default function AuthGate({ children }) {
           <input id="auth-identifier" placeholder="Enter your registered email" />
           <label>Password</label>
           <input id="auth-password" type="password" placeholder="Enter your password" onKeyDown={e => e.key === "Enter" && login()} />
-          <button className="auth-primary" onClick={() => login(false)} disabled={loading}>Login</button>
+          <button type="button" className="auth-primary" onClick={() => login(false)} disabled={loading}>Login</button>
 
           {sessionConflict && (
             <div className="auth-modal-backdrop">
@@ -510,8 +514,27 @@ export default function AuthGate({ children }) {
                 </div>
                 <p className="auth-hint">Do you want to terminate the previous session and continue with this login?</p>
                 <div className="auth-modal-actions">
-                  <button className="auth-secondary" onClick={() => setSessionConflict(null)}>No / Cancel</button>
-                  <button className="auth-primary" onClick={() => { setSessionConflict(null); void login(true); }}>Yes, Terminate Old Session</button>
+                  <button
+                    type="button"
+                    className="auth-secondary"
+                    onClick={() => {
+                      setSessionConflict(null);
+                      setPendingLoginCredentials(null);
+                    }}
+                  >
+                    No / Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="auth-primary"
+                    onClick={() => {
+                      if (!pendingLoginCredentials || loading) return;
+                      void login(true, pendingLoginCredentials);
+                    }}
+                    disabled={loading || !pendingLoginCredentials}
+                  >
+                    {loading ? "Terminating & Signing In..." : "Yes, Terminate Old Session"}
+                  </button>
                 </div>
               </div>
             </div>

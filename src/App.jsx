@@ -1455,6 +1455,62 @@ function getTargetUnit(vehicle) {
   return isTipperModel(vehicle?.model) ? "HRS" : "KM";
 }
 
+function getRelevantReadingForBasis(record, basis) {
+  const targetIsHrs = String(basis || "").toUpperCase() === "HRS";
+
+  if (targetIsHrs) {
+    if (isHoursUnit(record?.cumulativeUnit) && (record?.cumulative || 0) > 0) {
+      return record.cumulative;
+    }
+    if (isHoursUnit(record?.secondaryCumulativeUnit) && (record?.secondaryCumulativeReading || 0) > 0) {
+      return record.secondaryCumulativeReading;
+    }
+    return 0;
+  }
+
+  if (isKmUnit(record?.cumulativeUnit) && (record?.cumulative || 0) > 0) {
+    return record.cumulative;
+  }
+  if (isKmUnit(record?.secondaryCumulativeUnit) && (record?.secondaryCumulativeReading || 0) > 0) {
+    return record.secondaryCumulativeReading;
+  }
+  return 0;
+}
+
+function deriveRunningReadingForBasis(records, vehicle, basis) {
+  const targetUnit = String(basis || "").toUpperCase() === "HRS" ? "HRS" : "KM";
+  const dated = records
+    .filter(r => r.date && getRelevantReadingForBasis(r, targetUnit) > 0)
+    .sort((a, b) => a.date - b.date);
+
+  if (!dated.length) {
+    return { current: 0, last: null, mode: `No ${targetUnit} reading`, unit: targetUnit };
+  }
+
+  const last = dated[dated.length - 1];
+  const recorded = getRelevantReadingForBasis(last, targetUnit);
+  const saleDate = vehicle.sale;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  if (!saleDate || today <= last.date) {
+    return { current: recorded, last, mode: "Last recorded reading", unit: targetUnit };
+  }
+
+  const runningDays = Math.floor((last.date - saleDate) / 86400000);
+  if (runningDays <= 0) {
+    return { current: recorded, last, mode: "Last recorded reading", unit: targetUnit };
+  }
+
+  const elapsed = Math.floor((today - saleDate) / 86400000);
+  return {
+    current: Math.round(recorded * (elapsed / runningDays)),
+    last,
+    mode: "Running average",
+    unit: targetUnit,
+  };
+}
+
 function deriveRunningReading(records, vehicle) {
   const targetUnit = getTargetUnit(vehicle);
   const dated = records
@@ -3514,7 +3570,7 @@ function ServiceDecisionApp({ user }) {
   const [analysis, setAnalysis] = useState(null);
   const [error, setError] = useState("");
   const [overrideReading, setOverrideReading] = useState("");
-  const [appliedOverride, setAppliedOverride] = useState(null);
+  const [appliedOverride, setAppliedOverride] = useState(null);\n  const [decisionBasis, setDecisionBasis] = useState("AUTO");
   const [mode, setMode] = useState("home");
   const [bulkResults, setBulkResults] = useState([]);
   const [bulkMeta, setBulkMeta] = useState(null);
@@ -4082,45 +4138,41 @@ function ServiceDecisionApp({ user }) {
 
   const recalculateWithOverride = () => {
     if (!analysis) return;
-    logUsage("Reading Override", {
+
+    const basis = decisionBasis === "HRS" ? "HRS" : "KM";
+    logUsage("Reading / Decision Basis Override", {
       mode:"single",
       vehicleCount:1,
       vin:String(analysis?.vehicle?.vin || "").trim().toUpperCase(),
-      details:{ value:overrideReading || "", unit:analysis?.running?.unit || "KM" }
+      details:{ value:overrideReading || "", unit:basis, basis }
     });
 
     const raw = String(overrideReading || "").replace(/,/g, "").trim();
+    const baseRunning = deriveRunningReadingForBasis(analysis.records, analysis.vehicle, basis);
 
-    // Blank input = restore the original DMS-calculated reading.
     if (!raw) {
-      const vehicle = analysis.vehicle;
-      const originalRunning = deriveRunningReading(analysis.records, vehicle);
-      const decision = calculateDecisions(analysis.records, vehicle, originalRunning);
+      const decision = calculateDecisions(analysis.records, analysis.vehicle, baseRunning);
       setAppliedOverride(null);
-      setAnalysis(prev => ({ ...prev, running: originalRunning, decision }));
+      setAnalysis(prev => ({ ...prev, running: baseRunning, decision }));
       return;
     }
 
     const value = Number(raw);
-    const unit = analysis.running.unit || (isTipperModel(analysis.vehicle.model) ? "HRS" : "KM");
     if (!Number.isFinite(value) || value <= 0) {
-      const msg = `Please enter a valid ${unit} value.`;
+      const msg = `Please enter a valid ${basis} value.`;
       setError(msg);
       window.alert(msg);
       return;
     }
 
-    // A vehicle meter reading must not go backwards.
-    // Validate the user override against the highest valid historical reading
-    // so a lower value cannot be used to generate a false service decision.
     const historicalReadings = analysis.records
-      .map(r => getRelevantReading(r, analysis.vehicle))
+      .map(r => getRelevantReadingForBasis(r, basis))
       .filter(v => Number.isFinite(v) && v > 0);
     const highestRecorded = historicalReadings.length ? Math.max(...historicalReadings) : 0;
 
     if (highestRecorded > 0 && value < highestRecorded) {
       setAppliedOverride(null);
-      const msg = `Invalid ${unit} reading!\n\nEntered: ${formatNumber(value)} ${unit}\nPrevious recorded reading: ${formatNumber(highestRecorded)} ${unit}\n\nPlease enter a reading equal to or higher than the previous recorded reading.`;
+      const msg = `Invalid ${basis} reading!\n\nEntered: ${formatNumber(value)} ${basis}\nPrevious recorded reading: ${formatNumber(highestRecorded)} ${basis}\n\nPlease enter a reading equal to or higher than the previous recorded reading.`;
       setError(msg.replace(/\n/g, " "));
       window.alert(msg);
       return;
@@ -4128,10 +4180,10 @@ function ServiceDecisionApp({ user }) {
 
     setError("");
     const overriddenRunning = {
-      ...analysis.running,
+      ...baseRunning,
       current: value,
       mode: "User override",
-      unit: analysis.running.unit || (isTipperModel(analysis.vehicle.model) ? "HRS" : "KM")
+      unit: basis
     };
     const decision = calculateDecisions(analysis.records, analysis.vehicle, overriddenRunning);
     setAppliedOverride(value);
@@ -5737,6 +5789,7 @@ clone.style.transformOrigin = "top left";
               {uploadedFiles.length > 0 && <span className="status-pill blue">{uploadedFiles.length} Excel file{uploadedFiles.length > 1 ? "s" : ""}</span>}
               {mode === "single" && analysis && (
                 <div className="compact-override-control no-print">
+                  <span style={{fontSize:11,fontWeight:700}}>Override {decisionBasis === "HRS" ? "HRS" : "KM"}</span>
                   <input
                     className="excel-input compact-override-input"
                     type="number"
@@ -5744,9 +5797,20 @@ clone.style.transformOrigin = "top left";
                     step="1"
                     value={overrideReading}
                     onChange={(e)=>{setOverrideReading(e.target.value);setError("")}}
-                    placeholder={analysis?.running?.unit || "KM"}
-                    aria-label={`Enter ${analysis?.running?.unit || "KM"}`}
+                    placeholder={decisionBasis === "HRS" ? "HRS" : "KM"}
+                    aria-label={`Override ${decisionBasis === "HRS" ? "HRS" : "KM"}`}
                   />
+                  <span style={{fontSize:11,fontWeight:700}}>Decision Basis</span>
+                  <select
+                    className="excel-input"
+                    value={decisionBasis}
+                    onChange={(e)=>setDecisionBasis(e.target.value)}
+                    style={{height:30,padding:"3px 6px",width:82,fontSize:11}}
+                    aria-label="Decision Basis"
+                  >
+                    <option value="KM">KM</option>
+                    <option value="HRS">HRS</option>
+                  </select>
                   <button
                     className="excel-button green compact-recalculate-button"
                     onClick={recalculateWithOverride}

@@ -1599,13 +1599,12 @@ function getVisitJobCard(visit) {
     .find(Boolean) || '-';
 }
 
-function getVisitReading(visit, vehicle) {
-  // Service History display must use CUMULATIVE COUNTER READING.
-  // The parser now supports both DMS formats:
-  // - separate duplicate Fleet counter unit columns
-  // - one Fleet counter unit column shared with cumulative reading
+function getVisitReading(visit, vehicle, basis) {
+  // Service History display follows the currently selected Decision Basis.
+  // KM -> cumulative KM reading, HRS -> cumulative HRS reading.
+  const selectedBasis = basis === "HRS" ? "HRS" : "KM";
   const candidates = visit
-    .map(record => getRelevantReading(record, vehicle))
+    .map(record => getRelevantReadingForBasis(record, selectedBasis))
     .filter(reading => reading > 0);
 
   if (!candidates.length) return 0;
@@ -2552,7 +2551,7 @@ async function printCustomerReport(group, detailed=false) {
       const historyBody = visits.map(visit => {
         const date = getVisitDate(visit);
         const jc = getVisitJobCard(visit);
-        const reading = getVisitReading(visit, vehicle);
+        const reading = getVisitReading(visit, vehicle, "KM");
         const parts = getVisitParts(visit.filter(isMappedServiceLine), vehicle, v.decision)
           .map(part => part.text)
           .filter(Boolean)
@@ -6006,7 +6005,7 @@ clone.style.transformOrigin = "top left";
     {index < singleTableColumns.length - 1 && <span className="column-resizer" onPointerDown={e=>resizeTableColumn("single",key,e)} />}
   </th>
 ))}</tr></thead><tbody>
-{visibleSingleVisits.length ? visibleSingleVisits.map((visit,i)=>{const visitDate=getVisitDate(visit),jobCard=getVisitJobCard(visit),visitReading=getVisitReading(visit,analysis.vehicle),allParts=getVisitParts(visit,analysis.vehicle,analysis.decision),parts=historyViewMode === "full" ? allParts : allParts.filter(part => part.eligible);return <tr key={i}>
+{visibleSingleVisits.length ? visibleSingleVisits.map((visit,i)=>{const visitDate=getVisitDate(visit),jobCard=getVisitJobCard(visit),visitReading=getVisitReading(visit,analysis.vehicle,decisionBasis),allParts=getVisitParts(visit,analysis.vehicle,analysis.decision),parts=historyViewMode === "full" ? allParts : allParts.filter(part => part.eligible);return <tr key={i}>
 {isSingleColumnVisible("date")&&<td style={tableColumnStyle("single","date")}>{formatDateShort(visitDate)}</td>}
 {isSingleColumnVisible("jobCard")&&<td style={tableColumnStyle("single","jobCard")}>{jobCard}</td>}
 {isSingleColumnVisible("reading")&&<td style={tableColumnStyle("single","reading")}>{visitReading?`${formatNumber(visitReading)} ${getTargetUnit(analysis.vehicle)}`:"-"}</td>}

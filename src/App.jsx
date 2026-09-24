@@ -2151,7 +2151,7 @@ function latestDefFilter(records, vehicle){
     ? { ...selected, relevantReading: getRelevantReading(selected, vehicle) }
     : null;
 }
-function defInlineDecision(records,vehicle,running,analysisDate){
+function defInlineDecision(records,vehicle,running,analysisDate,decisionBasis = "AUTO"){
   // Exact VBA applicability rule:
   // DEF Inline Filter is applicable only when either:
   // 1) DEF INLINE FILTER already exists in history, OR
@@ -2167,11 +2167,14 @@ function defInlineDecision(records,vehicle,running,analysisDate){
 
   const base = serviceBase(records, ["DEF INLINE FILTER"], 1, false, vehicle);
 
-  if(isTipperModel(vehicle.model)){
-    return dueByHours(running.current, base, 1500, 12, analysisDate, sale, vehicle);
+  const useHours = decisionBasis === "HRS" ? true : decisionBasis === "KM" ? false : isTipperModel(vehicle.model);
+  const decisionBase = normalizeDecisionBase(base, decisionBasis, vehicle);
+
+  if(useHours){
+    return dueByHours(running.current, decisionBase, 1500, 12, analysisDate, sale, vehicle);
   }
 
-  return dueNormalWithSale(
+  return dueNormalWithSale(running.current, decisionBase,
     running.current,
     base,
     80000,
@@ -2303,7 +2306,7 @@ function calculateDecisions(records,vehicle,running,decisionBasis = "AUTO"){
   const keys=['engineOil','coolant','gearOil','hubGrease','axleOil','fuelFilter','steeringOil','airFilter','clutchOil','defFilter','apdaFilter'];
   const result={};
   for(const k of keys) result[k]=decideAggregate(records,vehicle,running,k,analysisDate,decisionBasis);
-  result.defInline=defInlineDecision(records,vehicle,running,analysisDate);
+  result.defInline=defInlineDecision(records,vehicle,running,analysisDate,decisionBasis);
   const free=freeService(records,vehicle,running,analysisDate,decisionBasis);
   const additional=additionalServiceEligibility(records,vehicle,running,analysisDate,decisionBasis);
   return {result, freeService:free, additionalServices:additional};

@@ -598,6 +598,53 @@ function normalizePartCode(value) {
     .trim();
 }
 
+const PART_DECISION_LABELS = {
+  engineOil: "ENGINE OIL",
+  engineOilFilter: "ENGINE OIL FILTER",
+  fuelFilter: "FUEL FILTER",
+  fuelFilterKit: "FUEL FILTER KIT",
+  airFilter: "AIR FILTER",
+  airFilterKit: "AIR FILTER KIT",
+  steeringOil: "STEERING OIL",
+  steeringOilFilter: "STEERING OIL FILTER",
+  defFilterSuction: "DEF FILTER SUCTION",
+  defFilterAir: "DEF FILTER AIR",
+  defFilterKit: "DEF FILTER KIT",
+  defInlineFilter: "DEF INLINE FILTER",
+  gearOil: "GEAR OIL",
+  apdaFilter: "APDA FILTER",
+  coolant: "COOLANT",
+  hubGrease: "HUB GREASE",
+  axleOil: "AXLE OIL",
+  clutchOil: "CLUTCH OIL",
+};
+
+let ACTIVE_PART_DECISION_MAPPING = {};
+
+function setActivePartDecisionMapping(mapping) {
+  ACTIVE_PART_DECISION_MAPPING = {};
+  Object.keys(PART_DECISION_LABELS).forEach((key) => {
+    const values = Array.isArray(mapping?.[key]) ? mapping[key] : [];
+    ACTIVE_PART_DECISION_MAPPING[key] = new Set(
+      values.map(normalizePartCode).filter(Boolean)
+    );
+  });
+}
+
+function decisionPartText(record) {
+  const code = normalizePartCode(record?.partCode);
+  if (!code) return "";
+  return Object.entries(ACTIVE_PART_DECISION_MAPPING)
+    .filter(([, codes]) => codes.has(code))
+    .map(([key]) => PART_DECISION_LABELS[key])
+    .join(" | ");
+}
+
+function hasDecisionPart(record, category) {
+  const code = normalizePartCode(record?.partCode);
+  return !!code && !!ACTIVE_PART_DECISION_MAPPING?.[category]?.has(code);
+}
+
 function standardizePart(code, description) {
   const key = normalizePartCode(code);
   if (key && PART_STANDARDIZATION[key]) return PART_STANDARDIZATION[key];
@@ -651,6 +698,7 @@ function openJobCardIndexDb() {
 
 async function loadJobCardIndexFromBrowser() {
   if (jobCardIndexMemory) return jobCardIndexMemory;
+
   const db = await openJobCardIndexDb();
   const result = await new Promise((resolve, reject) => {
     const transaction = db.transaction(
@@ -661,78 +709,61 @@ async function loadJobCardIndexFromBrowser() {
     const metaStore = transaction.objectStore(JOB_CARD_INDEX_META_STORE);
     const keysRequest = store.getAllKeys();
     const metaRequest = metaStore.get(JOB_CARD_INDEX_META_KEY);
+
     transaction.oncomplete = () => resolve({
       jobCards: new Set((keysRequest.result || []).map(normalizeJobCard).filter(Boolean)),
       lastId: Number(metaRequest.result?.lastId || 0),
       globalVersion: Number(metaRequest.result?.globalVersion || 0),
       syncedAt: Number(metaRequest.result?.syncedAt || 0),
     });
+
     transaction.onerror = () => reject(
       transaction.error || new Error("Unable to read Job Card cache.")
     );
   });
+
   db.close();
   jobCardIndexMemory = result;
   return result;
 }
 
-
-
 async function updateJobCardIndexMeta(meta = {}) {
-  const state = jobCardIndexMemory || { jobCards:new Set(), lastId:0, globalVersion:0, syncedAt:0 };
+  const state = jobCardIndexMemory || {
+    jobCards: new Set(),
+    lastId: 0,
+    globalVersion: 0,
+    syncedAt: 0,
+  };
+
   const next = {
     ...state,
     globalVersion: Number(meta.globalVersion ?? state.globalVersion ?? 0),
     syncedAt: Number(meta.syncedAt ?? state.syncedAt ?? 0),
   };
+
   const db = await openJobCardIndexDb();
-  await new Promise((resolve,reject)=>{
-    const transaction = db.transaction(JOB_CARD_INDEX_META_STORE,"readwrite");
+
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction(JOB_CARD_INDEX_META_STORE, "readwrite");
     transaction.objectStore(JOB_CARD_INDEX_META_STORE).put({
-      key:JOB_CARD_INDEX_META_KEY,
-      lastId:next.lastId,
-      globalVersion:next.globalVersion,
-      syncedAt:next.syncedAt
+      key: JOB_CARD_INDEX_META_KEY,
+      lastId: next.lastId,
+      globalVersion: next.globalVersion,
+      syncedAt: next.syncedAt,
     });
-    transaction.oncomplete=resolve;
-    transaction.onerror=()=>reject(transaction.error || new Error("Unable to update Job Card cache metadata."));
+
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(
+      transaction.error || new Error("Unable to update Job Card cache metadata.")
+    );
   });
+
   db.close();
-  jobCardIndexMemory=next;
+  jobCardIndexMemory = next;
   return next;
 }
 
 async function clearJobCardIndex() {
-  const db = await openJobCardIndexDb();
-  await new Promise((resolve,reject)=>{
-    const transaction=db.transaction([JOB_CARD_INDEX_STORE,JOB_CARD_INDEX_META_STORE],"readwrite");
-    transaction.objectStore(JOB_CARD_INDEX_STORE).clear();
-    transaction.objectStore(JOB_CARD_INDEX_META_STORE).clear();
-    transaction.oncomplete=resolve;
-    transaction.onerror=()=>reject(transaction.error || new Error("Unable to clear Job Card cache."));
-  });
-  db.close();
-  jobCardIndexMemory={jobCards:new Set(),lastId:0,globalVersion:0,syncedAt:0};
-}
-
-async function fetchJobCardCachePolicy() {
-  const response = await fetch("/api/auth", {
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({action:"job-card-cache-settings"})
-  });
-  const payload = await response.json().catch(()=>null);
-  if (!response.ok || !payload?.success) {
-    throw new Error(payload?.error || "Job Card cache policy check failed.");
-  }
-  return payload.settings || {enabled:true,intervalHours:24,version:1,lastRebuildAt:null};
-}
-
-async function addJobCardsToBrowserIndex(jobCards, lastId = null) {
-  const normalizedJobCards = [...new Set(
-    (jobCards || []).map(normalizeJobCard).filter(Boolean)
-  )];
-  const state = jobCardIndexMemory || { jobCards: new Set(), lastId: 0 };
   const db = await openJobCardIndexDb();
 
   await new Promise((resolve, reject) => {
@@ -740,17 +771,89 @@ async function addJobCardsToBrowserIndex(jobCards, lastId = null) {
       [JOB_CARD_INDEX_STORE, JOB_CARD_INDEX_META_STORE],
       "readwrite"
     );
+
+    transaction.objectStore(JOB_CARD_INDEX_STORE).clear();
+    transaction.objectStore(JOB_CARD_INDEX_META_STORE).clear();
+
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(
+      transaction.error || new Error("Unable to clear Job Card cache.")
+    );
+  });
+
+  db.close();
+  jobCardIndexMemory = {
+    jobCards: new Set(),
+    lastId: 0,
+    globalVersion: 0,
+    syncedAt: 0,
+  };
+}
+
+async function fetchJobCardCachePolicy() {
+  const response = await fetch("/api/auth", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "job-card-cache-settings" }),
+  });
+
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok || !payload?.success) {
+    throw new Error(
+      payload?.error || "Job Card cache policy check failed."
+    );
+  }
+
+  return payload.settings || {
+    enabled: true,
+    intervalHours: 24,
+    version: 1,
+    lastRebuildAt: null,
+  };
+}
+
+async function addJobCardsToBrowserIndex(jobCards, lastId = null) {
+  const normalizedJobCards = [...new Set(
+    (jobCards || []).map(normalizeJobCard).filter(Boolean)
+  )];
+
+  const state = jobCardIndexMemory || {
+    jobCards: new Set(),
+    lastId: 0,
+    globalVersion: 0,
+    syncedAt: 0,
+  };
+
+  const db = await openJobCardIndexDb();
+
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction(
+      [JOB_CARD_INDEX_STORE, JOB_CARD_INDEX_META_STORE],
+      "readwrite"
+    );
+
     const store = transaction.objectStore(JOB_CARD_INDEX_STORE);
     const metaStore = transaction.objectStore(JOB_CARD_INDEX_META_STORE);
+
     for (const jobCardNo of normalizedJobCards) {
       store.put({ jobCardNo });
       state.jobCards.add(jobCardNo);
     }
+
     const nextLastId = Number(lastId);
     if (Number.isFinite(nextLastId) && nextLastId > state.lastId) {
       state.lastId = nextLastId;
     }
-    metaStore.put({ key: JOB_CARD_INDEX_META_KEY, lastId: state.lastId });
+
+    // Preserve cache version/timestamp when adding newly confirmed Job Cards.
+    metaStore.put({
+      key: JOB_CARD_INDEX_META_KEY,
+      lastId: state.lastId,
+      globalVersion: Number(state.globalVersion || 0),
+      syncedAt: Number(state.syncedAt || 0),
+    });
+
     transaction.oncomplete = resolve;
     transaction.onerror = () => reject(
       transaction.error || new Error("Unable to update Job Card cache.")
@@ -781,16 +884,27 @@ async function syncJobCardIndex(apiBaseUrl) {
       });
 
       let payload = null;
-      try { payload = await response.json(); } catch { payload = null; }
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
 
       if (!response.ok || !payload?.success) {
-        throw new Error(payload?.error || `Job Card index sync failed (${response.status})`);
+        throw new Error(
+          payload?.error || `Job Card index sync failed (${response.status})`
+        );
       }
 
       const rows = Array.isArray(payload.jobCards) ? payload.jobCards : [];
-      const pageJobCards = rows.map(row => normalizeJobCard(row?.jobCardNo)).filter(Boolean);
+      const pageJobCards = rows
+        .map(row => normalizeJobCard(row?.jobCardNo))
+        .filter(Boolean);
+
       const pageLastId = Number(
-        payload.nextAfterId || rows[rows.length - 1]?.id || afterId
+        payload.nextAfterId ||
+        rows[rows.length - 1]?.id ||
+        afterId
       );
 
       await addJobCardsToBrowserIndex(pageJobCards, pageLastId);
@@ -811,49 +925,67 @@ async function getHybridNewJobCards(apiBaseUrl, jobCards, checkNewJobCardsFn) {
   const uniqueJobCards = [...new Set(
     (jobCards || []).map(normalizeJobCard).filter(Boolean)
   )];
+
   if (!uniqueJobCards.length) return new Set();
 
   try {
     const policy = await fetchJobCardCachePolicy();
 
-    // Cache OFF = bypass browser cache and use Neon directly.
+    // Admin can disable the browser cache completely.
     if (policy.enabled === false) {
       return checkNewJobCardsFn(uniqueJobCards);
     }
 
     let state = await loadJobCardIndexFromBrowser();
-    const intervalMs = Math.max(1, Number(policy.intervalHours || 24)) * 60 * 60 * 1000;
-    const cacheAge = state.syncedAt ? Date.now() - state.syncedAt : Number.POSITIVE_INFINITY;
-    const versionChanged = Number(state.globalVersion || 0) !== Number(policy.version || 0);
+
+    const intervalMs =
+      Math.max(1, Number(policy.intervalHours || 24)) *
+      60 * 60 * 1000;
+
+    const cacheAge = state.syncedAt
+      ? Date.now() - state.syncedAt
+      : Number.POSITIVE_INFINITY;
+
+    const versionChanged =
+      Number(state.globalVersion || 0) !== Number(policy.version || 0);
+
     const intervalExpired = cacheAge >= intervalMs;
 
-    // Rebuild when the admin changed the global cache version or this browser's
-    // own cache has reached the configured interval.
+    // Rebuild the browser index when:
+    // 1. this browser has no cache,
+    // 2. admin changed the global cache version, or
+    // 3. configured rebuild interval has expired.
     if (!state.jobCards.size || versionChanged || intervalExpired) {
       await clearJobCardIndex();
       await syncJobCardIndex(apiBaseUrl);
+
       state = await updateJobCardIndexMeta({
-        globalVersion:Number(policy.version || 0),
-        syncedAt:Date.now()
+        globalVersion: Number(policy.version || 0),
+        syncedAt: Date.now(),
       });
     }
 
     const cached = state.jobCards || new Set();
-    const candidates = uniqueJobCards.filter(jobCard => !cached.has(jobCard));
+    const candidates = uniqueJobCards.filter(
+      jobCard => !cached.has(jobCard)
+    );
 
     if (!candidates.length) return new Set();
 
     const confirmedNewJobCards = await checkNewJobCardsFn(candidates);
 
-    // Server confirmation lets us safely add both existing and new candidates.
+    // Server confirmation safely adds both existing and new candidates.
     await addJobCardsToBrowserIndex(candidates);
+
     return confirmedNewJobCards;
   } catch (error) {
-    console.warn("Hybrid Job Card cache unavailable; using central check:", error);
+    console.warn(
+      "Hybrid Job Card cache unavailable; using central check:",
+      error
+    );
     return checkNewJobCardsFn(uniqueJobCards);
   }
 }
-
 
 function makeHistoryRowKey(record) {
   const date = record?.date ? formatDate(record.date) : "";
@@ -1544,16 +1676,12 @@ function getVisitJobCard(visit) {
 }
 
 function getVisitReading(visit, vehicle) {
-  // Service History display must use CUMULATIVE COUNTER READING.
-  // The parser now supports both DMS formats:
-  // - separate duplicate Fleet counter unit columns
-  // - one Fleet counter unit column shared with cumulative reading
+  // Reading comes from the complete visit, not only the mapped service rows.
   const candidates = visit
-    .map(record => getRelevantReading(record, vehicle))
-    .filter(reading => reading > 0);
-
+    .map(r => ({ record: r, reading: getRelevantReading(r, vehicle) }))
+    .filter(x => x.reading > 0);
   if (!candidates.length) return 0;
-  return candidates[0];
+  return candidates[0].reading;
 }
 
 function getRawHeaderValue(record, names) {
@@ -1770,7 +1898,7 @@ function matchesServicePart(value, serviceName) {
 function serviceBase(records, names, minQty = 0, requireOilFilter = false, vehicle = null, requiredFilterName = 'OIL FILTER', filterMustMatchJobCard = false) {
   const sorted = [...records].sort((a, b) => (b.date || 0) - (a.date || 0));
   for (const r of sorted) {
-    const name = String(r.standardizedPart || '').toUpperCase();
+    const name = String(decisionPartText(r) || '').toUpperCase();
     if (!names.some(n => matchesServicePart(name, n))) continue;
     if ((r.qty || 0) <= 0 && minQty > 0) continue;
 
@@ -1783,12 +1911,12 @@ function serviceBase(records, names, minQty = 0, requireOilFilter = false, vehic
       ? records.filter(x => String(x.jobCard || '').trim() === jobCard)
       : records.filter(x => formatDate(x.date) === key);
     const qty = same
-      .filter(x => names.some(n => matchesServicePart(x.standardizedPart, n)))
+      .filter(x => names.some(n => matchesServicePart(decisionPartText(x), n)))
       .reduce((a, x) => a + (x.qty || 0), 0);
 
     if (qty < minQty) continue;
     const companions = same;
-    if (requireOilFilter && !companions.some(x => String(x.standardizedPart || '').toUpperCase().includes(requiredFilterName))) continue;
+    if (requireOilFilter && !companions.some(x => String(decisionPartText(x) || '').toUpperCase().includes(requiredFilterName))) continue;
 
     return { ...r, serviceQty: qty, relevantReading: vehicle ? getRelevantReading(r, vehicle) : (r.reading || 0) };
   }
@@ -1797,15 +1925,17 @@ function serviceBase(records, names, minQty = 0, requireOilFilter = false, vehic
 function latestFilter(records, filterName, kitName, vehicle = null) {
   const sorted = [...records].sort((a, b) => (b.date || 0) - (a.date || 0));
   for (const r of sorted) {
-    const p = String(r.standardizedPart || '').toUpperCase();
-    if (p === kitName.toUpperCase() || (p.includes(filterName) && p.includes('KIT'))) {
-      if ((r.qty || 0) >= 1) return { ...r, relevantReading: vehicle ? getRelevantReading(r, vehicle) : (r.reading || 0) };
+    const p = String(decisionPartText(r) || '').toUpperCase();
+    const isKit = kitName === 'AIR FILTER KIT' ? hasDecisionPart(r, "airFilterKit") : false;
+    const isIndividual = filterName === 'AIR FILTER' ? hasDecisionPart(r, "airFilter") && !hasDecisionPart(r, "airFilterKit") : false;
+    if (isKit && (r.qty || 0) >= 1) {
+      return { ...r, relevantReading: vehicle ? getRelevantReading(r, vehicle) : (r.reading || 0) };
     }
-    if (p.includes(filterName) && !p.includes('KIT')) {
+    if (isIndividual) {
       const key = formatDate(r.date);
       const qty = records
-        .filter(x => formatDate(x.date) === key && String(x.standardizedPart || '').toUpperCase().includes(filterName))
-        .filter(x => !String(x.standardizedPart || '').toUpperCase().includes('KIT'))
+        .filter(x => formatDate(x.date) === key && hasDecisionPart(x, "airFilter"))
+        .filter(x => !hasDecisionPart(x, "airFilterKit"))
         .reduce((a, x) => a + (x.qty || 0), 0);
       if (qty >= 2) return { ...r, relevantReading: vehicle ? getRelevantReading(r, vehicle) : (r.reading || 0) };
     }
@@ -1824,14 +1954,8 @@ function latestFuelFilter(records, vehicle = null) {
   // Same-file duplicate rows are NOT removed by this function.
 
   const upper = (value) => String(value || '').trim().toUpperCase();
-  const isKit = (record) => {
-    const p = upper(record?.standardizedPart);
-    return p === 'FUEL FILTER KIT' || (p.includes('FUEL FILTER') && p.includes('KIT'));
-  };
-  const isIndividual = (record) => {
-    const p = upper(record?.standardizedPart);
-    return p.includes('FUEL FILTER') && !p.includes('KIT');
-  };
+  const isKit = (record) => hasDecisionPart(record, "fuelFilterKit");
+  const isIndividual = (record) => hasDecisionPart(record, "fuelFilter") && !hasDecisionPart(record, "fuelFilterKit");
 
   const usable = records.filter(r =>
     r?.date &&
@@ -1951,19 +2075,11 @@ function isBSVIApplicable(vehicle){
   const sale = vehicle?.sale;
   return !!(sale && sale > new Date(2020, 2, 31));
 }
-const CLUTCH_OIL_DECISION_PART_CODES = new Set([
-  "CFD99991",
-  "CLA99994",
-  "U9999995",
-  "U9999999",
-]);
-
 function latestValidClutchOilPart(records, vehicle) {
   const valid = (records || [])
     .filter(record => {
-      const code = normalizePartCode(record?.partCode);
       const qty = Number(record?.qty || 0);
-      return CLUTCH_OIL_DECISION_PART_CODES.has(code) && qty >= 0.5;
+      return hasDecisionPart(record, "clutchOil") && qty >= 0.5;
     })
     .sort((a, b) => (b.date || 0) - (a.date || 0));
   if (!valid.length) return null;
@@ -2016,16 +2132,9 @@ function decideAggregate(records, vehicle, running, key, analysisDate){
   return dueNormalWithSale(running.current,base,cfg[0],cfg[1],analysisDate,sale,running.mode,vehicle);
 }
 function latestClutchOilPart(records, vehicle = null) {
-  // Clutch Oil decision is based ONLY on these approved clutch-oil PART codes.
-  // Labour codes/descriptions such as CLH125 must never create or reset the
-  // Clutch Oil service base.
-  const allowedCodes = new Set(['CFD99991', 'CLA99994', 'U9999995', 'U9999999']);
-
+  // Clutch Oil decision is based only on the Admin Part Decision mapping.
   const matches = records
-    .filter(r => {
-      const code = normalizePartCode(r?.partCode);
-      return allowedCodes.has(code) && Number(r?.qty || 0) >= 0.5 && r?.date;
-    })
+    .filter(r => hasDecisionPart(r, "clutchOil") && Number(r?.qty || 0) >= 0.5 && r?.date)
     .sort((a, b) => b.date - a.date);
 
   const latest = matches[0] || null;
@@ -2047,17 +2156,17 @@ function latestDefFilter(records, vehicle){
   const datedDesc = (arr) => [...arr].filter(r => r.date).sort((a,b) => b.date - a.date);
 
   const kits = datedDesc(records.filter(r =>
-    String(r.standardizedPart || '').toUpperCase() === 'DEF FILTER KIT' &&
+    hasDecisionPart(r, "defFilterKit") &&
     (r.qty || 0) >= 1
   ));
 
   const suctions = datedDesc(records.filter(r =>
-    String(r.standardizedPart || '').toUpperCase() === 'DEF FILTER SUCTION' &&
+    hasDecisionPart(r, "defFilterSuction") &&
     (r.qty || 0) > 0
   ));
 
   const airs = datedDesc(records.filter(r =>
-    String(r.standardizedPart || '').toUpperCase() === 'DEF FILTER AIR' &&
+    hasDecisionPart(r, "defFilterAir") &&
     (r.qty || 0) > 0
   ));
 
@@ -2093,9 +2202,7 @@ function defInlineDecision(records,vehicle,running,analysisDate){
   // 1) DEF INLINE FILTER already exists in history, OR
   // 2) vehicle sale date is on/after 01-May-2025.
   const startDate = new Date(2025, 4, 1);
-  const hasHistory = records.some(r =>
-    String(r.standardizedPart || "").toUpperCase().includes("DEF INLINE FILTER")
-  );
+  const hasHistory = records.some(r => hasDecisionPart(r, "defInlineFilter"));
   const sale = vehicle.sale;
   const applicable = hasHistory || (sale && sale >= startDate);
 
@@ -3175,7 +3282,7 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
     if (!(globalRate > 0)) return item;
     item.baseRate = globalRate;
     item.rate = Number((globalRate * 1.18).toFixed(2));
-    item.source = "Historical DB (Qty from same-model history; Rate from matching part history, 18% GST added)";
+    item.source = "Historical DB (Qty from same-model history; Rate from latest 10 job cards — most frequent rate, 18% GST added)";
     return item;
   }
 
@@ -3437,26 +3544,14 @@ function emptyEstimateItem(type = "part") {
 function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResults, savedEstimates, savedEstimatesLoading, onOpenSavedEstimate, theme = "blue", onThemeChange }) {
   const dueVehicles = (bulkResults || []).filter(item => Array.isArray(item?.services) && item.services.length > 0).length;
   const totalVehicles = (bulkResults || []).length;
-  const savedCount = Array.isArray(savedEstimates) ? savedEstimates.length : 0;
   const cards = [
-    { key:"single", icon:"🚚", title:"Single Vehicle", text:"Check one vehicle service history, service requirements and completed work." },
-    { key:"bulk", icon:"📊", title:"Bulk Vehicle", text:"Analyse multiple vehicles and prepare customer-wise service due summaries." },
-    { key:"schedule", icon:"📅", title:"Service Schedule", text:"Review service intervals and applicable maintenance schedules." },
+    { key:"single", icon:"🚚", title:"Single Vehicle", text:"Check one vehicle service decision, history and due services." },
+    { key:"bulk", icon:"📊", title:"Bulk Vehicle", text:"Analyse multiple vehicles and prepare customer-wise due summaries." },
+    { key:"schedule", icon:"📅", title:"Service Schedule", text:"View service intervals and additional service windows." },
   ];
   return (
     <div className="portal-home">
-      <div className="portal-home-hero">
-        <div>
-          <div className="portal-home-kicker">VEHICLE SERVICE MANAGEMENT</div>
-          <h1>Welcome{user?.personName ? ", " + user.personName : ""}</h1>
-          <p>Manage vehicle service history, service requirements, due schedules and estimates from one place.</p>
-        </div>
-        <div className="portal-home-hero-actions">
-          <button className="excel-button green portal-upload-button" onClick={onUpload}>Upload DMS Excel</button>
-          <button className="excel-button portal-upload-button" onClick={() => onNavigate("estimate")}>Prepare Estimate</button>
-          <button className="excel-button" onClick={onClear}>Clear</button>
-        </div>
-      </div>
+      <div className="portal-home-hero"><div><div className="portal-home-kicker">SERVICE DECISION WEB PORTAL</div><h1>Welcome{user?.personName ? ", " + user.personName : ""}</h1><p>Your main workflow starts with Excel upload. Upload the DMS file first, then analyse vehicles or prepare the due summary.</p></div><div style={{display:"flex",gap:8,flexWrap:"wrap"}}><button className="excel-button green portal-upload-button" onClick={onUpload}>Upload Excel &amp; Start</button><button className="excel-button" onClick={onClear}>Clear</button></div></div>
       <div className="home-theme-picker">
         <div className="home-theme-picker-title">Dashboard Theme</div>
         <div className="home-theme-options">
@@ -3467,14 +3562,10 @@ function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResu
           ))}
         </div>
       </div>
-      <div className="portal-kpi-grid">
-        <div className="portal-kpi"><span>Vehicles in Current Upload</span><strong>{totalVehicles}</strong><small>Current session</small></div>
-        <div className="portal-kpi"><span>Due Vehicles</span><strong>{dueVehicles}</strong><small>Current upload</small></div>
-        <div className="portal-kpi"><span>Saved Estimates</span><strong>{savedCount}</strong><small>Available to open</small></div>
-      </div>
-      <div className="portal-section-title">Quick Actions</div>
+      <div className="portal-kpi-grid"><div className="portal-kpi"><span>Vehicles in Current Upload</span><strong>{totalVehicles}</strong><small>Current session only</small></div><div className="portal-kpi"><span>Due Vehicles in Current Upload</span><strong>{dueVehicles}</strong><small>Current session only</small></div><div className="portal-kpi"><span>Portal Mode</span><strong>Beta</strong><small>Testing &amp; feedback</small></div></div>
+      <div className="portal-section-title">What would you like to do?</div>
       <div className="portal-action-grid">{cards.map(card => <button key={card.key} className="portal-action-card" onClick={() => onNavigate(card.key)}><span className="portal-action-icon">{card.icon}</span><span className="portal-action-title">{card.title}</span><span className="portal-action-text">{card.text}</span><span className="portal-action-link">Open →</span></button>)}
-        <button className="portal-action-card" onClick={() => onNavigate("estimate")}><span className="portal-action-icon">🧾</span><span className="portal-action-title">Service Estimate</span><span className="portal-action-text">Prepare an estimate directly from Home. Vehicle details and parts can be loaded from the database or entered manually.</span><span className="portal-action-link">Open Estimate →</span></button>
+        <button className="portal-action-card" onClick={() => onNavigate("estimate")}><span className="portal-action-icon">🧾</span><span className="portal-action-title">Prepare Estimate</span><span className="portal-action-text">Prepare an estimate directly from Home. Enter Vehicle No. first; DB details and parts can be loaded automatically or entered manually.</span><span className="portal-action-link">Open Estimate →</span></button>
       </div>
       <div className="home-estimate-preview" onClick={() => onNavigate("estimate")} role="button" tabIndex={0} onKeyDown={event => { if(event.key==="Enter" || event.key===" ") onNavigate("estimate"); }}>
         <div className="home-estimate-preview-head">
@@ -3505,11 +3596,58 @@ function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResu
           <div className="small-note">No saved estimates yet.</div>
         )}
       </div>
-      <div className="portal-workflow"><div><b>Workflow</b><span>Upload DMS Excel → Analyse → Review Service History → Prepare Estimate / Share Due Summary</span></div><div><b>Personalisation</b><span>Theme is selected from Home. Columns, custom names and table widths are saved in Profile &amp; Settings.</span></div></div>
+      <div className="portal-workflow"><div><b>Recommended workflow</b><span>Upload Excel → Analyse → Review Service Decision → Prepare Estimate / Share Due Summary</span></div><div><b>Personalise</b><span>Theme is selected from Home. Columns, custom names and table widths are saved in Profile &amp; Settings.</span></div></div>
     </div>
   );
 }
+
+function buildDefaultPartDecisionMapping() {
+  const categoryByLabel = Object.entries(PART_DECISION_LABELS).reduce((acc,[key,label]) => {
+    acc[String(label).toUpperCase()] = key;
+    return acc;
+  }, {});
+  const mapping = {};
+  Object.keys(PART_DECISION_LABELS).forEach(key => { mapping[key] = []; });
+  Object.entries(PART_STANDARDIZATION).forEach(([code, label]) => {
+    const key = categoryByLabel[String(label || "").toUpperCase()];
+    if (key) mapping[key].push(code);
+  });
+  return mapping;
+}
+
+async function loadPartDecisionMappingOnce() {
+  try {
+    const cached = JSON.parse(localStorage.getItem("serviceDecisionActivePartDecisionMapping") || "{}");
+    const hasCached = Object.values(cached).some(values => Array.isArray(values) && values.length);
+    if (hasCached) setActivePartDecisionMapping(cached);
+    else setActivePartDecisionMapping(buildDefaultPartDecisionMapping());
+  } catch {
+    setActivePartDecisionMapping(buildDefaultPartDecisionMapping());
+  }
+
+  try {
+    const token = localStorage.getItem("serviceDecisionAuthToken");
+    const response = await fetch("/api/auth", {
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        ...(token ? { Authorization:`Bearer ${token}` } : {}),
+      },
+      body:JSON.stringify({ action:"part-decision-mapping" }),
+    });
+    const data = await response.json().catch(() => ({}));
+    const mapping = data?.mapping || {};
+    const hasServerMapping = Object.values(mapping).some(values => Array.isArray(values) && values.length);
+    if (response.ok && data?.success !== false && hasServerMapping) {
+      setActivePartDecisionMapping(mapping);
+      localStorage.setItem("serviceDecisionActivePartDecisionMapping", JSON.stringify(mapping));
+    }
+  } catch (e) {
+    console.warn("Part Decision master refresh failed; cached/default mapping remains active.", e);
+  }
+}
 function ServiceDecisionApp({ user }) {
+  useEffect(() => { void loadPartDecisionMappingOnce(); }, []);
   const [excelData, setExcelData] = useState("");
   const [analysis, setAnalysis] = useState(null);
   const [error, setError] = useState("");
@@ -3594,6 +3732,16 @@ function ServiceDecisionApp({ user }) {
   const [dashboardPrefs, setDashboardPrefs] = useState(() => normalizeDashboardPrefs(user?.preferences || {}));
   const changeDashboardTheme = (theme) => { const nextTheme = String(theme || "blue"); void persistDashboardPrefs({ ...dashboardPrefs, theme: nextTheme }); };
   useEffect(() => { setDashboardPrefs(normalizeDashboardPrefs(user?.preferences || {})); }, [user?.id, user?.preferences]);
+  useEffect(() => {
+    if (!user?.id) return;
+    void loadPartDecisionMappingFromServer().catch((error) => {
+      console.warn("Part Decision mapping load failed:", error);
+      try {
+        const cached = JSON.parse(localStorage.getItem("serviceDecisionActivePartDecisionMapping") || "{}");
+        setActivePartDecisionMapping(cached);
+      } catch {}
+    });
+  }, [user?.id]);
   const singleTableColumns = dashboardPrefs.singleColumns;
   const bulkTableColumns = dashboardPrefs.bulkColumns;
   const singleColumnLabels = dashboardPrefs.singleColumnLabels;
@@ -3766,6 +3914,7 @@ function ServiceDecisionApp({ user }) {
     );
   }
 
+
   async function saveHistoryToBackend({ records, vehicle }) {
     const response = await fetch(`${API_BASE_URL}/api/save-history`, {
       method: "POST",
@@ -3815,8 +3964,10 @@ function ServiceDecisionApp({ user }) {
         const index = nextIndex++;
         const [, vehicleRecords] = jobs[index];
         try {
-          const vehicle = deriveVehicle(vehicleRecords);
-          await saveHistoryToBackend({ records: vehicleRecords, vehicle });
+          await saveHistoryToBackend({
+            records: vehicleRecords,
+            vehicle: deriveVehicle(vehicleRecords),
+          });
         } catch (error) {
           console.error("Background history save failed:", error);
         }
@@ -3932,7 +4083,7 @@ function ServiceDecisionApp({ user }) {
     return parseExcelPaste(excelData);
   };
 
-  const analyze = () => {
+  const analyze = async () => {
     setError("");
     try {
       const parsed = getAnalysisRecords();
@@ -4620,7 +4771,7 @@ function ServiceDecisionApp({ user }) {
     try {
       const response = await fetch("/api/save-history?partNo=" + encodeURIComponent(code));
       const data = await response.json().catch(() => ({}));
-      if (data.part) setEstimateParts(prev => prev.map(item => item.id === id ? {...item,partNo:data.part.partNo||code,description:data.part.description||item.description,rate:Number(data.part.rateInclGst||0),baseRate:Number(data.part.rate||0),source:"Historical DB - exact Part No."} : item));
+      if (data.part) setEstimateParts(prev => prev.map(item => item.id === id ? {...item,partNo:data.part.partNo||code,description:data.part.description||item.description,rate:Number(data.part.rateInclGst||0),baseRate:Number(data.part.rate||0),source:"Historical DB - exact Part No. (latest 10 job cards, most frequent rate)"} : item));
     } catch (err) { console.warn("Manual estimate part lookup:",err); }
     finally { setManualPartLookupBusy(prev => ({...prev,[id]:false})); }
   }
@@ -4842,7 +4993,7 @@ function ServiceDecisionApp({ user }) {
         )
       );
 
-      clone = source.cloneNode(true);
+clone = source.cloneNode(true);
 clone.removeAttribute("id");
 
 const themeRoot = source.closest(".excel-app");
@@ -4865,17 +5016,17 @@ if (themeRoot) {
 }
 
 clone.style.position = "absolute";
-clone.style.left = "-100000px";
-clone.style.top = "0";
-clone.style.width = sourceWidth + "px";
-clone.style.height = sourceHeight + "px";
-clone.style.maxHeight = sourceHeight + "px";
-clone.style.overflow = "hidden";
-clone.style.margin = "0";
-clone.style.boxSizing = "border-box";
-clone.style.zIndex = "999999";
-clone.style.transform = "none";
-clone.style.transformOrigin = "top left";
+      clone.style.left = "-100000px";
+      clone.style.top = "0";
+      clone.style.width = sourceWidth + "px";
+      clone.style.height = sourceHeight + "px";
+      clone.style.maxHeight = sourceHeight + "px";
+      clone.style.overflow = "hidden";
+      clone.style.margin = "0";
+      clone.style.boxSizing = "border-box";
+      clone.style.zIndex = "999999";
+      clone.style.transform = "none";
+      clone.style.transformOrigin = "top left";
 
       const originalControls = source.querySelectorAll("input, textarea, select");
       const clonedControls = clone.querySelectorAll("input, textarea, select");
@@ -4885,61 +5036,29 @@ clone.style.transformOrigin = "top left";
         if (originalControl instanceof HTMLInputElement) {
           clonedControl.value = originalControl.value;
           clonedControl.checked = originalControl.checked;
-      } else if (originalControl instanceof HTMLTextAreaElement) {
-  const value = originalControl.value;
-
-  clonedControl.value = value;
-  clonedControl.textContent = value;
-
-  const rect = originalControl.getBoundingClientRect();
-  clonedControl.style.height = rect.height + "px";
-  clonedControl.style.whiteSpace = "pre-wrap";
-  clonedControl.style.overflowWrap = "anywhere";
-  clonedControl.style.wordBreak = "break-word";
-
-  const lineBreakOverlay = document.createElement("div");
-  lineBreakOverlay.textContent = value;
-  lineBreakOverlay.style.position = "absolute";
-  lineBreakOverlay.style.left = rect.left + "px";
-  lineBreakOverlay.style.top = rect.top + "px";
-  lineBreakOverlay.style.width = rect.width + "px";
-  lineBreakOverlay.style.height = rect.height + "px";
-  lineBreakOverlay.style.boxSizing = "border-box";
-  lineBreakOverlay.style.padding = window.getComputedStyle(originalControl).padding;
-  lineBreakOverlay.style.font = window.getComputedStyle(originalControl).font;
-  lineBreakOverlay.style.lineHeight = window.getComputedStyle(originalControl).lineHeight;
-  lineBreakOverlay.style.textAlign = window.getComputedStyle(originalControl).textAlign;
-  lineBreakOverlay.style.color = window.getComputedStyle(originalControl).color;
-  lineBreakOverlay.style.background = "transparent";
-  lineBreakOverlay.style.whiteSpace = "pre-wrap";
-  lineBreakOverlay.style.overflowWrap = "anywhere";
-  lineBreakOverlay.style.wordBreak = "break-word";
-  lineBreakOverlay.style.pointerEvents = "none";
-  lineBreakOverlay.style.zIndex = "1000000";
-
-  clonedControl.style.color = "transparent";
-  clonedControl.style.caretColor = "transparent";
-
-  clone.appendChild(lineBreakOverlay);
-} else if (originalControl instanceof HTMLSelectElement) {
-  clonedControl.value = originalControl.value;
-}
+        } else if (originalControl instanceof HTMLTextAreaElement) {
+          clonedControl.value = originalControl.value;
+          clonedControl.textContent = originalControl.value;
+          clonedControl.style.height = originalControl.getBoundingClientRect().height + "px";
+        } else if (originalControl instanceof HTMLSelectElement) {
+          clonedControl.value = originalControl.value;
+        }
       });
 
       document.body.appendChild(clone);
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
       const canvas = await html2canvas(clone, {
-        backgroundColor: "#ffffff",
-        useCORS: true,
-        scale: 2.5,
-        width: sourceWidth,
-        height: sourceHeight,
-        windowWidth: sourceWidth,
-        windowHeight: sourceHeight,
-        scrollX: 0,
-        scrollY: 0,
-      });
+  backgroundColor: "#ffffff",
+  useCORS: true,
+  scale: 2.5,
+  width: sourceWidth,
+  height: sourceHeight,
+  windowWidth: sourceWidth,
+  windowHeight: sourceHeight,
+  scrollX: 0,
+  scrollY: 0,
+});
 
       const blob = await new Promise((resolve, reject) => {
         canvas.toBlob((value) => value ? resolve(value) : reject(new Error("Unable to create PNG.")), "image/png");
@@ -5020,7 +5139,6 @@ clone.style.transformOrigin = "top left";
         .portal-home-kicker { color:#1f4e78; font-size:11px; font-weight:800; letter-spacing:1px; }
         .portal-home-hero h1 { margin:5px 0 4px; font-size:27px; color:#1f1f1f; }
         .portal-home-hero p { margin:0; color:#5f6b75; font-size:13px; }
-        .portal-home-hero-actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
         .portal-upload-button { white-space:nowrap; min-height:38px; }
         .portal-kpi-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:12px 0; }
         .portal-kpi,.bulk-overview-card { border:1px solid #c7d1da; background:#fff; padding:13px; border-radius:5px; }
@@ -5068,7 +5186,7 @@ clone.style.transformOrigin = "top left";
         .bulk-overview-card.due strong { color:#006100; }
         .bulk-search-input { max-width:360px; min-height:31px; }
         @media (max-width:900px) { .portal-action-grid{grid-template-columns:repeat(2,1fr)} .decision-status-grid{grid-template-columns:repeat(2,1fr)} .decision-basis-grid{grid-template-columns:repeat(2,1fr)} .bulk-overview-grid{grid-template-columns:repeat(2,1fr)} }
-        @media (max-width:600px) { .portal-home-hero{flex-direction:column;align-items:flex-start}.portal-home-hero-actions{width:100%;justify-content:flex-start}.portal-kpi-grid,.portal-workflow{grid-template-columns:1fr}.portal-action-grid{grid-template-columns:1fr}.decision-basis-grid{grid-template-columns:1fr}.bulk-overview-grid{grid-template-columns:1fr}.bulk-search-input{max-width:none;width:100%} }
+        @media (max-width:600px) { .portal-home-hero{flex-direction:column;align-items:flex-start}.portal-kpi-grid,.portal-workflow{grid-template-columns:1fr}.portal-action-grid{grid-template-columns:1fr}.decision-basis-grid{grid-template-columns:1fr}.bulk-overview-grid{grid-template-columns:1fr}.bulk-search-input{max-width:none;width:100%} }
         .excel-window { width: min(1500px, 100%); margin: 0 auto; background: #fff; min-height: 100vh; box-shadow: 0 0 0 1px #9e9e9e; }
         .excel-titlebar { height: 34px; background: #217346; color: #fff; display:flex; align-items:center; justify-content:center; padding:0 12px; font-size:14px; }
         .excel-title { font-weight:700; text-align:center; flex:1; }
@@ -5435,39 +5553,37 @@ clone.style.transformOrigin = "top left";
         .single-service-summary th:last-child, .single-service-summary td:last-child { overflow-wrap:anywhere; }
         .service-summary-note { padding:5px 8px; margin-top:4px; }
         .service-summary-title {
-  position:relative;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  text-align:center;
-  background:#2f75b5;
-  color:#fff;
-  border-color:#255e91;
-  margin-top:10px;
-  min-height:44px;
-  padding:8px 190px 8px 12px;
-  box-shadow:0 1px 2px rgba(0,0,0,.18);
-  letter-spacing:.1px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  background: #2f75b5;
+  color: #fff;
+  border-color: #255e91;
+  margin-top: 10px;
+  min-height: 44px;
+  padding: 8px 190px 8px 12px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.18);
+  letter-spacing: .1px;
 }
 
 .vehicle-profile-panel > .section-title {
-  text-align:center;
+  text-align: center;
 }
 
 .service-summary-title > span {
-  width:100%;
-  text-align:center;
+  width: 100%;
+  text-align: center;
 }
 
 .service-summary-title .single-history-toggle {
-  position:absolute;
-  right:8px;
-  top:50%;
-  transform:translateY(-50%);
-  margin-left:0;
-}
-
-        .history-part { display:inline-block; margin:2px 4px 2px 0; padding:3px 6px; border:1px solid transparent; }
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-left: 0;
+}        .history-part { display:inline-block; margin:2px 4px 2px 0; padding:3px 6px; border:1px solid transparent; }
         .history-part.eligible { background:#e2f0d9; color:#006100; border-color:#70ad47; font-weight:700; border-radius:2px; }
         .pre-analysis-empty { min-height:420px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; border:1px dashed #9fbad0; background:#eef4fa; color:#5b6770; padding:30px 20px; }
         .pre-analysis-title { font-size:20px; font-weight:700; color:#1f4e78; margin-bottom:8px; }
@@ -5717,6 +5833,10 @@ clone.style.transformOrigin = "top left";
         <div className="excel-window">
           <div className="excel-titlebar">
             <div className="excel-title">Vehicle Service Decision &amp; Maintenance Dashboard</div>
+            <div className="excel-title-right" style={{display:"flex",alignItems:"center",gap:10}}>
+              <span>Excel Web Version</span>
+              <span style={{fontSize:11,fontWeight:700,opacity:.9}}>Beta Commit: {import.meta.env.VITE_VERCEL_GIT_COMMIT_SHA || "Local"}</span>
+            </div>
           </div>
 
           <div className="excel-ribbon no-print">
@@ -5890,7 +6010,7 @@ clone.style.transformOrigin = "top left";
 
                 {error && <div className="error-line no-print">{error}</div>}
 
-                <div className="section-title service-summary-title" style={{display:"flex",alignItems:"center",gap:10}}>
+                <div className="section-title service-summary-title">
                   <span>Service Summary — Complete Vehicle History</span>
                   <div className="single-history-toggle no-print" role="group" aria-label="Service history view">
                     <label>
@@ -6174,4 +6294,4 @@ function App() {
   return <AuthGate><ServiceDecisionApp /></AuthGate>;
 }
 
-export default App;
+export default App;;

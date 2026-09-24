@@ -116,9 +116,6 @@ export default function AuthGate({ children }) {
       setUser(normalizeLoggedInUser(data.user));
     } catch (e) {
       if (e?.sessionConflict) {
-        // Keep the exact credentials from the first attempt. The confirmation
-        // button must retry the same login request with terminateExistingSession=true
-        // instead of reading the DOM again.
         setPendingLoginCredentials(loginCredentials);
         setSessionConflict(e.previousSession || {});
         return;
@@ -135,11 +132,6 @@ export default function AuthGate({ children }) {
     setUser(null);
     setAdminOpen(false);
   };
-
-  useEffect(() => {
-    if (!user) return;
-    if (user.role === "admin") void loadPartDecisionMapping();
-  }, [user?.id, user?.role]);
 
   useEffect(() => {
     if (!user) return;
@@ -247,11 +239,7 @@ export default function AuthGate({ children }) {
   };
 
   const updateEmergencyDbUploadCutoff = (enabled) => run(async () => {
-    const data = await api(
-      "admin-emergency-db-upload-cutoff",
-      { enabled: enabled === true },
-      localStorage.getItem(TOKEN_KEY)
-    );
+    const data = await api("admin-emergency-db-upload-cutoff", { enabled: enabled === true }, localStorage.getItem(TOKEN_KEY));
     setEmergencyDbUploadCutoff(data?.settings?.enabled === true);
     setMessage(data.message || "Emergency DB upload cutoff updated.");
   });
@@ -496,89 +484,6 @@ export default function AuthGate({ children }) {
     });
   };
 
-  const PART_MAPPING_CATEGORIES = [
-    ["engineOil","Engine Oil"],
-    ["engineOilFilter","Engine Oil Filter"],
-    ["fuelFilter","Fuel Filter"],
-    ["fuelFilterKit","Fuel Filter Kit"],
-    ["airFilter","Air Filter"],
-    ["airFilterKit","Air Filter Kit"],
-    ["steeringOil","Steering Oil"],
-    ["steeringOilFilter","Steering Oil Filter"],
-    ["defFilterSuction","DEF Filter Suction"],
-    ["defFilterAir","DEF Filter Air"],
-    ["defFilterKit","DEF Filter Kit"],
-    ["defInlineFilter","DEF Inline Filter"],
-    ["gearOil","Gear Oil"],
-    ["apdaFilter","APDA Filter"],
-    ["coolant","Coolant"],
-    ["hubGrease","Hub Grease"],
-    ["axleOil","Axle Oil"],
-    ["clutchOil","Clutch Oil"],
-  ];
-  const PART_MAPPING_STORAGE_KEY = "serviceDecisionAdminPartNumberDraft";
-  const [partMappingDraft, setPartMappingDraft] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(PART_MAPPING_STORAGE_KEY) || "{}");
-      return PART_MAPPING_CATEGORIES.reduce((acc,[key]) => ({...acc,[key]:String(saved?.[key] || "")}), {});
-    } catch {
-      return PART_MAPPING_CATEGORIES.reduce((acc,[key]) => ({...acc,[key]:""}), {});
-    }
-  });
-  const [partMappingSaved, setPartMappingSaved] = useState(false);
-
-  const updatePartMappingDraft = (key, value) => {
-    setPartMappingDraft(prev => ({...prev,[key]:value}));
-    setPartMappingSaved(false);
-  };
-
-  const loadPartDecisionMapping = async () => {
-    try {
-      const data = await api("part-decision-mapping", {}, localStorage.getItem(TOKEN_KEY));
-      if (data?.mapping && typeof data.mapping === "object") {
-        const hasDatabaseMapping = Object.values(data.mapping).some(
-          values => Array.isArray(values) && values.length > 0
-        );
-        if (hasDatabaseMapping) {
-          const normalized = PART_MAPPING_CATEGORIES.reduce((acc,[key]) => ({
-            ...acc,
-            [key]: Array.isArray(data.mapping[key]) ? data.mapping[key].join("\n") : ""
-          }), {});
-          setPartMappingDraft(normalized);
-          localStorage.setItem(PART_MAPPING_STORAGE_KEY, JSON.stringify(normalized));
-        }
-      }
-    } catch {}
-  };
-
-  const savePartMappingDraft = () => run(async () => {
-    const mapping = PART_MAPPING_CATEGORIES.reduce((acc,[key]) => {
-      const values = String(partMappingDraft?.[key] || "")
-        .split(/[\s,;]+/)
-        .map(v => v.trim())
-        .filter(Boolean)
-        .filter((v,i,a) => a.findIndex(x => x.toUpperCase() === v.toUpperCase()) === i);
-      return { ...acc, [key]: values };
-    }, {});
-    const data = await api("admin-save-part-decision-mapping", { mapping }, localStorage.getItem(TOKEN_KEY));
-    localStorage.setItem(PART_MAPPING_STORAGE_KEY, JSON.stringify(partMappingDraft));
-    setPartMappingSaved(true);
-    setMessage(data?.message || "Part Decision mapping saved to database.");
-  });
-
-  const clearPartMappingDraft = () => {
-    if (!window.confirm("Clear all Part Number Mapping entries from the database and this browser?")) return;
-    run(async () => {
-      const empty = PART_MAPPING_CATEGORIES.reduce((acc,[key]) => ({...acc,[key]:""}), {});
-      const mapping = PART_MAPPING_CATEGORIES.reduce((acc,[key]) => ({...acc,[key]:[]}), {});
-      await api("admin-save-part-decision-mapping", { mapping }, localStorage.getItem(TOKEN_KEY));
-      setPartMappingDraft(empty);
-      localStorage.removeItem(PART_MAPPING_STORAGE_KEY);
-      setPartMappingSaved(false);
-      setMessage("Part Decision mapping cleared.");
-    });
-  };
-
   if (loading && !user) return <div className="auth-loading">Loading Service Decision...</div>;
 
   if (!user) {
@@ -740,12 +645,6 @@ export default function AuthGate({ children }) {
           campaignUploadMessage={campaignUploadMessage}
           campaignUploadError={campaignUploadError}
           onUploadCampaignExcel={uploadCampaignExcel}
-          partMappingCategories={PART_MAPPING_CATEGORIES}
-          partMappingDraft={partMappingDraft}
-          onUpdatePartMappingDraft={updatePartMappingDraft}
-          onSavePartMappingDraft={savePartMappingDraft}
-          onClearPartMappingDraft={clearPartMappingDraft}
-          partMappingSaved={partMappingSaved}
         />
       ) : cloneElement(children, { user })}
     </div>
@@ -761,12 +660,9 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
   return <div className="auth-modal-backdrop"><div className="auth-modal" style={{maxWidth:820,width:"min(820px,calc(100vw - 32px))",maxHeight:"90vh",overflow:"auto",boxSizing:"border-box"}}><h2>Profile & Dashboard Settings</h2><p className="auth-hint">Ye settings sirf aapki user ID ke liye save hongi. Table width header divider ko mouse se drag karke set hogi.</p><label>Person Name</label><input value={form.personName} onChange={e=>setForm({...form,personName:e.target.value})}/><label>Dealer / Workshop Name</label><input value={form.dealerName} onChange={e=>setForm({...form,dealerName:e.target.value})}/><label>Mobile</label><input value={form.mobile} onChange={e=>setForm({...form,mobile:e.target.value})}/><label className="booking-field-label">Advance Booking Contact 1 {!form.booking1 && <span className="booking-field-dot" />}</label><input value={form.booking1} onChange={e=>setForm({...form,booking1:e.target.value})} placeholder="Optional mobile number"/><label className="booking-field-label">Advance Booking Contact 2 {!form.booking2 && <span className="booking-field-dot" />}</label><input value={form.booking2} onChange={e=>setForm({...form,booking2:e.target.value})} placeholder="Optional mobile number"/><label>WhatsApp Opening Line (Optional)</label><textarea value={form.whatsappOpeningLine} onChange={e=>setForm({...form,whatsappOpeningLine:e.target.value})} placeholder="Applies to the top of the WhatsApp due message. Leave blank if no extra line is required." rows={3} style={{minHeight:72,resize:"vertical"}}/><div className="auth-hint">This is your personal wording. It will be saved with your user ID and reused in future WhatsApp due summaries.</div><div style={{fontWeight:800}}>Single Vehicle Service History Table</div><div className="auth-hint">Checkbox = show/hide · Text box = custom heading · width by mouse drag.</div><div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:"6px 12px",margin:"8px 0 16px",minWidth:0}}>{singleCols.map(([k,l])=>editor("singleColumns",k,l))}</div><div style={{fontWeight:800}}>Bulk Vehicle Due / Service Summary Table</div><div className="auth-hint">Checkbox = show/hide · Text box = custom heading · width by mouse drag.</div><div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:"6px 12px",margin:"8px 0",minWidth:0}}>{bulkCols.map(([k,l])=>editor("bulkColumns",k,l))}<div style={{display:"grid",gridTemplateColumns:"28px 1fr",gap:7,alignItems:"center"}}><span></span><input value={(form.bulkColumnLabels||{}).serial||"S.No. / Due"} onChange={e=>setLabel("bulkColumnLabels","serial",e.target.value)} placeholder="S.No. / Due"/></div></div><div className="auth-modal-actions"><button className="auth-secondary" onClick={onClose}>Cancel</button><button className="auth-primary" onClick={onSave} disabled={loading}>Save Profile & Settings</button></div></div></div>;
 }
 
-function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel, partMappingCategories, partMappingDraft, onUpdatePartMappingDraft, onSavePartMappingDraft, onClearPartMappingDraft, partMappingSaved }) {
+function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel }) {
   const analyticsDetailRef = useRef(null);
   const [view, setView] = useState("overview");
-  const [adminSection, setAdminSection] = useState("home");
-  const [standardPartNameDraft, setStandardPartNameDraft] = useState(() => localStorage.getItem("serviceDecisionAdminStandardPartNames") || "");
-  const [historyHighlightDraft, setHistoryHighlightDraft] = useState(() => localStorage.getItem("serviceDecisionAdminHistoryHighlights") || "");
 
   const selected = analyticsUserId
     ? analytics.summary.find(u => Number(u.id) === Number(analyticsUserId))
@@ -813,28 +709,6 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
   const maxVehicles = Math.max(1,...periods.map(p=>Number(p.vehicles||0)));
   const maxActivities = Math.max(1,...periods.map(p=>Number(p.activities||0)));
 
-  const normalizePartNumbers = (value) =>
-    String(value || "")
-      .split(/[\s,;]+/)
-      .map(v => v.trim())
-      .filter(Boolean)
-      .filter((v,i,a) => a.findIndex(x => x.toUpperCase() === v.toUpperCase()) === i);
-
-  const saveAdminWorkspaceText = (key, value) => {
-    try { localStorage.setItem(key, value); } catch {}
-  };
-
-  const adminModules = [
-    ["decision","Part Decision List","Part Number master for future Service Decision"],
-    ["standard","Standard Part Names","Customer-facing standardized names"],
-    ["history","Schedule History Highlighting","Part / labour highlight master"],
-    ["cache","Job Card Cache","Cache interval and rebuild controls"],
-    ["database","Database Controls","Emergency database controls"],
-    ["campaign","Campaign Master","Campaign Excel master"],
-    ["analytics","Analytics","Usage and activity analytics"],
-    ["users","User Management","User account administration"],
-  ];
-
   const metricCard = (label,value,sub="") => (
     <div className="admin-kpi">
       <div className="admin-kpi-label">{label}</div>
@@ -854,50 +728,16 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
           <button className="auth-secondary admin-back" onClick={onBack}>Back to Dashboard</button>
         </div>
 
-        {adminSection === "home" ? (
-          <>
-            <div className="admin-section-title">Admin Control Center</div>
-            <div className="admin-module-grid">
-              {adminModules.map(([key,title,sub]) => (
-                <button
-                  type="button"
-                  className="admin-module-card"
-                  key={key}
-                  onClick={() => {
-                    setAdminSection(key);
-                    if (key === "analytics") setView("overview");
-                    if (key === "users") setView("management");
-                  }}
-                >
-                  <span className="admin-module-icon">
-                    {key === "decision" ? "PN" : key === "standard" ? "SN" : key === "history" ? "HS" : key === "cache" ? "CC" : key === "database" ? "DB" : key === "campaign" ? "CM" : key === "analytics" ? "AN" : "UM"}
-                  </span>
-                  <span className="admin-module-title">{title}</span>
-                  <span className="admin-module-sub">{sub}</span>
-                  <span className="admin-module-arrow">Open →</span>
-                </button>
-              ))}
-            </div>
-            <div className="admin-kpi-grid">
-              {metricCard("Total Users", totals.users)}
-              {metricCard("Active Users", totals.active)}
-              {metricCard("Total Logins", totals.logins)}
-              {metricCard("Vehicles Analysed", totals.vehicles)}
-              {metricCard("Excel Files", totals.files)}
-              {metricCard("Activities", totals.activities)}
-            </div>
-          </>
-        ) : (
-          <div className="admin-subpage-head">
-            <button type="button" className="admin-small-btn" onClick={() => setAdminSection("home")}>← Admin Controls</button>
-            <div>
-              <div className="admin-subpage-title">{adminModules.find(x => x[0] === adminSection)?.[1] || "Admin Control"}</div>
-              <div className="admin-subpage-sub">{adminModules.find(x => x[0] === adminSection)?.[2] || ""}</div>
-            </div>
-          </div>
-        )}
+        <div className="admin-kpi-grid">
+          {metricCard("Total Users", totals.users)}
+          {metricCard("Active Users", totals.active)}
+          {metricCard("Total Logins", totals.logins)}
+          {metricCard("Vehicles Analysed", totals.vehicles)}
+          {metricCard("Excel Files", totals.files)}
+          {metricCard("Activities", totals.activities)}
+        </div>
 
-        <div hidden={adminSection !== "cache"} className="admin-panel-card" style={{marginTop:16,padding:"18px 20px"}}>
+        <div className="admin-panel-card" style={{marginTop:16,padding:"18px 20px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
             <div>
               <div className="admin-panel-card-title">Job Card Browser Cache</div>
@@ -925,7 +765,7 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
           </div>
         </div>
 
-        <div hidden={adminSection !== "database"} className="admin-panel-card" style={{marginTop:16,padding:"18px 20px",border:"2px solid #dc2626",background:"#fff7f7"}}>
+        <div className="admin-panel-card" style={{marginTop:16,padding:"18px 20px",border:"2px solid #dc2626",background:"#fff7f7"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
             <div>
               <div className="admin-panel-card-title" style={{color:"#b91c1c"}}>Emergency DB Upload Cutoff</div>
@@ -933,25 +773,19 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
             </div>
             <label style={{display:"flex",alignItems:"center",gap:8,fontWeight:800,color:emergencyDbUploadCutoff ? "#b91c1c" : "#166534"}}>
               <span>{emergencyDbUploadCutoff ? "CUTOFF ACTIVE" : "DB UPLOAD ACTIVE"}</span>
-              <input
-                type="checkbox"
-                checked={emergencyDbUploadCutoff}
-                onChange={e => {
-                  const enabled = e.target.checked;
-                  if (enabled && !window.confirm("Enable Emergency DB Upload Cutoff? New Excel history data will NOT be saved to Neon until you turn this OFF.")) return;
-                  onEmergencyDbUploadCutoff(enabled);
-                }}
-              />
+              <input type="checkbox" checked={emergencyDbUploadCutoff} onChange={e => {
+                const enabled = e.target.checked;
+                if (enabled && !window.confirm("Enable Emergency DB Upload Cutoff? New Excel history data will NOT be saved to Neon until you turn this OFF.")) return;
+                onEmergencyDbUploadCutoff(enabled);
+              }} />
             </label>
           </div>
           <div style={{marginTop:12,padding:"10px 12px",borderRadius:8,background:emergencyDbUploadCutoff ? "#fee2e2" : "#ecfdf5",color:emergencyDbUploadCutoff ? "#991b1b" : "#166534",fontWeight:700}}>
-            {emergencyDbUploadCutoff
-              ? "Emergency mode ON: Excel upload + Service Decision remain available, but history persistence is paused."
-              : "Normal mode: new Excel Job Cards are saved using the hybrid browser-cache + Neon duplicate-check system."}
+            {emergencyDbUploadCutoff ? "Emergency mode ON: Excel upload + Service Decision remain available, but history persistence is paused." : "Normal mode: new Excel Job Cards are saved using the hybrid browser-cache + Neon duplicate-check system."}
           </div>
         </div>
 
-        <div hidden={adminSection !== "campaign"} className="admin-panel-card" style={{marginTop:16,padding:"18px 20px"}}>
+        <div className="admin-panel-card" style={{marginTop:16,padding:"18px 20px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
             <div>
               <div className="admin-panel-card-title">Vehicle Campaign Master</div>
@@ -1022,90 +856,6 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
           </div>
         </div>
 
-        <section hidden={adminSection !== "decision"} className="admin-panel-card admin-part-mapping-card">
-          <div className="admin-panel-section-head">
-            <div>
-              <div className="admin-panel-card-title">Service Decision · Part Number Mapping</div>
-              <div className="admin-panel-card-sub">
-                Live Service Decision Part Number Master. Paste Part Numbers here in bulk; one per line or directly from an Excel column. These Part Numbers are used by the Service Decision engine.
-              </div>
-            </div>
-            <div className="admin-part-mapping-actions">
-              <button type="button" className="admin-small-btn primary" onClick={onSavePartMappingDraft}>Save Mapping</button>
-              <button type="button" className="admin-small-btn" onClick={onClearPartMappingDraft}>Clear All</button>
-            </div>
-          </div>
-
-          <div className="admin-part-mapping-note">
-            <strong>How to use:</strong> Copy 1 or 100+ Part Numbers from Excel and paste them into the required aggregate box. The same Part Number can intentionally be entered in multiple boxes, for example <b>Fuel Filter Kit</b> and <b>Engine Oil Filter</b>.
-            {partMappingSaved && <span className="admin-part-mapping-saved">Saved to database.</span>}
-          </div>
-
-          <div className="admin-part-mapping-grid">
-            {partMappingCategories.map(([key,label]) => {
-              const raw = partMappingDraft?.[key] || "";
-              const count = normalizePartNumbers(raw).length;
-              return (
-                <div className="admin-part-mapping-item" key={key}>
-                  <div className="admin-part-mapping-item-head">
-                    <span>{label}</span>
-                    <small>{count.toLocaleString("en-IN")} Part No.</small>
-                  </div>
-                  <textarea
-                    value={raw}
-                    onChange={e => onUpdatePartMappingDraft(key,e.target.value)}
-                    placeholder={"Paste Part Numbers here…\nExample:\nP1234567\nP1234568\nP1234569"}
-                    rows={5}
-                    spellCheck={false}
-                  />
-                  <div className="admin-part-mapping-help">Excel column paste supported · duplicate Part Numbers in this box are ignored in the count.</div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
-        {adminSection === "standard" && (
-          <section className="admin-panel-card admin-control-editor">
-            <div className="admin-panel-card-title">Standard Part Name Master</div>
-            <div className="admin-panel-card-sub">
-              Part No → Standard Part Name. One mapping per line, or paste directly from Excel using two columns: Part No | Standard Part Name. This master will be used for display-name mapping; Service Decision calculation is not changed yet.
-            </div>
-            <textarea
-              className="admin-control-large-textarea"
-              value={standardPartNameDraft}
-              onChange={e => setStandardPartNameDraft(e.target.value)}
-              placeholder={"AL12345678\tEngine Oil\nAL87654321\tEngine Oil Filter\nAL11223344\tFuel Filter Kit\n..."}
-              spellCheck={false}
-            />
-            <div className="admin-control-actions">
-              <button type="button" className="admin-small-btn primary" onClick={() => saveAdminWorkspaceText("serviceDecisionAdminStandardPartNames", standardPartNameDraft)}>Save Draft</button>
-              <span>Excel se Part No + Standard Part Name ke two columns ek saath paste kar sakte ho. Saved locally for this Admin browser.</span>
-            </div>
-          </section>
-        )}
-        {adminSection === "history" && (
-          <section className="admin-panel-card admin-control-editor">
-            <div className="admin-panel-card-title">Schedule Service History Highlight Master</div>
-            <div className="admin-panel-card-sub">
-              Yahan sirf Part No ya Labour Code paste karein — ek code per line. Neeche Schedule Service History Summary mein isi code ke basis par matching history highlight hogi.
-            </div>
-            <textarea
-              className="admin-control-large-textarea"
-              value={historyHighlightDraft}
-              onChange={e => setHistoryHighlightDraft(e.target.value)}
-              placeholder={"B4847805\nF3903190\nLAB001234\nLAB005678\n..."}
-              spellCheck={false}
-            />
-            <div className="admin-control-actions">
-              <button type="button" className="admin-small-btn primary" onClick={() => saveAdminWorkspaceText("serviceDecisionAdminHistoryHighlights", historyHighlightDraft)}>Save Draft</button>
-              <span>Highlight master only. Matching will be based on Part No / Labour Code; Service Decision calculation remains unchanged for now.</span>
-            </div>
-          </section>
-        )}
-
-        {(adminSection === "analytics" || adminSection === "users") && (
-          <div className="admin-analytics-section">
         <div className="admin-analytics-toolbar professional">
           <div className="admin-dashboard-scope-tabs">
             <button className={analyticsIncludeAdmins ? "active" : ""} onClick={() => { onSetAnalyticsIncludeAdmins(true); onAnalytics(null, analyticsRange); }}>All Statistics (Including Admin)</button>
@@ -1334,9 +1084,6 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
               {metricCard("Bulk", selected.bulkAnalyses||0)}
             </div>
             <button className="auth-secondary" onClick={()=>onAnalytics(null,analyticsRange)}>Clear User Filter</button>
-          </div>
-        )}
-
           </div>
         )}
 

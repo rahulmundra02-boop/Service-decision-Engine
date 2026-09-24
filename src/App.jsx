@@ -6008,7 +6008,7 @@ clone.style.transformOrigin = "top left";
 {visibleSingleVisits.length ? visibleSingleVisits.map((visit,i)=>{const visitDate=getVisitDate(visit),jobCard=getVisitJobCard(visit),visitReading=getVisitReading(visit,analysis.vehicle,decisionBasis),allParts=getVisitParts(visit,analysis.vehicle,analysis.decision),parts=historyViewMode === "full" ? allParts : allParts.filter(part => part.eligible);return <tr key={i}>
 {isSingleColumnVisible("date")&&<td style={tableColumnStyle("single","date")}>{formatDateShort(visitDate)}</td>}
 {isSingleColumnVisible("jobCard")&&<td style={tableColumnStyle("single","jobCard")}>{jobCard}</td>}
-{isSingleColumnVisible("reading")&&<td style={tableColumnStyle("single","reading")}>{visitReading?`${formatNumber(visitReading)} ${getTargetUnit(analysis.vehicle)}`:"-"}</td>}
+{isSingleColumnVisible("reading")&&<td style={tableColumnStyle("single","reading")}>{visitReading?`${formatNumber(visitReading)} ${decisionBasis === "HRS" ? "HRS" : "KM"}`:"-"}</td>}
 {isSingleColumnVisible("plant")&&<td style={tableColumnStyle("single","plant")}>{[...new Set(visit.map(r=>String(r?.plantName||r?.salesOrgName||"").trim()).filter(Boolean))].join(", ")||"-"}</td>}
 {isSingleColumnVisible("parts")&&<td style={tableColumnStyle("single","parts")}>{parts.length?parts.map((part,index)=><span key={index} className={historyViewMode === "full" && part.eligible ? "history-part eligible" : "history-part"} title={historyViewMode === "full" && part.eligible ? "Eligible service-calculation record" : "History record"}>{part.text}</span>):"-"}</td>}
 </tr>}) : <tr><td colSpan={Math.max(1,singleTableColumns.length)} className="small-note">No service history loaded.</td></tr>}

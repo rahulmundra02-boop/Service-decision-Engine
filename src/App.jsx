@@ -3747,6 +3747,21 @@ function parseWarrantySummaryRows(dataset){
   }).filter(Boolean);
 }
 
+function cleanWarrantyOemClaimNo(value){
+  const text=warrantyText(value);
+  if(!text) return "";
+  const digits=text.replace(/[^0-9]/g,"");
+  if(!digits) return text;
+  const trimmed=digits.replace(/^0+/,"");
+  return trimmed||"0";
+}
+
+function cleanWarrantyClaimType(value){
+  const text=warrantyText(value);
+  if(!text) return "WARRANTY BSVI";
+  return text.replace(/^\s*\d+\s+/,"").trim();
+}
+
 function buildWarrantyTags(claimRows,summaryRows){
   const summaryByJobCard=new Map();
   summaryRows.forEach(row=>{
@@ -3754,11 +3769,12 @@ function buildWarrantyTags(claimRows,summaryRows){
     if(!key) return;
     if(!summaryByJobCard.has(key)) summaryByJobCard.set(key,row);
   });
-
   const seen=new Set();
   return claimRows.map((row,index)=>{
     const summary=summaryByJobCard.get(normalizeWarrantyJobCard(row.jobCard))||{};
-    const jobReading=formatWarrantyReading(summary);
+    const primaryReading=summary.reading
+      ? formatNumber(summary.reading)+" "+(summary.readingUnit||"")
+      : "";
     const key=[row.claimNo,row.claimDate,row.reg,row.chassis,row.engine,row.partNo,row.qty,row.partDesc,row.jobCard].map(value=>warrantyText(value).toUpperCase()).join("|");
     if(seen.has(key)) return null;
     seen.add(key);
@@ -3768,9 +3784,10 @@ function buildWarrantyTags(claimRows,summaryRows){
       workshopCode:summary.workshopCode||"",
       customerName:row.customerName,
       reg:row.reg,
-      claimNo:formatWarrantyClaimNumber(row.claimNo),
+      claimNo:row.claimNo,
       claimDate:row.claimDate,
-      activeClaimNo:formatWarrantyClaimNumber(row.activeClaimNo),
+      activeClaimNo:row.activeClaimNo,
+      oemClaimNo:cleanWarrantyOemClaimNo(row.claimNo),
       chassis:row.chassis,
       engine:row.engine,
       partNo:row.partNo,
@@ -3778,11 +3795,12 @@ function buildWarrantyTags(claimRows,summaryRows){
       partDesc:row.partDesc,
       jobCard:row.jobCard,
       jobCardDate:row.jobCardDate,
-      reading:jobReading,
-      claimType:row.claimType
+      reading:primaryReading,
+      claimType:cleanWarrantyClaimType(row.claimType)
     };
   }).filter(Boolean);
 }
+
 
 function WarrantyBarcode({value}){
   const ref=useRef(null);
@@ -3800,12 +3818,12 @@ function WarrantyBarcode({value}){
 function WarrantyTag({tag}){
   return <div className="warranty-tag">
     <div className="warranty-tag-row"><span>Dlr.Name &amp; Code</span><strong>{tag.workshopCode?tag.workshopCode+" - ":""}{tag.workshopName||"-"}</strong></div>
-    <div className="warranty-tag-row"><span>Claim/ SAP No Dt</span><strong>{tag.activeClaimNo||"-"}{tag.claimDate?" & "+tag.claimDate:""}{tag.claimNo?" / "+tag.claimNo:""}</strong></div>
-    <div className="warranty-tag-row warranty-tag-barcode-row"><span>Sap Clm Bar Code</span><WarrantyBarcode value={tag.claimNo} /></div>
+    <div className="warranty-tag-row"><span>Claim/ SAP No Dt</span><strong>{tag.activeClaimNo||"-"}{tag.claimDate?" & "+tag.claimDate:""}{tag.oemClaimNo?" / "+tag.oemClaimNo:""}</strong></div>
+    <div className="warranty-tag-row warranty-tag-barcode-row"><span>Sap Clm Bar Code</span><WarrantyBarcode value={tag.oemClaimNo} /></div>
     <div className="warranty-tag-row"><span>Chassis/ Engine&quot; No</span><strong>{tag.chassis||"-"} / {tag.engine||"-"}</strong></div>
-    <div className="warranty-tag-row warranty-tag-part-row"><span>Fail.Part No | Qty</span><strong><b>{tag.partNo||"-"}</b><i>{tag.qty||""}</i></strong></div>
+    <div className="warranty-tag-row warranty-tag-part-row"><span>Fail.Part No | Qty</span><strong>{tag.partNo||"-"}</strong><strong>{tag.qty||""}</strong></div>
     <div className="warranty-tag-row"><span>Part Descp</span><strong>{tag.partDesc||"-"}</strong></div>
-    <div className="warranty-tag-row"><span>Job Card /DT /KM/Hrs</span><strong>{tag.jobCard||"-"}{tag.jobCardDate?" & "+tag.jobCardDate:""} / {tag.reading||"-"}</strong></div>
+    <div className="warranty-tag-row"><span>Job Card /DT /KM/Hrs</span><strong>{tag.jobCard||"-"}{tag.jobCardDate?" & "+tag.jobCardDate:""}{tag.reading?" / "+tag.reading:""}</strong></div>
     <div className="warranty-tag-row"><span>Claim Type</span><strong>{tag.claimType||"WARRANTY BSVI"}</strong></div>
   </div>;
 }
@@ -6200,155 +6218,23 @@ clone.style.transformOrigin = "top left";
 
         @page { size: A4 portrait; margin: 8mm; }
 
-        /* Warranty tags: exact 2-column x 5-row A4 sheet structure */
-        .warranty-tag-print-root {
-          width: 100%;
-          background: #fff;
-          color: #111 !important;
-          font-family: Arial, Helvetica, sans-serif;
-        }
-        .warranty-tag-page {
-          width: 194mm;
-          height: 281mm;
-          margin: 0 auto;
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          grid-template-rows: repeat(5, minmax(0, 1fr));
-          column-gap: 4mm;
-          row-gap: 3mm;
-          background: #fff;
-          color: #111 !important;
-          page-break-after: always;
-          break-after: page;
-        }
-        .warranty-tag-page:last-child {
-          page-break-after: auto;
-          break-after: auto;
-        }
-        .warranty-tag {
-          min-width: 0;
-          min-height: 0;
-          border: 1px solid #222;
-          background: #fff;
-          color: #111 !important;
-          display: flex;
-          flex-direction: column;
-          overflow: hidden;
-          font-size: 10.5px;
-          line-height: 1.15;
-        }
-        .warranty-tag-row {
-          min-height: 0;
-          flex: 1 1 auto;
-          display: grid;
-          grid-template-columns: 39% 61%;
-          align-items: center;
-          border-bottom: 1px solid #222;
-          color: #111 !important;
-        }
-        .warranty-tag-row:last-child { border-bottom: 0; }
-        .warranty-tag-part-row > strong {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          padding: 0;
-        }
-        .warranty-tag-part-row > strong > b,
-        .warranty-tag-part-row > strong > i {
-          height: 100%;
-          min-width: 0;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 3px 5px;
-          font-style: normal;
-        }
-        .warranty-tag-part-row > strong > i {
-          border-left: 1px solid #222;
-        }
-        .warranty-tag-row > span {
-          height: 100%;
-          display: flex;
-          align-items: center;
-          padding: 3px 5px;
-          border-right: 1px solid #222;
-          font-weight: 600;
-          color: #222 !important;
-          white-space: nowrap;
-        }
-        .warranty-tag-row > strong {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          min-width: 0;
-          height: 100%;
-          padding: 3px 5px;
-          text-align: center;
-          font-weight: 700;
-          color: #111 !important;
-          overflow-wrap: anywhere;
-          word-break: break-word;
-        }
-        .warranty-tag-barcode-row { flex: 1.15 1 auto; }
-        .warranty-tag-barcode-row > span { justify-content: center; }
-        .warranty-tag-barcode {
-          width: 70%;
-          height: 27px;
-          max-width: 145px;
-          display: block;
-          margin: 0 auto;
-        }
-        .warranty-tag-workspace { color: #1f1f1f !important; }
-        .warranty-tag-message { color: #1f1f1f !important; }
-
-        @media screen {
-          .warranty-tag-print-root {
-            margin-top: 18px;
-            padding: 12px;
-            overflow-x: auto;
-          }
-          .warranty-tag-page { box-shadow: 0 1px 8px rgba(0,0,0,.15); }
-        }
-
-        @media print {
-          body, .excel-app, .excel-window { background:#fff !important; }
-          .excel-titlebar, .excel-ribbon, .no-print { display:none !important; }
-          .excel-window { width:100%; box-shadow:none; }
-          .excel-sheet { padding:0; }
-          .history-wrap { max-height:none; overflow:visible; }
-          .history-table th { position:static; }
-          .warranty-tag-workspace { display:none !important; }
-          .warranty-tag-print-root {
-            display:block !important;
-            width:194mm !important;
-            margin:0 auto !important;
-            padding:0 !important;
-            background:#fff !important;
-            color:#111 !important;
-          }
-          .warranty-tag-page {
-            width:194mm !important;
-            height:281mm !important;
-            margin:0 auto !important;
-            column-gap:4mm !important;
-            row-gap:3mm !important;
-            box-shadow:none !important;
-            page-break-after:always !important;
-            break-after:page !important;
-          }
-          .warranty-tag-page:last-child {
-            page-break-after:auto !important;
-            break-after:auto !important;
-          }
-          .warranty-tag,
-          .warranty-tag-row,
-          .warranty-tag-row > span,
-          .warranty-tag-row > strong {
-            color:#111 !important;
-            -webkit-print-color-adjust:exact !important;
-            print-color-adjust:exact !important;
-          }
-        }
-
+        /* Warranty tags: separated cuttable tags on A4 */
+        .warranty-tag-print-root{width:100%;background:#fff;color:#111!important;font-family:Arial,Helvetica,sans-serif}
+        .warranty-tag-page{width:194mm;height:281mm;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(5,1fr);column-gap:4mm;row-gap:4mm;background:#fff;color:#111!important;page-break-after:always;break-after:page}
+        .warranty-tag-page:last-child{page-break-after:auto;break-after:auto}
+        .warranty-tag{min-width:0;min-height:0;border:1px solid #111;background:#fff;color:#111!important;display:flex;flex-direction:column;overflow:hidden;font-size:10.5px;line-height:1.15}
+        .warranty-tag-row{min-height:0;flex:1 1 auto;display:grid;grid-template-columns:39% 61%;align-items:center;border-bottom:1px solid #111;color:#111!important}
+        .warranty-tag-row:last-child{border-bottom:0}
+        .warranty-tag-row>span{height:100%;display:flex;align-items:center;padding:3px 5px;border-right:1px solid #111;font-weight:500;color:#111!important;white-space:nowrap}
+        .warranty-tag-row>strong{display:flex;align-items:center;justify-content:center;min-width:0;height:100%;padding:3px 5px;text-align:center;font-weight:500;color:#111!important;overflow-wrap:anywhere;word-break:break-word}
+        .warranty-tag-part-row{grid-template-columns:39% 43% 18%}
+        .warranty-tag-part-row>strong:first-of-type{border-right:1px solid #111}
+        .warranty-tag-barcode-row{flex:1.15 1 auto}
+        .warranty-tag-barcode-row>span{justify-content:flex-start}
+        .warranty-tag-barcode{width:70%;height:27px;max-width:145px;display:block;margin:0 auto}
+        .warranty-tag-workspace{color:#1f1f1f!important}.warranty-tag-message{color:#1f1f1f!important}
+        @media screen{.warranty-tag-print-root{margin-top:18px;padding:12px;overflow-x:auto}.warranty-tag-page{box-shadow:0 1px 8px rgba(0,0,0,.15)}}
+        @media print{body,.excel-app,.excel-window{background:#fff!important}.excel-titlebar,.excel-ribbon,.no-print{display:none!important}.excel-window{width:100%;box-shadow:none}.excel-sheet{padding:0}.history-wrap{max-height:none;overflow:visible}.history-table th{position:static}.warranty-tag-workspace{display:none!important}.warranty-tag-print-root{display:block!important;width:194mm!important;margin:0 auto!important;padding:0!important;background:#fff!important;color:#111!important}.warranty-tag-page{width:194mm!important;height:281mm!important;margin:0 auto!important;column-gap:4mm!important;row-gap:4mm!important;box-shadow:none!important;page-break-after:always!important;break-after:page!important}.warranty-tag-page:last-child{page-break-after:auto!important;break-after:auto!important}.warranty-tag,.warranty-tag-row,.warranty-tag-row>span,.warranty-tag-row>strong{color:#111!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}
         .excel-upload-processing-overlay { position: fixed; inset: 0; z-index: 100000; background: rgba(255,255,255,.72); display: flex; align-items: center; justify-content: center; cursor: wait; }
         .excel-upload-processing-card { min-width: 280px; max-width: 90vw; padding: 24px 28px; border: 1px solid #c9c9c9; border-radius: 10px; background: #fff; box-shadow: 0 8px 30px rgba(0,0,0,.18); text-align: center; }
         .excel-upload-spinner { width: 42px; height: 42px; margin: 0 auto 14px; border: 4px solid #d9e2f3; border-top-color: #4472c4; border-radius: 50%; animation: excelUploadSpin .8s linear infinite; }

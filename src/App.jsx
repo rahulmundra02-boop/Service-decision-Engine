@@ -1820,6 +1820,7 @@ function getEffectiveDecisionBasis(vehicle, basis){
 function isH4Model(model){ return ["1015","1115","1215","1315","1415","1615","1815","1915"].some(x=>String(model||'').toUpperCase().includes(x)); }
 function isA4Model(model){ return /\d{4}N/.test(String(model||'').toUpperCase()); }
 function isH6Model(model){
+  if(is4825Model(model)) return true;
   const t=String(model||'').toUpperCase();
   for(let i=0;i<t.length-3;i++){
     const x=t.slice(i,i+4); if(/^\d{4}$/.test(x) && Number(x.slice(2))>=25 && t[i+4] !== 'N') return true;
@@ -2336,10 +2337,7 @@ const BULK_SERVICE_LABELS = [
 function getDueServiceNames(decision) {
   const aggregateNames=BULK_SERVICE_LABELS.filter(([, key]) => decision?.result?.[key]).map(([name]) => name);
   const names=[...aggregateNames];
-  // Free Service is shown to the customer only when at least one aggregate
-  // service is also due. If there is no aggregate service, do not show the
-  // free-service label by itself in Customer Output / Bulk Customer Output.
-  if(decision?.freeService && aggregateNames.length){
+  if(decision?.freeService){
     names.push(decision.freeService.replace(/^1st free service$/i,'1st Free Service').replace(/^2nd free service$/i,'2nd Free Service').replace(/^3rd free service$/i,'3rd Free Service'));
   }
   if(Array.isArray(decision?.additionalServices)) names.push(...decision.additionalServices);
@@ -5932,7 +5930,7 @@ clone.style.transformOrigin = "top left";
                           .map(([name]) => name);
                         const names = [
                           ...aggregateNames,
-                          ...(analysis.decision.freeService && aggregateNames.length
+                          ...(analysis.decision.freeService
                             ? [analysis.decision.freeService.replace(/^1st free service$/i,'1st Free Service').replace(/^2nd free service$/i,'2nd Free Service').replace(/^3rd free service$/i,'3rd Free Service')]
                             : []),
                           ...(analysis.decision.additionalServices || []).filter(name => !String(name).toLowerCase().includes('free service'))

@@ -3800,7 +3800,7 @@ function WarrantyBarcode({value}){
 function WarrantyTag({tag}){
   return <div className="warranty-tag">
     <div className="warranty-tag-row"><span>Dlr.Name &amp; Code</span><strong>{tag.workshopCode?tag.workshopCode+" - ":""}{tag.workshopName||"-"}</strong></div>
-    <div className="warranty-tag-row"><span>Claim/ SAP No Dt</span><strong>{tag.claimNo||"-"}{tag.claimDate?" & "+tag.claimDate:""}{tag.activeClaimNo?" / "+tag.activeClaimNo:""}</strong></div>
+    <div className="warranty-tag-row"><span>Claim/ SAP No Dt</span><strong>{tag.activeClaimNo||"-"}{tag.claimDate?" & "+tag.claimDate:""}{tag.claimNo?" / "+tag.claimNo:""}</strong></div>
     <div className="warranty-tag-row warranty-tag-barcode-row"><span>Sap Clm Bar Code</span><WarrantyBarcode value={tag.claimNo} /></div>
     <div className="warranty-tag-row"><span>Chassis/ Engine&quot; No</span><strong>{tag.chassis||"-"} / {tag.engine||"-"}</strong></div>
     <div className="warranty-tag-row warranty-tag-part-row"><span>Fail.Part No | Qty</span><strong><b>{tag.partNo||"-"}</b><i>{tag.qty||""}</i></strong></div>

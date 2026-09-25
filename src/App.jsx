@@ -2342,7 +2342,7 @@ const BULK_SERVICE_LABELS = [
 function getDueServiceNames(decision) {
   const aggregateNames=BULK_SERVICE_LABELS.filter(([, key]) => decision?.result?.[key]).map(([name]) => name);
   const names=[...aggregateNames];
-  if(decision?.freeService){
+  if(decision?.freeService && aggregateNames.length){
     names.push(decision.freeService.replace(/^1st free service$/i,'1st Free Service').replace(/^2nd free service$/i,'2nd Free Service').replace(/^3rd free service$/i,'3rd Free Service'));
   }
   if(Array.isArray(decision?.additionalServices)) names.push(...decision.additionalServices);
@@ -5935,7 +5935,7 @@ clone.style.transformOrigin = "top left";
                           .map(([name]) => name);
                         const names = [
                           ...aggregateNames,
-                          ...(analysis.decision.freeService
+                          ...(analysis.decision.freeService && aggregateNames.length
                             ? [analysis.decision.freeService.replace(/^1st free service$/i,'1st Free Service').replace(/^2nd free service$/i,'2nd Free Service').replace(/^3rd free service$/i,'3rd Free Service')]
                             : []),
                           ...(analysis.decision.additionalServices || []).filter(name => !String(name).toLowerCase().includes('free service'))

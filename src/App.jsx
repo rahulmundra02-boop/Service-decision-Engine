@@ -3566,7 +3566,13 @@ const WARRANTY_CLAIM_REQUIRED = ["jobCard","jobCardDate","reg","chassis","engine
 const WARRANTY_SUMMARY_REQUIRED = ["jobCard","reading","readingUnit","workshopName"];
 
 function normalizeWarrantyHeader(value){
-  return String(value ?? "").replace(/^\\uFEFF/,"").trim().toLowerCase().replace(/[\\r\\n]+/g," ").replace(/[^a-z0-9]+/g,"");
+  return String(value ?? "")
+    .replace(/^\uFEFF/,"")
+    .replace(/[\u00A0\u200B\u200C\u200D]/g," ")
+    .replace(/[\r\n]+/g," ")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g,"");
 }
 
 function warrantyHeaderIndex(headers,aliases){
@@ -3578,7 +3584,8 @@ function warrantyHeaderIndex(headers,aliases){
   }
   for(const alias of aliases){
     const wanted=normalizeWarrantyHeader(alias);
-    const index=normalized.findIndex(header=>header.startsWith(wanted)||wanted.startsWith(header));
+    if(!wanted) continue;
+    const index=normalized.findIndex(header=>header && (header.startsWith(wanted)||wanted.startsWith(header)));
     if(index>=0) return index;
   }
   return -1;
@@ -3586,11 +3593,12 @@ function warrantyHeaderIndex(headers,aliases){
 
 function findWarrantyHeaderRow(rows,aliasGroups){
   let best={index:-1,score:0};
-  rows.slice(0,15).forEach((row,rowIndex)=>{
-    const headers=Array.isArray(row)?row:[];
-    const score=Object.values(aliasGroups).reduce((total,aliases)=>total+(warrantyHeaderIndex(headers,aliases)>=0?1:0),0);
+  const scanLimit=Math.min(rows.length,50);
+  for(let rowIndex=0;rowIndex<scanLimit;rowIndex++){
+    const row=Array.isArray(rows[rowIndex])?rows[rowIndex]:[];
+    const score=Object.values(aliasGroups).reduce((total,aliases)=>total+(warrantyHeaderIndex(row,aliases)>=0?1:0),0);
     if(score>best.score) best={index:rowIndex,score};
-  });
+  }
   return best.index;
 }
 

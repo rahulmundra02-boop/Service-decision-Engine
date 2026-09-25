@@ -3834,9 +3834,13 @@ function WarrantyTagPanel({user,onBack}){
   const [claimDataset,setClaimDataset]=useState(null);
   const [summaryDataset,setSummaryDataset]=useState(null);
   const [tags,setTags]=useState([]);
+  const [removedDescriptions,setRemovedDescriptions]=useState([]);
+  const [repairFilter,setRepairFilter]=useState("ALL");
   const [busy,setBusy]=useState(false);
+  const [pdfBusy,setPdfBusy]=useState(false);
   const [error,setError]=useState("");
   const [message,setMessage]=useState("");
+  const printRootRef=useRef(null);
 
   const processClaimFile=async file=>{
     setBusy(true);setError("");setMessage("");
@@ -3845,7 +3849,7 @@ function WarrantyTagPanel({user,onBack}){
       const missing=warrantyMissingHeaders(dataset,WARRANTY_CLAIM_REQUIRED);
       if(!dataset.headers.length||!dataset.rows.length) throw new Error("Billed JC Claim Statement me recognizable header row / data nahi mila.");
       if(missing.length) throw new Error("Billed JC Claim Statement me mandatory header(s) missing: "+missing.join(", ")+".");
-      setClaimDataset(dataset);setTags([]);
+      setClaimDataset(dataset);setTags([]);setRemovedDescriptions([]);
       setMessage(dataset.rows.length.toLocaleString("en-IN")+" source rows detected from "+file.name+".");
     }catch(e){setClaimDataset(null);setError(e.message||"Unable to read Billed JC Claim Statement.");}
     finally{setBusy(false);}
@@ -3858,7 +3862,7 @@ function WarrantyTagPanel({user,onBack}){
       const missing=warrantyMissingHeaders(dataset,WARRANTY_SUMMARY_REQUIRED);
       if(!dataset.headers.length||!dataset.rows.length) throw new Error("Jobcard Summary me recognizable header row / data nahi mila.");
       if(missing.length) throw new Error("Jobcard Summary me mandatory header(s) missing: "+missing.join(", ")+".");
-      setSummaryDataset(dataset);setTags([]);
+      setSummaryDataset(dataset);setTags([]);setRemovedDescriptions([]);
       setMessage(dataset.rows.length.toLocaleString("en-IN")+" Job Card Summary rows detected from "+file.name+".");
     }catch(e){setSummaryDataset(null);setError(e.message||"Unable to read Jobcard Summary.");}
     finally{setBusy(false);}
@@ -3873,29 +3877,83 @@ function WarrantyTagPanel({user,onBack}){
     const nextTags=buildWarrantyTags(claimRows,summaryRows);
     if(!nextTags.length){setError("Tag ke liye valid claim rows nahi mile.");return;}
     setTags(nextTags);
-    setMessage(nextTags.length.toLocaleString("en-IN")+" warranty tags ready. "+Math.ceil(nextTags.length/10)+" A4 page(s) required.");
+    setRemovedDescriptions([]);
+    setRepairFilter("ALL");
+    setMessage(nextTags.length.toLocaleString("en-IN")+" warranty tags ready.");
+  };
+
+  const descriptionOptions=useMemo(()=>{
+    const map=new Map();
+    tags.forEach(tag=>{
+      const desc=warrantyText(tag.partDesc);
+      if(desc&&!map.has(desc)) map.set(desc,0);
+      if(desc) map.set(desc,(map.get(desc)||0)+1);
+    });
+    return Array.from(map.entries()).sort((a,b)=>a[0].localeCompare(b[0]));
+  },[tags]);
+
+  const visibleTags=useMemo(()=>{
+    return tags.filter(tag=>{
+      const desc=warrantyText(tag.partDesc);
+      if(removedDescriptions.includes(desc)) return false;
+      if(repairFilter==="AMC") return /\\bamc\\b/i.test(warrantyText(tag.claimType));
+      if(repairFilter==="NON_AMC") return !/\\bamc\\b/i.test(warrantyText(tag.claimType));
+      return true;
+    });
+  },[tags,removedDescriptions,repairFilter]);
+
+  const removeDescription=desc=>{
+    setRemovedDescriptions(prev=>prev.includes(desc)?prev:[...prev,desc]);
+  };
+  const restoreDescription=desc=>{
+    setRemovedDescriptions(prev=>prev.filter(x=>x!==desc));
+  };
+
+  const printTags=()=>{
+    if(!visibleTags.length) return;
+    window.print();
+  };
+
+  const downloadPdf=async()=>{
+    if(!visibleTags.length||!printRootRef.current) return;
+    setPdfBusy(true);setError("");setMessage("");
+    try{
+      const element=printRootRef.current;
+      const opt={
+        margin:0,
+        filename:"Warranty_Tags.pdf",
+        image:{type:"jpeg",quality:0.98},
+        html2canvas:{scale:2,useCORS:true,backgroundColor:"#ffffff"},
+        jsPDF:{unit:"mm",format:"a4",orientation:"portrait"},
+        pagebreak:{mode:["css","legacy"]}
+      };
+      await html2pdf().set(opt).from(element).save();
+      setMessage(visibleTags.length.toLocaleString("en-IN")+" tags PDF ready.");
+    }catch(e){
+      setError(e?.message||"PDF generate nahi ho saka.");
+    }finally{setPdfBusy(false);}
   };
 
   const clearAll=()=>{
-    setClaimFile(null);setSummaryFile(null);setClaimDataset(null);setSummaryDataset(null);setTags([]);setError("");setMessage("");
+    setClaimFile(null);setSummaryFile(null);setClaimDataset(null);setSummaryDataset(null);
+    setTags([]);setRemovedDescriptions([]);setRepairFilter("ALL");setError("");setMessage("");
   };
 
   return <>
     <div className="warranty-tag-workspace no-print">
       <div className="warranty-tag-header">
-        <div><div className="sheet-heading">WARRANTY TAG PRINTING</div><div className="sheet-subheading">Billed JC Claim Statement + Jobcard Summary → printable warranty tags</div></div>
+        <div><div className="sheet-heading">WARRANTY TAG PRINTING</div><div className="sheet-subheading">Billed JC Claim Statement + Jobcard Summary</div></div>
         <div className="warranty-tag-header-actions">
           <button className="excel-button" type="button" onClick={onBack}>← Home</button>
           <button className="excel-button" type="button" onClick={clearAll}>Clear</button>
-          <button className="excel-button green" type="button" disabled={!tags.length||busy} onClick={()=>window.print()}>Print A4</button>
         </div>
       </div>
 
       <div className="warranty-tag-info-grid">
-        <div className="warranty-tag-info-card"><span>Workshop / Dealer</span><strong>{summaryDataset?.mapping?.workshopName||"-"}</strong><small>Read from Jobcard Summary · Servicing Company</small></div>
-        <div className="warranty-tag-info-card"><span>Barcode Source</span><strong>OEM Claim No.</strong><small>Code128 barcode generated from OEM Claim Number</small></div>
-        <div className="warranty-tag-info-card"><span>A4 Layout</span><strong>10 tags / page</strong><small>2 columns × 5 rows, based on the supplied sample</small></div>
-        <div className="warranty-tag-info-card"><span>Output</span><strong>{tags.length?tags.length.toLocaleString("en-IN")+" tags":"Not generated"}</strong><small>{tags.length?Math.ceil(tags.length/10)+" A4 page(s)":"1 to 100+ pages supported"}</small></div>
+        <div className="warranty-tag-info-card"><span>Workshop / Dealer</span><strong>{summaryDataset?.mapping?.workshopName||"-"}</strong></div>
+        <div className="warranty-tag-info-card"><span>Barcode Source</span><strong>OEM Claim No.</strong></div>
+        <div className="warranty-tag-info-card"><span>A4 Layout</span><strong>10 tags / page</strong></div>
+        <div className="warranty-tag-info-card"><span>Selected Output</span><strong>{visibleTags.length?visibleTags.length.toLocaleString("en-IN")+" tags":"Not generated"}</strong></div>
       </div>
 
       <div className="warranty-tag-upload-grid">
@@ -3904,32 +3962,63 @@ function WarrantyTagPanel({user,onBack}){
           <div className="warranty-tag-upload-text">Mandatory: Job Card Number, Job Card Date, Registration Number, Chassis Number, Engine Number, Part / Labour code, Quantity, Part / Labour Desc, OEM Claim Number and Claim Creation Date.</div>
           <label className="warranty-tag-file-button"><input type="file" accept=".xlsx,.xls,.xlsm,.csv" disabled={busy} onChange={event=>{const file=event.target.files?.[0]||null;event.target.value="";setClaimFile(file);if(file) void processClaimFile(file);}} />{claimFile?"Replace Claim Statement":"Select Excel File"}</label>
           {claimFile&&<div className="warranty-tag-file-name">{claimFile.name}</div>}
-          {claimDataset&&<div className="warranty-tag-file-status">{claimDataset.rows.length.toLocaleString("en-IN")} source rows · {claimDataset.sheetName||"Sheet"}</div>}
         </div>
-
         <div className="warranty-tag-upload-card">
           <div className="warranty-tag-upload-title">2. Jobcard Summary</div>
-          <div className="warranty-tag-upload-text">Mandatory: Job Card No., KM Reading / HR Reading, km/hr and Servicing Company. Secondary Counter Reading is also read when available.</div>
+          <div className="warranty-tag-upload-text">Mandatory: Job Card No., KM Reading / HR Reading, km/hr and Servicing Company.</div>
           <label className="warranty-tag-file-button"><input type="file" accept=".xlsx,.xls,.xlsm,.csv" disabled={busy} onChange={event=>{const file=event.target.files?.[0]||null;event.target.value="";setSummaryFile(file);if(file) void processSummaryFile(file);}} />{summaryFile?"Replace Jobcard Summary":"Select Excel File"}</label>
           {summaryFile&&<div className="warranty-tag-file-name">{summaryFile.name}</div>}
-          {summaryDataset&&<div className="warranty-tag-file-status">{summaryDataset.rows.length.toLocaleString("en-IN")} source rows · {summaryDataset.sheetName||"Sheet"}</div>}
         </div>
       </div>
 
-      <div className="warranty-tag-action-row"><button className="excel-button green" type="button" disabled={busy||!claimDataset||!summaryDataset} onClick={generateTags}>{busy?"Reading Excel...":"Generate Warranty Tags"}</button>{busy&&<span className="warranty-tag-busy">Processing Excel files…</span>}</div>
+      <div className="warranty-tag-action-row">
+        <button className="excel-button green" type="button" disabled={busy||!claimDataset||!summaryDataset} onClick={generateTags}>{busy?"Reading Excel...":"Generate Warranty Tags"}</button>
+        {busy&&<span className="warranty-tag-busy">Processing Excel files…</span>}
+      </div>
 
       {(error||message)&&<div className={"warranty-tag-message "+(error?"error":"success")}>{error||message}</div>}
 
-      {!tags.length&&<div className="warranty-tag-empty"><div className="warranty-tag-empty-icon">🏷️</div><strong>No tags generated yet</strong><span>Upload both Excel files and then generate the A4 warranty tags.</span></div>}
+      {tags.length>0&&<>
+        <div className="warranty-tag-controls no-print">
+          <div className="warranty-tag-control-block">
+            <div className="warranty-tag-control-title">Repair Type</div>
+            <div className="warranty-tag-filter-buttons">
+              <button className={repairFilter==="AMC"?"active":""} type="button" onClick={()=>setRepairFilter("AMC")}>AMC Order</button>
+              <button className={repairFilter==="NON_AMC"?"active":""} type="button" onClick={()=>setRepairFilter("NON_AMC")}>NON AMC Order</button>
+              <button className={repairFilter==="ALL"?"active":""} type="button" onClick={()=>setRepairFilter("ALL")}>All Repair Types</button>
+            </div>
+          </div>
+          <div className="warranty-tag-control-block">
+            <div className="warranty-tag-control-title">Part Descriptions in Current Format</div>
+            <div className="warranty-tag-part-list">
+              {descriptionOptions.map(([desc,count])=>{
+                const removed=removedDescriptions.includes(desc);
+                return <div className={"warranty-tag-part-item "+(removed?"removed":"")} key={desc}>
+                  <span>{desc}</span><small>{count}</small>
+                  {removed
+                    ? <button type="button" onClick={()=>restoreDescription(desc)}>Add</button>
+                    : <button type="button" onClick={()=>removeDescription(desc)}>Remove</button>}
+                </div>;
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className="warranty-tag-print-controls no-print">
+          <strong>Tag Print Area</strong>
+          <span>{visibleTags.length.toLocaleString("en-IN")} tags selected · {Math.ceil(visibleTags.length/10)} A4 page(s)</span>
+          <button className="excel-button green" type="button" disabled={!visibleTags.length} onClick={printTags}>Print Tags</button>
+          <button className="excel-button" type="button" disabled={!visibleTags.length||pdfBusy} onClick={downloadPdf}>{pdfBusy?"Creating PDF...":"Download PDF"}</button>
+        </div>
+      </>}
     </div>
 
-    {tags.length>0&&<div className="warranty-tag-print-root">{Array.from({length:Math.ceil(tags.length/10)},(_,pageIndex)=>{
-      const pageTags=tags.slice(pageIndex*10,pageIndex*10+10);
+    {tags.length>0&&<div ref={printRootRef} className="warranty-tag-print-root">{Array.from({length:Math.ceil(visibleTags.length/10)},(_,pageIndex)=>{
+      const pageTags=visibleTags.slice(pageIndex*10,pageIndex*10+10);
       return <div className="warranty-tag-page" key={"warranty-page-"+pageIndex}>{pageTags.map(tag=><WarrantyTag key={tag.id} tag={tag}/>)}</div>;
     })}</div>}
   </>;
 }
-
 function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResults, savedEstimates, savedEstimatesLoading, onOpenSavedEstimate, theme = "blue", onThemeChange }) {
   const dueVehicles = (bulkResults || []).filter(item => Array.isArray(item?.services) && item.services.length > 0).length;
   const totalVehicles = (bulkResults || []).length;

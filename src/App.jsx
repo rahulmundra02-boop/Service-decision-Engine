@@ -3631,7 +3631,7 @@ function ServiceDecisionApp({ user }) {
   const [remark, setRemark] = useState("");
   const [campaigns, setCampaigns] = useState([]);
   const [campaignLoading, setCampaignLoading] = useState(false);
-  const [historyViewMode, setHistoryViewMode] = useState("full");
+  const [historyViewMode, setHistoryViewMode] = useState("schedule");
   const [screenshotBusy, setScreenshotBusy] = useState(false);
   const [screenshotStatus, setScreenshotStatus] = useState("");
 
@@ -4905,18 +4905,9 @@ function ServiceDecisionApp({ user }) {
       pdf.save(fileName);
     }
   }
-  const visibleSingleVisits = (() => {
-    if (!analysis?.visits) return [];
-    const cutoff = new Date();
-    cutoff.setHours(0, 0, 0, 0);
-    cutoff.setFullYear(cutoff.getFullYear() - 3);
-
-    return analysis.visits.filter((visit) => {
-      const visitDate = getVisitDate(visit);
-      if (!visitDate || visitDate < cutoff) return false;
-      return historyViewMode === "full" || isScheduledHistoryVisit(visit, analysis.vehicle, analysis.decision);
-    });
-  })();
+  const visibleSingleVisits = analysis?.visits?.filter((visit) =>
+    historyViewMode === "full" || isScheduledHistoryVisit(visit, analysis.vehicle, analysis.decision)
+  ) || [];
 
   const captureSingleScreenshot = async () => {
     if (screenshotBusy) return;
@@ -5191,17 +5182,17 @@ clone.style.transformOrigin = "top left";
         .excel-sheet { padding:10px; background:#fff; }
         .sheet-heading { background:#1f4e78; color:#fff; border:1px solid #17365d; font-size:18px; font-weight:700; padding:9px 12px; text-align:center; }
         .sheet-subheading { background:#d9eaf7; border:1px solid #9fbad0; border-top:0; padding:5px 10px; font-size:12px; color:#404040; }
-        .sheet-grid { display:grid; grid-template-columns: 135px minmax(130px,1fr) 115px minmax(130px,1fr); border-left:1px solid #b7b7b7; border-top:1px solid #b7b7b7; }
+        .sheet-grid { display:grid; grid-template-columns: 125px minmax(110px,1fr) 95px minmax(110px,1fr) 95px minmax(110px,1fr); border-left:1px solid #b7b7b7; border-top:1px solid #b7b7b7; }
         .compact-override-control { display:flex; align-items:center; gap:5px; }
         .compact-override-input { width:88px; min-width:88px; height:30px; padding:5px 7px; }
         .compact-recalculate-button { min-height:30px; height:30px; padding:4px 8px; font-size:11px; }
 
-        .vehicle-output-layout { display:grid; grid-template-columns:minmax(0, 1.55fr) minmax(320px, .95fr); gap:10px; align-items:stretch; }
+        .vehicle-output-layout { display:grid; grid-template-columns:minmax(0, 1fr) minmax(300px, 360px); gap:10px; align-items:stretch; }
         .vehicle-profile-panel, .customer-output-panel {
           min-width:0;
-          border:1px solid #b7b7b7;
-          background:#fff;
-          box-shadow:0 1px 3px rgba(0,0,0,.08);
+          border:1px solid #8aa8c4;
+          background:#1c2738;
+          box-shadow:0 1px 3px rgba(0,0,0,.22);
           overflow:hidden;
         }
         .vehicle-profile-panel .section-title, .customer-output-panel .section-title {
@@ -5222,11 +5213,8 @@ clone.style.transformOrigin = "top left";
           align-content:flex-start;
           align-items:flex-start;
           flex-wrap:wrap;
-          gap:6px;
           margin:0;
-          padding:10px;
           border:0;
-          background:#fff;
         }
         .cell {
           min-height:31px;
@@ -5548,13 +5536,13 @@ clone.style.transformOrigin = "top left";
   align-items:center;
   justify-content:center;
   text-align:center;
-  background:var(--theme, #4472c4);
+  background:#2f75b5;
   color:#fff;
-  border-color:var(--theme-dark, #1f4e78);
+  border-color:#255e91;
   margin-top:10px;
-  min-height:40px;
-  padding:7px 190px 7px 12px;
-  box-shadow:0 1px 2px rgba(0,0,0,.12);
+  min-height:44px;
+  padding:8px 190px 8px 12px;
+  box-shadow:0 1px 2px rgba(0,0,0,.18);
   letter-spacing:.1px;
 }
 
@@ -5733,42 +5721,41 @@ clone.style.transformOrigin = "top left";
           align-items: stretch;
         }
         .single-note-card {
-          border: 1px solid #b7b7b7;
-          background: #fff;
+          border: 1px solid #5c748d;
+          background: #253b53;
           min-width: 0;
-          box-shadow: 0 1px 3px rgba(0,0,0,.06);
         }
         .single-note-title {
-          background: var(--theme, #4472c4);
+          background: #117f79;
           color: #fff;
           font-weight: 800;
-          text-align: left;
-          padding: 7px 10px;
+          text-align: center;
+          padding: 8px 10px;
         }
         .single-note-value {
-          min-height: 54px;
-          padding: 10px 12px;
+          min-height: 64px;
+          padding: 12px;
           display: flex;
           align-items: center;
-          justify-content: flex-start;
-          text-align: left;
+          justify-content: center;
+          text-align: center;
           white-space: pre-wrap;
           overflow-wrap: anywhere;
-          color: #1f2937;
-          background: #fff;
+          color: #f8fafc;
+          background: #1f2937;
         }
         .single-customer-voice {
           display: block;
           width: 100%;
-          min-height: 54px;
+          min-height: 64px;
           resize: vertical;
           box-sizing: border-box;
           border: 0;
           outline: 0;
-          padding: 10px 12px;
+          padding: 12px;
           font: inherit;
           line-height: 1.35;
-          text-align: left;
+          text-align: center;
           white-space: pre-wrap;
           overflow-wrap: anywhere;
           overflow: hidden;
@@ -5801,7 +5788,6 @@ clone.style.transformOrigin = "top left";
           max-height: none !important;
           height: auto !important;
           overflow: visible !important;
-          border-color:#b7b7b7;
         }
         @media (max-width: 800px) {
           .single-note-grid {
@@ -5927,7 +5913,6 @@ clone.style.transformOrigin = "top left";
                       <div className="cell label">Customer Name</div><div className="cell value">{analysis?.vehicle?.customerName || ""}</div>
                       <div className="cell label">Reg No</div><div className="cell value">{analysis?.vehicle?.reg || ""}</div>
                       <div className="cell label">VIN No</div><div className="cell value">{analysis?.vehicle?.vin || ""}</div>
-                      <div className="cell label">Engine No</div><div className="cell value">{analysis?.vehicle?.engine || ""}</div>
                       <div className="cell label">Sale Date</div><div className="cell value">{analysis ? formatDate(analysis.vehicle.sale) : ""}</div>
                       <div className="cell label">Vehicle Age</div><div className="cell value">{analysis?.vehicle?.sale ? formatVehicleAge(analysis.vehicle.sale) : ""}</div>
                       <div className="cell label">Model</div><div className="cell value">{analysis?.vehicle?.model || ""}</div>
@@ -6017,7 +6002,7 @@ clone.style.transformOrigin = "top left";
                 {error && <div className="error-line no-print">{error}</div>}
 
                 <div className="section-title service-summary-title" style={{display:"flex",alignItems:"center",gap:10}}>
-                  <span>Service History — Last 3 Years</span>
+                  <span>Service Summary — Complete Vehicle History</span>
                   <div className="single-history-toggle no-print" role="group" aria-label="Service history view">
                     <label>
                       <input
@@ -6027,7 +6012,7 @@ clone.style.transformOrigin = "top left";
                         checked={historyViewMode === "schedule"}
                         onChange={() => setHistoryViewMode("schedule")}
                       />
-                      Schedule Service History
+                      Only Schedule Service History
                     </label>
                     <label>
                       <input
@@ -6037,7 +6022,7 @@ clone.style.transformOrigin = "top left";
                         checked={historyViewMode === "full"}
                         onChange={() => setHistoryViewMode("full")}
                       />
-                      Full History (Last 3 Years)
+                      Full History
                     </label>
                   </div>
                 </div>

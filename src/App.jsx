@@ -3839,9 +3839,6 @@ function WarrantyTagPanel({user,onBack}){
     setClaimFile(null);setSummaryFile(null);setClaimDataset(null);setSummaryDataset(null);setTags([]);setError("");setMessage("");
   };
 
-  const claimMappingKeys=["claimNo","claimDate","customerName","reg","chassis","engine","partNo","qty","partDesc","jobCard","jobCardDate","claimType"];
-  const summaryMappingKeys=["jobCard","reading","readingUnit","secondaryReading","secondaryUnit","workshopName","workshopCode"];
-
   return <>
     <div className="warranty-tag-workspace no-print">
       <div className="warranty-tag-header">
@@ -3881,15 +3878,6 @@ function WarrantyTagPanel({user,onBack}){
       <div className="warranty-tag-action-row"><button className="excel-button green" type="button" disabled={busy||!claimDataset||!summaryDataset} onClick={generateTags}>{busy?"Reading Excel...":"Generate Warranty Tags"}</button>{busy&&<span className="warranty-tag-busy">Processing Excel files…</span>}</div>
 
       {(error||message)&&<div className={"warranty-tag-message "+(error?"error":"success")}>{error||message}</div>}
-
-      {(claimDataset||summaryDataset)&&<div className="warranty-tag-mapping-card">
-        <div className="warranty-tag-section-title">Current Header Detection</div>
-        <div className="warranty-tag-mapping-note">Mandatory columns are validated before tag generation. Header names are matched from the actual Excel column names.</div>
-        <div className="warranty-tag-mapping-grid">
-          <div><strong>Billed JC Claim Statement</strong><div className="warranty-tag-mapping-list">{claimMappingKeys.map(key=><div key={key}><span>{key}</span><b>{claimDataset?.mapping?.[key]||"Not detected"}</b></div>)}</div></div>
-          <div><strong>Jobcard Summary</strong><div className="warranty-tag-mapping-list">{summaryMappingKeys.map(key=><div key={key}><span>{key}</span><b>{summaryDataset?.mapping?.[key]||"Not detected"}</b></div>)}</div></div>
-        </div>
-      </div>}
 
       {!tags.length&&<div className="warranty-tag-empty"><div className="warranty-tag-empty-icon">🏷️</div><strong>No tags generated yet</strong><span>Upload both Excel files and then generate the A4 warranty tags.</span></div>}
     </div>
@@ -6186,8 +6174,142 @@ clone.style.transformOrigin = "top left";
           }
         }
 
+
+        @page { size: A4 portrait; margin: 8mm; }
+
+        /* Warranty tag printing - matches supplied 2-column x 5-row A4 sample */
+        .warranty-tag-print-root {
+          width: 100%;
+          background: #fff;
+          color: #111 !important;
+          font-family: Arial, Helvetica, sans-serif;
+        }
+        .warranty-tag-page {
+          width: 194mm;
+          height: 281mm;
+          margin: 0 auto;
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          grid-template-rows: repeat(5, 1fr);
+          gap: 0;
+          background: #fff;
+          color: #111 !important;
+          page-break-after: always;
+          break-after: page;
+        }
+        .warranty-tag-page:last-child {
+          page-break-after: auto;
+          break-after: auto;
+        }
+        .warranty-tag {
+          min-width: 0;
+          min-height: 0;
+          border: 1px solid #222;
+          background: #fff;
+          color: #111 !important;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+          font-size: 10.5px;
+          line-height: 1.15;
+        }
+        .warranty-tag-row {
+          min-height: 0;
+          flex: 1 1 auto;
+          display: grid;
+          grid-template-columns: 39% 61%;
+          align-items: center;
+          border-bottom: 1px solid #222;
+          color: #111 !important;
+        }
+        .warranty-tag-row:last-child {
+          border-bottom: 0;
+        }
+        .warranty-tag-row > span {
+          height: 100%;
+          display: flex;
+          align-items: center;
+          padding: 3px 5px;
+          border-right: 1px solid #222;
+          font-weight: 600;
+          color: #222 !important;
+          white-space: nowrap;
+        }
+        .warranty-tag-row > strong {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 0;
+          height: 100%;
+          padding: 3px 5px;
+          text-align: center;
+          font-weight: 700;
+          color: #111 !important;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+        }
+        .warranty-tag-barcode-row {
+          flex: 1.15 1 auto;
+        }
+        .warranty-tag-barcode-row > span {
+          justify-content: center;
+        }
+        .warranty-tag-barcode {
+          width: 70%;
+          height: 27px;
+          max-width: 145px;
+          display: block;
+          margin: 0 auto;
+        }
+        .warranty-tag-workspace {
+          color: #1f1f1f !important;
+        }
+        .warranty-tag-message {
+          color: #1f1f1f !important;
+        }
+        @media screen {
+          .warranty-tag-print-root {
+            margin-top: 18px;
+            padding: 12px;
+            overflow-x: auto;
+          }
+          .warranty-tag-page {
+            box-shadow: 0 1px 8px rgba(0,0,0,.15);
+          }
+        }
+
         @media print {
-          body, .excel-app, .excel-window { background:#fff !important; }
+          .warranty-tag-workspace { display:none !important; }
+          .warranty-tag-print-root {
+            display:block !important;
+            width:194mm !important;
+            margin:0 auto !important;
+            padding:0 !important;
+            background:#fff !important;
+            color:#111 !important;
+          }
+          .warranty-tag-page {
+            width:194mm !important;
+            height:281mm !important;
+            margin:0 auto !important;
+            box-shadow:none !important;
+            page-break-after:always !important;
+            break-after:page !important;
+          }
+          .warranty-tag-page:last-child {
+            page-break-after:auto !important;
+            break-after:auto !important;
+          }
+          .warranty-tag,
+          .warranty-tag-row,
+          .warranty-tag-row > span,
+          .warranty-tag-row > strong {
+            color:#111 !important;
+            -webkit-print-color-adjust:exact !important;
+            print-color-adjust:exact !important;
+          }
+        }
+
           .excel-titlebar, .excel-ribbon, .no-print { display:none !important; }
           .excel-window { width:100%; box-shadow:none; }
           .excel-sheet { padding:0; }

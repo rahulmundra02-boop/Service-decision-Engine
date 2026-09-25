@@ -194,7 +194,9 @@ const PART_STANDARDIZATION = {
   'EN699991': 'Engine Oil',
   'EN699992': 'Engine Oil',
   'EN6C0002': 'Engine Oil',
+  'E9999996': 'Engine Oil',
   'X8G00200': 'Spark Plug',
+  'P7B00013': 'CNG Filter',
   'EN6A9991': 'Engine Oil',
   'EN6A9992': 'Engine Oil',
   'F7A01500': 'Engine Oil Filter',
@@ -1677,6 +1679,7 @@ function isCalculationEligibleLine(record, visit, vehicle, decision) {
   }
 
   if (text.includes("SPARK PLUG")) return qty >= 1;
+  if (text.includes("CNG FILTER")) return qty >= 1;
 
   if (text.includes("ENGINE OIL") && !text.includes("FILTER")) {
     return qty >= 12 && sameJob.some(r => String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase().includes("ENGINE OIL FILTER"));
@@ -1791,7 +1794,8 @@ const TIP_RULES = {
 };
 const SERVICE_SCHEDULE_ROWS = [
   ['Engine Oil', 'Special GB2822G/50 H CO: 20,000 KM; otherwise existing model rule', 'Special: 6 months (+/- 1 month); otherwise existing rule', '1,000 or 1,500 Hrs by tipper model; 60 Hrs early buffer', '18 months'],
-  ['Spark Plug', 'GB2822G/50 H CO: 20,000 KM only', 'No time limit', 'Not applicable', 'Not applicable'],
+  ['Spark Plug', 'CNG models: 20,000 KM', 'No time limit', 'Not applicable', 'Not applicable'],
+  ['CNG Filter', 'CNG models: 40,000 KM', 'CNG models: 6 months', 'Not applicable', 'Not applicable'],
   ['Body Building Check Up — GB2822G/50 H CO', '1-5,000 KM', '3 months (+/- 1 month)', 'Not applicable', 'Not applicable'],
   ['Coolant', '320,000 KM', '36 months', '5,000 Hrs', '36 months'],
   ['Gear Oil', '160,000 KM', '18 months', '2,000 Hrs', '18 months'],
@@ -1814,6 +1818,10 @@ function is4825Model(model){
 function isGB2822G50HCoModel(model){
   const t=String(model||'').toUpperCase().replace(/\s+/g,' ').trim();
   return /^GB2822G\s*\/\s*50\s+H\s+CO$/.test(t);
+}
+function isCngModel(model){
+  const t=String(model||'').toUpperCase().replace(/\s+/g,' ').trim();
+  return /^(?:GB2822G\s*\/\s*50\s+H\s+CO|CA1615\s*\/\s*47\s+H\s+FBL\s+G)$/.test(t);
 }
 function isCE282039RmcKmModel(model){
   const t=String(model||'').toUpperCase().replace(/\s+/g,' ').trim();
@@ -2037,8 +2045,8 @@ function isBSVIApplicable(vehicle){
   return !!(sale && sale > new Date(2020, 2, 31));
 }
 function decideAggregate(records, vehicle, running, key, analysisDate, decisionBasis = "AUTO"){
-  // GB2822G/50 H CO does not use Fuel Filter in its service schedule.
-  if (key === 'fuelFilter' && isGB2822G50HCoModel(vehicle.model)) return false;
+  // CNG models use CNG Filter instead of Fuel Filter.
+  if (key === 'fuelFilter' && isCngModel(vehicle.model)) return false;
 
   // DEF Filter and APDA Filter are BS-VI-only. Do not run their due logic for BS-IV.
   if ((key === 'defFilter' || key === 'apdaFilter') && !isBSVIApplicable(vehicle)) return false;
@@ -2062,8 +2070,16 @@ function decideAggregate(records, vehicle, running, key, analysisDate, decisionB
     if(useHours){ let hrs=1500; if(isA4Model(vehicle.model)||isH4Model(vehicle.model)||isH6Model(vehicle.model)) hrs=1000; return dueByHours(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),hrs,18,analysisDate,sale,vehicle); }
     return dueNormalWithSale(running.current,base,interval,18,analysisDate,sale,running.mode,vehicle);
   }
+  if(key==='cngFilter'){
+    if(!isCngModel(vehicle.model)) return false;
+    const base=serviceBase(records,['CNG FILTER'],1,false,vehicle);
+    const kmRunning=deriveRunningReadingForBasis(records, vehicle, "KM");
+    const baseKm=base ? getRelevantReadingForBasis(base, "KM") : 0;
+    const baseDate=base ? base.date : sale;
+    return kmRunning.current >= baseKm + 40000 || analysisDate >= monthsAfter(baseDate,6);
+  }
   if(key==='sparkPlug'){
-    if(!isGB2822G50HCoModel(vehicle.model)) return false;
+    if(!isCngModel(vehicle.model)) return false;
     const base=serviceBase(records,['SPARK PLUG'],1,false,vehicle);
     const kmRunning=deriveRunningReadingForBasis(records, vehicle, "KM");
     const baseKm=base ? getRelevantReadingForBasis(base, "KM") : 0;
@@ -2085,7 +2101,7 @@ function decideAggregate(records, vehicle, running, key, analysisDate, decisionB
   if(useHours){ const tr=TIP_RULES[key]; return tr ? dueByHours(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),tr[0],tr[1],analysisDate,sale,vehicle) : false; }
   return dueNormalWithSale(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),cfg[0],cfg[1],analysisDate,sale,running.mode,vehicle);
 }
-function keyToPart(key){ return ({coolant:'COOLANT',gearOil:'GEAR OIL',hubGrease:'HUB GREASE',axleOil:'AXLE OIL',clutchOil:'CLUTCH OIL',apdaFilter:'APDA FILTER',defInline:'DEF INLINE FILTER'})[key]||''; }
+function keyToPart(key){ return ({coolant:'COOLANT',gearOil:'GEAR OIL',hubGrease:'HUB GREASE',axleOil:'AXLE OIL',clutchOil:'CLUTCH OIL',apdaFilter:'APDA FILTER',defInline:'DEF INLINE FILTER',cngFilter:'CNG FILTER'})[key]||''; }
 function latestDefFilter(records, vehicle){
   // Match the Excel/VBA DEF Filter rule exactly:
   // 1) Latest valid DEF Filter Kit (qty >= 1).
@@ -2316,7 +2332,7 @@ function calculateDecisions(records,vehicle,running,decisionBasis = "AUTO"){
   const effectiveBasis = decisionBasis === "AUTO"
     ? (isTipperModel(vehicle?.model) ? "HRS" : "KM")
     : getEffectiveDecisionBasis(vehicle, decisionBasis);
-  const keys=['engineOil','coolant','gearOil','hubGrease','axleOil','fuelFilter','steeringOil','airFilter','clutchOil','defFilter','apdaFilter','sparkPlug'];
+  const keys=['engineOil','coolant','gearOil','hubGrease','axleOil','fuelFilter','cngFilter','steeringOil','airFilter','clutchOil','defFilter','apdaFilter','sparkPlug'];
   const result={};
   for(const k of keys) result[k]=decideAggregate(records,vehicle,running,k,analysisDate,effectiveBasis);
   result.defInline=defInlineDecision(records,vehicle,running,analysisDate,effectiveBasis);
@@ -2326,7 +2342,7 @@ function calculateDecisions(records,vehicle,running,decisionBasis = "AUTO"){
 }
 
 const BULK_SERVICE_LABELS = [
-  ["Engine Oil", "engineOil"], ["Spark Plug", "sparkPlug"], ["Coolant", "coolant"], ["Gear Oil", "gearOil"],
+  ["Engine Oil", "engineOil"], ["Spark Plug", "sparkPlug"], ["CNG Filter", "cngFilter"], ["Coolant", "coolant"], ["Gear Oil", "gearOil"],
   ["Hub Grease", "hubGrease"], ["Axle Oil", "axleOil"], ["Fuel Filter", "fuelFilter"],
   ["Steering Oil", "steeringOil"], ["Air Filter", "airFilter"], ["Clutch Oil", "clutchOil"],
   ["DEF Filter", "defFilter"], ["DEF Inline Filter", "defInline"], ["APDA Filter", "apdaFilter"]

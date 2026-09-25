@@ -6302,6 +6302,7 @@ clone.style.transformOrigin = "top left";
               <WarrantyTagPanel user={user} onBack={() => setMode("home")} />
             ) : mode === "single" ? (
               <>
+                {analysis ? (
                 <div id="single-screenshot-area" className="single-screenshot-area">
                 <div className="sheet-heading" style={{marginTop:10}}>VEHICLE SCHEDULE SERVICE HISTORY FROM LAST 3 YEARS AS ON DATE - {todayDisplay}</div>
 
@@ -6443,12 +6444,13 @@ clone.style.transformOrigin = "top left";
 </tbody></table>
                 </div>
                 </div>
-              </>
-            ) : (
+              ) : (
               <div className="pre-analysis-empty">
                 <div className="pre-analysis-title">Upload Excel to start</div>
                 <div className="pre-analysis-text">Vehicle analysis, profile and service history will appear here after the Excel file is uploaded and analysed.</div>
               </div>
+                )}
+              </>
             ) : mode === "bulk" ? (
               <>
                 <div className="sheet-heading">BULK VEHICLE SERVICE DECISION</div>

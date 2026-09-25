@@ -1790,8 +1790,9 @@ const TIP_RULES = {
   defFilter:[1500,18], apdaFilter:[2000,24], defInline:[1500,12]
 };
 const SERVICE_SCHEDULE_ROWS = [
-  ['Engine Oil', 'Special GB2822G/50 H CO: 20,000 KM; otherwise existing model rule', 'Special: 6 months; otherwise existing rule', '1,000 or 1,500 Hrs by tipper model; 60 Hrs early buffer', '18 months'],
+  ['Engine Oil', 'Special GB2822G/50 H CO: 20,000 KM; otherwise existing model rule', 'Special: 6 months (+/- 1 month); otherwise existing rule', '1,000 or 1,500 Hrs by tipper model; 60 Hrs early buffer', '18 months'],
   ['Spark Plug', 'GB2822G/50 H CO: 20,000 KM only', 'No time limit', 'Not applicable', 'Not applicable'],
+  ['Body Building Check Up — GB2822G/50 H CO', '1-5,000 KM', '3 months (+/- 1 month)', 'Not applicable', 'Not applicable'],
   ['Coolant', '320,000 KM', '36 months', '5,000 Hrs', '36 months'],
   ['Gear Oil', '160,000 KM', '18 months', '2,000 Hrs', '18 months'],
   ['Hub Grease', '80,000 KM', '12 months', '1,500 Hrs', '12 months'],
@@ -2036,6 +2037,9 @@ function isBSVIApplicable(vehicle){
   return !!(sale && sale > new Date(2020, 2, 31));
 }
 function decideAggregate(records, vehicle, running, key, analysisDate, decisionBasis = "AUTO"){
+  // GB2822G/50 H CO does not use Fuel Filter in its service schedule.
+  if (key === 'fuelFilter' && isGB2822G50HCoModel(vehicle.model)) return false;
+
   // DEF Filter and APDA Filter are BS-VI-only. Do not run their due logic for BS-IV.
   if ((key === 'defFilter' || key === 'apdaFilter') && !isBSVIApplicable(vehicle)) return false;
 
@@ -2045,9 +2049,10 @@ function decideAggregate(records, vehicle, running, key, analysisDate, decisionB
   if(key==='engineOil'){
     if(isGB2822G50HCoModel(vehicle.model)){
       const base=serviceBase(records,['ENGINE OIL'],12,false,vehicle);
-      const baseKm=base ? (base.relevantReading ?? getRelevantReading(base, vehicle)) : 0;
+      const kmRunning=deriveRunningReadingForBasis(records, vehicle, "KM");
+      const baseKm=base ? getRelevantReadingForBasis(base, "KM") : 0;
       const baseDate=base ? base.date : sale;
-      return running.current >= baseKm + 20000 || analysisDate >= monthsAfter(baseDate,6);
+      return kmRunning.current >= baseKm + 20000 || analysisDate >= monthsAfter(baseDate,6);
     }
     const base=serviceBase(records,['ENGINE OIL'],12,true,vehicle,'ENGINE OIL FILTER',true);
     let interval=120000;
@@ -2060,8 +2065,9 @@ function decideAggregate(records, vehicle, running, key, analysisDate, decisionB
   if(key==='sparkPlug'){
     if(!isGB2822G50HCoModel(vehicle.model)) return false;
     const base=serviceBase(records,['SPARK PLUG'],1,false,vehicle);
-    const baseKm=base ? (base.relevantReading ?? getRelevantReading(base, vehicle)) : 0;
-    return running.current >= baseKm + 20000;
+    const kmRunning=deriveRunningReadingForBasis(records, vehicle, "KM");
+    const baseKm=base ? getRelevantReadingForBasis(base, "KM") : 0;
+    return kmRunning.current >= baseKm + 20000;
   }
   if(key==='steeringOil'){
     // Steering Oil is a valid replacement only when its dedicated filter is
@@ -2165,15 +2171,19 @@ function defInlineDecision(records,vehicle,running,analysisDate,decisionBasis = 
 }
 function freeService(records,vehicle,running,analysisDate,decisionBasis = "AUTO"){
   if(isGB2822G50HCoModel(vehicle.model)){
+    // GB2822G/50 H CO is a KM-based CND model.
+    // Free-service target months are 6/12/18 with +/- 1 month deviation.
+    const kmRunning = deriveRunningReadingForBasis(records, vehicle, "KM");
     const checks=[
-      ['1ST FREE SERVICE',17000,23000,'1st free service'],
-      ['2ND FREE SERVICE',37000,43000,'2nd free service'],
-      ['3RD FREE SERVICE',57000,63000,'3rd free service']
+      ['1ST FREE SERVICE',17000,23000,5,7,'1st free service'],
+      ['2ND FREE SERVICE',37000,43000,11,13,'2nd free service'],
+      ['3RD FREE SERVICE',57000,63000,17,19,'3rd free service']
     ];
-    for(const [name,min,max,label] of checks){
+    for(const [name,min,max,mn,mx,label] of checks){
       if(records.some(r=>String(r.standardizedPart||'').toUpperCase().includes(name))) continue;
-      if(running.current>max) continue;
-      if(running.current>=min) return label;
+      const ageMax=monthsAfter(vehicle.sale,mx), ageMin=monthsAfter(vehicle.sale,mn);
+      if(kmRunning.current>max || analysisDate>ageMax) continue;
+      if(kmRunning.current>=min || analysisDate>=ageMin) return label;
     }
     return '';
   }
@@ -2278,15 +2288,18 @@ function additionalServiceEligibility(records, vehicle, running, analysisDate, d
 
   // Body Building Check Up: existing model list and KM/time window preserved.
   const bodyModels=['GM4225/66 H CO','GP4925/68 H CO','NH4120/60 H CC','NP4825/66 H CC','UG3520/57 H CC','UP4825/66 H CC','UP4825/66 PL CC'];
-  const isBodyModel=bodyModels.some(code=>modelText.includes(code));
+  const isBodyModel=isGB2822G50HCoModel(vehicle.model) || bodyModels.some(code=>modelText.includes(code));
   if(isBodyModel){
-    // Body Building Check Up has a KM/time rule only. When the user selects
-    // HRS, do not treat HRS as KM; use the vehicle's calculated KM reading.
-    const bodyRunning = decisionBasis === "KM"
-      ? running
-      : deriveRunningReadingForBasis(records, vehicle, "KM");
+    // Body Building Check Up is KM-based. GB2822G/50 H CO target is 3 months
+    // with +/- 1 month deviation, i.e. 2-4 months, plus 1-5,000 KM.
+    const bodyRunning = deriveRunningReadingForBasis(records, vehicle, "KM");
     const km=Number(bodyRunning?.current||0);
-    if(km>=1 && km<=5000 && analysisDate<=monthsAfter(vehicle.sale,4)){
+    const bodyDateMin=isGB2822G50HCoModel(vehicle.model) ? monthsAfter(vehicle.sale,2) : null;
+    const bodyDateMax=monthsAfter(vehicle.sale,4);
+    const bodyTimeEligible=isGB2822G50HCoModel(vehicle.model)
+      ? (analysisDate>=bodyDateMin && analysisDate<=bodyDateMax)
+      : analysisDate<=bodyDateMax;
+    if(km>=1 && km<=5000 && bodyTimeEligible){
       const historyDone=records.some(r=>{
         const t=serviceTextForRecord(r);
         return t.includes('BODY BUILDING CHECK UP') || t.includes('BODY BUILDING CHECKUP');

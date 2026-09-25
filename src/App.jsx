@@ -3556,7 +3556,7 @@ const WARRANTY_SUMMARY_ALIASES = {
   secondaryReading:["secondary counter reading"],
   secondaryUnit:["secondary counter reading unit","secondary counter unit"],
   workshopName:["servicing company"],
-  workshopCode:["service code"],
+  workshopCode:["sac code","sac code no","dealer code","service code"],
   chassis:["chassis no.","chassis no","chassis number"],
   engine:["engine no.","engine no","engine number"],
   model:["model name"],
@@ -3627,9 +3627,38 @@ function formatWarrantyDate(value){
 }
 
 function parseWarrantyNumber(value){
-  const match=String(value ?? "").replace(/,/g,"").match(/-?\\d+(?:\\.\\d+)?/);
+  const text=String(value ?? "").replace(/,/g,"").trim();
+  const match=text.match(/-?\d+(?:\.\d+)?/);
   return match?Number(match[0]):0;
 }
+
+function formatWarrantyClaimNumber(value){
+  const text=warrantyText(value).replace(/\s+/g,"");
+  if(!text) return "";
+  return text.replace(/^0+(?=\d)/,"");
+}
+
+function formatWarrantyClaimType(value){
+  const text=warrantyText(value).trim();
+  if(!text) return "WARRANTY ORDER";
+  return text.replace(/^\d+\s+/,"").trim().toUpperCase();
+}
+
+function formatWarrantyReading(summary){
+  const primary=summary?.reading||0;
+  const primaryUnit=(summary?.readingUnit||"").toUpperCase();
+  const secondary=summary?.secondaryReading||0;
+  const secondaryUnit=(summary?.secondaryUnit||"").toUpperCase();
+
+  if(primary && primaryUnit.includes("KM")) return formatNumber(primary)+" K";
+  if(secondary && secondaryUnit.includes("KM")) return formatNumber(secondary)+" K";
+  if(primary && primaryUnit.includes("HR")) return formatNumber(primary)+" H";
+  if(secondary && secondaryUnit.includes("HR")) return formatNumber(secondary)+" H";
+  if(primary) return formatNumber(primary)+" "+primaryUnit;
+  if(secondary) return formatNumber(secondary)+" "+secondaryUnit;
+  return "-";
+}
+
 
 function readWarrantyWorkbook(file,aliasGroups){
   return file.arrayBuffer().then(buffer=>{
@@ -3674,7 +3703,9 @@ function warrantyMissingHeaders(dataset,requiredKeys){
 }
 
 function normalizeWarrantyJobCard(value){
-  return String(value ?? "").replace(/\\.0+$/,"").replace(/\\s+/g,"").toUpperCase();
+  const text=String(value ?? "").trim().replace(/\s+/g,"").toUpperCase();
+  if(/^\d+(?:\.0+)?$/.test(text)) return text.split(".")[0];
+  return text;
 }
 
 function parseWarrantyClaimRows(dataset){
@@ -3691,7 +3722,7 @@ function parseWarrantyClaimRows(dataset){
     const partDesc=warrantyText(warrantyCell(row,headers,WARRANTY_TAG_ALIASES.partDesc));
     const jobCard=warrantyText(warrantyCell(row,headers,WARRANTY_TAG_ALIASES.jobCard));
     const jobCardDate=formatWarrantyDate(warrantyCell(row,headers,WARRANTY_TAG_ALIASES.jobCardDate));
-    const claimType=warrantyText(warrantyCell(row,headers,WARRANTY_TAG_ALIASES.claimType))||"WARRANTY BSVI";
+    const claimType=formatWarrantyClaimType(warrantyCell(row,headers,WARRANTY_TAG_ALIASES.claimType));
     const activeClaimNo=warrantyText(warrantyCell(row,headers,WARRANTY_TAG_ALIASES.activeClaimNo));
     if(!claimNo&&!jobCard&&!partNo&&!chassis&&!reg) return null;
     return {_row:rowIndex+1,claimNo,claimDate,customerName,reg,chassis,engine,partNo,qty,partDesc,jobCard,jobCardDate,claimType,activeClaimNo};
@@ -3727,15 +3758,7 @@ function buildWarrantyTags(claimRows,summaryRows){
   const seen=new Set();
   return claimRows.map((row,index)=>{
     const summary=summaryByJobCard.get(normalizeWarrantyJobCard(row.jobCard))||{};
-    const readingText=summary.reading
-      ? formatNumber(summary.reading)+" "+(summary.readingUnit||"")
-      : "";
-    const secondaryText=summary.secondaryReading
-      ? formatNumber(summary.secondaryReading)+" "+(summary.secondaryUnit||"")
-      : "";
-    const jobReading=readingText&&secondaryText
-      ? readingText+" / "+secondaryText
-      : (readingText||secondaryText||"");
+    const jobReading=formatWarrantyReading(summary);
     const key=[row.claimNo,row.claimDate,row.reg,row.chassis,row.engine,row.partNo,row.qty,row.partDesc,row.jobCard].map(value=>warrantyText(value).toUpperCase()).join("|");
     if(seen.has(key)) return null;
     seen.add(key);
@@ -3745,9 +3768,9 @@ function buildWarrantyTags(claimRows,summaryRows){
       workshopCode:summary.workshopCode||"",
       customerName:row.customerName,
       reg:row.reg,
-      claimNo:row.claimNo,
+      claimNo:formatWarrantyClaimNumber(row.claimNo),
       claimDate:row.claimDate,
-      activeClaimNo:row.activeClaimNo,
+      activeClaimNo:formatWarrantyClaimNumber(row.activeClaimNo),
       chassis:row.chassis,
       engine:row.engine,
       partNo:row.partNo,
@@ -3780,7 +3803,7 @@ function WarrantyTag({tag}){
     <div className="warranty-tag-row"><span>Claim/ SAP No Dt</span><strong>{tag.claimNo||"-"}{tag.claimDate?" & "+tag.claimDate:""}{tag.activeClaimNo?" / "+tag.activeClaimNo:""}</strong></div>
     <div className="warranty-tag-row warranty-tag-barcode-row"><span>Sap Clm Bar Code</span><WarrantyBarcode value={tag.claimNo} /></div>
     <div className="warranty-tag-row"><span>Chassis/ Engine&quot; No</span><strong>{tag.chassis||"-"} / {tag.engine||"-"}</strong></div>
-    <div className="warranty-tag-row"><span>Fail.Part No | Qty</span><strong>{tag.partNo||"-"} {tag.qty||""}</strong></div>
+    <div className="warranty-tag-row warranty-tag-part-row"><span>Fail.Part No | Qty</span><strong><b>{tag.partNo||"-"}</b><i>{tag.qty||""}</i></strong></div>
     <div className="warranty-tag-row"><span>Part Descp</span><strong>{tag.partDesc||"-"}</strong></div>
     <div className="warranty-tag-row"><span>Job Card /DT /KM/Hrs</span><strong>{tag.jobCard||"-"}{tag.jobCardDate?" & "+tag.jobCardDate:""} / {tag.reading||"-"}</strong></div>
     <div className="warranty-tag-row"><span>Claim Type</span><strong>{tag.claimType||"WARRANTY BSVI"}</strong></div>
@@ -6190,8 +6213,9 @@ clone.style.transformOrigin = "top left";
           margin: 0 auto;
           display: grid;
           grid-template-columns: 1fr 1fr;
-          grid-template-rows: repeat(5, 1fr);
-          gap: 0;
+          grid-template-rows: repeat(5, minmax(0, 1fr));
+          column-gap: 4mm;
+          row-gap: 3mm;
           background: #fff;
           color: #111 !important;
           page-break-after: always;
@@ -6223,6 +6247,24 @@ clone.style.transformOrigin = "top left";
           color: #111 !important;
         }
         .warranty-tag-row:last-child { border-bottom: 0; }
+        .warranty-tag-part-row > strong {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          padding: 0;
+        }
+        .warranty-tag-part-row > strong > b,
+        .warranty-tag-part-row > strong > i {
+          height: 100%;
+          min-width: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 3px 5px;
+          font-style: normal;
+        }
+        .warranty-tag-part-row > strong > i {
+          border-left: 1px solid #222;
+        }
         .warranty-tag-row > span {
           height: 100%;
           display: flex;
@@ -6287,6 +6329,8 @@ clone.style.transformOrigin = "top left";
             width:194mm !important;
             height:281mm !important;
             margin:0 auto !important;
+            column-gap:4mm !important;
+            row-gap:3mm !important;
             box-shadow:none !important;
             page-break-after:always !important;
             break-after:page !important;

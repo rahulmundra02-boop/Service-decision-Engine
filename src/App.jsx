@@ -3994,7 +3994,7 @@ function WarrantyTagPanel({user,onBack}){
               {descriptionOptions.map(([desc,count])=>{
                 const removed=removedDescriptions.includes(desc);
                 return <div className={"warranty-tag-part-item "+(removed?"removed":"")} key={desc}>
-                  <span>{desc}</span><small>{count}</small>
+                  <span>{desc}</span>
                   {removed
                     ? <button type="button" onClick={()=>restoreDescription(desc)}>Add</button>
                     : <button type="button" onClick={()=>removeDescription(desc)}>Remove</button>}

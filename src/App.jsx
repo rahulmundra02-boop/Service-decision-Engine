@@ -1676,6 +1676,8 @@ function isCalculationEligibleLine(record, visit, vehicle, decision) {
     return true;
   }
 
+  if (text.includes("SPARK PLUG")) return qty >= 1;
+
   if (text.includes("ENGINE OIL") && !text.includes("FILTER")) {
     return qty >= 12 && sameJob.some(r => String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase().includes("ENGINE OIL FILTER"));
   }
@@ -1789,6 +1791,7 @@ const TIP_RULES = {
 };
 const SERVICE_SCHEDULE_ROWS = [
   ['Engine Oil', 'Special GB2822G/50 H CO: 20,000 KM; otherwise existing model rule', 'Special: 6 months; otherwise existing rule', '1,000 or 1,500 Hrs by tipper model; 60 Hrs early buffer', '18 months'],
+  ['Spark Plug', 'GB2822G/50 H CO: 20,000 KM only', 'No time limit', 'Not applicable', 'Not applicable'],
   ['Coolant', '320,000 KM', '36 months', '5,000 Hrs', '36 months'],
   ['Gear Oil', '160,000 KM', '18 months', '2,000 Hrs', '18 months'],
   ['Hub Grease', '80,000 KM', '12 months', '1,500 Hrs', '12 months'],

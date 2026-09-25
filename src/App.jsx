@@ -6375,12 +6375,12 @@ clone.style.transformOrigin = "top left";
 
           <div className="excel-ribbon no-print">
             <div className="excel-tabs">
-              <div className={"excel-tab " + (mode === "home" ? "active" : "")} onClick={() => { setMode("home"); setEstimateOpen(false);setMode("home"); }}>Home</div>
-              <div className={"excel-tab " + (mode === "single" ? "active" : "")} onClick={() => { setEstimateOpen(false);setMode("home"); setMode("single"); setError(""); setBulkResults([]); setBulkMeta(null); }}>Single Vehicle</div>
-              <div className={`excel-tab ${mode === "bulk" ? "active" : ""}`} onClick={() => { setEstimateOpen(false);setMode("home"); setMode("bulk"); setError(""); setAnalysis(null); }}>Bulk Vehicle</div>
-              <div className={`excel-tab ${mode === "schedule" ? "active" : ""}`} onClick={() => { setEstimateOpen(false);setMode("home"); setMode("schedule"); setError(""); logUsage("Service Schedule Viewed", { mode:"schedule" }); }}>Service Schedule Chart</div>
+              <div className={"excel-tab " + (mode === "home" ? "active" : "")} onClick={() => { setEstimateOpen(false); setMode("home"); }}>Home</div>
+              <div className={"excel-tab " + (mode === "single" ? "active" : "")} onClick={() => { setEstimateOpen(false); setMode("single"); setError(""); setBulkResults([]); setBulkMeta(null); }}>Single Vehicle</div>
+              <div className={`excel-tab ${mode === "bulk" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("bulk"); setError(""); setAnalysis(null); }}>Bulk Vehicle</div>
+              <div className={`excel-tab ${mode === "schedule" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("schedule"); setError(""); logUsage("Service Schedule Viewed", { mode:"schedule" }); }}>Service Schedule Chart</div>
               <div className={`excel-tab ${estimateOpen ? "active" : ""}`} onClick={() => { setMode("estimate"); if (analysis) void openEstimate(); else openStandaloneEstimate(); }}>Prepare Estimate</div>
-              <div className={`excel-tab ${mode === "warranty-tags" ? "active" : ""}`} onClick={() => { setEstimateOpen(false);setMode("home"); setMode("warranty-tags"); setError(""); }}>Warranty Tag Print</div>
+              <div className={`excel-tab ${mode === "warranty-tags" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("warranty-tags"); setError(""); }}>Warranty Tag Print</div>
             </div>
             <div className="excel-toolbar">
               {mode !== "schedule" && mode !== "home" && <>

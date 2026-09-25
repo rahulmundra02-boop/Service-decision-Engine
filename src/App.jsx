@@ -6390,6 +6390,7 @@ clone.style.transformOrigin = "top left";
               <div className={`excel-tab ${estimateOpen ? "active" : ""}`} onClick={() => { setMode("estimate"); if (analysis) void openEstimate(); else openStandaloneEstimate(); }}>Prepare Estimate</div>
               <div className={`excel-tab ${mode === "warranty-tags" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("warranty-tags"); setError(""); }}>Warranty Tag Print</div>
             </div>
+            {mode !== "warranty-tags" && (
             <div className="excel-toolbar">
               {mode !== "schedule" && mode !== "home" && <>
                 <button className="excel-button green" onClick={() => document.getElementById("excel-file-input")?.click()} disabled={uploadBusy}>Upload Excel</button>
@@ -6455,6 +6456,7 @@ clone.style.transformOrigin = "top left";
                 </div>
               )}
             </div>
+            )}
           </div>
 
           <input id="excel-file-input" className="no-print" type="file" accept=".xlsx,.xls,.xlsm,.csv" multiple style={{display:"none"}} onChange={handleExcelUpload} disabled={uploadBusy} />

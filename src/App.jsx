@@ -2342,8 +2342,11 @@ const BULK_SERVICE_LABELS = [
 function getDueServiceNames(decision) {
   const aggregateNames=BULK_SERVICE_LABELS.filter(([, key]) => decision?.result?.[key]).map(([name]) => name);
   const names=[...aggregateNames];
-  if(decision?.freeService && aggregateNames.length){
-    names.push(decision.freeService.replace(/^1st free service$/i,'1st Free Service').replace(/^2nd free service$/i,'2nd Free Service').replace(/^3rd free service$/i,'3rd Free Service'));
+  const freeService=String(decision?.freeService || '').trim();
+  const isFirstFreeService=/^1st free service$/i.test(freeService);
+  const showFreeService=!!freeService && (isFirstFreeService || aggregateNames.length>0);
+  if(showFreeService){
+    names.push(freeService.replace(/^1st free service$/i,'1st Free Service').replace(/^2nd free service$/i,'2nd Free Service').replace(/^3rd free service$/i,'3rd Free Service'));
   }
   if(Array.isArray(decision?.additionalServices)) names.push(...decision.additionalServices);
   return names;
@@ -5933,10 +5936,13 @@ clone.style.transformOrigin = "top left";
                         const aggregateNames = BULK_SERVICE_LABELS
                           .filter(([,key]) => analysis.decision.result[key])
                           .map(([name]) => name);
+                        const freeService = String(analysis.decision.freeService || '').trim();
+                        const isFirstFreeService = /^1st free service$/i.test(freeService);
+                        const showFreeService = !!freeService && (isFirstFreeService || aggregateNames.length > 0);
                         const names = [
                           ...aggregateNames,
-                          ...(analysis.decision.freeService && aggregateNames.length
-                            ? [analysis.decision.freeService.replace(/^1st free service$/i,'1st Free Service').replace(/^2nd free service$/i,'2nd Free Service').replace(/^3rd free service$/i,'3rd Free Service')]
+                          ...(showFreeService
+                            ? [freeService.replace(/^1st free service$/i,'1st Free Service').replace(/^2nd free service$/i,'2nd Free Service').replace(/^3rd free service$/i,'3rd Free Service')]
                             : []),
                           ...(analysis.decision.additionalServices || []).filter(name => !String(name).toLowerCase().includes('free service'))
                         ];

@@ -3819,7 +3819,13 @@ function WarrantyTag({tag}){
   return <div className="warranty-tag">
     <div className="warranty-tag-row"><span>Dlr.Name &amp; Code</span><strong>{tag.workshopCode?tag.workshopCode+" - ":""}{tag.workshopName||"-"}</strong></div>
     <div className="warranty-tag-row"><span>Claim/ SAP No Dt</span><strong>{tag.activeClaimNo||"-"}{tag.claimDate?" & "+tag.claimDate:""}{tag.oemClaimNo?" / "+tag.oemClaimNo:""}</strong></div>
-    <div className="warranty-tag-row warranty-tag-barcode-row"><span>Sap Clm Bar Code</span><WarrantyBarcode value={tag.oemClaimNo} /></div>
+    <div className="warranty-tag-row warranty-tag-barcode-row warranty-tag-barcode-registration-row">
+      <span>Sap Clm Bar Code</span>
+      <div>
+        <div className="barcode-side"><WarrantyBarcode value={tag.oemClaimNo} /></div>
+        <div className="registration-side"><span className="registration-label">Registration No.</span><strong className="registration-value">{tag.reg||"-"}</strong></div>
+      </div>
+    </div>
     <div className="warranty-tag-row"><span>Chassis/ Engine&quot; No</span><strong>{tag.chassis||"-"} / {tag.engine||"-"}</strong></div>
     <div className="warranty-tag-row warranty-tag-part-row"><span>Fail.Part No | Qty</span><strong>{tag.partNo||"-"}</strong><strong>{tag.qty||""}</strong></div>
     <div className="warranty-tag-row"><span>Part Descp</span><strong>{tag.partDesc||"-"}</strong></div>
@@ -4027,7 +4033,8 @@ function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResu
     { key:"single", icon:"🚚", title:"Single Vehicle", text:"Check one vehicle service history, service requirements and completed work." },
     { key:"bulk", icon:"📊", title:"Bulk Vehicle", text:"Analyse multiple vehicles and prepare customer-wise service due summaries." },
     { key:"schedule", icon:"📅", title:"Service Schedule", text:"Review service intervals and applicable maintenance schedules." },
-    { key:"warranty-tags", icon:"🏷️", title:"Warranty Tag Printing", text:"Generate printable A4 warranty tags from Billed JC Claim Statement + Jobcard Summary Excel files." },
+    { key:"estimate", icon:"🧾", title:"Prepare Estimate", text:"Open the existing Service Estimate module and prepare a vehicle estimate." },
+    { key:"warranty-tags", icon:"🏷️", title:"Warranty Tag Print", text:"Generate and print warranty tags from Billed JC Claim Statement + Jobcard Summary." },
   ];
   return (
     <div className="portal-home">
@@ -5126,7 +5133,7 @@ function ServiceDecisionApp({ user }) {
       setEstimateNotice("Saved estimate loaded. You can edit it and save again; the estimate number will remain unchanged.");
       setEstimateStage("estimate");
     } catch (error) {
-      setEstimateOpen(false);
+      setEstimateOpen(false);setMode("home");
       setError(error.message || "Unable to load saved estimate.");
     } finally {
       setEstimateLoading(false);
@@ -6322,6 +6329,23 @@ clone.style.transformOrigin = "top left";
         .warranty-tag-barcode-row>span{justify-content:flex-start}
         .warranty-tag-barcode{width:70%;height:27px;max-width:145px;display:block;margin:0 auto}
         .warranty-tag-workspace{color:#1f1f1f!important}.warranty-tag-message{color:#1f1f1f!important}
+        .warranty-tag-filter-buttons{display:flex;flex-wrap:wrap;gap:12px;align-items:stretch}
+        .warranty-tag-filter-buttons button{display:inline-flex!important;align-items:center!important;justify-content:center!important;min-height:54px!important;background:#f5f7fa!important;color:#1f2937!important;border:1px solid #9aa4b2!important;font-size:16px!important;opacity:1!important;visibility:visible!important}
+        .warranty-tag-filter-buttons button.active{background:#1976d2!important;color:#fff!important}
+        .warranty-tag-part-list{display:flex;flex-direction:column;gap:0}
+        .warranty-tag-part-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 10px;border-bottom:1px solid #ddd;color:#1f2937!important}
+        .warranty-tag-part-item>span{color:#1f2937!important;font-size:16px!important;line-height:1.35;text-align:left}
+        .warranty-tag-part-item button{display:inline-flex!important;align-items:center;justify-content:center;min-width:92px;min-height:42px;padding:7px 12px;border:1px solid #9aa4b2!important;border-radius:8px;background:#f5f7fa!important;color:#1f2937!important;font-weight:700!important;opacity:1!important;visibility:visible!important}
+        .warranty-tag-part-item.removed>span{text-decoration:line-through;opacity:.55}
+        .warranty-tag-print-controls{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:16px;padding:16px;border:2px solid #2f80c9;border-radius:10px;background:#f8fbff;color:#1f2937!important}
+        .warranty-tag-print-controls strong{font-size:18px}
+        .warranty-tag-print-controls span{font-size:16px;font-weight:700}
+        .warranty-tag-barcode-registration-row>div{display:grid;grid-template-columns:1fr 1fr;min-width:0;height:100%}
+        .warranty-tag-barcode-registration-row .barcode-side{display:flex;align-items:center;justify-content:center;padding:3px 8px;border-right:1px solid #111;min-width:0}
+        .warranty-tag-barcode-registration-row .registration-side{display:flex;align-items:center;justify-content:center;gap:5px;flex-direction:column;padding:3px 6px;text-align:center;min-width:0}
+        .warranty-tag-barcode-registration-row .registration-label{font-size:9px;font-weight:700;color:#111!important}
+        .warranty-tag-barcode-registration-row .registration-value{font-size:11px;font-weight:700;color:#111!important;overflow-wrap:anywhere}
+
         @media screen{.warranty-tag-print-root{margin-top:18px;padding:12px;overflow-x:auto}.warranty-tag-page{box-shadow:0 1px 8px rgba(0,0,0,.15)}}
         @media print{body,.excel-app,.excel-window{background:#fff!important}.excel-titlebar,.excel-ribbon,.no-print{display:none!important}.excel-window{width:100%;box-shadow:none}.excel-sheet{padding:0}.history-wrap{max-height:none;overflow:visible}.history-table th{position:static}.warranty-tag-workspace{display:none!important}.warranty-tag-print-root{display:block!important;width:194mm!important;margin:0 auto!important;padding:0!important;background:#fff!important;color:#111!important}.warranty-tag-page{width:194mm!important;height:281mm!important;margin:0 auto!important;column-gap:4mm!important;row-gap:4mm!important;box-shadow:none!important;page-break-after:always!important;break-after:page!important}.warranty-tag-page:last-child{page-break-after:auto!important;break-after:auto!important}.warranty-tag,.warranty-tag-row,.warranty-tag-row>span,.warranty-tag-row>strong{color:#111!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}
         .excel-upload-processing-overlay { position: fixed; inset: 0; z-index: 100000; background: rgba(255,255,255,.72); display: flex; align-items: center; justify-content: center; cursor: wait; }
@@ -6351,10 +6375,12 @@ clone.style.transformOrigin = "top left";
 
           <div className="excel-ribbon no-print">
             <div className="excel-tabs">
-              <div className={"excel-tab " + (mode === "home" ? "active" : "")} onClick={() => setMode("home")}>Home</div>
-              <div className={"excel-tab " + (mode === "single" ? "active" : "")} onClick={() => { setMode("single"); setError(""); setBulkResults([]); setBulkMeta(null); }}>Single Vehicle</div>
-              <div className={`excel-tab ${mode === "bulk" ? "active" : ""}`} onClick={() => { setMode("bulk"); setError(""); setAnalysis(null); }}>Bulk Vehicle</div>
-              <div className={`excel-tab ${mode === "schedule" ? "active" : ""}`} onClick={() => { setMode("schedule"); setError(""); logUsage("Service Schedule Viewed", { mode:"schedule" }); }}>Service Schedule Chart</div>
+              <div className={"excel-tab " + (mode === "home" ? "active" : "")} onClick={() => { setMode("home"); setEstimateOpen(false);setMode("home"); }}>Home</div>
+              <div className={"excel-tab " + (mode === "single" ? "active" : "")} onClick={() => { setEstimateOpen(false);setMode("home"); setMode("single"); setError(""); setBulkResults([]); setBulkMeta(null); }}>Single Vehicle</div>
+              <div className={`excel-tab ${mode === "bulk" ? "active" : ""}`} onClick={() => { setEstimateOpen(false);setMode("home"); setMode("bulk"); setError(""); setAnalysis(null); }}>Bulk Vehicle</div>
+              <div className={`excel-tab ${mode === "schedule" ? "active" : ""}`} onClick={() => { setEstimateOpen(false);setMode("home"); setMode("schedule"); setError(""); logUsage("Service Schedule Viewed", { mode:"schedule" }); }}>Service Schedule Chart</div>
+              <div className={`excel-tab ${estimateOpen ? "active" : ""}`} onClick={() => { setMode("estimate"); if (analysis) void openEstimate(); else openStandaloneEstimate(); }}>Prepare Estimate</div>
+              <div className={`excel-tab ${mode === "warranty-tags" ? "active" : ""}`} onClick={() => { setEstimateOpen(false);setMode("home"); setMode("warranty-tags"); setError(""); }}>Warranty Tag Print</div>
             </div>
             <div className="excel-toolbar">
               {mode !== "schedule" && mode !== "home" && <>
@@ -6739,7 +6765,7 @@ clone.style.transformOrigin = "top left";
                   <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
                     <div style={{fontSize:22,fontWeight:800}}>SERVICE ESTIMATE</div>
                     <div className="estimate-meta">Estimate No. (Session): <b>{estimateNumber || "-"}</b> · Date: <b>{formatDate(new Date())}</b></div>
-                    <button className="excel-button" style={{marginLeft:"auto"}} onClick={()=>setEstimateOpen(false)}>Cancel</button>
+                    <button className="excel-button" style={{marginLeft:"auto"}} onClick={()=>setEstimateOpen(false);setMode("home")}>Cancel</button>
                   </div>
                   <div style={{border:"1px solid #d5d5d5",borderRadius:8,padding:14}}>
                     <div style={{fontWeight:800,fontSize:16,marginBottom:10}}>1. Vehicle Details</div>
@@ -6758,7 +6784,7 @@ clone.style.transformOrigin = "top left";
                   <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
                     <div style={{fontSize:22,fontWeight:800}}>SELECT AGGREGATE SERVICES</div><div className="estimate-meta">Estimate No. (Session): <b>{estimateNumber || "-"}</b> · Date: <b>{formatDate(new Date())}</b></div>
                     <span style={{fontSize:12,color:"#666"}}>Single Vehicle Estimate</span>
-                    <button className="excel-button" style={{marginLeft:"auto"}} onClick={()=>setEstimateOpen(false)}>Cancel</button>
+                    <button className="excel-button" style={{marginLeft:"auto"}} onClick={()=>setEstimateOpen(false);setMode("home")}>Cancel</button>
                   </div>
                   <div style={{border:"1px solid #d5d5d5",borderRadius:8,padding:14}}>
                     <div style={{fontWeight:800,fontSize:16,marginBottom:10}}>Which services should be included in the estimate?</div>
@@ -6775,7 +6801,7 @@ clone.style.transformOrigin = "top left";
                   {estimateLoading && <div style={{marginTop:12,padding:10,textAlign:"center",background:"#f5f5f5",borderRadius:7}}>Loading vehicle history...</div>}
                   {!estimateLoading && estimateNotice && <div style={{marginTop:12,padding:10,background:"#f5f5f5",borderRadius:7}}>{estimateNotice}</div>}
                   <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:16}}>
-                    <button className="excel-button" onClick={()=>setEstimateOpen(false)}>Cancel</button>
+                    <button className="excel-button" onClick={()=>setEstimateOpen(false);setMode("home")}>Cancel</button>
                     <button className="excel-button green" disabled={estimateLoading} onClick={prepareEstimate}>OK / Prepare Estimate</button>
                   </div>
                 </>
@@ -6785,7 +6811,7 @@ clone.style.transformOrigin = "top left";
                     <div style={{fontSize:22,fontWeight:800}}>SERVICE ESTIMATE</div><div className="estimate-meta">Estimate No. (Session): <b>{estimateNumber || "-"}</b> · Date: <b>{formatDate(new Date())}</b></div>
                     <span style={{fontSize:12,color:"#666"}}>Single Vehicle Only</span>
                     <span style={{marginLeft:"auto",fontWeight:700}}>{user?.dealerName || "Workshop"}</span>
-                    <button className="excel-button no-print" onClick={()=>setEstimateOpen(false)}>Close</button>
+                    <button className="excel-button no-print" onClick={()=>setEstimateOpen(false);setMode("home")}>Close</button>
                   </div>
                    <div style={{display:"grid",gridTemplateColumns:"repeat(5,minmax(0,1fr))",gap:8,marginBottom:12}}>
                      {[["Customer","customerName"],["Reg. No.","reg"],["Chassis / VIN","vin"],["Engine No.","engine"],["Model","model"]].map(([label,key]) => (

@@ -6177,7 +6177,7 @@ clone.style.transformOrigin = "top left";
 
         @page { size: A4 portrait; margin: 8mm; }
 
-        /* Warranty tag printing - matches supplied 2-column x 5-row A4 sample */
+        /* Warranty tags: exact 2-column x 5-row A4 sheet structure */
         .warranty-tag-print-root {
           width: 100%;
           background: #fff;
@@ -6222,9 +6222,7 @@ clone.style.transformOrigin = "top left";
           border-bottom: 1px solid #222;
           color: #111 !important;
         }
-        .warranty-tag-row:last-child {
-          border-bottom: 0;
-        }
+        .warranty-tag-row:last-child { border-bottom: 0; }
         .warranty-tag-row > span {
           height: 100%;
           display: flex;
@@ -6248,12 +6246,8 @@ clone.style.transformOrigin = "top left";
           overflow-wrap: anywhere;
           word-break: break-word;
         }
-        .warranty-tag-barcode-row {
-          flex: 1.15 1 auto;
-        }
-        .warranty-tag-barcode-row > span {
-          justify-content: center;
-        }
+        .warranty-tag-barcode-row { flex: 1.15 1 auto; }
+        .warranty-tag-barcode-row > span { justify-content: center; }
         .warranty-tag-barcode {
           width: 70%;
           height: 27px;
@@ -6261,24 +6255,25 @@ clone.style.transformOrigin = "top left";
           display: block;
           margin: 0 auto;
         }
-        .warranty-tag-workspace {
-          color: #1f1f1f !important;
-        }
-        .warranty-tag-message {
-          color: #1f1f1f !important;
-        }
+        .warranty-tag-workspace { color: #1f1f1f !important; }
+        .warranty-tag-message { color: #1f1f1f !important; }
+
         @media screen {
           .warranty-tag-print-root {
             margin-top: 18px;
             padding: 12px;
             overflow-x: auto;
           }
-          .warranty-tag-page {
-            box-shadow: 0 1px 8px rgba(0,0,0,.15);
-          }
+          .warranty-tag-page { box-shadow: 0 1px 8px rgba(0,0,0,.15); }
         }
 
         @media print {
+          body, .excel-app, .excel-window { background:#fff !important; }
+          .excel-titlebar, .excel-ribbon, .no-print { display:none !important; }
+          .excel-window { width:100%; box-shadow:none; }
+          .excel-sheet { padding:0; }
+          .history-wrap { max-height:none; overflow:visible; }
+          .history-table th { position:static; }
           .warranty-tag-workspace { display:none !important; }
           .warranty-tag-print-root {
             display:block !important;
@@ -6308,13 +6303,6 @@ clone.style.transformOrigin = "top left";
             -webkit-print-color-adjust:exact !important;
             print-color-adjust:exact !important;
           }
-        }
-
-          .excel-titlebar, .excel-ribbon, .no-print { display:none !important; }
-          .excel-window { width:100%; box-shadow:none; }
-          .excel-sheet { padding:0; }
-          .history-wrap { max-height:none; overflow:visible; }
-          .history-table th { position:static; }
         }
 
         .excel-upload-processing-overlay { position: fixed; inset: 0; z-index: 100000; background: rgba(255,255,255,.72); display: flex; align-items: center; justify-content: center; cursor: wait; }

@@ -3983,9 +3983,9 @@ function WarrantyTagPanel({user,onBack}){
           <div className="warranty-tag-control-block">
             <div className="warranty-tag-control-title">Repair Type</div>
             <div className="warranty-tag-filter-buttons">
-              <button className={repairFilter==="AMC"?"active":""} type="button" onClick={()=>setRepairFilter("AMC")}>AMC Order</button>
-              <button className={repairFilter==="NON_AMC"?"active":""} type="button" onClick={()=>setRepairFilter("NON_AMC")}>NON AMC Order</button>
-              <button className={repairFilter==="ALL"?"active":""} type="button" onClick={()=>setRepairFilter("ALL")}>All Repair Types</button>
+              <button className={repairFilter==="AMC"?"active":""} style={{background:repairFilter==="AMC"?"#1976d2":"#f5f7fa",color:repairFilter==="AMC"?"#fff":"#1f2937",border:"1px solid #9aa4b2",fontWeight:700,minWidth:170,minHeight:54,padding:"10px 18px",borderRadius:10}} type="button" onClick={()=>setRepairFilter("AMC")}>AMC Order</button>
+              <button className={repairFilter==="NON_AMC"?"active":""} style={{background:repairFilter==="NON_AMC"?"#1976d2":"#f5f7fa",color:repairFilter==="NON_AMC"?"#fff":"#1f2937",border:"1px solid #9aa4b2",fontWeight:700,minWidth:170,minHeight:54,padding:"10px 18px",borderRadius:10}} type="button" onClick={()=>setRepairFilter("NON_AMC")}>NON AMC Order</button>
+              <button className={repairFilter==="ALL"?"active":""} style={{background:repairFilter==="ALL"?"#1976d2":"#f5f7fa",color:repairFilter==="ALL"?"#fff":"#1f2937",border:"1px solid #9aa4b2",fontWeight:700,minWidth:170,minHeight:54,padding:"10px 18px",borderRadius:10}} type="button" onClick={()=>setRepairFilter("ALL")}>All Repair Types</button>
             </div>
           </div>
           <div className="warranty-tag-control-block">

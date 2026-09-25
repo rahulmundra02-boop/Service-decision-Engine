@@ -3534,27 +3534,39 @@ function emptyEstimateItem(type = "part") {
 }
 
 const WARRANTY_TAG_ALIASES = {
-  claimNo:["oem claim no","claim no","claim number","claim no.","claim/sap no dt","claim/sap no"],
-  claimDate:["claim date","claim dt","claim date dt"],
-  sapNo:["sap no","sap claim no","sap number","sap no."],
-  dealer:["dlr name & code","dealer name & code","dealer name","workshop name"],
-  chassis:["chassis no","chassis number","chassis","chassis/ engine no","chassis/ engine\" no"],
-  engine:["engine no","engine number","engine","chassis/ engine no","chassis/ engine\" no"],
-  partNo:["fail part no","failed part no","fail.part no","part no","fail.part no | qty"],
-  qty:["qty","quantity","fail part no | qty","fail.part no | qty"],
-  partDesc:["part descp","part description","failed part description","part desc"],
-  jobCard:["job card","job card no","jobcard","job card number","job card /dt /km/hrs"],
-  jobCardDate:["job card date","jc date","jobcard date","job card /dt /km/hrs"],
-  claimType:["claim type"]
+  claimNo:["oem claim number","oem claim no","claim no","claim number"],
+  claimDate:["claim creation date","claim date","claim dt"],
+  customerName:["customer name","customer"],
+  reg:["registration number","reg no","registration no"],
+  chassis:["chassis number","chassis no","chassis"],
+  engine:["engine number","engine no","engine"],
+  partNo:["part / labour code","part/labour code","fail part no","failed part no","part no"],
+  qty:["quantity","qty"],
+  partDesc:["part / labour desc","part/labour desc","part descp","part description","failed part description"],
+  jobCard:["job card number","job card no","job card","jobcard"],
+  jobCardDate:["job card date","jobcard date","jc date"],
+  claimType:["job type","claim type"],
+  activeClaimNo:["active claim no"],
 };
 
 const WARRANTY_SUMMARY_ALIASES = {
-  jobCard:["job card","job card no","jobcard","job card number","job card /dt /km/hrs"],
-  km:["km","km reading","km reading.","kms","kilometer","kilometre","odometer","running km","job card /dt /km/hrs"]
+  jobCard:["job card no.","job card no","job card number","job card"],
+  reading:["km reading / hr reading","km reading/hr reading","km reading","hr reading"],
+  readingUnit:["km/hr","km / hr","kmhr"],
+  secondaryReading:["secondary counter reading"],
+  secondaryUnit:["secondary counter reading unit","secondary counter unit"],
+  workshopName:["servicing company"],
+  workshopCode:["service code"],
+  chassis:["chassis no.","chassis no","chassis number"],
+  engine:["engine no.","engine no","engine number"],
+  model:["model name"],
 };
 
+const WARRANTY_CLAIM_REQUIRED = ["jobCard","jobCardDate","reg","chassis","engine","partNo","qty","partDesc","claimNo","claimDate"];
+const WARRANTY_SUMMARY_REQUIRED = ["jobCard","reading","readingUnit","workshopName"];
+
 function normalizeWarrantyHeader(value){
-  return String(value ?? "").replace(/^\uFEFF/,"").trim().toLowerCase().replace(/[\r\n]+/g," ").replace(/[^a-z0-9]+/g,"");
+  return String(value ?? "").replace(/^\\uFEFF/,"").trim().toLowerCase().replace(/[\\r\\n]+/g," ").replace(/[^a-z0-9]+/g,"");
 }
 
 function warrantyHeaderIndex(headers,aliases){
@@ -3584,42 +3596,31 @@ function findWarrantyHeaderRow(rows,aliasGroups){
 
 function warrantyCell(row,headers,aliases){
   const index=warrantyHeaderIndex(headers,aliases);
-  return index>=0?String(row[index]??"").trim():"";
+  return index>=0?row[index]:"";
 }
 
-function parseWarrantyClaimCombined(value){
-  const text=String(value??"").trim();
-  if(!text) return {claimNo:"",claimDate:"",sapNo:""};
-  const parts=text.split(/\s*\/\s*/);
-  const left=parts[0]||"";
-  const sapNo=parts.length>1?parts.slice(1).join(" / ").trim():"";
-  const claimParts=left.split(/\s*&\s*/);
-  return {claimNo:String(claimParts[0]||"").trim(),claimDate:String(claimParts[1]||"").trim(),sapNo};
+function warrantyText(value){
+  return String(value ?? "").trim();
 }
 
-function parseWarrantyChassisEngine(value){
-  const text=String(value??"").trim();
-  if(!text) return {chassis:"",engine:""};
-  const parts=text.split(/\s*\/\s*/);
-  return {chassis:String(parts[0]||"").trim(),engine:String(parts[1]||"").trim()};
+function formatWarrantyDate(value){
+  if(value instanceof Date && !Number.isNaN(value.getTime())){
+    const dd=String(value.getDate()).padStart(2,"0");
+    const mm=String(value.getMonth()+1).padStart(2,"0");
+    return dd+"/"+mm+"/"+value.getFullYear();
+  }
+  const text=warrantyText(value);
+  if(!text) return "";
+  if(/^\\d{4}-\\d{2}-\\d{2}/.test(text)){
+    const d=new Date(text);
+    if(!Number.isNaN(d.getTime())) return String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0")+"/"+d.getFullYear();
+  }
+  return text;
 }
 
-function parseWarrantyPartQty(value){
-  const text=String(value??"").trim();
-  if(!text) return {partNo:"",qty:""};
-  const match=text.match(/^([A-Za-z0-9._-]+)\s+([0-9]+(?:\.[0-9]+)?)$/);
-  if(match) return {partNo:match[1].trim(),qty:match[2].trim()};
-  return {partNo:text,qty:""};
-}
-
-function parseWarrantyJobCardCombined(value){
-  const text=String(value??"").trim();
-  if(!text) return {jobCard:"",date:"",reading:""};
-  const ampersand=text.split(/\s*&\s*/);
-  const jobCard=String(ampersand[0]||"").trim();
-  const rest=ampersand.slice(1).join(" & ").trim();
-  const slashParts=rest.split(/\s*\/\s*/);
-  return {jobCard,date:String(slashParts[0]||"").trim(),reading:slashParts.length>1?String(slashParts[1]||"").replace(/[^\d.-]/g,""):""};
+function parseWarrantyNumber(value){
+  const match=String(value ?? "").replace(/,/g,"").match(/-?\\d+(?:\\.\\d+)?/);
+  return match?Number(match[0]):0;
 }
 
 function readWarrantyWorkbook(file,aliasGroups){
@@ -3635,7 +3636,7 @@ function readWarrantyWorkbook(file,aliasGroups){
       if(!rows.length) continue;
       const headerRowIndex=findWarrantyHeaderRow(rows,aliasGroups);
       if(headerRowIndex<0) continue;
-      const headers=rows[headerRowIndex].map(value=>String(value??"").trim());
+      const headers=rows[headerRowIndex].map(value=>warrantyText(value));
       const score=Object.values(aliasGroups).reduce((total,aliases)=>total+(warrantyHeaderIndex(headers,aliases)>=0?1:0),0);
       if(!selectedSheet||score>(mapping._score||0)){
         selectedSheet=sheetName;
@@ -3646,7 +3647,7 @@ function readWarrantyWorkbook(file,aliasGroups){
         });
         output.length=0;
         for(const row of rows.slice(headerRowIndex+1)){
-          if(row.every(value=>String(value??"").trim()==="")) continue;
+          if(row.every(value=>warrantyText(value)==="")) continue;
           output.push(row);
         }
         mapping._headers=headers;
@@ -3660,81 +3661,93 @@ function readWarrantyWorkbook(file,aliasGroups){
   });
 }
 
+function warrantyMissingHeaders(dataset,requiredKeys){
+  return requiredKeys.filter(key=>!warrantyText(dataset?.mapping?.[key]));
+}
+
 function normalizeWarrantyJobCard(value){
-  return String(value??"").replace(/\.0+$/,"").replace(/\s+/g,"").toUpperCase();
+  return String(value ?? "").replace(/\\.0+$/,"").replace(/\\s+/g,"").toUpperCase();
 }
 
 function parseWarrantyClaimRows(dataset){
   const headers=dataset.headers||[];
   return (dataset.rows||[]).map((row,rowIndex)=>{
-    const combinedClaim=warrantyCell(row,headers,WARRANTY_TAG_ALIASES.claimNo);
-    const parsedClaim=parseWarrantyClaimCombined(combinedClaim);
-    const separateClaimNo=warrantyCell(row,headers,["oem claim no","claim no","claim number","claim no."]);
-    const separateClaimDate=warrantyCell(row,headers,WARRANTY_TAG_ALIASES.claimDate);
-    const separateSapNo=warrantyCell(row,headers,WARRANTY_TAG_ALIASES.sapNo);
-    const combinedVehicle=warrantyCell(row,headers,WARRANTY_TAG_ALIASES.chassis);
-    const parsedVehicle=parseWarrantyChassisEngine(combinedVehicle);
-    const separateChassis=warrantyCell(row,headers,["chassis no","chassis number","chassis"]);
-    const separateEngine=warrantyCell(row,headers,["engine no","engine number","engine"]);
-    const combinedPart=warrantyCell(row,headers,WARRANTY_TAG_ALIASES.partNo);
-    const parsedPart=parseWarrantyPartQty(combinedPart);
-    const separatePart=warrantyCell(row,headers,["fail part no","failed part no","fail.part no","part no"]);
-    const separateQty=warrantyCell(row,headers,["qty","quantity"]);
-    const combinedJob=warrantyCell(row,headers,WARRANTY_TAG_ALIASES.jobCard);
-    const parsedJob=parseWarrantyJobCardCombined(combinedJob);
-    const separateJobCard=warrantyCell(row,headers,["job card","job card no","jobcard","job card number"]);
-    const separateJobDate=warrantyCell(row,headers,WARRANTY_TAG_ALIASES.jobCardDate);
-    const claimNo=separateClaimNo||parsedClaim.claimNo;
-    const claimDate=separateClaimDate||parsedClaim.claimDate;
-    const sapNo=separateSapNo||parsedClaim.sapNo;
-    const chassis=separateChassis||parsedVehicle.chassis;
-    const engine=separateEngine||parsedVehicle.engine;
-    const partNo=separatePart||parsedPart.partNo;
-    const qty=separateQty||parsedPart.qty;
-    const jobCard=separateJobCard||parsedJob.jobCard;
-    const jobCardDate=separateJobDate||parsedJob.date;
-    const partDesc=warrantyCell(row,headers,WARRANTY_TAG_ALIASES.partDesc);
-    const claimType=warrantyCell(row,headers,WARRANTY_TAG_ALIASES.claimType)||"WARRANTY BSVI";
-    const dealerSource=warrantyCell(row,headers,WARRANTY_TAG_ALIASES.dealer);
-    if(!claimNo&&!jobCard&&!partNo&&!chassis) return null;
-    return {_row:rowIndex+1,claimNo,claimDate,sapNo,chassis,engine,partNo,qty,partDesc,jobCard,jobCardDate,claimType,dealerSource};
+    const claimNo=warrantyText(warrantyCell(row,headers,WARRANTY_TAG_ALIASES.claimNo));
+    const claimDate=formatWarrantyDate(warrantyCell(row,headers,WARRANTY_TAG_ALIASES.claimDate));
+    const customerName=warrantyText(warrantyCell(row,headers,WARRANTY_TAG_ALIASES.customerName));
+    const reg=warrantyText(warrantyCell(row,headers,WARRANTY_TAG_ALIASES.reg));
+    const chassis=warrantyText(warrantyCell(row,headers,WARRANTY_TAG_ALIASES.chassis));
+    const engine=warrantyText(warrantyCell(row,headers,WARRANTY_TAG_ALIASES.engine));
+    const partNo=warrantyText(warrantyCell(row,headers,WARRANTY_TAG_ALIASES.partNo));
+    const qty=warrantyText(warrantyCell(row,headers,WARRANTY_TAG_ALIASES.qty));
+    const partDesc=warrantyText(warrantyCell(row,headers,WARRANTY_TAG_ALIASES.partDesc));
+    const jobCard=warrantyText(warrantyCell(row,headers,WARRANTY_TAG_ALIASES.jobCard));
+    const jobCardDate=formatWarrantyDate(warrantyCell(row,headers,WARRANTY_TAG_ALIASES.jobCardDate));
+    const claimType=warrantyText(warrantyCell(row,headers,WARRANTY_TAG_ALIASES.claimType))||"WARRANTY BSVI";
+    const activeClaimNo=warrantyText(warrantyCell(row,headers,WARRANTY_TAG_ALIASES.activeClaimNo));
+    if(!claimNo&&!jobCard&&!partNo&&!chassis&&!reg) return null;
+    return {_row:rowIndex+1,claimNo,claimDate,customerName,reg,chassis,engine,partNo,qty,partDesc,jobCard,jobCardDate,claimType,activeClaimNo};
   }).filter(Boolean);
 }
 
 function parseWarrantySummaryRows(dataset){
   const headers=dataset.headers||[];
   return (dataset.rows||[]).map((row,rowIndex)=>{
-    const combinedJob=warrantyCell(row,headers,WARRANTY_SUMMARY_ALIASES.jobCard);
-    const parsedJob=parseWarrantyJobCardCombined(combinedJob);
-    const separateJobCard=warrantyCell(row,headers,["job card","job card no","jobcard","job card number"]);
-    const separateKm=warrantyCell(row,headers,["km","km reading","km reading.","kms","kilometer","kilometre","odometer","running km"]);
-    const jobCard=separateJobCard||parsedJob.jobCard;
-    const kmRaw=separateKm||parsedJob.reading;
-    const km=Number(String(kmRaw).replace(/,/g,"").match(/\d+(?:\.\d+)?/)?.[0]||0);
-    if(!jobCard||!km) return null;
-    return {_row:rowIndex+1,jobCard,km};
+    const jobCard=warrantyText(warrantyCell(row,headers,WARRANTY_SUMMARY_ALIASES.jobCard));
+    const reading=parseWarrantyNumber(warrantyCell(row,headers,WARRANTY_SUMMARY_ALIASES.reading));
+    const readingUnit=warrantyText(warrantyCell(row,headers,WARRANTY_SUMMARY_ALIASES.readingUnit)).toUpperCase();
+    const secondaryReading=parseWarrantyNumber(warrantyCell(row,headers,WARRANTY_SUMMARY_ALIASES.secondaryReading));
+    const secondaryUnit=warrantyText(warrantyCell(row,headers,WARRANTY_SUMMARY_ALIASES.secondaryUnit)).toUpperCase();
+    const workshopName=warrantyText(warrantyCell(row,headers,WARRANTY_SUMMARY_ALIASES.workshopName));
+    const workshopCode=warrantyText(warrantyCell(row,headers,WARRANTY_SUMMARY_ALIASES.workshopCode));
+    const chassis=warrantyText(warrantyCell(row,headers,WARRANTY_SUMMARY_ALIASES.chassis));
+    const engine=warrantyText(warrantyCell(row,headers,WARRANTY_SUMMARY_ALIASES.engine));
+    const model=warrantyText(warrantyCell(row,headers,WARRANTY_SUMMARY_ALIASES.model));
+    if(!jobCard) return null;
+    return {_row:rowIndex+1,jobCard,reading,readingUnit,secondaryReading,secondaryUnit,workshopName,workshopCode,chassis,engine,model};
   }).filter(Boolean);
 }
 
-function buildWarrantyTags(claimRows,summaryRows,workshopName){
-  const kmByJobCard=new Map();
+function buildWarrantyTags(claimRows,summaryRows){
+  const summaryByJobCard=new Map();
   summaryRows.forEach(row=>{
     const key=normalizeWarrantyJobCard(row.jobCard);
     if(!key) return;
-    const current=Number(kmByJobCard.get(key)||0);
-    if(Number(row.km||0)>=current) kmByJobCard.set(key,Number(row.km||0));
+    if(!summaryByJobCard.has(key)) summaryByJobCard.set(key,row);
   });
+
   const seen=new Set();
   return claimRows.map((row,index)=>{
-    const km=kmByJobCard.get(normalizeWarrantyJobCard(row.jobCard))||0;
-    const key=[row.claimNo,row.claimDate,row.sapNo,row.chassis,row.engine,row.partNo,row.qty,row.partDesc,row.jobCard].map(value=>String(value??"").trim().toUpperCase()).join("|");
+    const summary=summaryByJobCard.get(normalizeWarrantyJobCard(row.jobCard))||{};
+    const readingText=summary.reading
+      ? formatNumber(summary.reading)+" "+(summary.readingUnit||"")
+      : "";
+    const secondaryText=summary.secondaryReading
+      ? formatNumber(summary.secondaryReading)+" "+(summary.secondaryUnit||"")
+      : "";
+    const jobReading=readingText&&secondaryText
+      ? readingText+" / "+secondaryText
+      : (readingText||secondaryText||"");
+    const key=[row.claimNo,row.claimDate,row.reg,row.chassis,row.engine,row.partNo,row.qty,row.partDesc,row.jobCard].map(value=>warrantyText(value).toUpperCase()).join("|");
     if(seen.has(key)) return null;
     seen.add(key);
     return {
       id:"warranty-tag-"+index+"-"+row.claimNo+"-"+row.jobCard,
-      workshopName:String(workshopName||row.dealerSource||"").trim(),
-      claimNo:row.claimNo,claimDate:row.claimDate,sapNo:row.sapNo,chassis:row.chassis,engine:row.engine,
-      partNo:row.partNo,qty:row.qty,partDesc:row.partDesc,jobCard:row.jobCard,jobCardDate:row.jobCardDate,km,claimType:row.claimType
+      workshopName:summary.workshopName||"",
+      workshopCode:summary.workshopCode||"",
+      customerName:row.customerName,
+      reg:row.reg,
+      claimNo:row.claimNo,
+      claimDate:row.claimDate,
+      chassis:row.chassis,
+      engine:row.engine,
+      partNo:row.partNo,
+      qty:row.qty,
+      partDesc:row.partDesc,
+      jobCard:row.jobCard,
+      jobCardDate:row.jobCardDate,
+      reading:jobReading,
+      claimType:row.claimType
     };
   }).filter(Boolean);
 }
@@ -3744,9 +3757,9 @@ function WarrantyBarcode({value}){
   useEffect(()=>{
     if(!ref.current) return;
     ref.current.innerHTML="";
-    if(!String(value||"").trim()) return;
+    if(!warrantyText(value)) return;
     try{
-      JsBarcode(ref.current,String(value).trim(),{format:"CODE128",displayValue:false,width:1.35,height:34,margin:0,background:"#ffffff",lineColor:"#000000"});
+      JsBarcode(ref.current,warrantyText(value),{format:"CODE128",displayValue:false,width:1.35,height:34,margin:0,background:"#ffffff",lineColor:"#000000"});
     }catch{}
   },[value]);
   return <svg ref={ref} className="warranty-tag-barcode" aria-label={value?"Barcode "+value:"Barcode"} />;
@@ -3754,13 +3767,14 @@ function WarrantyBarcode({value}){
 
 function WarrantyTag({tag}){
   return <div className="warranty-tag">
-    <div className="warranty-tag-row"><span>Dlr.Name &amp; Code</span><strong>{tag.workshopName||"-"}</strong></div>
-    <div className="warranty-tag-row"><span>Claim/ SAP No Dt</span><strong>{tag.claimNo||"-"}{tag.claimDate?" & "+tag.claimDate:""}{tag.sapNo?" / "+tag.sapNo:""}</strong></div>
+    <div className="warranty-tag-row"><span>Dlr.Name &amp; Code</span><strong>{tag.workshopName||"-"}{tag.workshopCode?" ("+tag.workshopCode+")":""}</strong></div>
+    <div className="warranty-tag-row"><span>Claim/ SAP No Dt</span><strong>{tag.claimNo||"-"}{tag.claimDate?" & "+tag.claimDate:""}</strong></div>
     <div className="warranty-tag-row warranty-tag-barcode-row"><span>Sap Clm Bar Code</span><WarrantyBarcode value={tag.claimNo} /></div>
+    <div className="warranty-tag-row"><span>Registration No.</span><strong>{tag.reg||"-"}</strong></div>
     <div className="warranty-tag-row"><span>Chassis/ Engine&quot; No</span><strong>{tag.chassis||"-"} / {tag.engine||"-"}</strong></div>
     <div className="warranty-tag-row"><span>Fail.Part No | Qty</span><strong>{tag.partNo||"-"} {tag.qty||""}</strong></div>
     <div className="warranty-tag-row"><span>Part Descp</span><strong>{tag.partDesc||"-"}</strong></div>
-    <div className="warranty-tag-row"><span>Job Card /DT /KM/Hrs</span><strong>{tag.jobCard||"-"}{tag.jobCardDate?" & "+tag.jobCardDate:""} / {tag.km?formatNumber(tag.km)+" K":"K"}</strong></div>
+    <div className="warranty-tag-row"><span>Job Card /DT /KM/Hrs</span><strong>{tag.jobCard||"-"}{tag.jobCardDate?" & "+tag.jobCardDate:""} / {tag.reading||"-"}</strong></div>
     <div className="warranty-tag-row"><span>Claim Type</span><strong>{tag.claimType||"WARRANTY BSVI"}</strong></div>
   </div>;
 }
@@ -3779,7 +3793,9 @@ function WarrantyTagPanel({user,onBack}){
     setBusy(true);setError("");setMessage("");
     try{
       const dataset=await readWarrantyWorkbook(file,WARRANTY_TAG_ALIASES);
+      const missing=warrantyMissingHeaders(dataset,WARRANTY_CLAIM_REQUIRED);
       if(!dataset.headers.length||!dataset.rows.length) throw new Error("Billed JC Claim Statement me recognizable header row / data nahi mila.");
+      if(missing.length) throw new Error("Billed JC Claim Statement me mandatory header(s) missing: "+missing.join(", ")+".");
       setClaimDataset(dataset);setTags([]);
       setMessage(dataset.rows.length.toLocaleString("en-IN")+" source rows detected from "+file.name+".");
     }catch(e){setClaimDataset(null);setError(e.message||"Unable to read Billed JC Claim Statement.");}
@@ -3790,7 +3806,9 @@ function WarrantyTagPanel({user,onBack}){
     setBusy(true);setError("");setMessage("");
     try{
       const dataset=await readWarrantyWorkbook(file,WARRANTY_SUMMARY_ALIASES);
+      const missing=warrantyMissingHeaders(dataset,WARRANTY_SUMMARY_REQUIRED);
       if(!dataset.headers.length||!dataset.rows.length) throw new Error("Jobcard Summary me recognizable header row / data nahi mila.");
+      if(missing.length) throw new Error("Jobcard Summary me mandatory header(s) missing: "+missing.join(", ")+".");
       setSummaryDataset(dataset);setTags([]);
       setMessage(dataset.rows.length.toLocaleString("en-IN")+" Job Card Summary rows detected from "+file.name+".");
     }catch(e){setSummaryDataset(null);setError(e.message||"Unable to read Jobcard Summary.");}
@@ -3803,19 +3821,18 @@ function WarrantyTagPanel({user,onBack}){
     if(!summaryDataset){setError("Pehle Jobcard Summary Excel upload karein.");return;}
     const claimRows=parseWarrantyClaimRows(claimDataset);
     const summaryRows=parseWarrantySummaryRows(summaryDataset);
-    const nextTags=buildWarrantyTags(claimRows,summaryRows,user?.dealerName);
-    if(!nextTags.length){setError("Tag ke liye valid claim rows nahi mile. Exact Excel headers share karne par mapping update ki ja sakti hai.");return;}
-    const missingKm=nextTags.filter(tag=>!tag.km).length;
+    const nextTags=buildWarrantyTags(claimRows,summaryRows);
+    if(!nextTags.length){setError("Tag ke liye valid claim rows nahi mile.");return;}
     setTags(nextTags);
-    setMessage(nextTags.length.toLocaleString("en-IN")+" warranty tags ready. "+Math.ceil(nextTags.length/10)+" A4 page(s) required."+(missingKm?" "+missingKm+" tag(s) me Job Card Summary se KM match nahi mila.":""));
+    setMessage(nextTags.length.toLocaleString("en-IN")+" warranty tags ready. "+Math.ceil(nextTags.length/10)+" A4 page(s) required.");
   };
 
   const clearAll=()=>{
     setClaimFile(null);setSummaryFile(null);setClaimDataset(null);setSummaryDataset(null);setTags([]);setError("");setMessage("");
   };
 
-  const claimMappingKeys=["claimNo","claimDate","sapNo","chassis","engine","partNo","qty","partDesc","jobCard","jobCardDate","claimType"];
-  const summaryMappingKeys=["jobCard","km"];
+  const claimMappingKeys=["claimNo","claimDate","customerName","reg","chassis","engine","partNo","qty","partDesc","jobCard","jobCardDate","claimType"];
+  const summaryMappingKeys=["jobCard","reading","readingUnit","secondaryReading","secondaryUnit","workshopName","workshopCode"];
 
   return <>
     <div className="warranty-tag-workspace no-print">
@@ -3829,8 +3846,8 @@ function WarrantyTagPanel({user,onBack}){
       </div>
 
       <div className="warranty-tag-info-grid">
-        <div className="warranty-tag-info-card"><span>Workshop / Dealer</span><strong>{user?.dealerName||"-"}</strong><small>Read automatically from logged-in User ID</small></div>
-        <div className="warranty-tag-info-card"><span>Barcode Source</span><strong>OEM Claim No.</strong><small>Code128 barcode generated from Claim No.</small></div>
+        <div className="warranty-tag-info-card"><span>Workshop / Dealer</span><strong>{summaryDataset?.mapping?.workshopName||"-"}</strong><small>Read from Jobcard Summary · Servicing Company</small></div>
+        <div className="warranty-tag-info-card"><span>Barcode Source</span><strong>OEM Claim No.</strong><small>Code128 barcode generated from OEM Claim Number</small></div>
         <div className="warranty-tag-info-card"><span>A4 Layout</span><strong>10 tags / page</strong><small>2 columns × 5 rows, based on the supplied sample</small></div>
         <div className="warranty-tag-info-card"><span>Output</span><strong>{tags.length?tags.length.toLocaleString("en-IN")+" tags":"Not generated"}</strong><small>{tags.length?Math.ceil(tags.length/10)+" A4 page(s)":"1 to 100+ pages supported"}</small></div>
       </div>
@@ -3838,7 +3855,7 @@ function WarrantyTagPanel({user,onBack}){
       <div className="warranty-tag-upload-grid">
         <div className="warranty-tag-upload-card">
           <div className="warranty-tag-upload-title">1. Billed JC Claim Statement</div>
-          <div className="warranty-tag-upload-text">Main source. Claim, chassis, engine, failed part, quantity, description, job card, date and claim type are read from this file.</div>
+          <div className="warranty-tag-upload-text">Mandatory: Job Card Number, Job Card Date, Registration Number, Chassis Number, Engine Number, Part / Labour code, Quantity, Part / Labour Desc, OEM Claim Number and Claim Creation Date.</div>
           <label className="warranty-tag-file-button"><input type="file" accept=".xlsx,.xls,.xlsm,.csv" disabled={busy} onChange={event=>{const file=event.target.files?.[0]||null;event.target.value="";setClaimFile(file);if(file) void processClaimFile(file);}} />{claimFile?"Replace Claim Statement":"Select Excel File"}</label>
           {claimFile&&<div className="warranty-tag-file-name">{claimFile.name}</div>}
           {claimDataset&&<div className="warranty-tag-file-status">{claimDataset.rows.length.toLocaleString("en-IN")} source rows · {claimDataset.sheetName||"Sheet"}</div>}
@@ -3846,7 +3863,7 @@ function WarrantyTagPanel({user,onBack}){
 
         <div className="warranty-tag-upload-card">
           <div className="warranty-tag-upload-title">2. Jobcard Summary</div>
-          <div className="warranty-tag-upload-text">KM source. Job Card No. is matched with the billed claim statement and the KM reading is added to each tag.</div>
+          <div className="warranty-tag-upload-text">Mandatory: Job Card No., KM Reading / HR Reading, km/hr and Servicing Company. Secondary Counter Reading is also read when available.</div>
           <label className="warranty-tag-file-button"><input type="file" accept=".xlsx,.xls,.xlsm,.csv" disabled={busy} onChange={event=>{const file=event.target.files?.[0]||null;event.target.value="";setSummaryFile(file);if(file) void processSummaryFile(file);}} />{summaryFile?"Replace Jobcard Summary":"Select Excel File"}</label>
           {summaryFile&&<div className="warranty-tag-file-name">{summaryFile.name}</div>}
           {summaryDataset&&<div className="warranty-tag-file-status">{summaryDataset.rows.length.toLocaleString("en-IN")} source rows · {summaryDataset.sheetName||"Sheet"}</div>}
@@ -3859,14 +3876,14 @@ function WarrantyTagPanel({user,onBack}){
 
       {(claimDataset||summaryDataset)&&<div className="warranty-tag-mapping-card">
         <div className="warranty-tag-section-title">Current Header Detection</div>
-        <div className="warranty-tag-mapping-note">Column positions are not fixed. The Beta tool is using header names/aliases so tomorrow's exact headers can be added without changing the A4 output design.</div>
+        <div className="warranty-tag-mapping-note">Mandatory columns are validated before tag generation. Header names are matched from the actual Excel column names.</div>
         <div className="warranty-tag-mapping-grid">
           <div><strong>Billed JC Claim Statement</strong><div className="warranty-tag-mapping-list">{claimMappingKeys.map(key=><div key={key}><span>{key}</span><b>{claimDataset?.mapping?.[key]||"Not detected"}</b></div>)}</div></div>
           <div><strong>Jobcard Summary</strong><div className="warranty-tag-mapping-list">{summaryMappingKeys.map(key=><div key={key}><span>{key}</span><b>{summaryDataset?.mapping?.[key]||"Not detected"}</b></div>)}</div></div>
         </div>
       </div>}
 
-      {!tags.length&&<div className="warranty-tag-empty"><div className="warranty-tag-empty-icon">🏷️</div><strong>No tags generated yet</strong><span>Upload both Excel files. After the exact headers are available, the header alias map can be finalized without changing this workflow.</span></div>}
+      {!tags.length&&<div className="warranty-tag-empty"><div className="warranty-tag-empty-icon">🏷️</div><strong>No tags generated yet</strong><span>Upload both Excel files and then generate the A4 warranty tags.</span></div>}
     </div>
 
     {tags.length>0&&<div className="warranty-tag-print-root">{Array.from({length:Math.ceil(tags.length/10)},(_,pageIndex)=>{
@@ -6432,7 +6449,7 @@ clone.style.transformOrigin = "top left";
                 <div className="pre-analysis-title">Upload Excel to start</div>
                 <div className="pre-analysis-text">Vehicle analysis, profile and service history will appear here after the Excel file is uploaded and analysed.</div>
               </div>
-            ) ) : mode === "bulk" ? (
+            ) : mode === "bulk" ? (
               <>
                 <div className="sheet-heading">BULK VEHICLE SERVICE DECISION</div>
                 <div className="sheet-subheading">Multiple Excel files supported · Vehicle separation by VIN · Cross-file duplicate protection only.</div>

@@ -2300,7 +2300,12 @@ function additionalServiceEligibility(records, vehicle, running, analysisDate, d
   const bodyModels=['GM4225/66 H CO','GP4925/68 H CO','NH4120/60 H CC','NP4825/66 H CC','UG3520/57 H CC','UP4825/66 H CC','UP4825/66 PL CC'];
   const isBodyModel=bodyModels.some(code=>modelText.includes(code));
   if(isBodyModel){
-    const km=Number(running.current||0);
+    // Body Building Check Up has a KM/time rule only. When the user selects
+    // HRS, do not treat HRS as KM; use the vehicle's calculated KM reading.
+    const bodyRunning = decisionBasis === "KM"
+      ? running
+      : deriveRunningReadingForBasis(records, vehicle, "KM");
+    const km=Number(bodyRunning?.current||0);
     if(km>=1 && km<=5000 && analysisDate<=monthsAfter(vehicle.sale,4)){
       const historyDone=records.some(r=>{
         const t=serviceTextForRecord(r);

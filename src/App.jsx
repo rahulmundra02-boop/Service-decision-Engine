@@ -6765,7 +6765,7 @@ clone.style.transformOrigin = "top left";
                   <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
                     <div style={{fontSize:22,fontWeight:800}}>SERVICE ESTIMATE</div>
                     <div className="estimate-meta">Estimate No. (Session): <b>{estimateNumber || "-"}</b> · Date: <b>{formatDate(new Date())}</b></div>
-                    <button className="excel-button" style={{marginLeft:"auto"}} onClick={()=>setEstimateOpen(false);setMode("home")}>Cancel</button>
+                    <button className="excel-button" style={{marginLeft:"auto"}} onClick={()=>{setEstimateOpen(false);setMode("home");}}>Cancel</button>
                   </div>
                   <div style={{border:"1px solid #d5d5d5",borderRadius:8,padding:14}}>
                     <div style={{fontWeight:800,fontSize:16,marginBottom:10}}>1. Vehicle Details</div>
@@ -6784,7 +6784,7 @@ clone.style.transformOrigin = "top left";
                   <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
                     <div style={{fontSize:22,fontWeight:800}}>SELECT AGGREGATE SERVICES</div><div className="estimate-meta">Estimate No. (Session): <b>{estimateNumber || "-"}</b> · Date: <b>{formatDate(new Date())}</b></div>
                     <span style={{fontSize:12,color:"#666"}}>Single Vehicle Estimate</span>
-                    <button className="excel-button" style={{marginLeft:"auto"}} onClick={()=>setEstimateOpen(false);setMode("home")}>Cancel</button>
+                    <button className="excel-button" style={{marginLeft:"auto"}} onClick={()=>{setEstimateOpen(false);setMode("home");}}>Cancel</button>
                   </div>
                   <div style={{border:"1px solid #d5d5d5",borderRadius:8,padding:14}}>
                     <div style={{fontWeight:800,fontSize:16,marginBottom:10}}>Which services should be included in the estimate?</div>
@@ -6801,7 +6801,7 @@ clone.style.transformOrigin = "top left";
                   {estimateLoading && <div style={{marginTop:12,padding:10,textAlign:"center",background:"#f5f5f5",borderRadius:7}}>Loading vehicle history...</div>}
                   {!estimateLoading && estimateNotice && <div style={{marginTop:12,padding:10,background:"#f5f5f5",borderRadius:7}}>{estimateNotice}</div>}
                   <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:16}}>
-                    <button className="excel-button" onClick={()=>setEstimateOpen(false);setMode("home")}>Cancel</button>
+                    <button className="excel-button" onClick={()=>{setEstimateOpen(false);setMode("home");}}>Cancel</button>
                     <button className="excel-button green" disabled={estimateLoading} onClick={prepareEstimate}>OK / Prepare Estimate</button>
                   </div>
                 </>
@@ -6811,7 +6811,7 @@ clone.style.transformOrigin = "top left";
                     <div style={{fontSize:22,fontWeight:800}}>SERVICE ESTIMATE</div><div className="estimate-meta">Estimate No. (Session): <b>{estimateNumber || "-"}</b> · Date: <b>{formatDate(new Date())}</b></div>
                     <span style={{fontSize:12,color:"#666"}}>Single Vehicle Only</span>
                     <span style={{marginLeft:"auto",fontWeight:700}}>{user?.dealerName || "Workshop"}</span>
-                    <button className="excel-button no-print" onClick={()=>setEstimateOpen(false);setMode("home")}>Close</button>
+                    <button className="excel-button no-print" onClick={()=>{setEstimateOpen(false);setMode("home");}}>Close</button>
                   </div>
                    <div style={{display:"grid",gridTemplateColumns:"repeat(5,minmax(0,1fr))",gap:8,marginBottom:12}}>
                      {[["Customer","customerName"],["Reg. No.","reg"],["Chassis / VIN","vin"],["Engine No.","engine"],["Model","model"]].map(([label,key]) => (

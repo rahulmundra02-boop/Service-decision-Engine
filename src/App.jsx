@@ -1805,8 +1805,12 @@ function is4825Model(model){
   const t=String(model||'').toUpperCase();
   return /(?:^|[^0-9])4825(?:[^0-9]|$)/.test(t);
 }
+function isCE282039RmcKmModel(model){
+  const t=String(model||'').toUpperCase().replace(/\s+/g,' ').trim();
+  return /CE2820\s*\/\s*39\s+R\s+RMC/.test(t);
+}
 function isTipperModel(model){
-  if(is4825Model(model)) return false;
+  if(is4825Model(model) || isCE282039RmcKmModel(model)) return false;
   const t=String(model||'').toUpperCase();
   return t.includes('TIP') || t.includes('RMC');
 }

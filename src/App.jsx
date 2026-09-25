@@ -5823,7 +5823,25 @@ clone.style.transformOrigin = "top left";
           .history-wrap { max-height:none; overflow:visible; }
           .history-table th { position:static; }
         }
-      `}</style>
+
+        .excel-upload-processing-overlay { position: fixed; inset: 0; z-index: 100000; background: rgba(255,255,255,.72); display: flex; align-items: center; justify-content: center; cursor: wait; }
+        .excel-upload-processing-card { min-width: 280px; max-width: 90vw; padding: 24px 28px; border: 1px solid #c9c9c9; border-radius: 10px; background: #fff; box-shadow: 0 8px 30px rgba(0,0,0,.18); text-align: center; }
+        .excel-upload-spinner { width: 42px; height: 42px; margin: 0 auto 14px; border: 4px solid #d9e2f3; border-top-color: #4472c4; border-radius: 50%; animation: excelUploadSpin .8s linear infinite; }
+        .excel-upload-processing-title { font-size: 18px; font-weight: 800; color: #1f1f1f; }
+        .excel-upload-processing-text { margin-top: 6px; font-size: 13px; color: #666; line-height: 1.4; }
+        @keyframes excelUploadSpin { to { transform: rotate(360deg); } }      `}</style>
+
+
+
+      {uploadBusy && (
+        <div className="excel-upload-processing-overlay" role="status" aria-live="polite" aria-busy="true">
+          <div className="excel-upload-processing-card">
+            <div className="excel-upload-spinner" aria-hidden="true"></div>
+            <div className="excel-upload-processing-title">Processing Excel...</div>
+            <div className="excel-upload-processing-text">Please wait while the Excel data is being uploaded and processed.</div>
+          </div>
+        </div>
+      )}
 
       <div className={`excel-app theme-${dashboardPrefs.theme || "blue"}`}>
         <div className="excel-window">

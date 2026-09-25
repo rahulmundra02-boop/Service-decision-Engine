@@ -193,6 +193,8 @@ const PART_STANDARDIZATION = {
   'E9999998': 'Engine Oil',
   'EN699991': 'Engine Oil',
   'EN699992': 'Engine Oil',
+  'EN6C0002': 'Engine Oil',
+  'X8G00200': 'Spark Plug',
   'EN6A9991': 'Engine Oil',
   'EN6A9992': 'Engine Oil',
   'F7A01500': 'Engine Oil Filter',
@@ -1786,7 +1788,7 @@ const TIP_RULES = {
   defFilter:[1500,18], apdaFilter:[2000,24], defInline:[1500,12]
 };
 const SERVICE_SCHEDULE_ROWS = [
-  ['Engine Oil', '40,000 / 80,000 / 120,000 KM by model and valid oil quantity; 4,000 KM early buffer', '18 months', '1,000 or 1,500 Hrs by tipper model; 60 Hrs early buffer', '18 months'],
+  ['Engine Oil', 'Special GB2822G/50 H CO: 20,000 KM; otherwise existing model rule', 'Special: 6 months; otherwise existing rule', '1,000 or 1,500 Hrs by tipper model; 60 Hrs early buffer', '18 months'],
   ['Coolant', '320,000 KM', '36 months', '5,000 Hrs', '36 months'],
   ['Gear Oil', '160,000 KM', '18 months', '2,000 Hrs', '18 months'],
   ['Hub Grease', '80,000 KM', '12 months', '1,500 Hrs', '12 months'],
@@ -1804,6 +1806,10 @@ function daysBetween(a,b){ return Math.floor((b-a)/86400000); }
 function is4825Model(model){
   const t=String(model||'').toUpperCase();
   return /(?:^|[^0-9])4825(?:[^0-9]|$)/.test(t);
+}
+function isGB2822G50HCoModel(model){
+  const t=String(model||'').toUpperCase().replace(/\s+/g,' ').trim();
+  return /^GB2822G\s*\/\s*50\s+H\s+CO$/.test(t);
 }
 function isCE282039RmcKmModel(model){
   const t=String(model||'').toUpperCase().replace(/\s+/g,' ').trim();
@@ -2034,6 +2040,12 @@ function decideAggregate(records, vehicle, running, key, analysisDate, decisionB
   const useHours = decisionBasis === "HRS" ? true : decisionBasis === "KM" ? false : tip;
   const sale=vehicle.sale;
   if(key==='engineOil'){
+    if(isGB2822G50HCoModel(vehicle.model)){
+      const base=serviceBase(records,['ENGINE OIL'],12,false,vehicle);
+      const baseKm=base ? (base.relevantReading ?? getRelevantReading(base, vehicle)) : 0;
+      const baseDate=base ? base.date : sale;
+      return running.current >= baseKm + 20000 || analysisDate >= monthsAfter(baseDate,6);
+    }
     const base=serviceBase(records,['ENGINE OIL'],12,true,vehicle,'ENGINE OIL FILTER',true);
     let interval=120000;
     if(isH4Model(vehicle.model)) interval=40000;
@@ -2041,6 +2053,12 @@ function decideAggregate(records, vehicle, running, key, analysisDate, decisionB
     else if(isH6Model(vehicle.model)) interval=80000;
     if(useHours){ let hrs=1500; if(isA4Model(vehicle.model)||isH4Model(vehicle.model)||isH6Model(vehicle.model)) hrs=1000; return dueByHours(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),hrs,18,analysisDate,sale,vehicle); }
     return dueNormalWithSale(running.current,base,interval,18,analysisDate,sale,running.mode,vehicle);
+  }
+  if(key==='sparkPlug'){
+    if(!isGB2822G50HCoModel(vehicle.model)) return false;
+    const base=serviceBase(records,['SPARK PLUG'],1,false,vehicle);
+    const baseKm=base ? (base.relevantReading ?? getRelevantReading(base, vehicle)) : 0;
+    return running.current >= baseKm + 20000;
   }
   if(key==='steeringOil'){
     // Steering Oil is a valid replacement only when its dedicated filter is
@@ -2143,6 +2161,20 @@ function defInlineDecision(records,vehicle,running,analysisDate,decisionBasis = 
   );
 }
 function freeService(records,vehicle,running,analysisDate,decisionBasis = "AUTO"){
+  if(isGB2822G50HCoModel(vehicle.model)){
+    const checks=[
+      ['1ST FREE SERVICE',17000,23000,'1st free service'],
+      ['2ND FREE SERVICE',37000,43000,'2nd free service'],
+      ['3RD FREE SERVICE',57000,63000,'3rd free service']
+    ];
+    for(const [name,min,max,label] of checks){
+      if(records.some(r=>String(r.standardizedPart||'').toUpperCase().includes(name))) continue;
+      if(running.current>max) continue;
+      if(running.current>=min) return label;
+    }
+    return '';
+  }
+
   const tip=isTipperModel(vehicle.model);
   const useHours = decisionBasis === "HRS" ? true : decisionBasis === "KM" ? false : tip;
 
@@ -2268,7 +2300,7 @@ function calculateDecisions(records,vehicle,running,decisionBasis = "AUTO"){
   const effectiveBasis = decisionBasis === "AUTO"
     ? (isTipperModel(vehicle?.model) ? "HRS" : "KM")
     : getEffectiveDecisionBasis(vehicle, decisionBasis);
-  const keys=['engineOil','coolant','gearOil','hubGrease','axleOil','fuelFilter','steeringOil','airFilter','clutchOil','defFilter','apdaFilter'];
+  const keys=['engineOil','coolant','gearOil','hubGrease','axleOil','fuelFilter','steeringOil','airFilter','clutchOil','defFilter','apdaFilter','sparkPlug'];
   const result={};
   for(const k of keys) result[k]=decideAggregate(records,vehicle,running,k,analysisDate,effectiveBasis);
   result.defInline=defInlineDecision(records,vehicle,running,analysisDate,effectiveBasis);
@@ -2278,7 +2310,7 @@ function calculateDecisions(records,vehicle,running,decisionBasis = "AUTO"){
 }
 
 const BULK_SERVICE_LABELS = [
-  ["Engine Oil", "engineOil"], ["Coolant", "coolant"], ["Gear Oil", "gearOil"],
+  ["Engine Oil", "engineOil"], ["Spark Plug", "sparkPlug"], ["Coolant", "coolant"], ["Gear Oil", "gearOil"],
   ["Hub Grease", "hubGrease"], ["Axle Oil", "axleOil"], ["Fuel Filter", "fuelFilter"],
   ["Steering Oil", "steeringOil"], ["Air Filter", "airFilter"], ["Clutch Oil", "clutchOil"],
   ["DEF Filter", "defFilter"], ["DEF Inline Filter", "defInline"], ["APDA Filter", "apdaFilter"]

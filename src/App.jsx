@@ -3747,6 +3747,7 @@ function buildWarrantyTags(claimRows,summaryRows){
       reg:row.reg,
       claimNo:row.claimNo,
       claimDate:row.claimDate,
+      activeClaimNo:row.activeClaimNo,
       chassis:row.chassis,
       engine:row.engine,
       partNo:row.partNo,
@@ -3775,10 +3776,9 @@ function WarrantyBarcode({value}){
 
 function WarrantyTag({tag}){
   return <div className="warranty-tag">
-    <div className="warranty-tag-row"><span>Dlr.Name &amp; Code</span><strong>{tag.workshopName||"-"}{tag.workshopCode?" ("+tag.workshopCode+")":""}</strong></div>
-    <div className="warranty-tag-row"><span>Claim/ SAP No Dt</span><strong>{tag.claimNo||"-"}{tag.claimDate?" & "+tag.claimDate:""}</strong></div>
+    <div className="warranty-tag-row"><span>Dlr.Name &amp; Code</span><strong>{tag.workshopCode?tag.workshopCode+" - ":""}{tag.workshopName||"-"}</strong></div>
+    <div className="warranty-tag-row"><span>Claim/ SAP No Dt</span><strong>{tag.claimNo||"-"}{tag.claimDate?" & "+tag.claimDate:""}{tag.activeClaimNo?" / "+tag.activeClaimNo:""}</strong></div>
     <div className="warranty-tag-row warranty-tag-barcode-row"><span>Sap Clm Bar Code</span><WarrantyBarcode value={tag.claimNo} /></div>
-    <div className="warranty-tag-row"><span>Registration No.</span><strong>{tag.reg||"-"}</strong></div>
     <div className="warranty-tag-row"><span>Chassis/ Engine&quot; No</span><strong>{tag.chassis||"-"} / {tag.engine||"-"}</strong></div>
     <div className="warranty-tag-row"><span>Fail.Part No | Qty</span><strong>{tag.partNo||"-"} {tag.qty||""}</strong></div>
     <div className="warranty-tag-row"><span>Part Descp</span><strong>{tag.partDesc||"-"}</strong></div>

@@ -169,10 +169,6 @@ const PART_STANDARDIZATION = {
   'FS0500': 'Body Building Checkup',
   'FL100290': 'Cluster Meter',
   'FL100390': 'Cluster Meter',
-  'CFD99991': 'Clutch Oil',
-  'CLA99994': 'Clutch Oil',
-  'U9999995': 'Clutch Oil',
-  'U9999999': 'Clutch Oil',
   'C9999991': 'Coolant',
   'C9999993': 'Coolant',
   'C9999996': 'Coolant',
@@ -2026,30 +2022,6 @@ function isBSVIApplicable(vehicle){
   const sale = vehicle?.sale;
   return !!(sale && sale > new Date(2020, 2, 31));
 }
-const CLUTCH_OIL_DECISION_PART_CODES = new Set([
-  "CFD99991",
-  "CLA99994",
-  "U9999995",
-  "U9999999",
-]);
-
-function latestValidClutchOilPart(records, vehicle) {
-  const valid = (records || [])
-    .filter(record => {
-      const code = normalizePartCode(record?.partCode);
-      const qty = Number(record?.qty || 0);
-      return CLUTCH_OIL_DECISION_PART_CODES.has(code) && qty >= 0.5;
-    })
-    .sort((a, b) => (b.date || 0) - (a.date || 0));
-  if (!valid.length) return null;
-  const selected = valid[0];
-  return {
-    ...selected,
-    serviceQty: Number(selected.qty || 0),
-    relevantReading: vehicle ? getRelevantReading(selected, vehicle) : (selected.reading || 0),
-  };
-}
-
 function decideAggregate(records, vehicle, running, key, analysisDate, decisionBasis = "AUTO"){
   // DEF Filter and APDA Filter are BS-VI-only. Do not run their due logic for BS-IV.
   if ((key === 'defFilter' || key === 'apdaFilter') && !isBSVIApplicable(vehicle)) return false;
@@ -2075,43 +2047,12 @@ function decideAggregate(records, vehicle, running, key, analysisDate, decisionB
   }
   const cfg=DECISION_RULES[key]; if(!cfg) return false;
   let base=null;
-  if (key === 'clutchOil') {
-    base = latestValidClutchOilPart(records, vehicle);
-    if(useHours){
-      const tr=TIP_RULES[key];
-      return tr ? dueByHours(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),tr[0],tr[1],analysisDate,sale,vehicle) : false;
-    }
-    return dueNormalWithSale(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),cfg[0],cfg[1],analysisDate,sale,running.mode,vehicle);
-  }
   if(key==='airFilter') base=latestFilter(records,'AIR FILTER','AIR FILTER KIT',vehicle);
   else if(key==='fuelFilter') base=latestFuelFilter(records,vehicle);
   else if(key==='defFilter') base=latestDefFilter(records,vehicle);
-  else if(key==='clutchOil') base=latestClutchOilPart(records,vehicle);
   else base=serviceBase(records,[keyToPart(key)],cfg[2],false,vehicle);
   if(useHours){ const tr=TIP_RULES[key]; return tr ? dueByHours(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),tr[0],tr[1],analysisDate,sale,vehicle) : false; }
   return dueNormalWithSale(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),cfg[0],cfg[1],analysisDate,sale,running.mode,vehicle);
-}
-function latestClutchOilPart(records, vehicle = null) {
-  // Clutch Oil decision is based ONLY on these approved clutch-oil PART codes.
-  // Labour codes/descriptions such as CLH125 must never create or reset the
-  // Clutch Oil service base.
-  const allowedCodes = new Set(['CFD99991', 'CLA99994', 'U9999995', 'U9999999']);
-
-  const matches = records
-    .filter(r => {
-      const code = normalizePartCode(r?.partCode);
-      return allowedCodes.has(code) && Number(r?.qty || 0) >= 0.5 && r?.date;
-    })
-    .sort((a, b) => b.date - a.date);
-
-  const latest = matches[0] || null;
-  return latest
-    ? {
-        ...latest,
-        serviceQty: Number(latest.qty || 0),
-        relevantReading: vehicle ? getRelevantReading(latest, vehicle) : (latest.reading || 0)
-      }
-    : null;
 }
 function keyToPart(key){ return ({coolant:'COOLANT',gearOil:'GEAR OIL',hubGrease:'HUB GREASE',axleOil:'AXLE OIL',clutchOil:'CLUTCH OIL',apdaFilter:'APDA FILTER',defInline:'DEF INLINE FILTER'})[key]||''; }
 function latestDefFilter(records, vehicle){

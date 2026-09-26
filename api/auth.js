@@ -573,6 +573,12 @@ export default async function handler(req, res) {
         summaryQueryParams
       );
 
+      const totalVehiclesResult = await client.query(
+        `SELECT COUNT(DISTINCT UPPER(TRIM(v.vin)))::int AS total_vehicles
+           FROM vehicles v
+          WHERE v.vin IS NOT NULL AND TRIM(v.vin) <> ''`
+      );
+
       const recent = await client.query(
         `SELECT a.id,a.user_id,u.person_name,u.dealer_name,a.activity_type,a.activity_time,
                 a.mode,a.vehicle_count,a.file_count,a.vin,a.details
@@ -665,6 +671,7 @@ export default async function handler(req, res) {
         success:true,
         rangeDays,
         includeAdmins,
+        totalVehicles:Number(totalVehiclesResult.rows[0]?.total_vehicles || 0),
         summary:summary.rows.map(row => ({
           ...userPayload(row),
           totalActivities:Number(row.total_activities||0),

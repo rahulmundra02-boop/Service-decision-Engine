@@ -4742,7 +4742,12 @@ function ServiceDecisionApp({ user }) {
           mode:"bulk",
           vehicleCount:results.length,
           fileCount:uploadedFiles.length,
-          details:{ rows:parsed.records.length, customers:groups.length, automatic:true }
+          details:{
+            rows:parsed.records.length,
+            customers:groups.length,
+            automatic:true,
+            vins:[...new Set(results.map(item=>String(item?.vin || item?.vehicle?.vin || "").trim().toUpperCase()).filter(Boolean))]
+          }
         });
         setError(`Multiple Vehicle Detected: ${uniqueVins.length} unique VINs found. Automatically switched to Bulk Service.`);
         return;
@@ -4835,7 +4840,11 @@ function ServiceDecisionApp({ user }) {
         mode:"bulk",
         vehicleCount:results.length,
         fileCount:uploadedFiles.length,
-        details:{ rows:parsed.records.length, customers:groups.length }
+        details:{
+          rows:parsed.records.length,
+          customers:groups.length,
+          vins:[...new Set(results.map(item=>String(item?.vin || item?.vehicle?.vin || "").trim().toUpperCase()).filter(Boolean))]
+        }
       });
     } catch (e) {
       setBulkResults([]);

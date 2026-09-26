@@ -6240,6 +6240,14 @@ clone.style.transformOrigin = "top left";
           margin: 10px 0;
           align-items: stretch;
         }
+        .single-note-card-full {
+          grid-column: 1 / -1;
+        }
+        .single-customer-voice-compact {
+          min-height: 42px;
+          height: 42px;
+          padding: 7px 10px;
+        }
         .single-note-card {
           border: 1px solid #5c748d;
           background: #253b53;
@@ -6477,7 +6485,7 @@ clone.style.transformOrigin = "top left";
               <>
                 {analysis ? (
                 <div id="single-screenshot-area" className="single-screenshot-area">
-                <div className="sheet-heading" style={{marginTop:10}}>VEHICLE SCHEDULE SERVICE HISTORY FROM LAST 3 YEARS AS ON DATE - {todayDisplay}</div>
+                <div className="sheet-heading" style={{marginTop:10}}>VEHICLE SCHEDULE SERVICE HISTORY AS ON DATE - {todayDisplay}</div>
 
                 <div className="vehicle-output-layout" style={{marginTop:10}}>
                   <div className="vehicle-profile-panel">
@@ -6519,58 +6527,98 @@ clone.style.transformOrigin = "top left";
                 </div>
 
 
-                <div className="single-note-grid">
-                  <div className="single-note-card">
-                    <div className="single-note-title">Remark</div>
-                    <div className="single-note-value">
-                      {campaignLoading ? (
-                        <span className="campaign-loading-text">Checking active campaigns…</span>
-                      ) : (
-                        (() => {
-                          const activeCampaigns = getActiveCampaignGroups(campaigns);
-                          return activeCampaigns.length ? (
-                            <div className="campaign-list">
-                              {activeCampaigns.map((campaign, index) => (
-                                <div className="campaign-remark-row" key={String(campaign.campaignNumber || campaign.campaignDesc) + "-" + index}>
-                                  <span className="campaign-remark-text">{campaign.campaignDesc}</span>
-                                  <span className="campaign-info-wrap">
-                                    <button type="button" className="campaign-info-button" aria-label="Campaign details">i</button>
-                                    <span className="campaign-info-popover">
-                                      <strong>Campaign Number:</strong> {campaign.campaignNumber || "-"}<br />
-                                      <strong>From Date:</strong> {campaign.fromDate ? formatDate(campaign.fromDate) : "-"}<br />
-                                      <strong>To Date:</strong> {campaign.toDate ? formatDate(campaign.toDate) : "-"}<br />
-                                      <strong>Items:</strong>
-                                      <span className="campaign-item-list">
-                                        {campaign.items.length ? campaign.items.map((item, itemIndex) => (
-                                          <span key={itemIndex}>{item.item || "-"} — Qty {item.quantity || "-"}</span>
-                                        )) : <span>-</span>}
-                                      </span>
+                {(() => {
+                  const activeCampaigns = getActiveCampaignGroups(campaigns);
+                  if (campaignLoading) {
+                    return (
+                      <div className="single-note-grid single-note-grid-campaign-loading">
+                        <div className="single-note-card single-note-card-full">
+                          <div className="single-note-title">Customer Voice</div>
+                          <textarea
+                            className="single-customer-voice"
+                            value={customerVoice}
+                            onChange={(event) => {
+                              setCustomerVoice(event.target.value);
+                              event.target.style.height = "auto";
+                              event.target.style.height = event.target.scrollHeight + "px";
+                            }}
+                            placeholder="Enter customer voice..."
+                            rows={2}
+                            aria-label="Customer Voice"
+                          />
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  if (!activeCampaigns.length) {
+                    return (
+                      <div className="single-note-grid single-note-grid-no-campaign">
+                        <div className="single-note-card single-note-card-full">
+                          <div className="single-note-title">Customer Voice</div>
+                          <textarea
+                            className="single-customer-voice single-customer-voice-compact"
+                            value={customerVoice}
+                            onChange={(event) => {
+                              setCustomerVoice(event.target.value);
+                              event.target.style.height = "auto";
+                              event.target.style.height = event.target.scrollHeight + "px";
+                            }}
+                            placeholder="Enter customer voice..."
+                            rows={1}
+                            aria-label="Customer Voice"
+                          />
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="single-note-grid single-note-grid-with-campaign">
+                      <div className="single-note-card">
+                        <div className="single-note-title">Remark</div>
+                        <div className="single-note-value">
+                          <div className="campaign-list">
+                            {activeCampaigns.map((campaign, index) => (
+                              <div className="campaign-remark-row" key={String(campaign.campaignNumber || campaign.campaignDesc) + "-" + index}>
+                                <span className="campaign-remark-text">{campaign.campaignDesc}</span>
+                                <span className="campaign-info-wrap">
+                                  <button type="button" className="campaign-info-button" aria-label="Campaign details">i</button>
+                                  <span className="campaign-info-popover">
+                                    <strong>Campaign Number:</strong> {campaign.campaignNumber || "-"}<br />
+                                    <strong>From Date:</strong> {campaign.fromDate ? formatDate(campaign.fromDate) : "-"}<br />
+                                    <strong>To Date:</strong> {campaign.toDate ? formatDate(campaign.toDate) : "-"}<br />
+                                    <strong>Items:</strong>
+                                    <span className="campaign-item-list">
+                                      {campaign.items.length ? campaign.items.map((item, itemIndex) => (
+                                        <span key={itemIndex}>{item.item || "-"} — Qty {item.quantity || "-"}</span>
+                                      )) : <span>-</span>}
                                     </span>
                                   </span>
-                                </div>
-                              ))}
-                            </div>
-                          ) : <span>{remark}</span>;
-                        })()
-                      )}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="single-note-card">
+                        <div className="single-note-title">Customer Voice</div>
+                        <textarea
+                          className="single-customer-voice"
+                          value={customerVoice}
+                          onChange={(event) => {
+                            setCustomerVoice(event.target.value);
+                            event.target.style.height = "auto";
+                            event.target.style.height = event.target.scrollHeight + "px";
+                          }}
+                          placeholder="Enter customer voice..."
+                          rows={1}
+                          aria-label="Customer Voice"
+                        />
+                      </div>
                     </div>
-                  </div>
-                  <div className="single-note-card">
-                    <div className="single-note-title">Customer Voice</div>
-                    <textarea
-                      className="single-customer-voice"
-                      value={customerVoice}
-                      onChange={(event) => {
-                        setCustomerVoice(event.target.value);
-                        event.target.style.height = "auto";
-                        event.target.style.height = event.target.scrollHeight + "px";
-                      }}
-                      placeholder="Enter customer voice..."
-                      rows={2}
-                      aria-label="Customer Voice"
-                    />
-                  </div>
-                </div>
+                  );
+                })()}
 
                 {error && <div className="error-line no-print">{error}</div>}
 

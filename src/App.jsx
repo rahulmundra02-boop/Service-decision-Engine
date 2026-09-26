@@ -3842,6 +3842,7 @@ function WarrantyBarcode({value}){
   return <svg ref={ref} className="warranty-tag-barcode" aria-label={value?"Barcode "+value:"Barcode"} />;
 }
 
+// Warranty tag print build repair
 function WarrantyTag({tag}){
   return <div className="warranty-tag">
     <div className="warranty-tag-row"><span>Dlr.Name &amp; Code</span><strong>{tag.workshopCode?tag.workshopCode+" - ":""}{tag.workshopName||"-"}</strong></div>

@@ -97,6 +97,7 @@ export default async function handler(req, res) {
           "FROM service_history sh JOIN job_cards jc ON jc.id=sh.job_card_id " +
           "WHERE sh.item_category LIKE 'P002%' " +
           "AND UPPER(REPLACE(TRIM(sh.part_code), ' ', ''))=$1 " +
+          "AND UPPER(COALESCE(sh.repair_line_item_type, '')) LIKE '%POST%WARRANTY%' " +
           "AND sh.rate IS NOT NULL AND sh.rate > 0 " +
           "ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC LIMIT 1",
           [partNo]
@@ -161,6 +162,7 @@ export default async function handler(req, res) {
           "FROM service_history sh JOIN job_cards jc ON jc.id=sh.job_card_id " +
           "JOIN vehicles v ON v.id=jc.vehicle_id " +
           "WHERE sh.item_category LIKE 'P002%' AND sh.part_code IS NOT NULL " +
+          "AND UPPER(COALESCE(sh.repair_line_item_type, '')) LIKE '%POST%WARRANTY%' " +
           "AND sh.rate IS NOT NULL AND sh.rate > 0 " +
           "ORDER BY UPPER(REPLACE(TRIM(sh.part_code), ' ', '')), jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC"
         );

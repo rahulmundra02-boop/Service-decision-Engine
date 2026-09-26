@@ -72,7 +72,7 @@ export default function AuthGate({ children }) {
   const [campaignUploadBusy, setCampaignUploadBusy] = useState(false);
   const [campaignUploadMessage, setCampaignUploadMessage] = useState("");
   const [campaignUploadError, setCampaignUploadError] = useState("");
-  const [staleChassis, setStaleChassis] = useState([]);
+  const [staleChassisBuckets, setStaleChassisBuckets] = useState({"7plus":[],"6":[],"5":[],"4":[],"3":[],"2":[],"1":[]});
   const [staleChassisLoading, setStaleChassisLoading] = useState(false);
 
 
@@ -251,7 +251,15 @@ export default function AuthGate({ children }) {
     setStaleChassisLoading(true);
     try {
       const data = await api("admin-stale-chassis", {}, localStorage.getItem(TOKEN_KEY));
-      setStaleChassis(Array.isArray(data?.chassis) ? data.chassis : []);
+      setStaleChassisBuckets({
+        "7plus":Array.isArray(data?.buckets?.["7plus"]) ? data.buckets["7plus"] : [],
+        "6":Array.isArray(data?.buckets?.["6"]) ? data.buckets["6"] : [],
+        "5":Array.isArray(data?.buckets?.["5"]) ? data.buckets["5"] : [],
+        "4":Array.isArray(data?.buckets?.["4"]) ? data.buckets["4"] : [],
+        "3":Array.isArray(data?.buckets?.["3"]) ? data.buckets["3"] : [],
+        "2":Array.isArray(data?.buckets?.["2"]) ? data.buckets["2"] : [],
+        "1":Array.isArray(data?.buckets?.["1"]) ? data.buckets["1"] : []
+      });
     } catch (e) {
       setError(e.message || "Unable to load stale chassis list.");
     } finally {
@@ -661,7 +669,7 @@ export default function AuthGate({ children }) {
           campaignUploadMessage={campaignUploadMessage}
           campaignUploadError={campaignUploadError}
           onUploadCampaignExcel={uploadCampaignExcel}
-          staleChassis={staleChassis}
+          staleChassisBuckets={staleChassisBuckets}
           staleChassisLoading={staleChassisLoading}
           onLoadStaleChassis={loadStaleChassis}
         />
@@ -679,7 +687,7 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
   return <div className="auth-modal-backdrop"><div className="auth-modal" style={{maxWidth:820,width:"min(820px,calc(100vw - 32px))",maxHeight:"90vh",overflow:"auto",boxSizing:"border-box"}}><h2>Profile & Dashboard Settings</h2><p className="auth-hint">Ye settings sirf aapki user ID ke liye save hongi. Table width header divider ko mouse se drag karke set hogi.</p><label>Person Name</label><input value={form.personName} onChange={e=>setForm({...form,personName:e.target.value})}/><label>Dealer / Workshop Name</label><input value={form.dealerName} onChange={e=>setForm({...form,dealerName:e.target.value})}/><label>Mobile</label><input value={form.mobile} onChange={e=>setForm({...form,mobile:e.target.value})}/><label className="booking-field-label">Advance Booking Contact 1 {!form.booking1 && <span className="booking-field-dot" />}</label><input value={form.booking1} onChange={e=>setForm({...form,booking1:e.target.value})} placeholder="Optional mobile number"/><label className="booking-field-label">Advance Booking Contact 2 {!form.booking2 && <span className="booking-field-dot" />}</label><input value={form.booking2} onChange={e=>setForm({...form,booking2:e.target.value})} placeholder="Optional mobile number"/><label>WhatsApp Opening Line (Optional)</label><textarea value={form.whatsappOpeningLine} onChange={e=>setForm({...form,whatsappOpeningLine:e.target.value})} placeholder="Applies to the top of the WhatsApp due message. Leave blank if no extra line is required." rows={3} style={{minHeight:72,resize:"vertical"}}/><div className="auth-hint">This is your personal wording. It will be saved with your user ID and reused in future WhatsApp due summaries.</div><div style={{fontWeight:800}}>Single Vehicle Service History Table</div><div className="auth-hint">Checkbox = show/hide · Text box = custom heading · width by mouse drag.</div><div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:"6px 12px",margin:"8px 0 16px",minWidth:0}}>{singleCols.map(([k,l])=>editor("singleColumns",k,l))}</div><div style={{fontWeight:800}}>Bulk Vehicle Due / Service Summary Table</div><div className="auth-hint">Checkbox = show/hide · Text box = custom heading · width by mouse drag.</div><div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:"6px 12px",margin:"8px 0",minWidth:0}}>{bulkCols.map(([k,l])=>editor("bulkColumns",k,l))}<div style={{display:"grid",gridTemplateColumns:"28px 1fr",gap:7,alignItems:"center"}}><span></span><input value={(form.bulkColumnLabels||{}).serial||"S.No. / Due"} onChange={e=>setLabel("bulkColumnLabels","serial",e.target.value)} placeholder="S.No. / Due"/></div></div><div className="auth-modal-actions"><button className="auth-secondary" onClick={onClose}>Cancel</button><button className="auth-primary" onClick={onSave} disabled={loading}>Save Profile & Settings</button></div></div></div>;
 }
 
-function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel, staleChassis, staleChassisLoading, onLoadStaleChassis }) {
+function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel, staleChassisBuckets, staleChassisLoading, onLoadStaleChassis }) {
   const analyticsDetailRef = useRef(null);
   const [view, setView] = useState("overview");
 
@@ -758,25 +766,14 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
 
         <div className="admin-panel-card" style={{marginTop:16,padding:"18px 20px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
-            <div>
-              <div className="admin-panel-card-title">Service Update Pending ≥ 7 Days</div>
-              <div className="admin-panel-card-sub">DB se un chassis ki list jinka latest service / job-card date 7 days ya usse purana hai.</div>
-            </div>
-            <button className="auth-primary" type="button" onClick={onLoadStaleChassis} disabled={staleChassisLoading}>
-              {staleChassisLoading ? "Loading..." : "Refresh List"}
-            </button>
+            <div><div className="admin-panel-card-title">Service Update Pending</div><div className="admin-panel-card-sub">Latest service / job-card date ke basis par chassis ko age-wise priority buckets me dekhein.</div></div>
+            <button className="auth-primary" type="button" onClick={onLoadStaleChassis} disabled={staleChassisLoading}>{staleChassisLoading ? "Loading..." : "Refresh List"}</button>
           </div>
-          <div style={{marginTop:14,padding:"10px 12px",borderRadius:8,background:"#f5f8fb",fontWeight:700}}>
-            {staleChassis.length.toLocaleString("en-IN")} chassis found
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(110px,1fr))",gap:8,marginTop:14}}>
+            {[["7plus","7 Days or More"],["6","6 Days Old"],["5","5 Days Old"],["4","4 Days Old"],["3","3 Days Old"],["2","2 Days Old"],["1","1 Day Old"]].map(([key,label])=><div key={key} style={{padding:"10px 8px",border:"1px solid #d7dce3",borderRadius:8,background:"#f5f8fb",textAlign:"center"}}><div style={{fontSize:12,fontWeight:700,color:"#667085"}}>{label}</div><div style={{fontSize:20,fontWeight:800,marginTop:3}}>{(staleChassisBuckets?.[key]||[]).length.toLocaleString("en-IN")}</div><div style={{fontSize:11,color:"#667085"}}>chassis</div></div>)}
           </div>
-          <div style={{marginTop:12,maxHeight:360,overflowY:"auto",border:"1px solid #d7dce3",borderRadius:8,background:"#fff"}}>
-            {staleChassis.length ? staleChassis.map((chassis,index) => (
-              <div key={chassis+"-"+index} style={{padding:"8px 12px",borderBottom:index===staleChassis.length-1?"0":"1px solid #edf0f3",fontFamily:"monospace",fontSize:13}}>
-                {chassis}
-              </div>
-            )) : (
-              <div style={{padding:14,color:"#667085"}}>{staleChassisLoading ? "Loading chassis list..." : "No chassis found with service update pending for 7 days or more."}</div>
-            )}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12,marginTop:14}}>
+            {[["7plus","7 Days or More"],["6","6 Days Old"],["5","5 Days Old"],["4","4 Days Old"],["3","3 Days Old"],["2","2 Days Old"],["1","1 Day Old"]].map(([key,label])=>{const list=staleChassisBuckets?.[key]||[];return <div key={key} style={{border:"1px solid #d7dce3",borderRadius:8,overflow:"hidden",background:"#fff"}}><div style={{padding:"9px 12px",fontWeight:800,background:"#f5f8fb",borderBottom:"1px solid #edf0f3"}}>{label} <span style={{fontWeight:600,color:"#667085"}}>({list.length.toLocaleString("en-IN")})</span></div><div style={{maxHeight:240,overflowY:"auto"}}>{list.length?list.map((chassis,index)=><div key={chassis+"-"+index} style={{padding:"7px 12px",borderBottom:index===list.length-1?"0":"1px solid #edf0f3",fontFamily:"monospace",fontSize:13}}>{chassis}</div>):<div style={{padding:12,color:"#667085"}}>{staleChassisLoading?"Loading...":"No chassis in this bucket."}</div>}</div></div>})}
           </div>
         </div>
 

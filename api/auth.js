@@ -636,7 +636,7 @@ export default async function handler(req, res) {
            SELECT (f.activity_time AT TIME ZONE 'Asia/Kolkata')::date AS activity_date,
                   COUNT(*)::int AS activities,
                   COUNT(*) FILTER (WHERE f.activity_type='Login')::int AS logins,
-                  COUNT(DISTINCT av.vin)::int AS vehicles,
+                  COUNT(DISTINCT (f.user_id, av.vin))::int AS vehicles,
                   COALESCE(SUM(f.file_count),0)::int AS files
              FROM filtered f
              LEFT JOIN activity_vins av ON av.id=f.id
@@ -663,7 +663,7 @@ export default async function handler(req, res) {
              WHERE NULLIF(TRIM(v.value),'') IS NOT NULL
            )
            SELECT f.activity_type, COUNT(*)::int AS count,
-                  COUNT(DISTINCT av.vin)::int AS vehicles,
+                  COUNT(DISTINCT (f.user_id, av.vin))::int AS vehicles,
                   COALESCE(SUM(f.file_count),0)::int AS files
              FROM filtered f
              LEFT JOIN activity_vins av ON av.id=f.id

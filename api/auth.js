@@ -699,20 +699,18 @@ export default async function handler(req, res) {
       const result = await client.query(
         `SELECT
            UPPER(TRIM(v.vin)) AS chassis_no,
-           MAX(jc.job_date)::date AS last_service_date
+           v.last_refreshed_at AS last_updated_at
          FROM vehicles v
-         JOIN job_cards jc ON jc.vehicle_id=v.id
          WHERE v.vin IS NOT NULL AND TRIM(v.vin) <> ''
-           AND jc.job_date IS NOT NULL
-         GROUP BY UPPER(TRIM(v.vin))
-         ORDER BY MAX(jc.job_date) ASC, UPPER(TRIM(v.vin)) ASC`
+           AND v.last_refreshed_at IS NOT NULL
+         ORDER BY v.last_refreshed_at ASC, UPPER(TRIM(v.vin)) ASC`
       );
 
       const buckets = {"7plus": [], "6": [], "5": [], "4": [], "3": [], "2": [], "1": []};
 
       for (const row of result.rows) {
-        if (!row.chassis_no || !row.last_service_date) continue;
-        const serviceDate = new Date(row.last_service_date);
+        if (!row.chassis_no || !row.last_updated_at) continue;
+        const serviceDate = new Date(row.last_updated_at);
         const today = new Date();
         serviceDate.setHours(0,0,0,0);
         today.setHours(0,0,0,0);

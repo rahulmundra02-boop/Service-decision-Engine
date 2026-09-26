@@ -3778,9 +3778,7 @@ function cleanWarrantyOemClaimNo(value){
 }
 
 function cleanWarrantyClaimType(value){
-  const text=warrantyText(value);
-  if(!text) return "WARRANTY BSVI";
-  return text.replace(/^\s*\d+\s+/,"").trim();
+  return formatWarrantyClaimType(value);
 }
 
 function buildWarrantyTags(claimRows,summaryRows){
@@ -3943,12 +3941,15 @@ function WarrantyTagPanel({user,onBack}){
   const descriptionOptions=useMemo(()=>{
     const map=new Map();
     tags.forEach(tag=>{
+      const isAmc=/^AMC$/i.test(warrantyText(tag.claimType));
+      if(repairFilter==="AMC" && !isAmc) return;
+      if(repairFilter==="NON_AMC" && isAmc) return;
       const desc=warrantyText(tag.partDesc);
       if(desc&&!map.has(desc)) map.set(desc,0);
       if(desc) map.set(desc,(map.get(desc)||0)+1);
     });
     return Array.from(map.entries()).sort((a,b)=>a[0].localeCompare(b[0]));
-  },[tags]);
+  },[tags,repairFilter]);
 
   const visibleTags=useMemo(()=>{
     return tags.filter(tag=>{

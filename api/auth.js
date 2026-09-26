@@ -665,22 +665,42 @@ export default async function handler(req, res) {
       const result = await client.query(
         `SELECT
            UPPER(TRIM(v.vin)) AS chassis_no,
-           MAX(jc.job_date) AS last_service_date
+           MAX(jc.job_date)::date AS last_service_date
          FROM vehicles v
          JOIN job_cards jc ON jc.vehicle_id=v.id
          WHERE v.vin IS NOT NULL AND TRIM(v.vin) <> ''
            AND jc.job_date IS NOT NULL
          GROUP BY UPPER(TRIM(v.vin))
-         HAVING MAX(jc.job_date)::date <= (CURRENT_DATE - INTERVAL '7 days')::date
          ORDER BY MAX(jc.job_date) ASC, UPPER(TRIM(v.vin)) ASC`
       );
+
+      const buckets = {
+        "7plus": [],
+        "6": [],
+        "5": [],
+        "4": [],
+        "3": [],
+        "2": [],
+        "1": [],
+      };
+
+      for (const row of result.rows) {
+        if (!row.chassis_no || !row.last_service_date) continue;
+        const serviceDate = new Date(row.last_service_date);
+        const today = new Date();
+        serviceDate.setHours(0,0,0,0);
+        today.setHours(0,0,0,0);
+        const ageDays = Math.floor((today.getTime() - serviceDate.getTime()) / (24 * 60 * 60 * 1000));
+
+        if (ageDays >= 7) buckets["7plus"].push(row.chassis_no);
+        else if (ageDays >= 1 && ageDays <= 6) buckets[String(ageDays)].push(row.chassis_no);
+      }
 
       await client.query("COMMIT");
       return res.json({
         success:true,
-        thresholdDays:7,
-        chassis:result.rows.map(row => row.chassis_no).filter(Boolean),
-        count:result.rows.length
+        buckets,
+        counts:Object.fromEntries(Object.entries(buckets).map(([key,list]) => [key,list.length]))
       });
     }
 

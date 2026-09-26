@@ -4176,7 +4176,7 @@ function WarrantyTagPanel({user,onBack}){
 
         <div className="warranty-tag-print-controls no-print">
           <strong>Tag Print Area</strong>
-          <span>{visibleTags.length.toLocaleString("en-IN")} tags selected · {Math.ceil(visibleTags.length/10)} A4 page(s)</span>
+          <span>{visibleTags.length.toLocaleString("en-IN")} tags selected · {Math.ceil(visibleTags.length/(printLayout==="4"?4:10))} A4 page(s)</span>
           <button className="excel-button green" type="button" disabled={!visibleTags.length} onClick={printTags}>Print Tags</button>
           <button className="excel-button" type="button" disabled={!visibleTags.length||pdfBusy} onClick={downloadPdf}>{pdfBusy?"Creating PDF...":"Download PDF"}</button>
         </div>

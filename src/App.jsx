@@ -3638,6 +3638,11 @@ function formatWarrantyClaimNumber(value){
   return text.replace(/^0+(?=\d)/,"");
 }
 
+function getWarrantyRepairType(claimType){
+  const normalized=warrantyText(claimType).trim().toUpperCase();
+  return /^AMC(?:\s|$)/.test(normalized) ? "AMC" : "NON_AMC";
+}
+
 function formatWarrantyClaimType(value){
   const text=warrantyText(value).trim();
   if(!text) return "WARRANTY";
@@ -3941,9 +3946,9 @@ function WarrantyTagPanel({user,onBack}){
   const descriptionOptions=useMemo(()=>{
     const map=new Map();
     tags.forEach(tag=>{
-      const isAmc=/^AMC$/i.test(warrantyText(tag.claimType));
-      if(repairFilter==="AMC" && !isAmc) return;
-      if(repairFilter==="NON_AMC" && isAmc) return;
+      const tagRepairType=getWarrantyRepairType(tag.claimType);
+      if(repairFilter==="AMC" && tagRepairType!=="AMC") return;
+      if(repairFilter==="NON_AMC" && tagRepairType!=="NON_AMC") return;
       const desc=warrantyText(tag.partDesc);
       if(desc&&!map.has(desc)) map.set(desc,0);
       if(desc) map.set(desc,(map.get(desc)||0)+1);
@@ -3955,8 +3960,9 @@ function WarrantyTagPanel({user,onBack}){
     return tags.filter(tag=>{
       const desc=warrantyText(tag.partDesc);
       if(removedDescriptions.includes(desc)) return false;
-      if(repairFilter==="AMC") return /\\bamc\\b/i.test(warrantyText(tag.claimType));
-      if(repairFilter==="NON_AMC") return !/\\bamc\\b/i.test(warrantyText(tag.claimType));
+      const tagRepairType=getWarrantyRepairType(tag.claimType);
+      if(repairFilter==="AMC") return tagRepairType==="AMC";
+      if(repairFilter==="NON_AMC") return tagRepairType==="NON_AMC";
       return true;
     });
   },[tags,removedDescriptions,repairFilter]);

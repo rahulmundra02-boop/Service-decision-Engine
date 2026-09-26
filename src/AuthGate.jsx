@@ -690,6 +690,8 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
 function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel, staleChassisBuckets, staleChassisLoading, onLoadStaleChassis }) {
   const analyticsDetailRef = useRef(null);
   const [view, setView] = useState("overview");
+  const [serviceUpdateOpen, setServiceUpdateOpen] = useState(false);
+  const [copiedServiceBucket, setCopiedServiceBucket] = useState("");
 
   const selected = analyticsUserId
     ? analytics.summary.find(u => Number(u.id) === Number(analyticsUserId))
@@ -764,18 +766,88 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
           {metricCard("Activities", totals.activities)}
         </div>
 
-        <div className="admin-panel-card" style={{marginTop:16,padding:"18px 20px"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
-            <div><div className="admin-panel-card-title">Service Update Pending</div><div className="admin-panel-card-sub">Latest service / job-card date ke basis par chassis ko age-wise priority buckets me dekhein.</div></div>
-            <button className="auth-primary" type="button" onClick={onLoadStaleChassis} disabled={staleChassisLoading}>{staleChassisLoading ? "Loading..." : "Refresh List"}</button>
+        {!serviceUpdateOpen ? (
+          <div className="admin-panel-card service-update-entry-card">
+            <div className="service-update-entry-content">
+              <div>
+                <div className="admin-panel-card-title">Service Update Priority</div>
+                <div className="admin-panel-card-sub">DB se service update pending chassis ko 1 day se 7+ days tak priority-wise dekhein.</div>
+              </div>
+              <button className="auth-primary service-update-open-btn" type="button" onClick={()=>setServiceUpdateOpen(true)}>
+                Open Service Update List
+              </button>
+            </div>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(110px,1fr))",gap:8,marginTop:14}}>
-            {[["7plus","7 Days or More"],["6","6 Days Old"],["5","5 Days Old"],["4","4 Days Old"],["3","3 Days Old"],["2","2 Days Old"],["1","1 Day Old"]].map(([key,label])=><div key={key} style={{padding:"10px 8px",border:"1px solid #d7dce3",borderRadius:8,background:"#f5f8fb",textAlign:"center"}}><div style={{fontSize:12,fontWeight:700,color:"#667085"}}>{label}</div><div style={{fontSize:20,fontWeight:800,marginTop:3}}>{(staleChassisBuckets?.[key]||[]).length.toLocaleString("en-IN")}</div><div style={{fontSize:11,color:"#667085"}}>chassis</div></div>)}
+        ) : (
+          <div className="admin-panel-card service-update-detail-card">
+            <div className="service-update-detail-header">
+              <div>
+                <div className="admin-panel-card-title">Service Update Pending</div>
+                <div className="admin-panel-card-sub">Latest service / job-card date ke basis par chassis ko age-wise priority buckets me dekhein.</div>
+              </div>
+              <div className="service-update-detail-actions">
+                <button className="auth-secondary" type="button" onClick={()=>setServiceUpdateOpen(false)}>Back</button>
+                <button className="auth-primary" type="button" onClick={onLoadStaleChassis} disabled={staleChassisLoading}>
+                  {staleChassisLoading ? "Loading..." : "Refresh List"}
+                </button>
+              </div>
+            </div>
+
+            <div className="service-update-count-grid">
+              {[["7plus","7 Days or More"],["6","6 Days Old"],["5","5 Days Old"],["4","4 Days Old"],["3","3 Days Old"],["2","2 Days Old"],["1","1 Day Old"]].map(([key,label])=>(
+                <div key={key} className="service-update-count-box">
+                  <div className="service-update-count-label">{label}</div>
+                  <div className="service-update-count-value">{(staleChassisBuckets?.[key]||[]).length.toLocaleString("en-IN")}</div>
+                  <div className="service-update-count-sub">chassis</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="service-update-list-grid">
+              {[["7plus","7 Days or More"],["6","6 Days Old"],["5","5 Days Old"],["4","4 Days Old"],["3","3 Days Old"],["2","2 Days Old"],["1","1 Day Old"]].map(([key,label])=>{
+                const list=staleChassisBuckets?.[key]||[];
+                const copyList=async()=>{
+                  try {
+                    const text=list.join("\n");
+                    if(navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
+                    else {
+                      const area=document.createElement("textarea");
+                      area.value=text;
+                      area.style.position="fixed";
+                      area.style.opacity="0";
+                      document.body.appendChild(area);
+                      area.select();
+                      document.execCommand("copy");
+                      area.remove();
+                    }
+                    setCopiedServiceBucket(key);
+                    setTimeout(()=>setCopiedServiceBucket(current=>current===key ? "" : current),1800);
+                  } catch(e) {
+                    setError("Unable to copy chassis list.");
+                  }
+                };
+                return (
+                  <div key={key} className="service-update-list-box">
+                    <div className="service-update-list-header">
+                      <div className="service-update-list-title">{label} <span>({list.length.toLocaleString("en-IN")})</span></div>
+                      <button type="button" className="service-update-copy-btn" onClick={copyList} disabled={!list.length}>
+                        {copiedServiceBucket===key ? "Copied ✓" : "Copy to Clipboard"}
+                      </button>
+                    </div>
+                    <div className="service-update-list-scroll">
+                      {list.length ? list.map((chassis,index)=>(
+                        <div key={chassis+"-"+index} className="service-update-chassis-row">{chassis}</div>
+                      )) : (
+                        <div className="service-update-empty">{staleChassisLoading ? "Loading..." : "No chassis in this bucket."}</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12,marginTop:14}}>
-            {[["7plus","7 Days or More"],["6","6 Days Old"],["5","5 Days Old"],["4","4 Days Old"],["3","3 Days Old"],["2","2 Days Old"],["1","1 Day Old"]].map(([key,label])=>{const list=staleChassisBuckets?.[key]||[];return <div key={key} style={{border:"1px solid #d7dce3",borderRadius:8,overflow:"hidden",background:"#fff"}}><div style={{padding:"9px 12px",fontWeight:800,background:"#f5f8fb",borderBottom:"1px solid #edf0f3"}}>{label} <span style={{fontWeight:600,color:"#667085"}}>({list.length.toLocaleString("en-IN")})</span></div><div style={{maxHeight:240,overflowY:"auto"}}>{list.length?list.map((chassis,index)=><div key={chassis+"-"+index} style={{padding:"7px 12px",borderBottom:index===list.length-1?"0":"1px solid #edf0f3",fontFamily:"monospace",fontSize:13}}>{chassis}</div>):<div style={{padding:12,color:"#667085"}}>{staleChassisLoading?"Loading...":"No chassis in this bucket."}</div>}</div></div>})}
-          </div>
-        </div>
+        )}
+
 
         <div className="admin-panel-card" style={{marginTop:16,padding:"18px 20px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>

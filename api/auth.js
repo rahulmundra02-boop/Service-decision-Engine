@@ -528,20 +528,47 @@ export default async function handler(req, res) {
         : (targetUserId ? [targetUserId, rangeDays] : [rangeDays]);
 
       const summary = await client.query(
-        `SELECT
+        `WITH filtered_activity AS (
+           SELECT a.*
+           FROM user_activity a
+           JOIN app_users au ON au.id=a.user_id
+           WHERE ${summaryActivityFilter.replace(/(^| )a\\./g, "$1a.")}
+             ${!includeAdmins ? " AND au.role <> 'admin'" : ""}
+         ),
+         unique_activity_vins AS (
+           SELECT DISTINCT fa.user_id, UPPER(TRIM(fa.vin)) AS vin
+           FROM filtered_activity fa
+           WHERE NULLIF(TRIM(fa.vin),'') IS NOT NULL
+           UNION
+           SELECT DISTINCT fa.user_id, UPPER(TRIM(v.value)) AS vin
+           FROM filtered_activity fa
+           CROSS JOIN LATERAL jsonb_array_elements_text(
+             CASE
+               WHEN jsonb_typeof(fa.details->'vins')='array' THEN fa.details->'vins'
+               ELSE '[]'::jsonb
+             END
+           ) v
+           WHERE NULLIF(TRIM(v.value),'') IS NOT NULL
+         )
+         SELECT
            u.id,u.person_name,u.dealer_name,u.email,u.mobile,u.role,u.status,u.created_at,u.last_login_at,u.last_activity_at,
            COUNT(a.id)::int AS total_activities,
            COUNT(*) FILTER (WHERE a.activity_type='Login')::int AS total_logins,
            COUNT(DISTINCT (a.activity_time AT TIME ZONE 'Asia/Kolkata')::date) FILTER (WHERE a.activity_type <> 'Logout')::int AS active_days,
-           COALESCE(SUM(a.vehicle_count),0)::int AS vehicles_analyzed,
+           COALESCE(uv.unique_vehicle_count,0)::int AS vehicles_analyzed,
            COALESCE(SUM(a.file_count),0)::int AS files_processed,
            COUNT(*) FILTER (WHERE a.activity_type='Single Vehicle Analysis')::int AS single_analyses,
            COUNT(*) FILTER (WHERE a.activity_type='Bulk Vehicle Analysis')::int AS bulk_analyses,
            COUNT(*) FILTER (WHERE a.activity_type='Service Schedule Viewed')::int AS schedule_views
          FROM app_users u
-         LEFT JOIN user_activity a ON a.user_id=u.id AND ${summaryActivityFilter}
+         LEFT JOIN filtered_activity a ON a.user_id=u.id
+         LEFT JOIN (
+           SELECT user_id, COUNT(*)::int AS unique_vehicle_count
+           FROM unique_activity_vins
+           GROUP BY user_id
+         ) uv ON uv.user_id=u.id
          ${userWhere}
-         GROUP BY u.id
+         GROUP BY u.id,uv.unique_vehicle_count
          ORDER BY u.role DESC,u.created_at DESC`,
         summaryQueryParams
       );

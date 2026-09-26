@@ -3640,8 +3640,21 @@ function formatWarrantyClaimNumber(value){
 
 function formatWarrantyClaimType(value){
   const text=warrantyText(value).trim();
-  if(!text) return "WARRANTY ORDER";
-  return text.replace(/^\d+\s+/,"").trim().toUpperCase();
+  if(!text) return "WARRANTY";
+  return text
+    .replace(/^\s*\d+\s*[-.:]?\s*/,"")
+    .replace(/\s+ORDER\s*$/i,"")
+    .trim()
+    .toUpperCase() || "WARRANTY";
+}
+
+function isWarrantyPrintEligiblePart(partNo){
+  const normalized=normalizePartCode(partNo);
+  if(!normalized) return false;
+  const alphaNumeric=normalized.replace(/[^A-Z0-9]/g,"");
+  if(alphaNumeric.length<8) return false;
+  if(alphaNumeric.includes("9999")) return false;
+  return true;
 }
 
 function formatWarrantyReading(summary){
@@ -3886,14 +3899,45 @@ function WarrantyTagPanel({user,onBack}){
     setError("");setMessage("");
     if(!claimDataset){setError("Pehle Billed JC Claim Statement Excel upload karein.");return;}
     if(!summaryDataset){setError("Pehle Jobcard Summary Excel upload karein.");return;}
+
     const claimRows=parseWarrantyClaimRows(claimDataset);
     const summaryRows=parseWarrantySummaryRows(summaryDataset);
+
+    // Every Job Card present in the Billed JC Claim Statement must also exist
+    // in the Jobcard Summary before any warranty tag result is populated.
+    const summaryJobCards=new Set(
+      summaryRows
+        .map(row=>normalizeWarrantyJobCard(row.jobCard))
+        .filter(Boolean)
+    );
+    const missingJobCards=[...new Set(
+      claimRows
+        .map(row=>normalizeWarrantyJobCard(row.jobCard))
+        .filter(Boolean)
+        .filter(jobCard=>!summaryJobCards.has(jobCard))
+    )];
+
+    if(missingJobCards.length){
+      setTags([]);
+      setRemovedDescriptions([]);
+      setError("Please upload same date data of Jobcard Summary and Billed JC Claim Statement.");
+      return;
+    }
+
     const nextTags=buildWarrantyTags(claimRows,summaryRows);
-    if(!nextTags.length){setError("Tag ke liye valid claim rows nahi mile.");return;}
-    setTags(nextTags);
+    const eligibleTags=nextTags.filter(tag=>isWarrantyPrintEligiblePart(tag.partNo));
+
+    if(!eligibleTags.length){
+      setTags([]);
+      setRemovedDescriptions([]);
+      setError("No eligible part numbers found for warranty tag printing.");
+      return;
+    }
+
+    setTags(eligibleTags);
     setRemovedDescriptions([]);
     setRepairFilter("ALL");
-    setMessage(nextTags.length.toLocaleString("en-IN")+" warranty tags ready.");
+    setMessage(eligibleTags.length.toLocaleString("en-IN")+" warranty tags ready.");
   };
 
   const descriptionOptions=useMemo(()=>{

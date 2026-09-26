@@ -236,22 +236,109 @@ async function getUserByToken(client, token) {
 }
 
 
+async function ensureUserVehicleAnalysisTable(client) {
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS user_vehicle_analysis (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+      vin TEXT NOT NULL,
+      analysis_date DATE NOT NULL,
+      first_activity_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(user_id, vin, analysis_date)
+    )
+  `);
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_user_vehicle_analysis_user_date
+      ON user_vehicle_analysis(user_id, analysis_date)
+  `);
+}
+
+async function recordUserVehicleAnalyses(client, userId, payload = {}) {
+  if (!userId) return;
+  const activityType = clean(payload.activityType);
+  if (activityType !== "Single Vehicle Analysis" && activityType !== "Bulk Vehicle Analysis") return;
+
+  const vins = new Set();
+  const singleVin = clean(payload.vin);
+  if (singleVin) vins.add(singleVin.toUpperCase());
+
+  const detailVins = Array.isArray(payload.details?.vins) ? payload.details.vins : [];
+  for (const value of detailVins) {
+    const vin = clean(value);
+    if (vin) vins.add(vin.toUpperCase());
+  }
+
+  if (!vins.size) return;
+
+  for (const vin of vins) {
+    await client.query(
+      `INSERT INTO user_vehicle_analysis (user_id,vin,analysis_date,first_activity_at)
+       VALUES ($1,$2,(NOW() AT TIME ZONE 'Asia/Kolkata')::date,NOW())
+       ON CONFLICT (user_id,vin,analysis_date) DO NOTHING`,
+      [userId, vin]
+    );
+  }
+}
+
+async function backfillUserVehicleAnalyses(client) {
+  await ensureUserVehicleAnalysisTable(client);
+
+  await client.query(`
+    INSERT INTO user_vehicle_analysis (user_id,vin,analysis_date,first_activity_at)
+    SELECT DISTINCT
+      a.user_id,
+      UPPER(TRIM(a.vin)) AS vin,
+      (a.activity_time AT TIME ZONE 'Asia/Kolkata')::date AS analysis_date,
+      a.activity_time
+    FROM user_activity a
+    WHERE a.activity_type IN ('Single Vehicle Analysis','Bulk Vehicle Analysis')
+      AND NULLIF(TRIM(a.vin),'') IS NOT NULL
+    ON CONFLICT (user_id,vin,analysis_date) DO NOTHING
+  `);
+
+  await client.query(`
+    INSERT INTO user_vehicle_analysis (user_id,vin,analysis_date,first_activity_at)
+    SELECT DISTINCT
+      a.user_id,
+      UPPER(TRIM(v.value)) AS vin,
+      (a.activity_time AT TIME ZONE 'Asia/Kolkata')::date AS analysis_date,
+      a.activity_time
+    FROM user_activity a
+    CROSS JOIN LATERAL jsonb_array_elements_text(
+      CASE
+        WHEN jsonb_typeof(a.details->'vins')='array' THEN a.details->'vins'
+        ELSE '[]'::jsonb
+      END
+    ) v
+    WHERE a.activity_type IN ('Single Vehicle Analysis','Bulk Vehicle Analysis')
+      AND NULLIF(TRIM(v.value),'') IS NOT NULL
+    ON CONFLICT (user_id,vin,analysis_date) DO NOTHING
+  `);
+}
+
 async function logActivity(client, userId, activityType, payload = {}) {
   if (!userId) return;
+  const activity = clean(activityType) || "Activity";
+  const details = payload.details || {};
   await client.query(
     `INSERT INTO user_activity
       (user_id,activity_type,mode,vehicle_count,file_count,vin,details)
      VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb)`,
     [
       userId,
-      clean(activityType) || "Activity",
+      activity,
       clean(payload.mode) || null,
       Number(payload.vehicleCount || 0),
       Number(payload.fileCount || 0),
       clean(payload.vin) || null,
-      JSON.stringify(payload.details || {}),
+      JSON.stringify(details),
     ]
   );
+
+  if (activity === "Single Vehicle Analysis" || activity === "Bulk Vehicle Analysis") {
+    await ensureUserVehicleAnalysisTable(client);
+    await recordUserVehicleAnalyses(client, userId, { ...payload, activityType:activity, details });
+  }
 }
 
 function userPayload(user) {
@@ -527,49 +614,36 @@ export default async function handler(req, res) {
         ? (targetUserId ? [targetUserId] : [])
         : (targetUserId ? [targetUserId, rangeDays] : [rangeDays]);
 
+      await backfillUserVehicleAnalyses(client);
+
       const summary = await client.query(
-        `WITH filtered_activity AS (
-           SELECT a.*
-           FROM user_activity a
-           JOIN app_users au ON au.id=a.user_id
-           WHERE ${summaryActivityFilter.replace(/(^| )a\\./g, "$1a.")}
-             ${!includeAdmins ? " AND au.role <> 'admin'" : ""}
-         ),
-         unique_activity_vins AS (
-           SELECT DISTINCT fa.user_id, UPPER(TRIM(fa.vin)) AS vin
-           FROM filtered_activity fa
-           WHERE NULLIF(TRIM(fa.vin),'') IS NOT NULL
-           UNION
-           SELECT DISTINCT fa.user_id, UPPER(TRIM(v.value)) AS vin
-           FROM filtered_activity fa
-           CROSS JOIN LATERAL jsonb_array_elements_text(
-             CASE
-               WHEN jsonb_typeof(fa.details->'vins')='array' THEN fa.details->'vins'
-               ELSE '[]'::jsonb
-             END
-           ) v
-           WHERE NULLIF(TRIM(v.value),'') IS NOT NULL
-         )
-         SELECT
+        `SELECT
            u.id,u.person_name,u.dealer_name,u.email,u.mobile,u.role,u.status,u.created_at,u.last_login_at,u.last_activity_at,
            COUNT(a.id)::int AS total_activities,
            COUNT(*) FILTER (WHERE a.activity_type='Login')::int AS total_logins,
            COUNT(DISTINCT (a.activity_time AT TIME ZONE 'Asia/Kolkata')::date) FILTER (WHERE a.activity_type <> 'Logout')::int AS active_days,
-           COALESCE(uv.unique_vehicle_count,0)::int AS vehicles_analyzed,
+           (
+             SELECT COUNT(*)::int
+             FROM user_vehicle_analysis uva
+             WHERE uva.user_id=u.id
+               AND uva.analysis_date >=
+                 CASE WHEN $RANGE_DAYS = 1
+                   THEN (NOW() AT TIME ZONE 'Asia/Kolkata')::date
+                   ELSE (NOW() AT TIME ZONE 'Asia/Kolkata')::date - ($RANGE_DAYS - 1)
+                 END
+           ) AS vehicles_analyzed,
            COALESCE(SUM(a.file_count),0)::int AS files_processed,
            COUNT(*) FILTER (WHERE a.activity_type='Single Vehicle Analysis')::int AS single_analyses,
            COUNT(*) FILTER (WHERE a.activity_type='Bulk Vehicle Analysis')::int AS bulk_analyses,
            COUNT(*) FILTER (WHERE a.activity_type='Service Schedule Viewed')::int AS schedule_views
          FROM app_users u
-         LEFT JOIN filtered_activity a ON a.user_id=u.id
-         LEFT JOIN (
-           SELECT user_id, COUNT(*)::int AS unique_vehicle_count
-           FROM unique_activity_vins
-           GROUP BY user_id
-         ) uv ON uv.user_id=u.id
+         LEFT JOIN user_activity a
+           ON a.user_id=u.id
+          AND ${summaryActivityFilter}
+          ${!includeAdmins ? " AND u.role <> 'admin'" : ""}
          ${userWhere}
-         GROUP BY u.id,uv.unique_vehicle_count
-         ORDER BY u.role DESC,u.created_at DESC`,
+         GROUP BY u.id
+         ORDER BY u.role DESC,u.created_at DESC`.replace("$RANGE_DAYS", String(rangeDays)),
         summaryQueryParams
       );
 
@@ -612,63 +686,29 @@ export default async function handler(req, res) {
         const todayWhere = todayConditions.join(" AND ");
 
         periods = await client.query(
-          `WITH filtered AS (
-             SELECT a.*
-             FROM user_activity a
-             WHERE ${todayWhere}
-           ),
-           activity_vins AS (
-             SELECT DISTINCT f.id,
-                    (f.activity_time AT TIME ZONE 'Asia/Kolkata')::date AS activity_date,
-                    UPPER(TRIM(f.vin)) AS vin
-             FROM filtered f
-             WHERE NULLIF(TRIM(f.vin),'') IS NOT NULL
-             UNION
-             SELECT DISTINCT f.id,
-                    (f.activity_time AT TIME ZONE 'Asia/Kolkata')::date AS activity_date,
-                    UPPER(TRIM(v.value)) AS vin
-             FROM filtered f
-             CROSS JOIN LATERAL jsonb_array_elements_text(
-               CASE WHEN jsonb_typeof(f.details->'vins')='array' THEN f.details->'vins' ELSE '[]'::jsonb END
-             ) v
-             WHERE NULLIF(TRIM(v.value),'') IS NOT NULL
-           )
-           SELECT (f.activity_time AT TIME ZONE 'Asia/Kolkata')::date AS activity_date,
-                  COUNT(*)::int AS activities,
-                  COUNT(*) FILTER (WHERE f.activity_type='Login')::int AS logins,
-                  COUNT(DISTINCT (f.user_id, av.vin))::int AS vehicles,
-                  COALESCE(SUM(f.file_count),0)::int AS files
-             FROM filtered f
-             LEFT JOIN activity_vins av ON av.id=f.id
-            GROUP BY 1 ORDER BY 1`,
+          `SELECT uva.analysis_date AS activity_date,
+                  0::int AS activities,
+                  0::int AS logins,
+                  COUNT(*)::int AS vehicles,
+                  0::int AS files
+             FROM user_vehicle_analysis uva
+            WHERE uva.analysis_date=(NOW() AT TIME ZONE 'Asia/Kolkata')::date
+              ${targetUserId ? "AND uva.user_id=$1" : ""}
+              ${!includeAdmins ? "AND uva.user_id IN (SELECT id FROM app_users WHERE role <> 'admin')" : ""}
+            GROUP BY uva.analysis_date ORDER BY uva.analysis_date`,
           todayParams
         );
 
         breakdown = await client.query(
-          `WITH filtered AS (
-             SELECT a.*
-             FROM user_activity a
-             WHERE ${todayWhere}
-           ),
-           activity_vins AS (
-             SELECT DISTINCT f.id, UPPER(TRIM(f.vin)) AS vin
-             FROM filtered f
-             WHERE NULLIF(TRIM(f.vin),'') IS NOT NULL
-             UNION
-             SELECT DISTINCT f.id, UPPER(TRIM(v.value)) AS vin
-             FROM filtered f
-             CROSS JOIN LATERAL jsonb_array_elements_text(
-               CASE WHEN jsonb_typeof(f.details->'vins')='array' THEN f.details->'vins' ELSE '[]'::jsonb END
-             ) v
-             WHERE NULLIF(TRIM(v.value),'') IS NOT NULL
-           )
-           SELECT f.activity_type, COUNT(*)::int AS count,
-                  COUNT(DISTINCT (f.user_id, av.vin))::int AS vehicles,
-                  COALESCE(SUM(f.file_count),0)::int AS files
-             FROM filtered f
-             LEFT JOIN activity_vins av ON av.id=f.id
-            GROUP BY f.activity_type
-            ORDER BY count DESC, f.activity_type`,
+          `SELECT 'Vehicle Analysis' AS activity_type,
+                  COUNT(*)::int AS count,
+                  COUNT(*)::int AS vehicles,
+                  0::int AS files
+             FROM user_vehicle_analysis uva
+            WHERE uva.analysis_date=(NOW() AT TIME ZONE 'Asia/Kolkata')::date
+              ${targetUserId ? "AND uva.user_id=$1" : ""}
+              ${!includeAdmins ? "AND uva.user_id IN (SELECT id FROM app_users WHERE role <> 'admin')" : ""}
+            HAVING COUNT(*) > 0`,
           todayParams
         );
       } else {
@@ -681,64 +721,32 @@ export default async function handler(req, res) {
           a.activity_time >= NOW() - (${rangeParam} * INTERVAL '1 day')`.replace(/\s+/g, " ").trim();
 
         periods = await client.query(
-          `WITH filtered AS (
-             SELECT a.*
-             FROM user_activity a
-             WHERE ${scopedAnalyticsCondition}
-           ),
-           activity_vins AS (
-             SELECT DISTINCT f.id,
-                    (f.activity_time AT TIME ZONE 'Asia/Kolkata')::date AS activity_date,
-                    UPPER(TRIM(f.vin)) AS vin
-             FROM filtered f
-             WHERE NULLIF(TRIM(f.vin),'') IS NOT NULL
-             UNION
-             SELECT DISTINCT f.id,
-                    (f.activity_time AT TIME ZONE 'Asia/Kolkata')::date AS activity_date,
-                    UPPER(TRIM(v.value)) AS vin
-             FROM filtered f
-             CROSS JOIN LATERAL jsonb_array_elements_text(
-               CASE WHEN jsonb_typeof(f.details->'vins')='array' THEN f.details->'vins' ELSE '[]'::jsonb END
-             ) v
-             WHERE NULLIF(TRIM(v.value),'') IS NOT NULL
-           )
-           SELECT (f.activity_time AT TIME ZONE 'Asia/Kolkata')::date AS activity_date,
-                  COUNT(*)::int AS activities,
-                  COUNT(*) FILTER (WHERE f.activity_type='Login')::int AS logins,
-                  COUNT(DISTINCT av.vin)::int AS vehicles,
-                  COALESCE(SUM(f.file_count),0)::int AS files
-             FROM filtered f
-             LEFT JOIN activity_vins av ON av.id=f.id
-            GROUP BY 1 ORDER BY 1`,
-          analyticsQueryParams
+          `SELECT uva.analysis_date AS activity_date,
+                  0::int AS activities,
+                  0::int AS logins,
+                  COUNT(*)::int AS vehicles,
+                  0::int AS files
+             FROM user_vehicle_analysis uva
+            WHERE uva.analysis_date >=
+              (NOW() AT TIME ZONE 'Asia/Kolkata')::date - ($1 - 1)
+              ${targetUserId ? "AND uva.user_id=$2" : ""}
+              ${!includeAdmins ? "AND uva.user_id IN (SELECT id FROM app_users WHERE role <> 'admin')" : ""}
+            GROUP BY uva.analysis_date ORDER BY uva.analysis_date`,
+          targetUserId ? [rangeDays, targetUserId] : [rangeDays]
         );
 
         breakdown = await client.query(
-          `WITH filtered AS (
-             SELECT a.*
-             FROM user_activity a
-             WHERE ${scopedAnalyticsCondition}
-           ),
-           activity_vins AS (
-             SELECT DISTINCT f.id, UPPER(TRIM(f.vin)) AS vin
-             FROM filtered f
-             WHERE NULLIF(TRIM(f.vin),'') IS NOT NULL
-             UNION
-             SELECT DISTINCT f.id, UPPER(TRIM(v.value)) AS vin
-             FROM filtered f
-             CROSS JOIN LATERAL jsonb_array_elements_text(
-               CASE WHEN jsonb_typeof(f.details->'vins')='array' THEN f.details->'vins' ELSE '[]'::jsonb END
-             ) v
-             WHERE NULLIF(TRIM(v.value),'') IS NOT NULL
-           )
-           SELECT f.activity_type, COUNT(*)::int AS count,
-                  COUNT(DISTINCT av.vin)::int AS vehicles,
-                  COALESCE(SUM(f.file_count),0)::int AS files
-             FROM filtered f
-             LEFT JOIN activity_vins av ON av.id=f.id
-            GROUP BY f.activity_type
-            ORDER BY count DESC, f.activity_type`,
-          analyticsQueryParams
+          `SELECT 'Vehicle Analysis' AS activity_type,
+                  COUNT(*)::int AS count,
+                  COUNT(*)::int AS vehicles,
+                  0::int AS files
+             FROM user_vehicle_analysis uva
+            WHERE uva.analysis_date >=
+              (NOW() AT TIME ZONE 'Asia/Kolkata')::date - ($1 - 1)
+              ${targetUserId ? "AND uva.user_id=$2" : ""}
+              ${!includeAdmins ? "AND uva.user_id IN (SELECT id FROM app_users WHERE role <> 'admin')" : ""}
+            HAVING COUNT(*) > 0`,
+          targetUserId ? [rangeDays, targetUserId] : [rangeDays]
         );
       }
 

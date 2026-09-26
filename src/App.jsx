@@ -733,7 +733,12 @@ async function addJobCardsToBrowserIndex(jobCards, lastId = null) {
   const normalizedJobCards = [...new Set(
     (jobCards || []).map(normalizeJobCard).filter(Boolean)
   )];
-  const state = jobCardIndexMemory || { jobCards: new Set(), lastId: 0 };
+  const state = jobCardIndexMemory || {
+    jobCards: new Set(),
+    lastId: 0,
+    globalVersion: 0,
+    syncedAt: 0
+  };
   const db = await openJobCardIndexDb();
 
   await new Promise((resolve, reject) => {
@@ -751,7 +756,12 @@ async function addJobCardsToBrowserIndex(jobCards, lastId = null) {
     if (Number.isFinite(nextLastId) && nextLastId > state.lastId) {
       state.lastId = nextLastId;
     }
-    metaStore.put({ key: JOB_CARD_INDEX_META_KEY, lastId: state.lastId });
+    metaStore.put({
+      key: JOB_CARD_INDEX_META_KEY,
+      lastId: state.lastId,
+      globalVersion: Number(state.globalVersion || 0),
+      syncedAt: Number(state.syncedAt || 0)
+    });
     transaction.oncomplete = resolve;
     transaction.onerror = () => reject(
       transaction.error || new Error("Unable to update Job Card cache.")

@@ -771,7 +771,7 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
             <div className="service-update-entry-content">
               <div>
                 <div className="admin-panel-card-title">Service Update Priority</div>
-                <div className="admin-panel-card-sub">DB se service update pending chassis ko 1 day se 7+ days tak priority-wise dekhein.</div>
+                <div className="admin-panel-card-sub">Vehicle DB ke last updated date ke basis par chassis ko 1 day se 7+ days tak priority-wise dekhein.</div>
               </div>
               <button className="auth-primary service-update-open-btn" type="button" onClick={()=>setServiceUpdateOpen(true)}>
                 Open Service Update List
@@ -783,7 +783,7 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
             <div className="service-update-detail-header">
               <div>
                 <div className="admin-panel-card-title">Service Update Pending</div>
-                <div className="admin-panel-card-sub">Latest service / job-card date ke basis par chassis ko age-wise priority buckets me dekhein.</div>
+                <div className="admin-panel-card-sub">DB me vehicle ka last updated date ke basis par chassis ko age-wise priority buckets me dekhein.</div>
               </div>
               <div className="service-update-detail-actions">
                 <button className="auth-secondary" type="button" onClick={()=>setServiceUpdateOpen(false)}>Back</button>

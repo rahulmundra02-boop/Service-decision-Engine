@@ -412,6 +412,7 @@ export default function AuthGate({ children }) {
       loadJobCardCacheSettings();
       loadEmergencyDbUploadCutoff();
       loadCampaignMeta();
+      loadStaleChassis();
     }
   }, [user?.role, adminOpen, analyticsIncludeAdmins]);
 

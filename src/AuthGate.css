@@ -328,3 +328,39 @@
 .admin-dashboard-scope-tabs button{border:1px solid #bdccd8;background:#fff;color:#28445c;border-radius:7px;padding:8px 12px;font-weight:800;cursor:pointer}
 .admin-dashboard-scope-tabs button.active{background:#315d82;color:#fff;border-color:#315d82}
 @media(max-width:700px){.admin-dashboard-scope-tabs{width:100%;overflow-x:auto;flex-wrap:nowrap}.admin-dashboard-scope-tabs button{white-space:nowrap}}
+
+
+.service-update-entry-card{margin-top:16px;padding:18px 20px}
+.service-update-entry-content{display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap}
+.service-update-open-btn{white-space:nowrap}
+.service-update-detail-card{margin-top:16px;padding:18px 20px}
+.service-update-detail-header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.service-update-detail-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.service-update-count-grid{display:grid;grid-template-columns:repeat(7,minmax(110px,1fr));gap:8px;margin-top:14px}
+.service-update-count-box{padding:10px 8px;border:1px solid #d7dce3;border-radius:8px;background:#f5f8fb;text-align:center;min-width:0}
+.service-update-count-label{font-size:12px;font-weight:700;color:#667085}
+.service-update-count-value{font-size:20px;font-weight:800;margin-top:3px;color:#162f46}
+.service-update-count-sub{font-size:11px;color:#667085}
+.service-update-list-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}
+.service-update-list-box{border:1px solid #d7dce3;border-radius:8px;overflow:hidden;background:#fff;min-width:0}
+.service-update-list-header{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px;background:#f5f8fb;border-bottom:1px solid #edf0f3}
+.service-update-list-title{font-weight:800;min-width:0}
+.service-update-list-title span{font-weight:600;color:#667085}
+.service-update-copy-btn{border:1px solid #c7d0da;background:#fff;border-radius:6px;padding:5px 9px;font-size:11px;font-weight:700;white-space:nowrap;cursor:pointer}
+.service-update-copy-btn:disabled{opacity:.45;cursor:not-allowed}
+.service-update-list-scroll{max-height:240px;overflow-y:auto}
+.service-update-chassis-row{padding:7px 12px;border-bottom:1px solid #edf0f3;font-family:monospace;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.service-update-empty{padding:12px;color:#667085}
+@media(max-width:900px){
+  .service-update-count-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:600px){
+  .service-update-entry-card,.service-update-detail-card{padding:14px}
+  .service-update-entry-content{align-items:stretch}
+  .service-update-open-btn{width:100%}
+  .service-update-count-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .service-update-list-grid{grid-template-columns:1fr}
+  .service-update-detail-actions{width:100%}
+  .service-update-detail-actions button{flex:1}
+  .service-update-list-header{align-items:flex-start}
+}

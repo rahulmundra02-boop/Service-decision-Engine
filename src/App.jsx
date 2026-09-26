@@ -3536,6 +3536,7 @@ function emptyEstimateItem(type = "part") {
 const WARRANTY_TAG_ALIASES = {
   claimNo:["oem claim number","oem claim no","claim no","claim number"],
   claimDate:["claim creation date","claim date","claim dt"],
+  failureDate:["failure date","failed date","failure dt"],
   customerName:["customer name","customer"],
   reg:["registration number","reg no","registration no"],
   chassis:["chassis number","chassis no","chassis"],
@@ -3741,9 +3742,10 @@ function parseWarrantyClaimRows(dataset){
     const jobCard=warrantyText(warrantyCell(row,headers,WARRANTY_TAG_ALIASES.jobCard));
     const jobCardDate=formatWarrantyDate(warrantyCell(row,headers,WARRANTY_TAG_ALIASES.jobCardDate));
     const claimType=formatWarrantyClaimType(warrantyCell(row,headers,WARRANTY_TAG_ALIASES.claimType));
+    const failureDate=formatWarrantyDate(warrantyCell(row,headers,WARRANTY_TAG_ALIASES.failureDate)) || jobCardDate;
     const activeClaimNo=warrantyText(warrantyCell(row,headers,WARRANTY_TAG_ALIASES.activeClaimNo));
     if(!claimNo&&!jobCard&&!partNo&&!chassis&&!reg) return null;
-    return {_row:rowIndex+1,claimNo,claimDate,customerName,reg,chassis,engine,partNo,qty,partDesc,jobCard,jobCardDate,claimType,activeClaimNo};
+    return {_row:rowIndex+1,claimNo,claimDate,failureDate,customerName,reg,chassis,engine,partNo,qty,partDesc,jobCard,jobCardDate,claimType,activeClaimNo};
   }).filter(Boolean);
 }
 
@@ -3810,6 +3812,7 @@ function buildWarrantyTags(claimRows,summaryRows){
       reg:row.reg,
       claimNo:row.claimNo,
       claimDate:row.claimDate,
+      failureDate:row.failureDate,
       activeClaimNo:row.activeClaimNo,
       oemClaimNo:cleanWarrantyOemClaimNo(row.claimNo),
       chassis:row.chassis,
@@ -3858,6 +3861,38 @@ function WarrantyTag({tag}){
   </div>;
 }
 
+function WarrantyTagFourUp({tag}){
+  return <div className="warranty-tag-4up">
+    <div className="warranty-tag-4up-roof">
+      <div className="warranty-tag-4up-hole" aria-hidden="true"></div>
+      <div className="warranty-tag-4up-workshop">{tag.workshopName||"-"}</div>
+    </div>
+    <div className="warranty-tag-4up-body">
+      <div className="warranty-tag-4up-title">FAILED MATERIAL TAG</div>
+      <div className="warranty-tag-4up-grid">
+        <div>SAC Code</div><strong>{tag.workshopCode||"-"}</strong>
+        <div>Job Card Number</div><strong>{tag.jobCard||"-"}</strong>
+        <div>Job Card Date</div><strong>{tag.jobCardDate||"-"}</strong>
+        <div>Claim No</div><strong>{tag.oemClaimNo||"-"}</strong>
+        <div>Claim Date</div><strong>{tag.claimDate||"-"}</strong>
+        <div>Failure Date</div><strong>{tag.failureDate||"-"}</strong>
+        <div>Chassis Number</div><strong>{tag.chassis||"-"}</strong>
+        <div>Engine Number</div><strong>{tag.engine||"-"}</strong>
+        <div>Reg Number</div><strong>{tag.reg||"-"}</strong>
+        <div>Kms Covered</div><strong>{tag.reading||"-"}</strong>
+        <div>Part No / QTY</div><strong>{tag.partNo||"-"} <span className="warranty-tag-4up-qty">{tag.qty||""}</span></strong>
+        <div>Part Desc</div><strong>{tag.partDesc||"-"}</strong>
+      </div>
+      <div className="warranty-tag-4up-check-title">Please tick the relevant box</div>
+      <div className="warranty-tag-4up-checks">
+        <div><span className="warranty-tag-4up-checkbox"></span><b>Ancillry</b></div>
+        <div><span className="warranty-tag-4up-checkbox"></span><b>Casting Defect</b></div>
+        <div><span className="warranty-tag-4up-checkbox"></span><b>For Scrap</b></div>
+      </div>
+    </div>
+  </div>;
+}
+
 function WarrantyTagPanel({user,onBack}){
   const [claimFile,setClaimFile]=useState(null);
   const [summaryFile,setSummaryFile]=useState(null);
@@ -3866,6 +3901,7 @@ function WarrantyTagPanel({user,onBack}){
   const [tags,setTags]=useState([]);
   const [removedDescriptions,setRemovedDescriptions]=useState([]);
   const [repairFilter,setRepairFilter]=useState("ALL");
+  const [printLayout,setPrintLayout]=useState("10");
   const [busy,setBusy]=useState(false);
   const [pdfBusy,setPdfBusy]=useState(false);
   const [error,setError]=useState("");
@@ -4001,7 +4037,7 @@ function WarrantyTagPanel({user,onBack}){
 
   const clearAll=()=>{
     setClaimFile(null);setSummaryFile(null);setClaimDataset(null);setSummaryDataset(null);
-    setTags([]);setRemovedDescriptions([]);setRepairFilter("ALL");setError("");setMessage("");
+    setTags([]);setRemovedDescriptions([]);setRepairFilter("ALL");setPrintLayout("10");setError("");setMessage("");
   };
 
   return <>
@@ -4017,7 +4053,7 @@ function WarrantyTagPanel({user,onBack}){
       <div className="warranty-tag-info-grid">
         <div className="warranty-tag-info-card"><span>Workshop / Dealer</span><strong>{summaryDataset?.mapping?.workshopName||"-"}</strong></div>
         <div className="warranty-tag-info-card"><span>Barcode Source</span><strong>OEM Claim No.</strong></div>
-        <div className="warranty-tag-info-card"><span>A4 Layout</span><strong>10 tags / page</strong></div>
+        <div className="warranty-tag-info-card"><span>A4 Layout</span><strong>{printLayout==="4"?"4 tags / page":"10 tags / page"}</strong></div>
         <div className="warranty-tag-info-card"><span>Selected Output</span><strong>{visibleTags.length?visibleTags.length.toLocaleString("en-IN")+" tags":"Not generated"}</strong></div>
       </div>
 
@@ -4069,6 +4105,17 @@ function WarrantyTagPanel({user,onBack}){
           </div>
         </div>
 
+        <div className="warranty-tag-layout-control no-print">
+          <div>
+            <strong>A4 Print Format</strong>
+            <span>Choose tag size for printing</span>
+          </div>
+          <div className="warranty-tag-layout-buttons">
+            <button type="button" className={printLayout==="10"?"active":""} onClick={()=>setPrintLayout("10")}>10 Tags / Page</button>
+            <button type="button" className={printLayout==="4"?"active":""} onClick={()=>setPrintLayout("4")}>4 Tags / Page · Large</button>
+          </div>
+        </div>
+
         <div className="warranty-tag-print-controls no-print">
           <strong>Tag Print Area</strong>
           <span>{visibleTags.length.toLocaleString("en-IN")} tags selected · {Math.ceil(visibleTags.length/10)} A4 page(s)</span>
@@ -4078,9 +4125,14 @@ function WarrantyTagPanel({user,onBack}){
       </>}
     </div>
 
-    {tags.length>0&&<div ref={printRootRef} className="warranty-tag-print-root">{Array.from({length:Math.ceil(visibleTags.length/10)},(_,pageIndex)=>{
-      const pageTags=visibleTags.slice(pageIndex*10,pageIndex*10+10);
-      return <div className="warranty-tag-page" key={"warranty-page-"+pageIndex}>{pageTags.map(tag=><WarrantyTag key={tag.id} tag={tag}/>)}</div>;
+    {tags.length>0&&<div ref={printRootRef} className={"warranty-tag-print-root warranty-tag-layout-"+printLayout}>{Array.from({length:Math.ceil(visibleTags.length/(printLayout==="4"?4:10))},(_,pageIndex)=>{
+      const perPage=printLayout==="4"?4:10;
+      const pageTags=visibleTags.slice(pageIndex*perPage,pageIndex*perPage+perPage);
+      return <div className={printLayout==="4"?"warranty-tag-page warranty-tag-page-4up":"warranty-tag-page"} key={"warranty-page-"+pageIndex}>
+        {printLayout==="4"
+          ? pageTags.map(tag=><WarrantyTagFourUp key={tag.id} tag={tag}/>)
+          : pageTags.map(tag=><WarrantyTag key={tag.id} tag={tag}/>)}
+      </div>;
     })}</div>}
   </>;
 }
@@ -6406,6 +6458,36 @@ clone.style.transformOrigin = "top left";
         @media (max-width:900px){.warranty-tag-part-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
         @media (max-width:560px){.warranty-tag-part-list{grid-template-columns:1fr}}
         .warranty-tag-part-item.removed>span{text-decoration:line-through;opacity:.55}
+        .warranty-tag-layout-control{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-top:16px;padding:12px 14px;border:1px solid #b9cbe0;border-radius:9px;background:#f7fbff;color:#1f2937!important}
+        .warranty-tag-layout-control>div:first-child{display:flex;flex-direction:column;gap:2px}
+        .warranty-tag-layout-control strong{font-size:14px}
+        .warranty-tag-layout-control span{font-size:11px;color:#64748b}
+        .warranty-tag-layout-buttons{display:flex;gap:6px;flex-wrap:wrap}
+        .warranty-tag-layout-buttons button{height:34px;padding:5px 11px;border:1px solid #9aa4b2;border-radius:6px;background:#fff;color:#1f2937;font-size:12px;font-weight:700;cursor:pointer}
+        .warranty-tag-layout-buttons button.active{background:#1976d2;color:#fff;border-color:#1976d2}
+        .warranty-tag-4up{width:100%;height:100%;box-sizing:border-box;color:#111;background:#fff;font-family:Arial,Helvetica,sans-serif}
+        .warranty-tag-4up-roof{height:18mm;position:relative;border:1.2mm solid #111;border-bottom:0;clip-path:polygon(50% 0,100% 100%,0 100%);background:#fff;display:flex;align-items:flex-end;justify-content:center;box-sizing:border-box}
+        .warranty-tag-4up-roof::after{content:"";position:absolute;left:0;right:0;bottom:-1px;border-bottom:1.2mm solid #111}
+        .warranty-tag-4up-hole{position:absolute;top:2.5mm;left:50%;transform:translateX(-50%);width:6mm;height:6mm;border:0.8mm solid #111;border-radius:50%;background:#fff;z-index:2}
+        .warranty-tag-4up-workshop{position:absolute;bottom:2.4mm;left:6mm;right:6mm;text-align:center;font-size:8px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:3}
+        .warranty-tag-4up-body{height:calc(100% - 18mm);border:1.2mm solid #111;box-sizing:border-box;display:flex;flex-direction:column;background:#fff}
+        .warranty-tag-4up-title{height:10mm;display:flex;align-items:center;justify-content:center;border-bottom:1.2mm solid #111;font-size:15px;font-weight:900}
+        .warranty-tag-4up-grid{display:grid;grid-template-columns:36% 64%;font-size:7.8px;line-height:1.1;flex:1;min-height:0}
+        .warranty-tag-4up-grid>div,.warranty-tag-4up-grid>strong{border-bottom:0.35mm solid #111;box-sizing:border-box;padding:1.05mm 0.8mm;min-width:0;overflow:hidden;overflow-wrap:anywhere}
+        .warranty-tag-4up-grid>div{border-right:0.35mm solid #111;font-weight:700}
+        .warranty-tag-4up-grid>strong{font-weight:800}
+        .warranty-tag-4up-qty{float:right;margin-left:3mm}
+        .warranty-tag-4up-check-title{height:7mm;display:flex;align-items:center;justify-content:center;font-size:7.5px;font-weight:700;border-top:0.35mm solid #111}
+        .warranty-tag-4up-checks{height:17mm;display:grid;grid-template-columns:repeat(3,1fr);align-items:center;text-align:center}
+        .warranty-tag-4up-checks>div{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.5mm;font-size:7px}
+        .warranty-tag-4up-checkbox{width:7mm;height:5.5mm;border:0.5mm solid #111;display:block;background:#fff}
+        .warranty-tag-layout-4 .warranty-tag-page-4up{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));gap:4mm}
+        @media screen{.warranty-tag-page-4up{box-shadow:0 1px 8px rgba(0,0,0,.15);background:#fff}}
+        @media print{
+          .warranty-tag-layout-control{display:none!important}
+          .warranty-tag-layout-4 .warranty-tag-page-4up{width:210mm!important;height:297mm!important;padding:6mm!important;box-sizing:border-box!important;gap:4mm!important;display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;grid-template-rows:repeat(2,minmax(0,1fr))!important}
+          .warranty-tag-layout-4 .warranty-tag-4up{break-inside:avoid!important;page-break-inside:avoid!important}
+        }
         .warranty-tag-print-controls{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:16px;padding:16px;border:2px solid #2f80c9;border-radius:10px;background:#f8fbff;color:#1f2937!important}
         .warranty-tag-print-controls strong{font-size:18px}
         .warranty-tag-print-controls span{font-size:16px;font-weight:700}
@@ -6416,7 +6498,7 @@ clone.style.transformOrigin = "top left";
         .warranty-tag-barcode-registration-row .registration-value{font-size:11px;font-weight:700;color:#111!important;overflow-wrap:anywhere}
 
         @media screen{.warranty-tag-print-root{margin-top:18px;padding:12px;overflow-x:auto}.warranty-tag-page{box-shadow:0 1px 8px rgba(0,0,0,.15)}}
-        @media print{body,.excel-app,.excel-window{background:#fff!important}.excel-titlebar,.excel-ribbon,.no-print{display:none!important}.excel-window{width:100%;box-shadow:none}.excel-sheet{padding:0}.history-wrap{max-height:none;overflow:visible}.history-table th{position:static}.warranty-tag-workspace{display:none!important}.warranty-tag-print-root{display:block!important;width:194mm!important;margin:0 auto!important;padding:0!important;background:#fff!important;color:#111!important}.warranty-tag-page{width:210mm!important;height:297mm!important;box-sizing:border-box!important;margin:0!important;padding:8mm!important;column-gap:4mm!important;row-gap:4mm!important;box-shadow:none!important;page-break-after:always!important;break-after:page!important}.warranty-tag-page:last-child{page-break-after:auto!important;break-after:auto!important}.warranty-tag-page,.warranty-tag{break-inside:avoid!important;page-break-inside:avoid!important}.warranty-tag,.warranty-tag-row,.warranty-tag-row>span,.warranty-tag-row>strong{color:#111!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}
+        @media print{body,.excel-app,.excel-window{background:#fff!important}.excel-titlebar,.excel-ribbon,.no-print{display:none!important}.excel-window{width:100%;box-shadow:none}.excel-sheet{padding:0}.history-wrap{max-height:none;overflow:visible}.history-table th{position:static}.warranty-tag-workspace{display:none!important}.warranty-tag-print-root{display:block!important;width:194mm!important;margin:0 auto!important;padding:0!important;background:#fff!important;color:#111!important}.warranty-tag-page{width:210mm!important;height:297mm!important;box-sizing:border-box!important;margin:0!important;padding:8mm!important;column-gap:4mm!important;row-gap:4mm!important;box-shadow:none!important;page-break-after:always!important;break-after:page!important}.warranty-tag-page:last-child{page-break-after:auto!important;break-after:auto!important}.warranty-tag-page-4up:last-child{page-break-after:auto!important;break-after:auto!important}.warranty-tag-page,.warranty-tag{break-inside:avoid!important;page-break-inside:avoid!important}.warranty-tag,.warranty-tag-row,.warranty-tag-row>span,.warranty-tag-row>strong{color:#111!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}
         .excel-upload-processing-overlay { position: fixed; inset: 0; z-index: 100000; background: rgba(255,255,255,.72); display: flex; align-items: center; justify-content: center; cursor: wait; }
         .excel-upload-processing-card { min-width: 280px; max-width: 90vw; padding: 24px 28px; border: 1px solid #c9c9c9; border-radius: 10px; background: #fff; box-shadow: 0 8px 30px rgba(0,0,0,.18); text-align: center; }
         .excel-upload-spinner { width: 42px; height: 42px; margin: 0 auto 14px; border: 4px solid #d9e2f3; border-top-color: #4472c4; border-radius: 50%; animation: excelUploadSpin .8s linear infinite; }

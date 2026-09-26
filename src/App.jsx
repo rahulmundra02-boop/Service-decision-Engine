@@ -4041,9 +4041,9 @@ function WarrantyTagPanel({user,onBack}){
           <div className="warranty-tag-control-block">
             <div className="warranty-tag-control-title">Repair Type</div>
             <div className="warranty-tag-filter-buttons">
-              <button className={repairFilter==="AMC"?"active":""} style={{background:repairFilter==="AMC"?"#1976d2":"#f5f7fa",color:repairFilter==="AMC"?"#fff":"#1f2937",border:"1px solid #9aa4b2",fontWeight:700,minWidth:170,minHeight:54,padding:"10px 18px",borderRadius:10}} type="button" onClick={()=>setRepairFilter("AMC")}>AMC Order</button>
-              <button className={repairFilter==="NON_AMC"?"active":""} style={{background:repairFilter==="NON_AMC"?"#1976d2":"#f5f7fa",color:repairFilter==="NON_AMC"?"#fff":"#1f2937",border:"1px solid #9aa4b2",fontWeight:700,minWidth:170,minHeight:54,padding:"10px 18px",borderRadius:10}} type="button" onClick={()=>setRepairFilter("NON_AMC")}>NON AMC Order</button>
-              <button className={repairFilter==="ALL"?"active":""} style={{background:repairFilter==="ALL"?"#1976d2":"#f5f7fa",color:repairFilter==="ALL"?"#fff":"#1f2937",border:"1px solid #9aa4b2",fontWeight:700,minWidth:170,minHeight:54,padding:"10px 18px",borderRadius:10}} type="button" onClick={()=>setRepairFilter("ALL")}>All Repair Types</button>
+              <button className={repairFilter==="AMC"?"active":""} type="button" onClick={()=>setRepairFilter("AMC")}>AMC</button>
+              <button className={repairFilter==="NON_AMC"?"active":""} type="button" onClick={()=>setRepairFilter("NON_AMC")}>NON AMC</button>
+              <button className={repairFilter==="ALL"?"active":""} type="button" onClick={()=>setRepairFilter("ALL")}>ALL REPAIR TYPES</button>
             </div>
           </div>
           <div className="warranty-tag-control-block">
@@ -6389,13 +6389,15 @@ clone.style.transformOrigin = "top left";
         .warranty-tag-barcode-row>span{justify-content:flex-start}
         .warranty-tag-barcode{width:70%;height:27px;max-width:145px;display:block;margin:0 auto}
         .warranty-tag-workspace{color:#1f1f1f!important}.warranty-tag-message{color:#1f1f1f!important}
-        .warranty-tag-filter-buttons{display:flex;flex-wrap:wrap;gap:12px;align-items:stretch}
-        .warranty-tag-filter-buttons button{display:inline-flex!important;align-items:center!important;justify-content:center!important;min-height:54px!important;background:#f5f7fa!important;color:#1f2937!important;border:1px solid #9aa4b2!important;font-size:16px!important;opacity:1!important;visibility:visible!important}
+        .warranty-tag-filter-buttons{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+        .warranty-tag-filter-buttons button{display:inline-flex!important;align-items:center!important;justify-content:center!important;min-height:38px!important;height:38px!important;min-width:0!important;padding:6px 12px!important;background:#f5f7fa!important;color:#1f2937!important;border:1px solid #9aa4b2!important;border-radius:7px!important;font-size:13px!important;font-weight:700!important;opacity:1!important;visibility:visible!important}
         .warranty-tag-filter-buttons button.active{background:#1976d2!important;color:#fff!important}
-        .warranty-tag-part-list{display:flex;flex-direction:column;gap:0}
-        .warranty-tag-part-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 10px;border-bottom:1px solid #ddd;color:#1f2937!important}
-        .warranty-tag-part-item>span{color:#1f2937!important;font-size:16px!important;line-height:1.35;text-align:left}
-        .warranty-tag-part-item button{display:inline-flex!important;align-items:center;justify-content:center;min-width:92px;min-height:42px;padding:7px 12px;border:1px solid #9aa4b2!important;border-radius:8px;background:#f5f7fa!important;color:#1f2937!important;font-weight:700!important;opacity:1!important;visibility:visible!important}
+        .warranty-tag-part-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+        .warranty-tag-part-item{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:7px 8px;border:1px solid #e0e4e8;border-radius:6px;background:#fafbfc;color:#1f2937!important;min-width:0}
+        .warranty-tag-part-item>span{color:#1f2937!important;font-size:12px!important;line-height:1.2;text-align:left;overflow-wrap:anywhere}
+        .warranty-tag-part-item button{display:inline-flex!important;align-items:center;justify-content:center;min-width:48px!important;min-height:28px!important;height:28px!important;padding:3px 8px!important;border:1px solid #9aa4b2!important;border-radius:6px!important;background:#f5f7fa!important;color:#1f2937!important;font-size:12px!important;font-weight:700!important;opacity:1!important;visibility:visible!important}
+        @media (max-width:900px){.warranty-tag-part-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
+        @media (max-width:560px){.warranty-tag-part-list{grid-template-columns:1fr}}
         .warranty-tag-part-item.removed>span{text-decoration:line-through;opacity:.55}
         .warranty-tag-print-controls{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:16px;padding:16px;border:2px solid #2f80c9;border-radius:10px;background:#f8fbff;color:#1f2937!important}
         .warranty-tag-print-controls strong{font-size:18px}

@@ -761,7 +761,7 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
           {metricCard("Total Users", totals.users)}
           {metricCard("Active Users", totals.active)}
           {metricCard("Total Logins", totals.logins)}
-          {metricCard("Vehicles Analysed", totals.vehicles)}
+          {metricCard("Total Vehicles", Number(analytics.totalVehicles || 0).toLocaleString("en-IN"))}
           {metricCard("Excel Files", totals.files)}
           {metricCard("Activities", totals.activities)}
         </div>

@@ -823,7 +823,8 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
                     setCopiedServiceBucket(key);
                     setTimeout(()=>setCopiedServiceBucket(current=>current===key ? "" : current),1800);
                   } catch(e) {
-                    setError("Unable to copy chassis list.");
+                    setCopiedServiceBucket("error:"+key);
+                    setTimeout(()=>setCopiedServiceBucket(current=>current==="error:"+key ? "" : current),1800);
                   }
                 };
                 return (
@@ -831,7 +832,7 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
                     <div className="service-update-list-header">
                       <div className="service-update-list-title">{label} <span>({list.length.toLocaleString("en-IN")})</span></div>
                       <button type="button" className="service-update-copy-btn" onClick={copyList} disabled={!list.length}>
-                        {copiedServiceBucket===key ? "Copied ✓" : "Copy to Clipboard"}
+                        {copiedServiceBucket===key ? "Copied ✓" : copiedServiceBucket==="error:"+key ? "Copy Failed" : "Copy to Clipboard"}
                       </button>
                     </div>
                     <div className="service-update-list-scroll">

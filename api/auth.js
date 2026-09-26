@@ -655,6 +655,35 @@ export default async function handler(req, res) {
       });
     }
 
+    if (action === "admin-stale-chassis") {
+      const admin = await requireAdmin(client, req);
+      if (admin.error) {
+        await client.query("ROLLBACK");
+        return res.status(admin.status).json({success:false,error:admin.error});
+      }
+
+      const result = await client.query(
+        `SELECT
+           UPPER(TRIM(v.vin)) AS chassis_no,
+           MAX(jc.job_date) AS last_service_date
+         FROM vehicles v
+         JOIN job_cards jc ON jc.vehicle_id=v.id
+         WHERE v.vin IS NOT NULL AND TRIM(v.vin) <> ''
+           AND jc.job_date IS NOT NULL
+         GROUP BY UPPER(TRIM(v.vin))
+         HAVING MAX(jc.job_date)::date <= (CURRENT_DATE - INTERVAL '7 days')::date
+         ORDER BY MAX(jc.job_date) ASC, UPPER(TRIM(v.vin)) ASC`
+      );
+
+      await client.query("COMMIT");
+      return res.json({
+        success:true,
+        thresholdDays:7,
+        chassis:result.rows.map(row => row.chassis_no).filter(Boolean),
+        count:result.rows.length
+      });
+    }
+
     if (action === "campaigns-by-vin") {
       const user = await getUserByToken(client, authToken(req));
       if (!user) {

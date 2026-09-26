@@ -674,15 +674,7 @@ export default async function handler(req, res) {
          ORDER BY MAX(jc.job_date) ASC, UPPER(TRIM(v.vin)) ASC`
       );
 
-      const buckets = {
-        "7plus": [],
-        "6": [],
-        "5": [],
-        "4": [],
-        "3": [],
-        "2": [],
-        "1": [],
-      };
+      const buckets = {"7plus": [], "6": [], "5": [], "4": [], "3": [], "2": [], "1": []};
 
       for (const row of result.rows) {
         if (!row.chassis_no || !row.last_service_date) continue;
@@ -691,7 +683,6 @@ export default async function handler(req, res) {
         serviceDate.setHours(0,0,0,0);
         today.setHours(0,0,0,0);
         const ageDays = Math.floor((today.getTime() - serviceDate.getTime()) / (24 * 60 * 60 * 1000));
-
         if (ageDays >= 7) buckets["7plus"].push(row.chassis_no);
         else if (ageDays >= 1 && ageDays <= 6) buckets[String(ageDays)].push(row.chassis_no);
       }
@@ -703,7 +694,6 @@ export default async function handler(req, res) {
         counts:Object.fromEntries(Object.entries(buckets).map(([key,list]) => [key,list.length]))
       });
     }
-
     if (action === "campaigns-by-vin") {
       const user = await getUserByToken(client, authToken(req));
       if (!user) {

@@ -3894,6 +3894,35 @@ function WarrantyTagFourUp({tag}){
   </div>;
 }
 
+const WARRANTY_REMOVED_PARTS_STORAGE_PREFIX="serviceDecisionWarrantyRemovedParts:";
+
+function warrantyRemovedPartsStorageKey(user){
+  const userId=String(user?.id ?? user?.email ?? user?.personName ?? "default").trim();
+  return WARRANTY_REMOVED_PARTS_STORAGE_PREFIX+(userId||"default");
+}
+
+function loadWarrantyRemovedParts(user){
+  try{
+    const raw=localStorage.getItem(warrantyRemovedPartsStorageKey(user));
+    const parsed=raw?JSON.parse(raw):[];
+    return Array.isArray(parsed)
+      ? parsed.map(normalizePartCode).filter(Boolean)
+      : [];
+  }catch{
+    return [];
+  }
+}
+
+function saveWarrantyRemovedParts(user,partNos){
+  try{
+    const unique=[...new Set((partNos||[]).map(normalizePartCode).filter(Boolean))];
+    localStorage.setItem(warrantyRemovedPartsStorageKey(user),JSON.stringify(unique));
+    return unique;
+  }catch{
+    return partNos||[];
+  }
+}
+
 function WarrantyTagPanel({user,onBack}){
   const [claimFile,setClaimFile]=useState(null);
   const [summaryFile,setSummaryFile]=useState(null);
@@ -3901,6 +3930,7 @@ function WarrantyTagPanel({user,onBack}){
   const [summaryDataset,setSummaryDataset]=useState(null);
   const [tags,setTags]=useState([]);
   const [removedDescriptions,setRemovedDescriptions]=useState([]);
+  const [rememberedRemovedPartNos,setRememberedRemovedPartNos]=useState(()=>loadWarrantyRemovedParts(user));
   const [repairFilter,setRepairFilter]=useState("ALL");
   const [printLayout,setPrintLayout]=useState("10");
   const [busy,setBusy]=useState(false);
@@ -3908,6 +3938,10 @@ function WarrantyTagPanel({user,onBack}){
   const [error,setError]=useState("");
   const [message,setMessage]=useState("");
   const printRootRef=useRef(null);
+
+  useEffect(()=>{
+    setRememberedRemovedPartNos(loadWarrantyRemovedParts(user));
+  },[user?.id,user?.email,user?.personName]);
 
   const processClaimFile=async file=>{
     setBusy(true);setError("");setMessage("");
@@ -3993,21 +4027,44 @@ function WarrantyTagPanel({user,onBack}){
     return Array.from(map.entries()).sort((a,b)=>a[0].localeCompare(b[0]));
   },[tags,repairFilter]);
 
+  const isDescriptionRemembered=desc=>{
+    const matchingPartNos=tags
+      .filter(tag=>warrantyText(tag.partDesc)===desc)
+      .map(tag=>normalizePartCode(tag.partNo))
+      .filter(Boolean);
+    return matchingPartNos.length>0 && matchingPartNos.every(partNo=>rememberedRemovedPartNos.includes(partNo));
+  };
+
   const visibleTags=useMemo(()=>{
     return tags.filter(tag=>{
       const desc=warrantyText(tag.partDesc);
+      const partNo=normalizePartCode(tag.partNo);
       if(removedDescriptions.includes(desc)) return false;
+      if(partNo && rememberedRemovedPartNos.includes(partNo)) return false;
       const tagRepairType=getWarrantyRepairType(tag.claimType);
-      if(repairFilter==="AMC") return tagRepairType==="AMC";
-      if(repairFilter==="NON_AMC") return tagRepairType==="NON_AMC";
+      if(repairFilter==="AMC" && tagRepairType!=="AMC") return false;
+      if(repairFilter==="NON_AMC" && tagRepairType!=="NON_AMC") return false;
       return true;
     });
-  },[tags,removedDescriptions,repairFilter]);
+  },[tags,removedDescriptions,rememberedRemovedPartNos,repairFilter]);
 
   const removeDescription=desc=>{
+    const partNosToRemember=tags
+      .filter(tag=>warrantyText(tag.partDesc)===desc)
+      .map(tag=>normalizePartCode(tag.partNo))
+      .filter(Boolean);
+    const next=saveWarrantyRemovedParts(user,[...rememberedRemovedPartNos,...partNosToRemember]);
+    setRememberedRemovedPartNos(next);
     setRemovedDescriptions(prev=>prev.includes(desc)?prev:[...prev,desc]);
   };
   const restoreDescription=desc=>{
+    const partNosToRestore=tags
+      .filter(tag=>warrantyText(tag.partDesc)===desc)
+      .map(tag=>normalizePartCode(tag.partNo))
+      .filter(Boolean);
+    const restoreSet=new Set(partNosToRestore);
+    const next=saveWarrantyRemovedParts(user,rememberedRemovedPartNos.filter(partNo=>!restoreSet.has(partNo)));
+    setRememberedRemovedPartNos(next);
     setRemovedDescriptions(prev=>prev.filter(x=>x!==desc));
   };
 
@@ -4094,7 +4151,7 @@ function WarrantyTagPanel({user,onBack}){
             <div className="warranty-tag-control-title">Part Descriptions in Current Format</div>
             <div className="warranty-tag-part-list">
               {descriptionOptions.map(([desc,count])=>{
-                const removed=removedDescriptions.includes(desc);
+                const removed=removedDescriptions.includes(desc)||isDescriptionRemembered(desc);
                 return <div className={"warranty-tag-part-item "+(removed?"removed":"")} key={desc}>
                   <span>{desc}</span>
                   {removed

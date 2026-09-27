@@ -834,6 +834,32 @@ async function syncJobCardIndex(apiBaseUrl) {
   return jobCardIndexSyncPromise;
 }
 
+async function reportJobCardCacheRebuildComplete() {
+  const token = localStorage.getItem("serviceDecisionAuthToken");
+  if (!token) return null;
+
+  try {
+    const response = await fetch("/api/auth", {
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        Authorization:"Bearer " + token
+      },
+      body:JSON.stringify({action:"job-card-cache-rebuild-complete"})
+    });
+    const payload = await response.json().catch(()=>null);
+    if (!response.ok || !payload?.success) {
+      throw new Error(payload?.error || "Unable to report Job Card cache rebuild completion.");
+    }
+    return payload;
+  } catch (error) {
+    // Reporting is telemetry only. A failed status update must never block
+    // or fail the already-completed browser cache rebuild.
+    console.warn("Job Card cache rebuild completion reporting failed:", error);
+    return null;
+  }
+}
+
 async function getHybridNewJobCards(apiBaseUrl, jobCards, checkNewJobCardsFn) {
   const uniqueJobCards = [...new Set(
     (jobCards || []).map(normalizeJobCard).filter(Boolean)
@@ -863,6 +889,10 @@ async function getHybridNewJobCards(apiBaseUrl, jobCards, checkNewJobCardsFn) {
         globalVersion:Number(policy.version || 0),
         syncedAt:Date.now()
       });
+
+      // The browser cache has now been physically rebuilt and synced.
+      // Report completion only after the IndexedDB metadata is successfully saved.
+      await reportJobCardCacheRebuildComplete();
     }
 
     const cached = state.jobCards || new Set();
@@ -4581,20 +4611,28 @@ function ServiceDecisionApp({ user }) {
 
   async function touchVehicleRefreshInBackend(vins) {
     const uniqueVins = [...new Set(
-      (vins || []).map(value => String(value ?? "").trim().toUpperCase()).filter(Boolean)
+      (vins || [])
+        .map(value => String(value ?? "").trim().toUpperCase())
+        .filter(Boolean)
     )];
     if (!uniqueVins.length) return null;
 
     const response = await fetch(API_BASE_URL + "/api/save-history", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({ action:"touch-vehicle-refresh", vins:uniqueVins }),
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "touch-vehicle-refresh",
+        vins: uniqueVins,
+      }),
     });
+
     let payload = null;
     try { payload = await response.json(); } catch { payload = null; }
+
     if (!response.ok || !payload?.success) {
       throw new Error(payload?.error || ("Vehicle refresh timestamp update failed (" + response.status + ")"));
     }
+
     return payload;
   }
 
@@ -4740,10 +4778,15 @@ function ServiceDecisionApp({ user }) {
               void saveHistoryInBackground(recordsForBackend);
             }
 
-            // Refresh every uploaded chassis even when there are no new Job Cards.
+            // Mark every VIN present in the uploaded history as refreshed,
+            // including vehicles where all uploaded Job Cards already existed
+            // in the database and therefore no new Job Card save was triggered.
             const uploadedVins = [...new Set(
-              parsedRows.map(record => String(record?.vin || "").trim().toUpperCase()).filter(Boolean)
+              parsedRows
+                .map(record => String(record?.vin || "").trim().toUpperCase())
+                .filter(Boolean)
             )];
+
             if (uploadedVins.length) {
               try {
                 await touchVehicleRefreshInBackend(uploadedVins);

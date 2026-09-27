@@ -64,7 +64,7 @@ export default function AuthGate({ children }) {
   const [analyticsRange, setAnalyticsRange] = useState(30);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsIncludeAdmins, setAnalyticsIncludeAdmins] = useState(true);
-  const [jobCardCacheSettings, setJobCardCacheSettings] = useState({ enabled:true, intervalHours:24, version:1, lastRebuildAt:null, nextRebuildAt:null, cachedJobCards:0 });
+  const [jobCardCacheSettings, setJobCardCacheSettings] = useState({ enabled:true, intervalHours:24, version:1, lastRebuildAt:null, lastAutoRebuildAt:null, nextRebuildAt:null, cachedJobCards:0 });
   const [emergencyDbUploadCutoff, setEmergencyDbUploadCutoff] = useState(false);
   const [sessionConflict, setSessionConflict] = useState(null);
   const [pendingLoginCredentials, setPendingLoginCredentials] = useState(null);
@@ -868,8 +868,8 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
                 {[6,12,24,48,168].map(v=><option key={v} value={v}>{v===168?"7 Days":v+" Hours"}</option>)}
               </select>
             </div>
-            <div><div className="admin-panel-card-sub">Last Global Index Update</div><strong>{jobCardCacheSettings?.lastRebuildAt ? new Date(jobCardCacheSettings.lastRebuildAt).toLocaleString("en-IN") : "Not yet rebuilt"}</strong></div>
-            <div><div className="admin-panel-card-sub">Next Rebuild</div><strong>{jobCardCacheSettings?.nextRebuildAt ? new Date(jobCardCacheSettings.nextRebuildAt).toLocaleString("en-IN") : "—"}</strong></div>
+            <div><div className="admin-panel-card-sub">Last Manual Rebuild Signal</div><strong>{jobCardCacheSettings?.lastRebuildAt ? new Date(jobCardCacheSettings.lastRebuildAt).toLocaleString("en-IN") : "Not yet rebuilt"}</strong></div>
+            <div><div className="admin-panel-card-sub">Last Automatic Cache Rebuild</div><strong>{jobCardCacheSettings?.lastAutoRebuildAt ? new Date(jobCardCacheSettings.lastAutoRebuildAt).toLocaleString("en-IN") : "Not yet rebuilt"}</strong></div>
             <div><div className="admin-panel-card-sub">Cached Job Cards</div><strong>{Number(jobCardCacheSettings?.cachedJobCards || 0).toLocaleString("en-IN")}</strong></div>
           </div>
           <div style={{display:"flex",gap:10,marginTop:16,flexWrap:"wrap"}}>

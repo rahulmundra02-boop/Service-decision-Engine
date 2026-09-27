@@ -93,13 +93,18 @@ export default async function handler(req, res) {
     try {
       if (partNo) {
         const result = await client.query(
-          "SELECT sh.part_code, sh.part_description, sh.rate, jc.job_date " +
+          "WITH paid_rates AS ( " +
+          "SELECT sh.part_code, sh.part_description, sh.rate, jc.job_date, jc.id AS job_card_id, sh.id AS service_history_id, " +
+          "ROW_NUMBER() OVER (ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC) AS rn " +
           "FROM service_history sh JOIN job_cards jc ON jc.id=sh.job_card_id " +
           "WHERE sh.item_category LIKE 'P002%' " +
           "AND UPPER(REPLACE(TRIM(sh.part_code), ' ', ''))=$1 " +
-          "AND UPPER(COALESCE(sh.repair_line_item_type, '')) LIKE '%POST%WARRANTY%' " +
+          "AND UPPER(REPLACE(COALESCE(sh.repair_line_item_type, ''), ' ', '')) LIKE '%POSTWARRANTY/PAIDORDER%' " +
           "AND sh.rate IS NOT NULL AND sh.rate > 0 " +
-          "ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC LIMIT 1",
+          ") " +
+          "SELECT part_code, part_description, rate, job_date " +
+          "FROM paid_rates WHERE rn <= 10 " +
+          "ORDER BY rate DESC, job_date DESC NULLS LAST, job_card_id DESC, service_history_id DESC LIMIT 1",
           [partNo]
         );
         const row = result.rows[0] || null;
@@ -157,14 +162,24 @@ export default async function handler(req, res) {
           modelRows = modelResult.rows;
         }
         const rateResult = await client.query(
-          "SELECT DISTINCT ON (UPPER(REPLACE(TRIM(sh.part_code), ' ', ''))) " +
-          "sh.part_code, sh.rate, jc.job_date " +
+          "WITH paid_rates AS ( " +
+          "SELECT sh.part_code, sh.rate, jc.job_date, jc.id AS job_card_id, sh.id AS service_history_id, " +
+          "ROW_NUMBER() OVER (PARTITION BY UPPER(REPLACE(TRIM(sh.part_code), ' ', '')) " +
+          "ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC) AS rn " +
           "FROM service_history sh JOIN job_cards jc ON jc.id=sh.job_card_id " +
           "JOIN vehicles v ON v.id=jc.vehicle_id " +
           "WHERE sh.item_category LIKE 'P002%' AND sh.part_code IS NOT NULL " +
-          "AND UPPER(COALESCE(sh.repair_line_item_type, '')) LIKE '%POST%WARRANTY%' " +
+          "AND UPPER(REPLACE(COALESCE(sh.repair_line_item_type, ''), ' ', '')) LIKE '%POSTWARRANTY/PAIDORDER%' " +
           "AND sh.rate IS NOT NULL AND sh.rate > 0 " +
-          "ORDER BY UPPER(REPLACE(TRIM(sh.part_code), ' ', '')), jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC"
+          "), latest_ten AS ( " +
+          "SELECT * FROM paid_rates WHERE rn <= 10 " +
+          "), max_rates AS ( " +
+          "SELECT DISTINCT ON (UPPER(REPLACE(TRIM(part_code), ' ', ''))) " +
+          "part_code, rate, job_date, job_card_id, service_history_id " +
+          "FROM latest_ten " +
+          "ORDER BY UPPER(REPLACE(TRIM(part_code), ' ', '')), rate DESC, job_date DESC NULLS LAST, job_card_id DESC, service_history_id DESC " +
+          ") " +
+          "SELECT part_code, rate, job_date FROM max_rates"
         );
         return res.status(200).json({
           success:true,
@@ -209,13 +224,24 @@ export default async function handler(req, res) {
       }
 
       const rateResult = await client.query(
-        "SELECT DISTINCT ON (UPPER(REPLACE(TRIM(sh.part_code), ' ', ''))) " +
-        "sh.part_code, sh.rate, jc.job_date " +
-        "FROM service_history sh JOIN job_cards jc ON jc.id=sh.job_card_id " +
-        "JOIN vehicles v ON v.id=jc.vehicle_id " +
-        "WHERE sh.item_category LIKE 'P002%' AND sh.part_code IS NOT NULL " +
-        "AND sh.rate IS NOT NULL AND sh.rate > 0 " +
-        "ORDER BY UPPER(REPLACE(TRIM(sh.part_code), ' ', '')), jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC"
+        "WITH paid_rates AS ( " +
+          "SELECT sh.part_code, sh.rate, jc.job_date, jc.id AS job_card_id, sh.id AS service_history_id, " +
+          "ROW_NUMBER() OVER (PARTITION BY UPPER(REPLACE(TRIM(sh.part_code), ' ', '')) " +
+          "ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC) AS rn " +
+          "FROM service_history sh JOIN job_cards jc ON jc.id=sh.job_card_id " +
+          "JOIN vehicles v ON v.id=jc.vehicle_id " +
+          "WHERE sh.item_category LIKE 'P002%' AND sh.part_code IS NOT NULL " +
+          "AND UPPER(REPLACE(COALESCE(sh.repair_line_item_type, ''), ' ', '')) LIKE '%POSTWARRANTY/PAIDORDER%' " +
+          "AND sh.rate IS NOT NULL AND sh.rate > 0 " +
+          "), latest_ten AS ( " +
+          "SELECT * FROM paid_rates WHERE rn <= 10 " +
+          "), max_rates AS ( " +
+          "SELECT DISTINCT ON (UPPER(REPLACE(TRIM(part_code), ' ', ''))) " +
+          "part_code, rate, job_date, job_card_id, service_history_id " +
+          "FROM latest_ten " +
+          "ORDER BY UPPER(REPLACE(TRIM(part_code), ' ', '')), rate DESC, job_date DESC NULLS LAST, job_card_id DESC, service_history_id DESC " +
+          ") " +
+          "SELECT part_code, rate, job_date FROM max_rates"
       );
 
       return res.status(200).json({

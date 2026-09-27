@@ -8,7 +8,7 @@ import * as Sharing from 'expo-sharing';
 import { restoreSession, login, logout, getVehicleByRegistration, getPartRate, saveEstimate } from './src/api';
 import { AGGREGATES, buildServiceItems, makeManualItem, rateForManualPart, totals } from './src/estimateLogic';
 
-const money = n => `₹${Number(n || 0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})`;
+const money = n => `₹${Number(n || 0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 const newEstimateNo = () => {
   const d = new Date();
   const p = n => String(n).padStart(2,'0');
@@ -134,7 +134,7 @@ function EstimateScreen({mode,data,user,onBack}) {
     const all=[...parts,...labour];
     const lines=all.map(x=>`<tr><td>${x.type==='part'?x.partNo:x.partNo||''}</td><td>${x.description||''}</td><td>${x.qty||0}</td><td>${Number(x.rate||0).toFixed(2)}</td><td>${(Number(x.qty)||0)*(Number(x.rate)||0).toFixed(2)}</td></tr>`).join('');
     const t=totals(parts,labour);
-    const html=`<html><body style="font-family:Arial;padding:24px"><h2>Service Estimate</h2><p><b>Estimate No:</b> ${estimateNo}</p><p><b>Vehicle:</b> ${vehicle.registration||''}<br/><b>Customer:</b> ${vehicle.customer_name||''}<br/><b>Model:</b> ${vehicle.model||''}<br/><b>Chassis:</b> ${vehicle.vin||''}</p><table style="width:100%;border-collapse:collapse" border="1" cellpadding="6"><tr><th>Part/Labour</th><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th></tr>${lines}</table><h3>Total: ${money(t.total)}</h3></body></html>`;
+    const html=`<html><body style="font-family:Arial;padding:24px"><h2>${mode==='service'?'Service Estimate':'Repair Estimate'}</h2><p><b>Estimate No:</b> ${estimateNo}</p><p><b>Vehicle:</b> ${vehicle.registration||''}<br/><b>Customer:</b> ${vehicle.customer_name||''}<br/><b>Model:</b> ${vehicle.model||''}<br/><b>Chassis:</b> ${vehicle.vin||''}</p><table style="width:100%;border-collapse:collapse" border="1" cellpadding="6"><tr><th>Part/Labour</th><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th></tr>${lines}</table><h3>Total: ${money(t.total)}</h3></body></html>`;
     try{
       const result=await Print.printToFileAsync({html});
       if(await Sharing.isAvailableAsync()) await Sharing.shareAsync(result.uri,{mimeType:'application/pdf',dialogTitle:'Share Estimate PDF'});

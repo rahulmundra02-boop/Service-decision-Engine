@@ -991,11 +991,55 @@ export default async function handler(req, res) {
       });
     }
 
+    if (action === "job-card-cache-rebuild-complete") {
+      const sessionUser = await getUserByToken(client, authToken(req));
+      if (!sessionUser) {
+        await client.query("ROLLBACK");
+        return res.status(401).json({success:false,error:"Session expired."});
+      }
+
+      const currentResult = await client.query(
+        "SELECT setting_value FROM app_settings WHERE setting_key='job_card_cache' LIMIT 1"
+      );
+      const current = currentResult.rows[0]?.setting_value || {
+        enabled:true,
+        intervalHours:24,
+        version:1,
+        lastRebuildAt:null,
+        lastAutoRebuildAt:null
+      };
+
+      const completedAt = new Date().toISOString();
+      const updatedSettings = {
+        ...current,
+        lastAutoRebuildAt: completedAt,
+        lastAutoRebuildBy: Number(sessionUser.id || 0) || null
+      };
+
+      await client.query(
+        "INSERT INTO app_settings (setting_key,setting_value,updated_at) " +
+        "VALUES ('job_card_cache',$1::jsonb,NOW()) " +
+        "ON CONFLICT (setting_key) DO UPDATE SET setting_value=EXCLUDED.setting_value,updated_at=NOW()",
+        [JSON.stringify(updatedSettings)]
+      );
+
+      await client.query("COMMIT");
+      return res.json({
+        success:true,
+        completedAt,
+        settings:{
+          ...updatedSettings,
+          enabled: updatedSettings.enabled !== false,
+          intervalHours: Math.max(1, Number(updatedSettings.intervalHours || 24))
+        }
+      });
+    }
+
     if (action === "job-card-cache-settings") {
       const result = await client.query(
         "SELECT setting_value, updated_at FROM app_settings WHERE setting_key='job_card_cache' LIMIT 1"
       );
-      const settings = result.rows[0]?.setting_value || { enabled:true, intervalHours:24, version:1, lastRebuildAt:null };
+      const settings = result.rows[0]?.setting_value || { enabled:true, intervalHours:24, version:1, lastRebuildAt:null, lastAutoRebuildAt:null };
       const countResult = await client.query(
         "SELECT COUNT(DISTINCT UPPER(TRIM(job_card_no)))::int AS count FROM job_cards WHERE job_card_no IS NOT NULL AND TRIM(job_card_no)<>''"
       );
@@ -1012,6 +1056,7 @@ export default async function handler(req, res) {
           intervalHours,
           version: Number(settings.version || 1),
           lastRebuildAt,
+          lastAutoRebuildAt: settings.lastAutoRebuildAt || null,
           nextRebuildAt,
           cachedJobCards: Number(countResult.rows[0]?.count || 0),
           updatedAt: result.rows[0]?.updated_at || null

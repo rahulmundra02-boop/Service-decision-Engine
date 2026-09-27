@@ -627,9 +627,9 @@ export default async function handler(req, res) {
              FROM user_vehicle_analysis uva
              WHERE uva.user_id=u.id
                AND uva.analysis_date >=
-                 CASE WHEN $RANGE_DAYS = 1
+                 CASE WHEN ${rangeDays} = 1
                    THEN (NOW() AT TIME ZONE 'Asia/Kolkata')::date
-                   ELSE (NOW() AT TIME ZONE 'Asia/Kolkata')::date - ($RANGE_DAYS - 1)
+                   ELSE (NOW() AT TIME ZONE 'Asia/Kolkata')::date - (${rangeDays} - 1)
                  END
            ) AS vehicles_analyzed,
            COALESCE(SUM(a.file_count),0)::int AS files_processed,
@@ -643,7 +643,7 @@ export default async function handler(req, res) {
           ${!includeAdmins ? " AND u.role <> 'admin'" : ""}
          ${userWhere}
          GROUP BY u.id
-         ORDER BY u.role DESC,u.created_at DESC`.replace("$RANGE_DAYS", String(rangeDays)),
+         ORDER BY u.role DESC,u.created_at DESC`,
         summaryQueryParams
       );
 

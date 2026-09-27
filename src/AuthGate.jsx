@@ -65,8 +65,6 @@ export default function AuthGate({ children }) {
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsIncludeAdmins, setAnalyticsIncludeAdmins] = useState(true);
   const [jobCardCacheSettings, setJobCardCacheSettings] = useState({ enabled:true, intervalHours:24, version:1, lastRebuildAt:null, nextRebuildAt:null, cachedJobCards:0 });
-  const [jobCardCacheActionBusy, setJobCardCacheActionBusy] = useState(false);
-  const [jobCardCacheActionStatus, setJobCardCacheActionStatus] = useState("");
   const [emergencyDbUploadCutoff, setEmergencyDbUploadCutoff] = useState(false);
   const [sessionConflict, setSessionConflict] = useState(null);
   const [pendingLoginCredentials, setPendingLoginCredentials] = useState(null);
@@ -228,36 +226,11 @@ export default function AuthGate({ children }) {
     }
   };
 
-  const updateJobCardCacheSettings = async (payload) => {
-    const operation = String(payload?.operation || "").toLowerCase();
-    const isRebuildAction = operation === "rebuild" || operation === "reset";
-
-    if (isRebuildAction) {
-      setJobCardCacheActionBusy(true);
-      setJobCardCacheActionStatus("Sending rebuild signal...");
-    }
-
-    try {
-      const data = await api("admin-job-card-cache-settings", payload, localStorage.getItem(TOKEN_KEY));
-      if (data?.settings) setJobCardCacheSettings(data.settings);
-
-      if (isRebuildAction) {
-        setJobCardCacheActionStatus(
-          operation === "reset"
-            ? "✓ Cache policy reset. Browser caches will rebuild on their next Job Card check."
-            : "✓ Rebuild signal sent. Browser caches will rebuild on their next Job Card check."
-        );
-      }
-      setMessage(data.message || "Job Card cache settings updated.");
-    } catch (e) {
-      if (isRebuildAction) {
-        setJobCardCacheActionStatus("✕ Rebuild request failed. Please try again.");
-      }
-      setError(e.message || "Unable to update Job Card cache settings.");
-    } finally {
-      if (isRebuildAction) setJobCardCacheActionBusy(false);
-    }
-  };
+  const updateJobCardCacheSettings = (payload) => run(async () => {
+    const data = await api("admin-job-card-cache-settings", payload, localStorage.getItem(TOKEN_KEY));
+    if (data?.settings) setJobCardCacheSettings(data.settings);
+    setMessage(data.message || "Job Card cache settings updated.");
+  });
 
   const loadEmergencyDbUploadCutoff = async () => {
     try {
@@ -716,14 +689,6 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
 
 function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel, staleChassisBuckets, staleChassisLoading, onLoadStaleChassis }) {
   const analyticsDetailRef = useRef(null);
-  const cacheEnabled = jobCardCacheSettings?.enabled !== false;
-  const cacheNextMs = jobCardCacheSettings?.nextRebuildAt ? new Date(jobCardCacheSettings.nextRebuildAt).getTime() : NaN;
-  const cacheRebuildDue = cacheEnabled && Number.isFinite(cacheNextMs) && cacheNextMs <= Date.now();
-  const cacheStatus = !cacheEnabled
-    ? {label:"CACHE OFF",bg:"#fef2f2",border:"#fecaca",color:"#b91c1c",icon:"⏸",detail:"Browser cache is bypassed. Job Cards are checked directly against Neon."}
-    : cacheRebuildDue
-      ? {label:"REBUILD DUE",bg:"#fff7ed",border:"#fed7aa",color:"#c2410c",icon:"⚠",detail:"Rebuild interval is over. The next Job Card check will rebuild this browser cache."}
-      : {label:"CACHE HEALTHY",bg:"#ecfdf5",border:"#bbf7d0",color:"#166534",icon:"✓",detail:"Browser cache is within the configured rebuild interval."};
   const [view, setView] = useState("overview");
   const [serviceUpdateOpen, setServiceUpdateOpen] = useState(false);
   const [copiedServiceBucket, setCopiedServiceBucket] = useState("");
@@ -897,40 +862,19 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
               <span>{jobCardCacheSettings?.enabled !== false ? "ON" : "OFF"}</span>
             </label>
           </div>
-
-          <div style={{marginTop:14,padding:"11px 13px",borderRadius:9,border:"1px solid "+cacheStatus.border,background:cacheStatus.bg,color:cacheStatus.color}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,fontWeight:900}}>
-              <span>{cacheStatus.icon}</span><span>{cacheStatus.label}</span>
-            </div>
-            <div style={{marginTop:4,fontSize:12,fontWeight:600}}>{cacheStatus.detail}</div>
-          </div>
-
           <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:12,marginTop:16}}>
             <div><div className="admin-panel-card-sub">Cache Rebuild Interval</div>
               <select value={Number(jobCardCacheSettings?.intervalHours || 24)} onChange={e=>onJobCardCacheSettings({intervalHours:Number(e.target.value)})} style={{marginTop:6,width:"100%",padding:"9px 10px",borderRadius:8,border:"1px solid #d7dce3"}}>
                 {[6,12,24,48,168].map(v=><option key={v} value={v}>{v===168?"7 Days":v+" Hours"}</option>)}
               </select>
             </div>
-            <div><div className="admin-panel-card-sub">Last Global Rebuild Signal</div><strong>{jobCardCacheSettings?.lastRebuildAt ? new Date(jobCardCacheSettings.lastRebuildAt).toLocaleString("en-IN") : "Not yet requested"}</strong></div>
-            <div><div className="admin-panel-card-sub">Next Rebuild Due</div><strong>{jobCardCacheSettings?.nextRebuildAt ? new Date(jobCardCacheSettings.nextRebuildAt).toLocaleString("en-IN") : "—"}</strong></div>
-            <div><div className="admin-panel-card-sub">Central Job Cards</div><strong>{Number(jobCardCacheSettings?.cachedJobCards || 0).toLocaleString("en-IN")}</strong></div>
+            <div><div className="admin-panel-card-sub">Last Global Index Update</div><strong>{jobCardCacheSettings?.lastRebuildAt ? new Date(jobCardCacheSettings.lastRebuildAt).toLocaleString("en-IN") : "Not yet rebuilt"}</strong></div>
+            <div><div className="admin-panel-card-sub">Next Rebuild</div><strong>{jobCardCacheSettings?.nextRebuildAt ? new Date(jobCardCacheSettings.nextRebuildAt).toLocaleString("en-IN") : "—"}</strong></div>
+            <div><div className="admin-panel-card-sub">Cached Job Cards</div><strong>{Number(jobCardCacheSettings?.cachedJobCards || 0).toLocaleString("en-IN")}</strong></div>
           </div>
-
           <div style={{display:"flex",gap:10,marginTop:16,flexWrap:"wrap"}}>
-            <button className="auth-primary" disabled={jobCardCacheActionBusy} onClick={()=>onJobCardCacheSettings({operation:"rebuild"})}>
-              {jobCardCacheActionBusy ? "⟳ Sending Rebuild Signal..." : "🔄 Rebuild Cache Now"}
-            </button>
-            <button className="auth-secondary" disabled={jobCardCacheActionBusy} onClick={()=>onJobCardCacheSettings({operation:"reset"})}>Clear Cache Policy</button>
-          </div>
-
-          {jobCardCacheActionStatus && (
-            <div style={{marginTop:10,padding:"9px 12px",borderRadius:8,background:jobCardCacheActionStatus.startsWith("✕") ? "#fff1f2" : "#eff6ff",color:jobCardCacheActionStatus.startsWith("✕") ? "#b91c1c" : "#1d4ed8",fontWeight:700,fontSize:12}}>
-              {jobCardCacheActionStatus}
-            </div>
-          )}
-
-          <div style={{marginTop:9,fontSize:11,color:"#6b7280"}}>
-            Note: “Rebuild Cache Now” sends a global version signal. Each user's browser IndexedDB cache physically rebuilds automatically on its next Job Card check/upload.
+            <button className="auth-primary" onClick={()=>onJobCardCacheSettings({operation:"rebuild"})}>Rebuild Cache Now</button>
+            <button className="auth-secondary" onClick={()=>onJobCardCacheSettings({operation:"reset"})}>Clear Cache Policy</button>
           </div>
         </div>
 

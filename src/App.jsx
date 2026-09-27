@@ -178,6 +178,7 @@ const PART_STANDARDIZATION = {
   'COD99991': 'Coolant',
   'COD99994': 'Coolant',
   'CFD99991': 'Clutch Oil',
+  'U9999995': 'Clutch Oil',
   'MB404069': 'DEF Filter air',
   'XFM00200': 'DEF Filter Air',
   'XFM00300': 'DEF Filter Air',

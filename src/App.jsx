@@ -604,7 +604,14 @@ function normalizePartCode(value) {
 function standardizePart(code, description) {
   const key = normalizePartCode(code);
   if (key && PART_STANDARDIZATION[key]) return PART_STANDARDIZATION[key];
-  return String(description ?? "").trim();
+
+  // Service Decision uses the Standard Part Name as its aggregate identity.
+  // Keep Clutch Oil history under one standard name even when a DMS export
+  // contains a new/unmapped clutch-oil part number with a valid description.
+  const fallback = String(description ?? "").trim();
+  if (fallback.toUpperCase().includes("CLUTCH OIL")) return "Clutch Oil";
+
+  return fallback;
 }
 
 
@@ -2867,7 +2874,7 @@ const ESTIMATE_REFERENCE_PARTS = {
   gearOil: ["G9999994"],
   axleOil: ["GB699991"],
   steeringOil: ["PSB99994", "PD600391"],
-  clutchOil: ["CFD99991"],
+  clutchOil: ["CFD99991", "U9999995"],
   defInline: ["XFM00800"],
   coolant: ["C9999993"],
   hubGrease: ["S9999997", "FJ607400", "F1721500", "H5001220"],

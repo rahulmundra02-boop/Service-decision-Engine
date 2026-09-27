@@ -3111,7 +3111,7 @@ function estimateIsPaidOrderRow(row = {}) {
   return repairLine.includes("POSTWARRANTY") && repairLine.includes("PAIDORDER");
 }
 
-function estimateChooseBestRate(rows = []) {
+function estimateChooseBestRate(rows = [], paidOnly = false) {
   const valid = rows
     .map((row, index) => ({
       row,
@@ -3119,7 +3119,7 @@ function estimateChooseBestRate(rows = []) {
       rank: estimateRowRank(row, index),
     }))
     .filter(item =>
-      estimateIsPaidOrderRow(item.row) &&
+      (!paidOnly || estimateIsPaidOrderRow(item.row)) &&
       Number.isFinite(item.rate) &&
       item.rate > 0
     );
@@ -3146,7 +3146,7 @@ function estimateBuildHistoricalItem(type, serviceKey, rows, code = "") {
   };
   if (effectiveQtyChoice.qty <= 0) return null;
 
-  const rate = estimateChooseBestRate(rows);
+  const rate = estimateChooseBestRate(rows, type === "part");
   const paidRows = rows.filter(estimateIsPaidOrderRow);
   const sourcePool = paidRows.length ? paidRows : rows;
   const sourceRow = sourcePool
@@ -3304,7 +3304,7 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
     const matching = allModelRates.filter(item =>
       normalizePartCode(item?.part_code) === code
     );
-    return estimateChooseBestRate(matching);
+    return estimateChooseBestRate(matching, true);
   }
 
   function applyGlobalPartRate(item) {

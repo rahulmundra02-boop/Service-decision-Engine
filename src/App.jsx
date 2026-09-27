@@ -5635,8 +5635,27 @@ function ServiceDecisionApp({ user }) {
     pdf.text("Authorized Signatory",165,y,{align:"center"});
 
     if(autoPrint){
+      // Open the generated A4 PDF through a Blob URL. Some browsers block
+      // jsPDF's legacy bloburl/window.open combination, which made Print A4
+      // appear to do nothing.
       pdf.autoPrint();
-      window.open(pdf.output("bloburl"),"_blank");
+      const blob = pdf.output("blob");
+      const url = URL.createObjectURL(blob);
+      const printWindow = window.open(url, "_blank");
+
+      if (!printWindow) {
+        // Popup-blocker fallback: create a user-triggered temporary link.
+        const link = document.createElement("a");
+        link.href = url;
+        link.target = "_blank";
+        link.rel = "noopener";
+        link.style.display = "none";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }
+
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
     } else {
       const fileName=("Service_Estimate_"+(vehicle.reg||vehicle.vin||"Vehicle")+".pdf")
         .replace(/[^a-z0-9_.-]+/gi,"_");

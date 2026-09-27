@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable,
+  ActivityIndicator, Alert, BackHandler, KeyboardAvoidingView, Platform, Pressable,
   SafeAreaView, ScrollView, Share, StyleSheet, Text, TextInput, View
 } from 'react-native';
 import * as Print from 'expo-print';
@@ -25,7 +25,7 @@ function Field({label,value,onChangeText,placeholder,keyboardType='default',onBl
   return <View style={styles.field}><Text style={styles.label}>{label}</Text><TextInput value={String(value??'')} onChangeText={onChangeText} onBlur={onBlur} placeholder={placeholder} keyboardType={keyboardType} autoCapitalize="characters" style={styles.input}/></View>;
 }
 
-function ItemCard({item,onChange,onDelete,onRateLookup}) {
+function ItemCard({item,onChange,onDelete,onRateLookup,rateLoading=false}) {
   const set=(k,v)=>onChange({...item,[k]:v});
   const isAutomatic=Boolean(item.serviceKey);
   return <View style={styles.itemCard}>
@@ -42,7 +42,7 @@ function ItemCard({item,onChange,onDelete,onRateLookup}) {
       <View style={styles.col}><Field label="Qty" value={item.qty} onChangeText={v=>set('qty',v)} keyboardType="decimal-pad"/></View>
       <View style={styles.col}><Field label="Rate (Incl. GST)" value={item.rate} onChangeText={v=>set('rate',v)} keyboardType="decimal-pad"/></View>
     </View>
-    {item.type==='part' && <Button title="Get Historical Rate" secondary onPress={()=>onRateLookup(item)} disabled={!String(item.partNo||'').trim()}/>}
+    {item.type==='part' && <Button title={rateLoading?'Getting Historical Rate...':'Get Historical Rate'} secondary onPress={()=>onRateLookup(item)} disabled={rateLoading||!String(item.partNo||'').trim()}/>} 
     <Text style={styles.lineAmount}>Amount: {money((Number(item.qty)||0)*(Number(item.rate)||0))}</Text>
     {item.source ? <Text style={styles.source}>{item.source}</Text> : null}
   </View>;
@@ -97,6 +97,7 @@ function EstimateScreen({mode,data,user,onBack}) {
   const [parts,setParts]=useState([]);
   const [labour,setLabour]=useState([]);
   const [saving,setSaving]=useState(false);
+  const [rateLoadingId,setRateLoadingId]=useState(null);
   const [estimateNo]=useState(newEstimateNo());
 
   const toggleAggregate=(key)=>{
@@ -118,12 +119,14 @@ function EstimateScreen({mode,data,user,onBack}) {
   const remove=(setter,id)=>setter(list=>list.filter(x=>x.id!==id));
 
   const lookupRate=async(item)=>{
+    setRateLoadingId(item.id);
     try{
       const response=await getPartRate(item.partNo);
       const result=rateForManualPart(item.partNo,response);
       setParts(list=>list.map(x=>x.id===item.id?{...x,rate:result.rate,description:x.description||result.description,source:result.rate?'Historical DB (Post Warranty / Paid Order, 18% GST added)':'Manual'}:x));
       if(!result.rate) Alert.alert('Historical rate','No qualifying Post Warranty / Paid Order rate found. Enter rate manually.');
     }catch(e){Alert.alert('Rate lookup failed',e.message);}
+    finally{setRateLoadingId(null);}
   };
 
   const save=async()=>{
@@ -142,7 +145,7 @@ function EstimateScreen({mode,data,user,onBack}) {
 
   const print=async()=>{
     const all=[...parts,...labour];
-    const lines=all.map(x=>`<tr><td>${x.type==='part'?x.partNo:x.partNo||''}</td><td>${x.description||''}</td><td>${x.qty||0}</td><td>${Number(x.rate||0).toFixed(2)}</td><td>${(Number(x.qty)||0)*(Number(x.rate)||0).toFixed(2)}</td></tr>`).join('');
+    const lines=all.map(x=>`<tr><td>${x.type==='part'?x.partNo:x.partNo||''}</td><td>${x.description||''}</td><td>${x.qty||0}</td><td>${Number(x.rate||0).toFixed(2)}</td><td>${((Number(x.qty)||0)*(Number(x.rate)||0)).toFixed(2)}</td></tr>`).join('');
     const t=totals(parts,labour);
     const html=`<html><body style="font-family:Arial;padding:24px"><h2>${mode==='service'?'Service Estimate':'Repair Estimate'}</h2><p><b>Estimate No:</b> ${estimateNo}</p><p><b>Vehicle:</b> ${vehicle.registration||''}<br/><b>Customer:</b> ${vehicle.customer_name||''}<br/><b>Model:</b> ${vehicle.model||''}<br/><b>Chassis:</b> ${vehicle.vin||''}</p><table style="width:100%;border-collapse:collapse" border="1" cellpadding="6"><tr><th>Part/Labour</th><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th></tr>${lines}</table><h3>Total: ${money(t.total)}</h3></body></html>`;
     try{
@@ -163,8 +166,11 @@ function EstimateScreen({mode,data,user,onBack}) {
       <View style={styles.vehicleCard}>
         <Text style={styles.cardTitle}>Vehicle</Text>
         <Text style={styles.vehicleMain}>{vehicle.registration||'-'}</Text>
-        <Text>{vehicle.customer_name||'-'}</Text>
-        <Text>{vehicle.model||'-'} • Chassis: {vehicle.vin||'-'}</Text>
+        <Text style={styles.vehicleDetail}>Customer: {vehicle.customer_name||'-'}</Text>
+        <Text style={styles.vehicleDetail}>Model: {vehicle.model||'-'}</Text>
+        <Text style={styles.vehicleDetail}>Engine: {vehicle.engine||'-'}</Text>
+        <Text style={styles.vehicleDetail}>Chassis: {vehicle.vin||'-'}</Text>
+        <Text style={styles.vehicleDetail}>Sale Date: {vehicle.sale_date||'-'}</Text>
       </View>
 
       {mode==='service' && <View style={styles.card}>
@@ -176,7 +182,7 @@ function EstimateScreen({mode,data,user,onBack}) {
 
       <View style={styles.card}>
         <View style={styles.rowBetween}><Text style={styles.cardTitle}>Parts</Text><Pressable onPress={addPart}><Text style={styles.add}>+ Add Part</Text></Pressable></View>
-        {parts.map(item=><ItemCard key={item.id} item={item} onChange={x=>updatePart(item.id,x)} onDelete={()=>remove(setParts,item.id)} onRateLookup={lookupRate}/>)}
+        {parts.map(item=><ItemCard key={item.id} item={item} onChange={x=>updatePart(item.id,x)} onDelete={()=>remove(setParts,item.id)} onRateLookup={lookupRate} rateLoading={rateLoadingId===item.id}/>)}
         {!parts.length&&<Text style={styles.empty}>No parts added.</Text>}
       </View>
 
@@ -200,6 +206,17 @@ export default function App(){
   const [vehicleData,setVehicleData]=useState(null);
 
   React.useEffect(()=>{restoreSession().then(setUser).finally(()=>setLoading(false));},[]);
+
+  React.useEffect(()=>{
+    const onBackPress=()=>{
+      if(vehicleData){setVehicleData(null);return true;}
+      if(mode){setMode(null);return true;}
+      return false;
+    };
+    const subscription=BackHandler.addEventListener('hardwareBackPress',onBackPress);
+    return ()=>subscription.remove();
+  },[mode,vehicleData]);
+
   if(loading) return <SafeAreaView style={styles.safe}><View style={styles.center}><ActivityIndicator size="large"/><Text style={styles.muted}>Loading...</Text></View></SafeAreaView>;
   if(!user) return <LoginScreen onLogin={setUser}/>;
   if(!mode) return <SafeAreaView style={styles.safe}><ScrollView contentContainerStyle={styles.container}>
@@ -228,7 +245,7 @@ const styles=StyleSheet.create({
   secondaryText:{color:'#12304a'},disabled:{opacity:.5},rowBetween:{flexDirection:'row',justifyContent:'space-between',alignItems:'center'},
   card:{backgroundColor:'#fff',borderRadius:14,padding:14,marginTop:14,shadowColor:'#000',shadowOpacity:.05,shadowRadius:8,elevation:2},
   vehicleCard:{backgroundColor:'#eaf2f7',borderRadius:14,padding:14,marginTop:14},cardTitle:{fontSize:17,fontWeight:'800',color:'#12304a',marginBottom:10},
-  vehicleMain:{fontSize:20,fontWeight:'800',marginBottom:3},muted:{color:'#6b7785',marginTop:4},back:{color:'#c46b17',fontWeight:'800'},
+  vehicleMain:{fontSize:20,fontWeight:'800',marginBottom:3},vehicleDetail:{marginTop:2,color:'#344554'},muted:{color:'#6b7785',marginTop:4},back:{color:'#c46b17',fontWeight:'800'},
   aggregate:{padding:13,borderWidth:1,borderColor:'#e0e5ea',borderRadius:9,marginBottom:8},aggregateSelected:{borderColor:'#12304a',backgroundColor:'#edf4f8'},
   aggregateText:{fontSize:15,fontWeight:'700',color:'#23313f'},add:{color:'#c46b17',fontWeight:'800'},empty:{color:'#8793a0',paddingVertical:8},
   itemCard:{borderTopWidth:1,borderTopColor:'#edf0f2',paddingTop:12,marginTop:12},itemTitle:{fontWeight:'800',color:'#12304a'},delete:{color:'#b3261e',fontWeight:'700'},

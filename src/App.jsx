@@ -357,6 +357,7 @@ const PART_STANDARDIZATION = {
   'P5104184': 'Hub Grease Kit',
   'P5104185': 'Hub Grease Kit',
   'P5104186': 'Hub Grease Kit',
+  'F1771900': 'Hub Grease',
   'P5104738': 'Hub Grease Kit',
   'P5104739': 'Hub Grease Kit',
   'P5104740': 'Hub Grease Kit',
@@ -2883,7 +2884,7 @@ const ESTIMATE_REFERENCE_PARTS = {
   clutchOil: ["CFD99991", "U9999995"],
   defInline: ["XFM00800"],
   coolant: ["C9999993"],
-  hubGrease: ["S9999997", "FJ607400", "F1721500", "H5001220"],
+  hubGrease: ["S9999997", "FJ607400", "F1721500", "H5001220", "F1771900"],
   fuelFilter: ["P5105609"],
   airFilter: ["P5105688"],
   defFilter: ["XFM00500", "PET00001"],
@@ -2895,6 +2896,7 @@ const HUB_GREASE_STANDARD_CODES = new Set([
   "FJ607400",
   "F1721500",
   "H5001220",
+  "F1771900",
 ]);
 
 const ESTIMATE_LABOUR_REFERENCE = {

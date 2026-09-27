@@ -6553,7 +6553,7 @@ clone.style.transformOrigin = "top left";
         .warranty-tag-4up-grid>div,.warranty-tag-4up-grid>strong{border-bottom:0.35mm solid #111;box-sizing:border-box;padding:1.05mm 0.8mm;min-width:0;overflow:hidden;overflow-wrap:anywhere}
         .warranty-tag-4up-grid>div{border-right:0.35mm solid #111;font-weight:700}
         .warranty-tag-4up-grid>strong{font-weight:800}
-        .warranty-tag-4up-qty{float:right;margin-left:3mm}
+        .warranty-tag-4up-qty{float:right;margin-left:3mm;margin-right:8mm}
         .warranty-tag-4up-check-title{height:7mm;display:flex;align-items:center;justify-content:center;font-size:7.5px;font-weight:700;border-top:0.35mm solid #111}
         .warranty-tag-4up-checks{height:17mm;display:grid;grid-template-columns:repeat(3,1fr);align-items:center;text-align:center}
         .warranty-tag-4up-checks>div{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.5mm;font-size:7px}

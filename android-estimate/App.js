@@ -21,14 +21,21 @@ function Button({title,onPress,secondary=false,disabled=false}) {
   </Pressable>;
 }
 
-function Field({label,value,onChangeText,placeholder,keyboardType='default'}) {
-  return <View style={styles.field}><Text style={styles.label}>{label}</Text><TextInput value={String(value??'')} onChangeText={onChangeText} placeholder={placeholder} keyboardType={keyboardType} style={styles.input}/></View>;
+function Field({label,value,onChangeText,placeholder,keyboardType='default',onBlur}) {
+  return <View style={styles.field}><Text style={styles.label}>{label}</Text><TextInput value={String(value??'')} onChangeText={onChangeText} onBlur={onBlur} placeholder={placeholder} keyboardType={keyboardType} autoCapitalize="characters" style={styles.input}/></View>;
 }
 
 function ItemCard({item,onChange,onDelete,onRateLookup}) {
   const set=(k,v)=>onChange({...item,[k]:v});
+  const isAutomatic=Boolean(item.serviceKey);
   return <View style={styles.itemCard}>
-    <View style={styles.rowBetween}><Text style={styles.itemTitle}>{item.type==='part'?'Part':'Labour'}</Text><Pressable onPress={onDelete}><Text style={styles.delete}>Delete</Text></Pressable></View>
+    <View style={styles.rowBetween}>
+      <View style={styles.itemHeadingRow}>
+        <Text style={styles.itemTitle}>{item.type==='part'?'Part':'Labour'}</Text>
+        <Text style={[styles.badge,isAutomatic?styles.autoBadge:styles.manualBadge]}>{isAutomatic?'AUTO':'MANUAL'}</Text>
+      </View>
+      <Pressable onPress={onDelete}><Text style={styles.delete}>Delete</Text></Pressable>
+    </View>
     {item.type==='part' && <Field label="Part No." value={item.partNo} onChangeText={v=>set('partNo',v.toUpperCase())} placeholder="Enter part number"/>}
     <Field label="Description" value={item.description} onChangeText={v=>set('description',v)} placeholder="Description"/>
     <View style={styles.twoCol}>
@@ -77,6 +84,7 @@ function VehicleScreen({mode,onVehicle}) {
     <Text style={styles.helper}>{mode==='service'?'Vehicle → Aggregate → Automatic Parts/Labour':'Vehicle → Manual Parts/Labour'}</Text>
     <Field label="Vehicle No." value={reg} onChangeText={setReg} placeholder="e.g. GJ39XX0000"/>
     <Button title={busy?'Loading vehicle...':'Load Vehicle'} onPress={lookup} disabled={busy}/>
+    <Text style={styles.lookupHint}>Vehicle data, service history and applicable estimate information will be loaded from the existing backend.</Text>
   </ScrollView></SafeAreaView>;
 }
 
@@ -95,9 +103,11 @@ function EstimateScreen({mode,data,user,onBack}) {
     const next=selected.includes(key)?selected.filter(x=>x!==key):[...selected,key];
     setSelected(next);
     if(mode==='service'){
+      const currentManualParts=parts.filter(x=>!x.serviceKey);
+      const currentManualLabour=labour.filter(x=>!x.serviceKey);
       const items=buildServiceItems(rows,modelRows,globalRates,next);
-      setParts(items.filter(x=>x.type==='part'));
-      setLabour(items.filter(x=>x.type==='labour'));
+      setParts([...items.filter(x=>x.type==='part'),...currentManualParts]);
+      setLabour([...items.filter(x=>x.type==='labour'),...currentManualLabour]);
     }
   };
 
@@ -145,7 +155,10 @@ function EstimateScreen({mode,data,user,onBack}) {
   const t=useMemo(()=>totals(parts,labour),[parts,labour]);
   return <SafeAreaView style={styles.safe}><KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==='ios'?'padding':undefined}>
     <ScrollView contentContainerStyle={styles.container}>
-      <View style={styles.rowBetween}><View><Text style={styles.heading}>{mode==='service'?'Service Estimate':'Repair Estimate'}</Text><Text style={styles.muted}>{estimateNo}</Text></View><Pressable onPress={onBack}><Text style={styles.back}>Back</Text></Pressable></View>
+      <View style={styles.rowBetween}>
+        <View><Text style={styles.heading}>{mode==='service'?'Service Estimate':'Repair Estimate'}</Text><Text style={styles.muted}>{estimateNo}</Text></View>
+        <Pressable onPress={onBack}><Text style={styles.back}>Vehicle</Text></Pressable>
+      </View>
 
       <View style={styles.vehicleCard}>
         <Text style={styles.cardTitle}>Vehicle</Text>
@@ -155,7 +168,7 @@ function EstimateScreen({mode,data,user,onBack}) {
       </View>
 
       {mode==='service' && <View style={styles.card}>
-        <Text style={styles.cardTitle}>Select Aggregate Service</Text>
+        <View style={styles.sectionHeader}><View><Text style={styles.cardTitle}>Select Aggregate Service</Text><Text style={styles.sectionHint}>Select one or more services. Applicable parts and labour will load automatically.</Text></View></View>
         {AGGREGATES.map(([label,key])=><Pressable key={key} onPress={()=>toggleAggregate(key)} style={[styles.aggregate,selected.includes(key)&&styles.aggregateSelected]}>
           <Text style={styles.aggregateText}>{selected.includes(key)?'✓  ':'○  '}{label}</Text>
         </Pressable>)}
@@ -173,7 +186,7 @@ function EstimateScreen({mode,data,user,onBack}) {
         {!labour.length&&<Text style={styles.empty}>No labour added.</Text>}
       </View>
 
-      <View style={styles.totalCard}><Text style={styles.totalLabel}>Grand Total</Text><Text style={styles.total}>{money(t.total)}</Text></View>
+      <View style={styles.totalCard}><View><Text style={styles.totalLabel}>Grand Total</Text><Text style={styles.totalHint}>All rates shown inclusive of GST</Text></View><Text style={styles.total}>{money(t.total)}</Text></View>
       <Button title={saving?'Saving...':'Save Estimate'} onPress={save} disabled={saving}/>
       <Button title="Print / Share PDF" secondary onPress={print}/>
     </ScrollView>
@@ -191,8 +204,12 @@ export default function App(){
   if(!user) return <LoginScreen onLogin={setUser}/>;
   if(!mode) return <SafeAreaView style={styles.safe}><ScrollView contentContainerStyle={styles.container}>
     <Text style={styles.brand}>SERVICE ESTIMATE</Text><Text style={styles.sub}>Welcome {user.personName||''}</Text>
-    <Button title="Service Estimate" onPress={()=>setMode('service')}/>
-    <Button title="Repair Estimate" onPress={()=>setMode('repair')} secondary/>
+    <View style={styles.modeCard}>
+      <Text style={styles.modeTitle}>Create Estimate</Text>
+      <Text style={styles.modeHint}>Choose the estimate type to continue.</Text>
+      <Button title="Service Estimate" onPress={()=>setMode('service')}/>
+      <Button title="Repair Estimate" onPress={()=>setMode('repair')} secondary/>
+    </View>
     <Button title="Logout" onPress={async()=>{await logout();setUser(null);}} secondary/>
   </ScrollView></SafeAreaView>;
   if(!vehicleData) return <VehicleScreen mode={mode} onVehicle={setVehicleData}/>;
@@ -217,5 +234,11 @@ const styles=StyleSheet.create({
   itemCard:{borderTopWidth:1,borderTopColor:'#edf0f2',paddingTop:12,marginTop:12},itemTitle:{fontWeight:'800',color:'#12304a'},delete:{color:'#b3261e',fontWeight:'700'},
   twoCol:{flexDirection:'row',gap:10},col:{flex:1},lineAmount:{fontWeight:'800',marginTop:3},source:{fontSize:11,color:'#71808f',marginTop:4},
   totalCard:{backgroundColor:'#12304a',borderRadius:14,padding:18,marginTop:14,flexDirection:'row',justifyContent:'space-between',alignItems:'center'},
-  totalLabel:{color:'#fff',fontSize:16,fontWeight:'700'},total:{color:'#fff',fontSize:22,fontWeight:'900'}
+  totalLabel:{color:'#fff',fontSize:16,fontWeight:'700'},total:{color:'#fff',fontSize:22,fontWeight:'900'},
+  totalHint:{color:'#dbe5ec',fontSize:11,marginTop:3},sectionHint:{color:'#71808f',fontSize:12,marginTop:-6,marginBottom:10},
+  sectionHeader:{marginBottom:2},itemHeadingRow:{flexDirection:'row',alignItems:'center',gap:7},
+  badge:{fontSize:9,fontWeight:'900',paddingHorizontal:7,paddingVertical:3,borderRadius:10},autoBadge:{backgroundColor:'#e7f1f7',color:'#12304a'},
+  manualBadge:{backgroundColor:'#fff0e2',color:'#a75b12'},modeCard:{backgroundColor:'#fff',borderRadius:16,padding:16,marginTop:18,elevation:2},
+  modeTitle:{fontSize:19,fontWeight:'800',color:'#12304a'},modeHint:{fontSize:13,color:'#71808f',marginTop:-5,marginBottom:8},
+  lookupHint:{fontSize:12,color:'#71808f',lineHeight:18,marginTop:8}
 });

@@ -1,13 +1,18 @@
 {
   "expo": {
-    "name": "Service Estimate",
-    "slug": "service-estimate",
+    "name": "AL Service Estimate",
+    "slug": "al-service-estimate",
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "android": {
       "package": "com.rahulmundra.serviceestimate",
       "versionCode": 1
+    },
+    "extra": {
+      "eas": {
+        "projectId": "58461c48-f687-4a82-83fe-f537dd46db66"
+      }
     }
   }
 }

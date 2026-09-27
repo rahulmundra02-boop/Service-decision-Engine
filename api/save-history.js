@@ -352,6 +352,33 @@ export default async function handler(req, res) {
     }
   }
 
+  // Refresh vehicle timestamp even when the uploaded Job Cards already exist.
+  // This keeps Admin stale-history buckets accurate without re-uploading history.
+  if (body.action === "touch-vehicle-refresh") {
+    const vins = [...new Set(
+      (Array.isArray(body.vins) ? body.vins : [])
+        .map(value => String(value ?? "").trim().toUpperCase())
+        .filter(Boolean)
+    )];
+
+    if (!vins.length) return res.status(200).json({ success:true, updatedVehicles:0 });
+
+    const client = await pool.connect();
+    try {
+      const result = await client.query(
+        "UPDATE vehicles SET last_refreshed_at=NOW() " +
+        "WHERE UPPER(TRIM(vin))=ANY($1::text[]) RETURNING vin",
+        [vins]
+      );
+      return res.status(200).json({ success:true, updatedVehicles:result.rowCount || 0 });
+    } catch (error) {
+      console.error("Vehicle Refresh Touch Error:", error);
+      return res.status(500).json({ success:false,error:error?.message || "Vehicle refresh timestamp update failed." });
+    } finally {
+      client.release();
+    }
+  }
+
   const records = Array.isArray(body.records) ? body.records : [];
   const vehicle = normalizeVehicle(body.vehicle || {});
   const recordsNormalized = records.map(normalizeRecord);

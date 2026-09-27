@@ -3103,6 +3103,14 @@ function estimateChooseBestQuantity(rows = []) {
   };
 }
 
+function estimateIsPaidOrderRow(row = {}) {
+  const repairLine = String(row?.repair_line_item_type ?? row?.repairTypeLine ?? "")
+    .toUpperCase()
+    .replace(/\s+/g, "");
+
+  return repairLine.includes("POSTWARRANTY") && repairLine.includes("PAIDORDER");
+}
+
 function estimateChooseBestRate(rows = []) {
   const valid = rows
     .map((row, index) => ({
@@ -3110,11 +3118,17 @@ function estimateChooseBestRate(rows = []) {
       rate: Number(row?.rate),
       rank: estimateRowRank(row, index),
     }))
-    .filter(item => Number.isFinite(item.rate) && item.rate > 0);
+    .filter(item =>
+      estimateIsPaidOrderRow(item.row) &&
+      Number.isFinite(item.rate) &&
+      item.rate > 0
+    );
 
   if (!valid.length) return 0;
+
   valid.sort((a, b) => b.rank - a.rank);
-  return valid[0].rate;
+  const latestTen = valid.slice(0, 10);
+  return Math.max(...latestTen.map(item => item.rate));
 }
 
 function estimateBuildHistoricalItem(type, serviceKey, rows, code = "") {
@@ -3133,7 +3147,9 @@ function estimateBuildHistoricalItem(type, serviceKey, rows, code = "") {
   if (effectiveQtyChoice.qty <= 0) return null;
 
   const rate = estimateChooseBestRate(rows);
-  const sourceRow = rows
+  const paidRows = rows.filter(estimateIsPaidOrderRow);
+  const sourcePool = paidRows.length ? paidRows : rows;
+  const sourceRow = sourcePool
     .slice()
     .sort((a, b) => estimateRowRank(b, 0) - estimateRowRank(a, 0))[0];
 
@@ -3285,11 +3301,10 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
   function latestGlobalPartRate(partCode) {
     const code = normalizePartCode(partCode);
     if (!code) return 0;
-    const row = allModelRates.find(item =>
-      normalizePartCode(item?.part_code) === code &&
-      Number(item?.rate) > 0
+    const matching = allModelRates.filter(item =>
+      normalizePartCode(item?.part_code) === code
     );
-    return Number(row?.rate || 0);
+    return estimateChooseBestRate(matching);
   }
 
   function applyGlobalPartRate(item) {

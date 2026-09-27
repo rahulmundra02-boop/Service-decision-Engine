@@ -686,29 +686,45 @@ export default async function handler(req, res) {
         const todayWhere = todayConditions.join(" AND ");
 
         periods = await client.query(
-          `SELECT uva.analysis_date AS activity_date,
-                  0::int AS activities,
-                  0::int AS logins,
-                  COUNT(*)::int AS vehicles,
-                  0::int AS files
+          `WITH activity_counts AS (
+             SELECT
+               COUNT(*)::int AS activities,
+               COUNT(*) FILTER (WHERE a.activity_type='Login')::int AS logins,
+               COALESCE(SUM(a.file_count),0)::int AS files
+             FROM user_activity a
+             JOIN app_users u ON u.id=a.user_id
+             WHERE (a.activity_time AT TIME ZONE 'Asia/Kolkata')::date =
+               (NOW() AT TIME ZONE 'Asia/Kolkata')::date
+               ${targetUserId ? "AND a.user_id=$1" : ""}
+               ${!includeAdmins ? "AND u.role <> 'admin'" : ""}
+           ),
+           vehicle_counts AS (
+             SELECT COUNT(*)::int AS vehicles
              FROM user_vehicle_analysis uva
-            WHERE uva.analysis_date=(NOW() AT TIME ZONE 'Asia/Kolkata')::date
-              ${targetUserId ? "AND uva.user_id=$1" : ""}
-              ${!includeAdmins ? "AND uva.user_id IN (SELECT id FROM app_users WHERE role <> 'admin')" : ""}
-            GROUP BY uva.analysis_date ORDER BY uva.analysis_date`,
+             JOIN app_users u ON u.id=uva.user_id
+             WHERE uva.analysis_date=(NOW() AT TIME ZONE 'Asia/Kolkata')::date
+               ${targetUserId ? "AND uva.user_id=$1" : ""}
+               ${!includeAdmins ? "AND u.role <> 'admin'" : ""}
+           )
+           SELECT (NOW() AT TIME ZONE 'Asia/Kolkata')::date AS activity_date,
+                  ac.activities, ac.logins, vc.vehicles, ac.files
+             FROM activity_counts ac CROSS JOIN vehicle_counts vc`,
           todayParams
         );
 
         breakdown = await client.query(
-          `SELECT 'Vehicle Analysis' AS activity_type,
+          `SELECT a.activity_type,
                   COUNT(*)::int AS count,
-                  COUNT(*)::int AS vehicles,
-                  0::int AS files
-             FROM user_vehicle_analysis uva
-            WHERE uva.analysis_date=(NOW() AT TIME ZONE 'Asia/Kolkata')::date
-              ${targetUserId ? "AND uva.user_id=$1" : ""}
-              ${!includeAdmins ? "AND uva.user_id IN (SELECT id FROM app_users WHERE role <> 'admin')" : ""}
-            HAVING COUNT(*) > 0`,
+                  COALESCE(SUM(a.vehicle_count),0)::int AS vehicles,
+                  COALESCE(SUM(a.file_count),0)::int AS files
+             FROM user_activity a
+             JOIN app_users u ON u.id=a.user_id
+            WHERE (a.activity_time AT TIME ZONE 'Asia/Kolkata')::date =
+              (NOW() AT TIME ZONE 'Asia/Kolkata')::date
+              ${targetUserId ? "AND a.user_id=$1" : ""}
+              ${!includeAdmins ? "AND u.role <> 'admin'" : ""}
+            GROUP BY a.activity_type
+            ORDER BY count DESC, a.activity_type ASC`,
           todayParams
         );
       } else {

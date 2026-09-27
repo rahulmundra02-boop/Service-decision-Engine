@@ -3301,10 +3301,18 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
   function latestGlobalPartRate(partCode) {
     const code = normalizePartCode(partCode);
     if (!code) return 0;
-    const matching = allModelRates.filter(item =>
-      normalizePartCode(item?.part_code) === code
-    );
-    return estimateChooseBestRate(matching, true);
+
+    // /api/save-history already applies the pricing rule for global part rates:
+    // Post warranty / Paid Order only -> latest 10 job cards -> maximum rate.
+    // Do not re-apply estimateIsPaidOrderRow() here because globalPartRates
+    // intentionally contains only the final selected rate and does not carry
+    // repair_line_item_type.
+    const matching = allModelRates
+      .filter(item => normalizePartCode(item?.part_code) === code)
+      .map(item => Number(item?.rate))
+      .filter(rate => Number.isFinite(rate) && rate > 0);
+
+    return matching.length ? Math.max(...matching) : 0;
   }
 
   function applyGlobalPartRate(item) {

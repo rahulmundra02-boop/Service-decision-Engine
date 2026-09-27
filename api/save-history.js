@@ -352,6 +352,47 @@ export default async function handler(req, res) {
     }
   }
 
+  // Admin Service History freshness:
+  // An Excel upload can contain only Job Cards that already exist in the DB.
+  // In that case the normal history-save path is skipped by the frontend,
+  // so the vehicle still looked stale in the Admin 7+ Days dashboard.
+  // This lightweight action records that the vehicle's history was refreshed
+  // even when there was no new Job Card to insert.
+  if (body.action === "touch-vehicle-refresh") {
+    const vins = [...new Set(
+      (Array.isArray(body.vins) ? body.vins : [])
+        .map(value => String(value ?? "").trim().toUpperCase())
+        .filter(Boolean)
+    )];
+
+    if (!vins.length) {
+      return res.status(200).json({ success:true, updatedVehicles:0 });
+    }
+
+    const client = await pool.connect();
+    try {
+      const result = await client.query(
+        "UPDATE vehicles SET last_refreshed_at=NOW() " +
+        "WHERE UPPER(TRIM(vin))=ANY($1::text[]) " +
+        "RETURNING vin",
+        [vins]
+      );
+
+      return res.status(200).json({
+        success:true,
+        updatedVehicles:result.rowCount || 0
+      });
+    } catch (error) {
+      console.error("Vehicle Refresh Touch Error:", error);
+      return res.status(500).json({
+        success:false,
+        error:error?.message || "Vehicle refresh timestamp update failed."
+      });
+    } finally {
+      client.release();
+    }
+  }
+
   const records = Array.isArray(body.records) ? body.records : [];
   const vehicle = normalizeVehicle(body.vehicle || {});
   const recordsNormalized = records.map(normalizeRecord);

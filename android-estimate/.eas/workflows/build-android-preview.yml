@@ -1,0 +1,14 @@
+name: Android Estimate Preview
+
+on:
+  push:
+    branches:
+      - android-estimate-beta
+
+jobs:
+  build_android:
+    name: Build Android APK
+    type: build
+    params:
+      platform: android
+      profile: preview

@@ -4579,6 +4579,25 @@ function ServiceDecisionApp({ user }) {
     );
   }
 
+  async function touchVehicleRefreshInBackend(vins) {
+    const uniqueVins = [...new Set(
+      (vins || []).map(value => String(value ?? "").trim().toUpperCase()).filter(Boolean)
+    )];
+    if (!uniqueVins.length) return null;
+
+    const response = await fetch(API_BASE_URL + "/api/save-history", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({ action:"touch-vehicle-refresh", vins:uniqueVins }),
+    });
+    let payload = null;
+    try { payload = await response.json(); } catch { payload = null; }
+    if (!response.ok || !payload?.success) {
+      throw new Error(payload?.error || ("Vehicle refresh timestamp update failed (" + response.status + ")"));
+    }
+    return payload;
+  }
+
   async function saveHistoryToBackend({ records, vehicle }) {
     const response = await fetch(`${API_BASE_URL}/api/save-history`, {
       method: "POST",
@@ -4719,6 +4738,18 @@ function ServiceDecisionApp({ user }) {
 
             if (recordsForBackend.length) {
               void saveHistoryInBackground(recordsForBackend);
+            }
+
+            // Refresh every uploaded chassis even when there are no new Job Cards.
+            const uploadedVins = [...new Set(
+              parsedRows.map(record => String(record?.vin || "").trim().toUpperCase()).filter(Boolean)
+            )];
+            if (uploadedVins.length) {
+              try {
+                await touchVehicleRefreshInBackend(uploadedVins);
+              } catch (touchError) {
+                console.error("Vehicle refresh timestamp update failed:", touchError);
+              }
             }
           }
         }

@@ -716,6 +716,14 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
 
 function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel, staleChassisBuckets, staleChassisLoading, onLoadStaleChassis }) {
   const analyticsDetailRef = useRef(null);
+  const cacheEnabled = jobCardCacheSettings?.enabled !== false;
+  const cacheNextMs = jobCardCacheSettings?.nextRebuildAt ? new Date(jobCardCacheSettings.nextRebuildAt).getTime() : NaN;
+  const cacheRebuildDue = cacheEnabled && Number.isFinite(cacheNextMs) && cacheNextMs <= Date.now();
+  const cacheStatus = !cacheEnabled
+    ? {label:"CACHE OFF",bg:"#fef2f2",border:"#fecaca",color:"#b91c1c",icon:"⏸",detail:"Browser cache is bypassed. Job Cards are checked directly against Neon."}
+    : cacheRebuildDue
+      ? {label:"REBUILD DUE",bg:"#fff7ed",border:"#fed7aa",color:"#c2410c",icon:"⚠",detail:"Rebuild interval is over. The next Job Card check will rebuild this browser cache."}
+      : {label:"CACHE HEALTHY",bg:"#ecfdf5",border:"#bbf7d0",color:"#166534",icon:"✓",detail:"Browser cache is within the configured rebuild interval."};
   const [view, setView] = useState("overview");
   const [serviceUpdateOpen, setServiceUpdateOpen] = useState(false);
   const [copiedServiceBucket, setCopiedServiceBucket] = useState("");
@@ -890,25 +898,12 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
             </label>
           </div>
 
-          {(() => {
-            const enabled = jobCardCacheSettings?.enabled !== false;
-            const nextMs = jobCardCacheSettings?.nextRebuildAt ? new Date(jobCardCacheSettings.nextRebuildAt).getTime() : NaN;
-            const due = enabled && Number.isFinite(nextMs) && nextMs <= Date.now();
-            const status = !enabled
-              ? {label:"CACHE OFF",bg:"#fef2f2",border:"#fecaca",color:"#b91c1c",icon:"⏸",detail:"Browser cache is bypassed. Job Cards are checked directly against Neon."}
-              : due
-                ? {label:"REBUILD DUE",bg:"#fff7ed",border:"#fed7aa",color:"#c2410c",icon:"⚠",detail:"Rebuild interval is over. The next Job Card check will rebuild this browser cache."}
-                : {label:"CACHE HEALTHY",bg:"#ecfdf5",border:"#bbf7d0",color:"#166534",icon:"✓",detail:"Browser cache is within the configured rebuild interval."};
-
-            return (
-              <div style={{marginTop:14,padding:"11px 13px",borderRadius:9,border:"1px solid "+status.border,background:status.bg,color:status.color}}>
-                <div style={{display:"flex",alignItems:"center",gap:8,fontWeight:900}}>
-                  <span>{status.icon}</span><span>{status.label}</span>
-                </div>
-                <div style={{marginTop:4,fontSize:12,fontWeight:600}}>{status.detail}</div>
-              </div>
-            );
-          })()}
+          <div style={{marginTop:14,padding:"11px 13px",borderRadius:9,border:"1px solid "+cacheStatus.border,background:cacheStatus.bg,color:cacheStatus.color}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,fontWeight:900}}>
+              <span>{cacheStatus.icon}</span><span>{cacheStatus.label}</span>
+            </div>
+            <div style={{marginTop:4,fontSize:12,fontWeight:600}}>{cacheStatus.detail}</div>
+          </div>
 
           <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:12,marginTop:16}}>
             <div><div className="admin-panel-card-sub">Cache Rebuild Interval</div>

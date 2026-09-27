@@ -610,7 +610,14 @@ function normalizePartCode(value) {
 function standardizePart(code, description) {
   const key = normalizePartCode(code);
   if (key && PART_STANDARDIZATION[key]) return PART_STANDARDIZATION[key];
-  return String(description ?? "").trim();
+
+  // Service Decision uses the Standard Part Name as its aggregate identity.
+  // Keep Clutch Oil history under one standard name even when a DMS export
+  // contains a new/unmapped clutch-oil part number with a valid description.
+  const fallback = String(description ?? "").trim();
+  if (fallback.toUpperCase().includes("CLUTCH OIL")) return "Clutch Oil";
+
+  return fallback;
 }
 
 
@@ -2873,7 +2880,7 @@ const ESTIMATE_REFERENCE_PARTS = {
   gearOil: ["G9999994"],
   axleOil: ["GB699991"],
   steeringOil: ["PSB99994", "PD600391"],
-  clutchOil: ["CFD99991"],
+  clutchOil: ["CFD99991", "U9999995"],
   defInline: ["XFM00800"],
   coolant: ["C9999993"],
   hubGrease: ["S9999997", "FJ607400", "F1721500", "H5001220"],
@@ -3096,18 +3103,32 @@ function estimateChooseBestQuantity(rows = []) {
   };
 }
 
-function estimateChooseBestRate(rows = []) {
+function estimateIsPaidOrderRow(row = {}) {
+  const repairLine = String(row?.repair_line_item_type ?? row?.repairTypeLine ?? "")
+    .toUpperCase()
+    .replace(/\s+/g, "");
+
+  return repairLine.includes("POSTWARRANTY") && repairLine.includes("PAIDORDER");
+}
+
+function estimateChooseBestRate(rows = [], paidOnly = false) {
   const valid = rows
     .map((row, index) => ({
       row,
       rate: Number(row?.rate),
       rank: estimateRowRank(row, index),
     }))
-    .filter(item => Number.isFinite(item.rate) && item.rate > 0);
+    .filter(item =>
+      (!paidOnly || estimateIsPaidOrderRow(item.row)) &&
+      Number.isFinite(item.rate) &&
+      item.rate > 0
+    );
 
   if (!valid.length) return 0;
+
   valid.sort((a, b) => b.rank - a.rank);
-  return valid[0].rate;
+  const latestTen = valid.slice(0, 10);
+  return Math.max(...latestTen.map(item => item.rate));
 }
 
 function estimateBuildHistoricalItem(type, serviceKey, rows, code = "") {
@@ -3125,8 +3146,10 @@ function estimateBuildHistoricalItem(type, serviceKey, rows, code = "") {
   };
   if (effectiveQtyChoice.qty <= 0) return null;
 
-  const rate = estimateChooseBestRate(rows);
-  const sourceRow = rows
+  const rate = estimateChooseBestRate(rows, type === "part");
+  const paidRows = rows.filter(estimateIsPaidOrderRow);
+  const sourcePool = paidRows.length ? paidRows : rows;
+  const sourceRow = sourcePool
     .slice()
     .sort((a, b) => estimateRowRank(b, 0) - estimateRowRank(a, 0))[0];
 
@@ -3278,11 +3301,10 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
   function latestGlobalPartRate(partCode) {
     const code = normalizePartCode(partCode);
     if (!code) return 0;
-    const row = allModelRates.find(item =>
-      normalizePartCode(item?.part_code) === code &&
-      Number(item?.rate) > 0
+    const matching = allModelRates.filter(item =>
+      normalizePartCode(item?.part_code) === code
     );
-    return Number(row?.rate || 0);
+    return estimateChooseBestRate(matching, true);
   }
 
   function applyGlobalPartRate(item) {

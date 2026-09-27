@@ -721,31 +721,67 @@ export default async function handler(req, res) {
           a.activity_time >= NOW() - (${rangeParam} * INTERVAL '1 day')`.replace(/\s+/g, " ").trim();
 
         periods = await client.query(
-          `SELECT uva.analysis_date AS activity_date,
-                  0::int AS activities,
-                  0::int AS logins,
-                  COUNT(*)::int AS vehicles,
-                  0::int AS files
+          `WITH days AS (
+             SELECT generate_series(
+               (NOW() AT TIME ZONE 'Asia/Kolkata')::date - ($1 - 1),
+               (NOW() AT TIME ZONE 'Asia/Kolkata')::date,
+               INTERVAL '1 day'
+             )::date AS activity_date
+           ),
+           activity_counts AS (
+             SELECT
+               (a.activity_time AT TIME ZONE 'Asia/Kolkata')::date AS activity_date,
+               COUNT(*)::int AS activities,
+               COUNT(*) FILTER (WHERE a.activity_type='Login')::int AS logins,
+               COALESCE(SUM(a.file_count),0)::int AS files
+             FROM user_activity a
+             JOIN app_users u ON u.id=a.user_id
+             WHERE (a.activity_time AT TIME ZONE 'Asia/Kolkata')::date BETWEEN
+               (NOW() AT TIME ZONE 'Asia/Kolkata')::date - ($1 - 1)
+               AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date
+               ${targetUserId ? "AND a.user_id=$2" : ""}
+               ${!includeAdmins ? "AND u.role <> 'admin'" : ""}
+             GROUP BY 1
+           ),
+           vehicle_counts AS (
+             SELECT
+               uva.analysis_date AS activity_date,
+               COUNT(*)::int AS vehicles
              FROM user_vehicle_analysis uva
-            WHERE uva.analysis_date >=
-              (NOW() AT TIME ZONE 'Asia/Kolkata')::date - ($1 - 1)
-              ${targetUserId ? "AND uva.user_id=$2" : ""}
-              ${!includeAdmins ? "AND uva.user_id IN (SELECT id FROM app_users WHERE role <> 'admin')" : ""}
-            GROUP BY uva.analysis_date ORDER BY uva.analysis_date`,
+             JOIN app_users u ON u.id=uva.user_id
+             WHERE uva.analysis_date BETWEEN
+               (NOW() AT TIME ZONE 'Asia/Kolkata')::date - ($1 - 1)
+               AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date
+               ${targetUserId ? "AND uva.user_id=$2" : ""}
+               ${!includeAdmins ? "AND u.role <> 'admin'" : ""}
+             GROUP BY 1
+           )
+           SELECT d.activity_date,
+                  COALESCE(ac.activities,0)::int AS activities,
+                  COALESCE(ac.logins,0)::int AS logins,
+                  COALESCE(vc.vehicles,0)::int AS vehicles,
+                  COALESCE(ac.files,0)::int AS files
+             FROM days d
+             LEFT JOIN activity_counts ac ON ac.activity_date=d.activity_date
+             LEFT JOIN vehicle_counts vc ON vc.activity_date=d.activity_date
+             ORDER BY d.activity_date`,
           targetUserId ? [rangeDays, targetUserId] : [rangeDays]
         );
 
         breakdown = await client.query(
-          `SELECT 'Vehicle Analysis' AS activity_type,
+          `SELECT a.activity_type,
                   COUNT(*)::int AS count,
-                  COUNT(*)::int AS vehicles,
-                  0::int AS files
-             FROM user_vehicle_analysis uva
-            WHERE uva.analysis_date >=
+                  COALESCE(SUM(a.vehicle_count),0)::int AS vehicles,
+                  COALESCE(SUM(a.file_count),0)::int AS files
+             FROM user_activity a
+             JOIN app_users u ON u.id=a.user_id
+            WHERE (a.activity_time AT TIME ZONE 'Asia/Kolkata')::date BETWEEN
               (NOW() AT TIME ZONE 'Asia/Kolkata')::date - ($1 - 1)
-              ${targetUserId ? "AND uva.user_id=$2" : ""}
-              ${!includeAdmins ? "AND uva.user_id IN (SELECT id FROM app_users WHERE role <> 'admin')" : ""}
-            HAVING COUNT(*) > 0`,
+              AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date
+              ${targetUserId ? "AND a.user_id=$2" : ""}
+              ${!includeAdmins ? "AND u.role <> 'admin'" : ""}
+            GROUP BY a.activity_type
+            ORDER BY count DESC, a.activity_type ASC`,
           targetUserId ? [rangeDays, targetUserId] : [rangeDays]
         );
       }

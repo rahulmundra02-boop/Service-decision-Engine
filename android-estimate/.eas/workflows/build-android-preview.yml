@@ -12,3 +12,5 @@ jobs:
     params:
       platform: android
       profile: preview
+
+# Triggered after GitHub repository connection and base-directory setup.

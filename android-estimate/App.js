@@ -238,15 +238,20 @@ function EstimateScreen({mode,data,user,onBack}) {
     const signature=await AsyncStorage.getItem('estimate_user_signature');
     const partRows=allParts.map(x=>`<tr><td>${esc(x.partNo||'-')}</td><td>${esc(x.description||'-')}</td><td class="center">${esc(x.qty||0)}</td><td class="right">${moneyPdf(x.rate)}</td><td class="right">${moneyPdf((Number(x.qty)||0)*(Number(x.rate)||0))}</td></tr>`).join('');
     const labourRows=allLabour.map(x=>`<tr><td colspan="2">${esc(x.description||'-')}</td><td class="center">${esc(x.qty||0)}</td><td class="right">${moneyPdf(x.rate)}</td><td class="right">${moneyPdf((Number(x.qty)||0)*(Number(x.rate)||0))}</td></tr>`).join('');
-    const infoCells=`<table class="info"><tr>
-        <td><b>Customer</b><br/>${esc(customerName||'-')}</td>
-        <td><b>Reg. No.</b><br/>${esc(vehicle.registration||'-')}</td>
-        <td><b>VIN</b><br/>${esc(vehicle.vin||'-')}</td>
-      </tr><tr>
-        <td><b>Model</b><br/>${esc(vehicle.model||'-')}</td>
-        <td><b>Current Reading</b><br/>${esc(currentReading)}</td>
-        <td><b>Sale Date</b><br/>${esc(formatDateOnly(vehicle.sale_date))}</td>
-      </tr></table>`;
+    const infoCells=data.missingVehicle
+      ? `<table class="info"><tr>
+          <td><b>Customer</b><br/>${esc(customerName||'-')}</td>
+          <td><b>Reg. No.</b><br/>${esc(vehicle.registration||'-')}</td>
+        </tr></table>`
+      : `<table class="info"><tr>
+          <td><b>Customer</b><br/>${esc(customerName||'-')}</td>
+          <td><b>Reg. No.</b><br/>${esc(vehicle.registration||'-')}</td>
+          <td><b>VIN</b><br/>${esc(vehicle.vin||'-')}</td>
+        </tr><tr>
+          <td><b>Model</b><br/>${esc(vehicle.model||'-')}</td>
+          <td><b>Current Reading</b><br/>${esc(currentReading)}</td>
+          <td><b>Sale Date</b><br/>${esc(formatDateOnly(vehicle.sale_date))}</td>
+        </tr></table>`;
     const aggregateBlock=selectedNames.length?`<div class="section">Selected Aggregate Services</div><div class="services">${esc(selectedNames.join(', '))}</div>`:'';
     const partsBlock=allParts.length?`<div class="section partsHead">Parts</div><table class="items"><thead><tr><th style="width:15%">Part No.</th><th style="width:43%">Description</th><th style="width:10%">Qty</th><th style="width:16%">Rate (Incl. GST)</th><th style="width:16%">Amount</th></tr></thead><tbody>${partRows}</tbody></table>`:'';
     const labourBlock=allLabour.length?`<div class="section labourHead">Labour</div><table class="items"><thead><tr><th colspan="2" style="width:58%">Description</th><th style="width:10%">Qty</th><th style="width:16%">Rate (Excl. GST)</th><th style="width:16%">Amount</th></tr></thead><tbody>${labourRows}</tbody></table>`:'';
@@ -267,10 +272,10 @@ function EstimateScreen({mode,data,user,onBack}) {
       .services{border:1px solid #aab4c0;background:#f4f9ff;padding:6px;min-height:15px;color:#17324d}
       .center{text-align:center}.right{text-align:right;white-space:nowrap}
       .items th:nth-child(4),.items th:nth-child(5),.items td:nth-child(4),.items td:nth-child(5){white-space:nowrap}
-      .items td:nth-child(4),.items td:nth-child(5){font-size:9px}
+      .items td:nth-child(4),.items td:nth-child(5){font-size:10px}
       .total{width:45%;margin-left:auto;margin-top:8px}
       .total td{padding:5px}.total td:last-child{white-space:nowrap}
-      .grand td{font-weight:800;font-size:11px;background:#eaf7ef}
+      .grand td{font-weight:900;font-size:13px;background:#eaf7ef}
       .sign{margin-top:20px;width:34%;margin-left:auto;text-align:center;min-height:45px}
       .sign img{max-width:120px;max-height:45px;display:block;margin:0 auto 3px}
       .disclaimer{margin-top:16px;padding:7px;border-top:1px solid #cbd5e1;font-size:8px;color:#64748b;text-align:center}
@@ -364,7 +369,7 @@ function SignatureScreen({signature,onSave,onBack}) {
   };
   const clear=async()=>{await AsyncStorage.removeItem('estimate_user_signature');onSave('');};
   return <SafeAreaView style={styles.safe}><ScrollView contentContainerStyle={styles.container}>
-    <View style={styles.rowBetween}><Text style={styles.heading}>User Signature</Text><Pressable onPress={onBack}><Text style={styles.back}>Back</Text></Pressable></View>
+    <Text style={styles.heading}>User Seal/Signature</Text>
     <Text style={styles.lookupHint}>Upload or click a photo of the user's signature. It will be used by default in the Authorized Signatory area.</Text>
     {signature?<View style={styles.signaturePreview}><Image source={{uri:signature}} style={styles.signatureImage}/><Text style={styles.signatureSaved}>Signature saved</Text></View>:<Text style={styles.empty}>No signature saved.</Text>}
     <Button title={busy?'Opening camera...':'Capture with Camera'} onPress={()=>choose('camera')} disabled={busy}/>
@@ -409,7 +414,7 @@ export default function App(){
     };
     const subscription=BackHandler.addEventListener('hardwareBackPress',onBackPress);
     return ()=>subscription.remove();
-  },[mode,vehicleData]);
+  },[mode,vehicleData,signatureScreen]);
 
   if(loading) return <SafeAreaView style={styles.safe}><View style={styles.center}><ActivityIndicator size="large"/><Text style={styles.muted}>Loading...</Text></View></SafeAreaView>;
   if(!user) return <LoginScreen onLogin={setUser}/>;
@@ -447,9 +452,9 @@ const styles=StyleSheet.create({
   aggregateText:{fontSize:12,fontWeight:'700',color:'#23313f'},add:{fontWeight:'800',fontSize:11},partAdd:{color:'#1976d2'},labourAdd:{color:'#ef7d22'},empty:{color:'#8793a0',paddingVertical:6,fontSize:11},
   itemCard:{borderRadius:8,padding:8,marginTop:8,borderWidth:1},partItemCard:{backgroundColor:'#f4f9ff',borderColor:'#cfe3fa'},labourItemCard:{backgroundColor:'#fff8f0',borderColor:'#f4d5b8'},
   itemTitle:{fontWeight:'800',color:'#12304a',fontSize:12},delete:{color:'#b3261e',fontWeight:'700',fontSize:10},
-  twoCol:{flexDirection:'row',gap:7},col:{flex:1},lineAmount:{fontWeight:'800',marginTop:2,fontSize:11},source:{fontSize:9,color:'#71808f',marginTop:3},
+  twoCol:{flexDirection:'row',gap:7},col:{flex:1},lineAmount:{fontWeight:'900',marginTop:3,fontSize:13},source:{fontSize:9,color:'#71808f',marginTop:3},
   totalCard:{backgroundColor:'#12304a',borderRadius:10,padding:12,marginTop:10,flexDirection:'row',justifyContent:'space-between',alignItems:'center'},
-  totalLabel:{color:'#fff',fontSize:13,fontWeight:'700'},total:{color:'#fff',fontSize:17,fontWeight:'900'},
+  totalLabel:{color:'#fff',fontSize:13,fontWeight:'700'},total:{color:'#fff',fontSize:21,fontWeight:'900'},
   totalHint:{color:'#dbe5ec',fontSize:9,marginTop:2},sectionHint:{color:'#71808f',fontSize:10,marginTop:-4,marginBottom:7},
   sectionHeader:{marginBottom:2},itemHeadingRow:{flexDirection:'row',alignItems:'center',gap:5},
   badge:{fontSize:8,fontWeight:'900',paddingHorizontal:5,paddingVertical:2,borderRadius:8},autoBadge:{backgroundColor:'#e7f1f7',color:'#12304a'},

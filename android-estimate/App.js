@@ -192,7 +192,7 @@ function LoginScreen({onLogin}) {
     setBusy(true);
     try{const data=await login(identifier,password);onLogin(data.user);}catch(e){Alert.alert('Login failed',e.message);}finally{setBusy(false);}
   };
-  return <SafeAreaView style={styles.safe}><KeyboardAvoidingView style={{flex:1}} behavior="height" keyboardVerticalOffset={0}>
+  return <SafeAreaView style={styles.safe}><KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==='ios'?'padding':undefined}>
     <View style={styles.loginWrap}>
       <Text style={styles.brand}>SERVICE ESTIMATE</Text>
       <Text style={styles.sub}>Ashok Leyland • Estimate App</Text>
@@ -455,7 +455,7 @@ function EstimateScreen({mode,data,user,onBack,savedEstimate,onSaved}) {
   };
 
   const t=useMemo(()=>totals(parts,labour),[parts,labour]);
-  return <SafeAreaView style={styles.safe}><KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==='ios'?'padding':undefined}>
+  return <SafeAreaView style={styles.safe}><KeyboardAvoidingView style={{flex:1}} behavior="height" keyboardVerticalOffset={0}>
     <ScrollView
       ref={scrollRef}
       keyboardShouldPersistTaps="handled"

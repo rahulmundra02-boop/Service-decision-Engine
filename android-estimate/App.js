@@ -272,10 +272,10 @@ function EstimateScreen({mode,data,user,onBack}) {
       .services{border:1px solid #aab4c0;background:#f4f9ff;padding:6px;min-height:15px;color:#17324d}
       .center{text-align:center}.right{text-align:right;white-space:nowrap}
       .items th:nth-child(4),.items th:nth-child(5),.items td:nth-child(4),.items td:nth-child(5){white-space:nowrap}
-      .items td:nth-child(4),.items td:nth-child(5){font-size:10px}
+      .items td:nth-child(4),.items td:nth-child(5){font-size:11px}
       .total{width:45%;margin-left:auto;margin-top:8px}
       .total td{padding:5px}.total td:last-child{white-space:nowrap}
-      .grand td{font-weight:900;font-size:13px;background:#eaf7ef}
+      .grand td{font-weight:900;font-size:15px;background:#eaf7ef}
       .sign{margin-top:20px;width:34%;margin-left:auto;text-align:center;min-height:45px}
       .sign img{max-width:120px;max-height:45px;display:block;margin:0 auto 3px}
       .disclaimer{margin-top:16px;padding:7px;border-top:1px solid #cbd5e1;font-size:8px;color:#64748b;text-align:center}
@@ -348,6 +348,16 @@ function EstimateScreen({mode,data,user,onBack}) {
 
 function SignatureScreen({signature,onSave,onBack}) {
   const [busy,setBusy]=useState(false);
+
+  React.useEffect(()=>{
+    const handleBack=()=>{
+      onBack();
+      return true;
+    };
+    const subscription=BackHandler.addEventListener('hardwareBackPress',handleBack);
+    return ()=>subscription.remove();
+  },[onBack]);
+
   const choose=async(source)=>{
     setBusy(true);
     try{
@@ -452,9 +462,9 @@ const styles=StyleSheet.create({
   aggregateText:{fontSize:12,fontWeight:'700',color:'#23313f'},add:{fontWeight:'800',fontSize:11},partAdd:{color:'#1976d2'},labourAdd:{color:'#ef7d22'},empty:{color:'#8793a0',paddingVertical:6,fontSize:11},
   itemCard:{borderRadius:8,padding:8,marginTop:8,borderWidth:1},partItemCard:{backgroundColor:'#f4f9ff',borderColor:'#cfe3fa'},labourItemCard:{backgroundColor:'#fff8f0',borderColor:'#f4d5b8'},
   itemTitle:{fontWeight:'800',color:'#12304a',fontSize:12},delete:{color:'#b3261e',fontWeight:'700',fontSize:10},
-  twoCol:{flexDirection:'row',gap:7},col:{flex:1},lineAmount:{fontWeight:'900',marginTop:3,fontSize:13},source:{fontSize:9,color:'#71808f',marginTop:3},
+  twoCol:{flexDirection:'row',gap:7},col:{flex:1},lineAmount:{fontWeight:'900',marginTop:3,fontSize:15},source:{fontSize:9,color:'#71808f',marginTop:3},
   totalCard:{backgroundColor:'#12304a',borderRadius:10,padding:12,marginTop:10,flexDirection:'row',justifyContent:'space-between',alignItems:'center'},
-  totalLabel:{color:'#fff',fontSize:13,fontWeight:'700'},total:{color:'#fff',fontSize:21,fontWeight:'900'},
+  totalLabel:{color:'#fff',fontSize:13,fontWeight:'700'},total:{color:'#fff',fontSize:25,fontWeight:'900'},
   totalHint:{color:'#dbe5ec',fontSize:9,marginTop:2},sectionHint:{color:'#71808f',fontSize:10,marginTop:-4,marginBottom:7},
   sectionHeader:{marginBottom:2},itemHeadingRow:{flexDirection:'row',alignItems:'center',gap:5},
   badge:{fontSize:8,fontWeight:'900',paddingHorizontal:5,paddingVertical:2,borderRadius:8},autoBadge:{backgroundColor:'#e7f1f7',color:'#12304a'},

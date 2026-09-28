@@ -193,7 +193,14 @@ export function rateForManualPart(partNo, response) {
 }
 
 export function totals(parts, labour) {
-  const rows = [...parts, ...labour];
-  const subtotal = rows.reduce((sum, r) => sum + (Number(r.qty)||0) * (Number(r.rate)||0), 0);
-  return { subtotal, total: subtotal };
+  const partsTotal = (parts || []).reduce((sum, r) => sum + (Number(r.qty)||0) * (Number(r.rate)||0), 0);
+  const labourSubtotal = (labour || []).reduce((sum, r) => sum + (Number(r.qty)||0) * (Number(r.rate)||0), 0);
+  const labourGst = labourSubtotal * 0.18;
+  return {
+    partsTotal,
+    labourSubtotal,
+    labourGst,
+    subtotal: partsTotal + labourSubtotal,
+    total: partsTotal + labourSubtotal + labourGst
+  };
 }

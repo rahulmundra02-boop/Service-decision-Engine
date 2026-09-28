@@ -1,0 +1,53 @@
+name: Android Estimate APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      - ".github/workflows/android-estimate-apk.yml"
+
+jobs:
+  build-android-apk:
+    name: Build Android APK
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout mobile app branch
+        uses: actions/checkout@v6
+        with:
+          ref: android-estimate-beta
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20.19.4
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        working-directory: android-estimate
+        run: npm install
+
+      - name: Generate Android native project
+        working-directory: android-estimate
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Build release APK with embedded JavaScript
+        working-directory: android-estimate/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: AL-Service-Estimate-release-apk
+          path: android-estimate/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 14

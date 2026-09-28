@@ -94,7 +94,7 @@ function ItemCard({item,onChange,onDelete,onRateLookup,rateLoading=false}) {
         <TextInput ref={qtyRef} value={String(item.qty??'')} onChangeText={v=>set('qty',v)} keyboardType="decimal-pad" onSubmitEditing={focusRate} returnKeyType="next" style={styles.input}/>
       </View></View>
       <View style={styles.col}><View style={styles.field}>
-        <Text style={styles.label}>{item.type==='part'?'Rate (Incl. GST)':'Rate (Excl. GST)'}</Text>
+        <Text style={styles.label}>{item.type==='part'?'MRP / Rate (Incl. GST)':'Rate (Excl. GST)'}</Text>
         <TextInput ref={rateRef} value={String(item.rate??'')} onChangeText={v=>set('rate',v)} keyboardType="decimal-pad" returnKeyType="done" style={styles.input}/>
       </View></View>
     </View>
@@ -510,7 +510,7 @@ export default function App(){
   };
 
   const openSavedEstimate=(record)=>{
-    setEditingSaved({...record,selectedServicesKeys:Array.isArray(record.selectedServicesKeys)?record.selectedServicesKeys:[]});
+    setEditingSaved({...record,id:null,estimateNo:newEstimateNo(),selectedServicesKeys:Array.isArray(record.selectedServicesKeys)?record.selectedServicesKeys:[]});
     setVehicleData({rows:[],modelRows:[],globalPartRates:[],vehicle:record.vehicle||{registration:record.vehicleNo},missingVehicle:false});
     setMode(record.mode||"repair");
     setSavedScreen(false);

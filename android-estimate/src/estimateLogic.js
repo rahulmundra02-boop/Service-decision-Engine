@@ -7,7 +7,7 @@ const PART_STANDARDIZATION = {
   S9999997: 'Hub Grease', F1721500: 'GASKET HUB CAP FRONT FA90',
   FJ607400: 'GASKET-10TG HUB-12 HOLES', F1771900: 'Hub Grease',
   CLOTH: 'CLOTH',
-  P5105609: 'Fuel Filter', P5105688: 'Air Filter',
+  P5105609: 'Fuel Filter', P5105688: 'Air Filter Kit', P5105689: 'Air Filter Kit',
   XFM00500: 'DEF Filter Air', PET00001: 'DEF Filter Suction',
   XFM00800: 'DEF Inline Filter', PD600968: 'APDA Filter'
 };
@@ -29,7 +29,7 @@ const REFERENCE_PARTS = {
   coolant: ['C9999993'],
   hubGrease: ['S9999997', 'F1721500', 'FJ607400', 'CLOTH', 'F1771900'],
   fuelFilter: ['P5105609'],
-  airFilter: ['P5105688'],
+  airFilter: ['P5105688', 'P5105689'],
   defFilter: ['XFM00500', 'PET00001'],
   apdaFilter: ['PD600968']
 };
@@ -65,10 +65,10 @@ const MINIMUM_QUANTITY_PARTS = {
 };
 
 const FIXED_HUB_PARTS = [
-  ['S9999997', 3, 'Hub Grease'],
-  ['F1721500', 2, 'GASKET HUB CAP FRONT FA90'],
-  ['FJ607400', 2, 'GASKET-10TG HUB-12 HOLES'],
-  ['CLOTH', 2, 'CLOTH']
+  ['S9999997', 'Hub Grease'],
+  ['F1721500', 'GASKET HUB CAP FRONT FA90'],
+  ['FJ607400', 'GASKET-10TG HUB-12 HOLES'],
+  ['CLOTH', 'CLOTH']
 ];
 
 const LABOUR = {
@@ -171,11 +171,25 @@ function matchesLabour(row, key) {
   return tests[key] ? tests[key](text) : false;
 }
 
+function mostFrequentQuantity(rows, fallback = 1) {
+  const valid = rows
+    .filter(r => Number(r?.quantity) > 0)
+    .map(r => Number(r.quantity));
+
+  if (!valid.length) return fallback;
+
+  const counts = new Map();
+  for (const q of valid) counts.set(q, (counts.get(q) || 0) + 1);
+
+  return [...counts.entries()]
+    .sort((a,b) => b[1] - a[1] || b[0] - a[0])[0][0];
+}
+
 function historicalItem(type, key, rows, partNo, globalRates, fixedQty = null, fixedDescription = '') {
   const safeRows = Array.isArray(rows) ? rows : [];
   const orderedRows = safeRows
     .filter(r => Number(r?.quantity) > 0)
-    .sort((a,b) => Number(b.quantity) - Number(a.quantity) || rank(b) - rank(a));
+    .sort((a,b) => rank(b) - rank(a));
 
   const selectedRow = orderedRows[0] || {};
   const code = normalizeCode(partNo || selectedRow?.part_code);
@@ -185,7 +199,7 @@ function historicalItem(type, key, rows, partNo, globalRates, fixedQty = null, f
     ? Number(fixedQty)
     : type === 'labour'
       ? latestQty(safeRows, 1)
-      : Number(selectedRow.quantity);
+      : mostFrequentQuantity(safeRows, 1);
 
   if (!(qty > 0)) return null;
 
@@ -250,15 +264,20 @@ export function buildServiceItems(rows = [], modelRows = [], globalRates = [], s
   const output = [];
 
   for (const key of selectedKeys) {
-    if (key === 'clutchOil') {
-      const clutch = bestAlternativePart(key, REFERENCE_PARTS[key], vehicle, model, globalRates);
-      if (clutch) output.push(clutch);
+    if (key === 'clutchOil' || key === 'airFilter') {
+      const selectedPart = bestAlternativePart(key, REFERENCE_PARTS[key], vehicle, model, globalRates);
+      if (selectedPart) output.push(selectedPart);
     } else if (key === 'hubGrease') {
-      for (const [code, qty, description] of FIXED_HUB_PARTS) {
-        const vehicleRows = exactPartRows(vehicle, code, key);
-        const modelRowsForCode = exactPartRows(model, code, key);
+      for (const [code, , description] of FIXED_HUB_PARTS) {
+        const isHubGreaseQuantityRule = normalizeCode(code) === 'S9999997';
+        const vehicleRows = isHubGreaseQuantityRule
+          ? exactPartRows(vehicle, code, key)
+          : (vehicle || []).filter(r => category(r) === 'part' && normalizeCode(r?.part_code) === normalizeCode(code) && Number(r?.quantity) > 0);
+        const modelRowsForCode = isHubGreaseQuantityRule
+          ? exactPartRows(model, code, key)
+          : (model || []).filter(r => category(r) === 'part' && normalizeCode(r?.part_code) === normalizeCode(code) && Number(r?.quantity) > 0);
         const candidates = vehicleRows.length ? vehicleRows : modelRowsForCode;
-        const item = historicalItem('part', key, candidates, code, globalRates, qty, description);
+        const item = historicalItem('part', key, candidates, code, globalRates, null, description);
         if (item) output.push(item);
       }
 

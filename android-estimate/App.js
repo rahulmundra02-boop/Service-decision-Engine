@@ -174,7 +174,7 @@ function EstimateScreen({mode,data,user,onBack,savedEstimate,onSaved}) {
       setParts(Array.isArray(savedEstimate.parts)?savedEstimate.parts:[]);
       setLabour(Array.isArray(savedEstimate.labour)?savedEstimate.labour:[]);
     }
-  },[savedEstimate?.id]);
+  },[savedEstimate?.estimateNo]);
 
   const toggleAggregate=(key)=>{
     const wasSelected=selected.includes(key);

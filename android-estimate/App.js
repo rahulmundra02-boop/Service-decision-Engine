@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, BackHandler, Keyboard, KeyboardAvoidingView, Platform, Pressable,
+  ActivityIndicator, Alert, BackHandler, Keyboard, KeyboardAvoidingView, PermissionsAndroid, Platform, Pressable,
   SafeAreaView, ScrollView, Share, StatusBar, StyleSheet, Text, TextInput, View, Image
 } from 'react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as ImagePicker from 'expo-image-picker';
+import DocumentScanner from 'react-native-document-scanner-plugin';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { restoreSession, login, logout, getVehicleByRegistration, getPartRate, saveEstimate } from './src/api';
+import { restoreSession, login, logout, getVehicleByRegistration, getPartRate } from './src/api';
 import { AGGREGATES, buildServiceItems, makeManualItem, rateForManualPart, totals } from './src/estimateLogic';
 
 const money = n => `₹${Number(n || 0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
@@ -411,11 +412,11 @@ function EstimateScreen({mode,data,user,onBack,savedEstimate,onSaved}) {
     const labourSubtotal=allLabour.reduce((sum,x)=>sum+(Number(x.qty)||0)*(Number(x.rate)||0),0);
     const labourGst=labourSubtotal*0.18;
     const currentReading=latestReading(rows);
-    const selectedNames=selected.map(key=>AGGREGATES.find(x=>x[1]===key)?.[0]).filter(Boolean);
     const moneyPdf=n=>`INR ${Number(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
     const esc=v=>String(v??'-').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const dealerName=String(user?.dealer_name||user?.dealerName||vehicle?.dealer_name||vehicle?.dealerName||'').trim();
     const signature=await AsyncStorage.getItem('estimate_user_signature');
+    const letterhead=await AsyncStorage.getItem('estimate_letterhead');
     const partRows=allParts.map(x=>`<tr><td>${esc(x.partNo||'-')}</td><td>${esc(x.description||'-')}</td><td class="center">${esc(x.qty||0)}</td><td class="right">${moneyPdf(x.rate)}</td><td class="right">${moneyPdf((Number(x.qty)||0)*(Number(x.rate)||0))}</td></tr>`).join('');
     const labourRows=allLabour.map(x=>`<tr><td colspan="2">${esc(x.description||'-')}</td><td class="center">${esc(x.qty||0)}</td><td class="right">${moneyPdf(x.rate)}</td><td class="right">${moneyPdf((Number(x.qty)||0)*(Number(x.rate)||0))}</td></tr>`).join('');
     const infoCells=data.missingVehicle
@@ -432,26 +433,28 @@ function EstimateScreen({mode,data,user,onBack,savedEstimate,onSaved}) {
           <td><b>Current Reading</b><br/>${esc(currentReading)}</td>
           <td><b>Sale Date</b><br/>${esc(formatDateOnly(vehicle.sale_date))}</td>
         </tr></table>`;
-    const aggregateBlock=selectedNames.length?`<div class="section">Selected Aggregate Services</div><div class="services">${esc(selectedNames.join(', '))}</div>`:'';
     const partsBlock=allParts.length?`<div class="section partsHead">Parts</div><table class="items"><thead><tr><th style="width:15%">Part No.</th><th style="width:43%">Description</th><th style="width:10%">Qty</th><th style="width:16%">Rate (Incl. GST)</th><th style="width:16%">Amount</th></tr></thead><tbody>${partRows}</tbody></table>`:'';
     const labourBlock=allLabour.length?`<div class="section labourHead">Labour</div><table class="items"><thead><tr><th colspan="2" style="width:58%">Description</th><th style="width:10%">Qty</th><th style="width:16%">Rate (Excl. GST)</th><th style="width:16%">Amount</th></tr></thead><tbody>${labourRows}</tbody></table>`:'';
     const signatureBlock=signature?`<div class="sign"><img src="${signature}" /><div>Authorized Signatory</div></div>`:'<div class="sign"><div>Authorized Signatory</div></div>';
     const html=`<html><head><style>
-      @page{size:A4;margin:10mm}
+      @page{size:A4;margin:0}
       body{font-family:Arial,Helvetica,sans-serif;color:#17212b;margin:0;font-size:10px}
       .title{text-align:center;font-size:20px;font-weight:800;color:#12304a;margin:0 0 4px}
       .workshop{text-align:center;font-size:12px;font-weight:800;color:#1976d2;margin-bottom:3px}
-      .note{text-align:center;font-size:8px;color:#64748b;margin-bottom:8px}
       .topline{display:flex;justify-content:space-between;font-size:8px;margin-bottom:7px}
+      html,body{width:100%;min-height:100%;margin:0;padding:0}
+      .letterheadBg{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0}
+      .letterheadBg img{width:100%;height:100%;display:block}
+      .pageContent{position:relative;z-index:1;padding:10mm}
       table{width:100%;border-collapse:collapse;table-layout:fixed}
       td,th{border:1px solid #aab4c0;padding:5px;vertical-align:middle;word-wrap:break-word}
-      th{font-weight:800;background:#eaf2ff;color:#17324d}
+      th{font-weight:800;background:#eaf2ff;color:#17324d;height:34px;line-height:11px;white-space:normal}
       .info td{width:33.33%;height:28px;background:#f8fbff}
       .section{font-weight:800;font-size:11px;margin:9px 0 4px;color:#12304a}
       .partsHead{color:#1976d2}.labourHead{color:#ef7d22}
       .services{border:1px solid #aab4c0;background:#f4f9ff;padding:6px;min-height:15px;color:#17324d}
       .center{text-align:center}.right{text-align:right;white-space:nowrap}
-      .items th:nth-child(4),.items th:nth-child(5),.items td:nth-child(4),.items td:nth-child(5){white-space:nowrap}
+      .items td:nth-child(4),.items td:nth-child(5){white-space:nowrap}
       .items td:nth-child(4),.items td:nth-child(5){font-size:11px}
       .total{width:45%;margin-left:auto;margin-top:8px}
       .total td{padding:5px}.total td:last-child{white-space:nowrap}
@@ -460,17 +463,18 @@ function EstimateScreen({mode,data,user,onBack,savedEstimate,onSaved}) {
       .sign img{max-width:120px;max-height:45px;display:block;margin:0 auto 3px}
       .disclaimer{margin-top:16px;padding:7px;border-top:1px solid #cbd5e1;font-size:8px;color:#64748b;text-align:center}
     </style></head><body>
+      ${letterhead?`<div class="letterheadBg"><img src="${esc(letterhead)}" /></div>`:''}
+      <div class="pageContent">
       <div class="title">${mode==='service'?'SERVICE ESTIMATE':'REPAIR ESTIMATE'}</div>
       ${dealerName?`<div class="workshop">${esc(dealerName)}</div>`:''}
-      <div class="note">This is an approximate estimate. The actual amount may vary depending on actual work, parts used and applicable rates.</div>
       <div class="topline"><span>Estimate No. (Session): ${esc(estimateNo)}</span><span>Prepared: ${formatDateOnly(new Date())}</span></div>
       ${infoCells}
-      ${aggregateBlock}
       ${partsBlock}
       ${labourBlock}
       <table class="total"><tr><td><b>Parts Total (GST Incl.)</b></td><td class="right">${moneyPdf(t.partsTotal)}</td></tr><tr><td>Labour Subtotal</td><td class="right">${moneyPdf(labourSubtotal)}</td></tr><tr><td>GST on Labour (18%)</td><td class="right">${moneyPdf(labourGst)}</td></tr><tr class="grand"><td>Grand Total</td><td class="right">${moneyPdf(t.total)}</td></tr></table>
       ${signatureBlock}
       <div class="disclaimer">Approximate estimate only; final billing may change after inspection and actual parts/labour used.</div>
+      </div>
     </body></html>`;    try{
       const result=await Print.printToFileAsync({html});
       if(await Sharing.isAvailableAsync()) await Sharing.shareAsync(result.uri,{mimeType:'application/pdf',dialogTitle:'Share Estimate PDF'});
@@ -594,7 +598,7 @@ function SavedEstimatesScreen({records,onOpen,onNew,onBack}) {
   </ScrollView></SafeAreaView>;
 }
 
-function SignatureScreen({signature,onSave,onBack}) {
+function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) {
   const [busy,setBusy]=useState(false);
 
   React.useEffect(()=>{
@@ -606,7 +610,16 @@ function SignatureScreen({signature,onSave,onBack}) {
     return ()=>subscription.remove();
   },[onBack]);
 
-  const choose=async(source)=>{
+  const saveImageFromAsset=async(asset,key,setter,successText)=>{
+    if(!asset?.base64) return;
+    const mime=String(asset.mimeType||'image/jpeg');
+    const uri='data:'+mime+';base64,'+asset.base64;
+    await AsyncStorage.setItem(key,uri);
+    setter(uri);
+    Alert.alert('Saved',successText);
+  };
+
+  const chooseSignature=async(source)=>{
     setBusy(true);
     try{
       let result;
@@ -615,24 +628,78 @@ function SignatureScreen({signature,onSave,onBack}) {
         if(!permission.granted){Alert.alert('Permission required','Camera permission is required for the signature photo.');return;}
         result=await ImagePicker.launchCameraAsync({mediaTypes:['images'],allowsEditing:true,aspect:[3,1],quality:0.8,base64:true});
       }else{
+        const permission=await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if(!permission.granted){Alert.alert('Permission required','Photo library permission is required.');return;}
         result=await ImagePicker.launchImageLibraryAsync({mediaTypes:['images'],allowsEditing:true,aspect:[3,1],quality:0.8,base64:true});
       }
-      if(!result.canceled&&result.assets?.[0]?.base64){
-        const uri=`data:image/jpeg;base64,${result.assets[0].base64}`;
-        await AsyncStorage.setItem('estimate_user_signature',uri);
-        onSave(uri);
-        Alert.alert('Signature','Signature saved. It will appear automatically on the estimate.');
+      if(!result.canceled&&result.assets?.[0]){
+        await saveImageFromAsset(result.assets[0],'estimate_user_signature',onSave,'Signature saved. It will appear automatically on the estimate.');
       }
     }catch(e){Alert.alert('Signature',e.message);}finally{setBusy(false);}
   };
-  const clear=async()=>{await AsyncStorage.removeItem('estimate_user_signature');onSave('');};
+
+  const scanLetterhead=async()=>{
+    setBusy(true);
+    try{
+      if(Platform.OS==='android'){
+        const permission=await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.CAMERA);
+        if(permission!==PermissionsAndroid.RESULTS.GRANTED){
+          Alert.alert('Permission required','Camera permission is required to scan the letterhead.');
+          return;
+        }
+      }
+      const result=await DocumentScanner.scanDocument({
+        responseType:'base64',
+        maxNumDocuments:1,
+        croppedImageQuality:85
+      });
+      const scanned=Array.isArray(result?.scannedImages)?result.scannedImages[0]:null;
+      if(result?.status==='success'&&scanned){
+        const value=String(scanned);
+        const uri=value.startsWith('data:image')?value:'data:image/jpeg;base64,'+value;
+        await AsyncStorage.setItem('estimate_letterhead',uri);
+        onLetterheadSave(uri);
+        Alert.alert('Letter Head','Letter head scanned, corner detected and cropped. It will be used as the estimate background on every page.');
+      }
+    }catch(e){Alert.alert('Letter Head',e.message);}finally{setBusy(false);}
+  };
+
+  const uploadLetterhead=async()=>{
+    setBusy(true);
+    try{
+      const permission=await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if(!permission.granted){Alert.alert('Permission required','Photo library permission is required.');return;}
+      const result=await ImagePicker.launchImageLibraryAsync({mediaTypes:['images'],allowsEditing:true,quality:0.85,base64:true});
+      if(!result.canceled&&result.assets?.[0]){
+        await saveImageFromAsset(result.assets[0],'estimate_letterhead',onLetterheadSave,'Letter head saved. It will be used as the estimate background on every page.');
+      }
+    }catch(e){Alert.alert('Letter Head',e.message);}finally{setBusy(false);}
+  };
+
+  const clearSignature=async()=>{await AsyncStorage.removeItem('estimate_user_signature');onSave('');};
+  const clearLetterhead=async()=>{await AsyncStorage.removeItem('estimate_letterhead');onLetterheadSave('');};
+
   return <SafeAreaView style={styles.safe}><ScrollView contentContainerStyle={styles.container}>
-    <Text style={styles.heading}>User Seal/Signature</Text>
-    <Text style={styles.lookupHint}>Upload or click a photo of the user's signature. It will be used by default in the Authorized Signatory area.</Text>
-    {signature?<View style={styles.signaturePreview}><Image source={{uri:signature}} style={styles.signatureImage}/><Text style={styles.signatureSaved}>Signature saved</Text></View>:<Text style={styles.empty}>No signature saved.</Text>}
-    <Button title={busy?'Opening camera...':'Capture with Camera'} onPress={()=>choose('camera')} disabled={busy}/>
-    <Button title="Upload from Gallery" secondary onPress={()=>choose('gallery')} disabled={busy}/>
-    {signature?<Button title="Remove Saved Signature" secondary onPress={clear}/>:null}
+    <Text style={styles.heading}>Sign and Letter Head</Text>
+    <Text style={styles.lookupHint}>User signature and letter head are saved only on this device. The letter head is scanned with automatic corner detection and crop, then used as the estimate background on every PDF page.</Text>
+
+    <View style={styles.signaturePreview}>
+      <Text style={styles.cardTitle}>User Signature</Text>
+      {signature?<Image source={{uri:signature}} style={styles.signatureImage}/>:<Text style={styles.empty}>No signature saved.</Text>}
+      {signature?<Text style={styles.signatureSaved}>Signature saved</Text>:null}
+    </View>
+    <Button title={busy?'Please wait...':'Capture Signature'} onPress={()=>chooseSignature('camera')} disabled={busy}/>
+    <Button title="Upload Signature from Gallery" secondary onPress={()=>chooseSignature('gallery')} disabled={busy}/>
+    {signature?<Button title="Remove Saved Signature" secondary onPress={clearSignature}/>:null}
+
+    <View style={styles.signaturePreview}>
+      <Text style={styles.cardTitle}>Estimate Letter Head</Text>
+      {letterhead?<Image source={{uri:letterhead}} style={styles.letterheadPreview}/>:<Text style={styles.empty}>No letter head saved.</Text>}
+      {letterhead?<Text style={styles.signatureSaved}>Letter head saved</Text>:null}
+    </View>
+    <Button title={busy?'Opening scanner...':'Scan / Capture Letter Head'} onPress={scanLetterhead} disabled={busy}/>
+    <Button title="Upload Letter Head from Gallery" secondary onPress={uploadLetterhead} disabled={busy}/>
+    {letterhead?<Button title="Remove Saved Letter Head" secondary onPress={clearLetterhead}/>:null}
   </ScrollView></SafeAreaView>;
 }
 
@@ -667,6 +734,7 @@ export default function App(){
   const [savedEstimates,setSavedEstimates]=useState([]);
   const [editingSaved,setEditingSaved]=useState(null);
   const [signature,setSignature]=useState('');
+  const [letterhead,setLetterhead]=useState('');
 
   const savedKey = "service_estimate_saved_"+String(user?.id || user?.email || user?.personName || "default").toLowerCase();
 
@@ -696,6 +764,7 @@ export default function App(){
   React.useEffect(()=>{
     restoreSession().then(setUser).finally(()=>setLoading(false));
     AsyncStorage.getItem('estimate_user_signature').then(v=>setSignature(v||''));
+    AsyncStorage.getItem('estimate_letterhead').then(v=>setLetterhead(v||''));
   },[]);
 
   React.useEffect(()=>{
@@ -712,11 +781,11 @@ export default function App(){
     };
     const subscription=BackHandler.addEventListener('hardwareBackPress',onBackPress);
     return ()=>subscription.remove();
-  },[mode,vehicleData,signatureScreen]);
+  },[mode,vehicleData,signatureScreen,savedScreen]);
 
   if(loading) return <SafeAreaView style={styles.safe}><View style={styles.center}><ActivityIndicator size="large"/><Text style={styles.muted}>Loading...</Text></View></SafeAreaView>;
   if(!user) return <LoginScreen onLogin={setUser}/>;
-  if(signatureScreen) return <SignatureScreen signature={signature} onSave={setSignature} onBack={()=>setSignatureScreen(false)}/>;
+  if(signatureScreen) return <SignatureScreen signature={signature} letterhead={letterhead} onSave={setSignature} onLetterheadSave={setLetterhead} onBack={()=>setSignatureScreen(false)}/>;
   if(savedScreen) return <SavedEstimatesScreen records={savedEstimates} onOpen={openSavedEstimate} onNew={()=>{setEditingSaved(null);setVehicleData(null);setMode('repair');setSavedScreen(false);}} onBack={()=>setSavedScreen(false)}/>;
   if(!mode) return <SafeAreaView style={styles.safe}><ScrollView contentContainerStyle={styles.container}>
     <Text style={styles.brand}>SERVICE ESTIMATE</Text><Text style={styles.sub}>Welcome {user.personName||''}</Text>
@@ -727,7 +796,7 @@ export default function App(){
       <Button title="Repair Estimate" onPress={()=>setMode('repair')} secondary/>
     </View>
     <Button title="Saved Estimates" onPress={()=>{loadSavedEstimates();setSavedScreen(true);}} secondary/>
-    <Button title="User Seal/Signature" onPress={()=>setSignatureScreen(true)} secondary/>
+    <Button title="Sign and Letter Head" onPress={()=>setSignatureScreen(true)} secondary/>
     <Button title="Logout" onPress={async()=>{await logout();setUser(null);}} secondary/>
   </ScrollView></SafeAreaView>;
   if(!vehicleData) return <VehicleScreen mode={mode} onVehicle={data=>{setEditingSaved(null);setVehicleData(data);}}/>;
@@ -763,6 +832,7 @@ const styles=StyleSheet.create({
   lookupHint:{fontSize:10,color:'#71808f',lineHeight:15,marginTop:6},
   signaturePreview:{backgroundColor:'#fff',borderRadius:10,padding:12,marginTop:14,borderWidth:1,borderColor:'#d6dde4',alignItems:'center'},
   signatureImage:{width:'100%',height:80,resizeMode:'contain',backgroundColor:'#fff'},
+  letterheadPreview:{width:'100%',height:180,resizeMode:'contain',backgroundColor:'#fff'},
   signatureSaved:{fontSize:10,color:'#2e7d32',fontWeight:'800',marginTop:5},
   manualCustomerBox:{backgroundColor:'#fff8e8',borderWidth:1,borderColor:'#f0c36b',borderRadius:8,padding:8,marginTop:6},
   manualCustomerTitle:{fontSize:11,fontWeight:'800',color:'#8a5a00',marginBottom:4},

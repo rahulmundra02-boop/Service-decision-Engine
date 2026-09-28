@@ -202,12 +202,7 @@ function EstimateScreen({mode,data,user,onBack}) {
     }catch(e){Alert.alert('PDF',e.message);}
   };
 
-  const t=useMemo(()=>{
-    const base=totals(parts,labour);
-    const labourSubtotal=labour.reduce((sum,x)=>sum+(Number(x.qty)||0)*(Number(x.rate)||0),0);
-    const labourGst=labourSubtotal*0.18;
-    return {...base, partsTotal:parts.reduce((sum,x)=>sum+(Number(x.qty)||0)*(Number(x.rate)||0),0), labourSubtotal, labourGst, total:base.partsTotal+labourSubtotal+labourGst};
-  },[parts,labour]);
+  const t=useMemo(()=>totals(parts,labour),[parts,labour]);
   return <SafeAreaView style={styles.safe}><KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==='ios'?'padding':undefined}>
     <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.container}>
       <View style={styles.rowBetween}>
@@ -222,7 +217,7 @@ function EstimateScreen({mode,data,user,onBack}) {
         <Text style={styles.vehicleDetail}>Model: {vehicle.model||'-'}</Text>
         <Text style={styles.vehicleDetail}>Engine: {vehicle.engine||'-'}</Text>
         <Text style={styles.vehicleDetail}>Chassis: {vehicle.vin||'-'}</Text>
-        <Text style={styles.vehicleDetail}>Sale Date: {vehicle.sale_date||'-'}</Text>
+        <Text style={styles.vehicleDetail}>Sale Date: {formatDateOnly(vehicle.sale_date)}</Text>
       </View>
 
       {mode==='service' && <View style={styles.card}>

@@ -89,7 +89,6 @@ function ItemCard({item,onChange,onDelete,onRateLookup,rateLoading=false,autoFoc
 
   const handlePartSubmit=()=>{
     if(onPartNoSubmit && !onPartNoSubmit(item)) return;
-    onRateLookup(item);
     focusQty();
   };
 
@@ -111,7 +110,7 @@ function ItemCard({item,onChange,onDelete,onRateLookup,rateLoading=false,autoFoc
             value={String(item.partNo??'')}
             onChangeText={v=>set('partNo',v.toUpperCase())}
             onFocus={()=>ensureVisible(partNoRef)}
-            onBlur={()=>{ if(String(item.partNo||'').trim()) onRateLookup(item); }}
+            onEndEditing={()=>{ if(String(item.partNo||'').trim()) onRateLookup(item); }}
             onSubmitEditing={handlePartSubmit}
             returnKeyType="next"
             placeholder="Part No."
@@ -279,7 +278,6 @@ function EstimateScreen({mode,data,user,onBack,savedEstimate,onSaved}) {
   const updateLabour=(id,item)=>setLabour(list=>list.map(x=>x.id===id?item:x));
 
   const addPart=()=>{
-    Keyboard.dismiss();
     const item=makeManualItem('part');
     setParts(x=>[item,...x]);
     setFocusLabourId(null);
@@ -287,7 +285,6 @@ function EstimateScreen({mode,data,user,onBack,savedEstimate,onSaved}) {
   };
 
   const addLabour=()=>{
-    Keyboard.dismiss();
     const item=makeManualItem('labour');
     setLabour(x=>[item,...x]);
     setFocusPartId(null);

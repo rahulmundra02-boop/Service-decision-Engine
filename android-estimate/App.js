@@ -40,7 +40,7 @@ function ItemCard({item,onChange,onDelete,onRateLookup,rateLoading=false}) {
     <Field label="Description" value={item.description} onChangeText={v=>set('description',v)} placeholder="Description"/>
     <View style={styles.twoCol}>
       <View style={styles.col}><Field label="Qty" value={item.qty} onChangeText={v=>set('qty',v)} keyboardType="decimal-pad"/></View>
-      <View style={styles.col}><Field label={item.type==='part'?'Rate (Incl. GST)':'Rate'} value={item.rate} onChangeText={v=>set('rate',v)} keyboardType="decimal-pad"/></View>
+      <View style={styles.col}><Field label={item.type==='part'?'Rate (Incl. GST)':'Rate (Excl. GST)'} value={item.rate} onChangeText={v=>set('rate',v)} keyboardType="decimal-pad"/></View>
     </View>
     {item.type==='part' && <Button title={rateLoading?'Getting Historical Rate...':'Get Historical Rate'} secondary onPress={()=>onRateLookup(item)} disabled={rateLoading||!String(item.partNo||'').trim()}/>} 
     <Text style={styles.lineAmount}>Amount: {money((Number(item.qty)||0)*(Number(item.rate)||0))}</Text>
@@ -119,12 +119,20 @@ function EstimateScreen({mode,data,user,onBack}) {
   const remove=(setter,id)=>setter(list=>list.filter(x=>x.id!==id));
 
   const lookupRate=async(item)=>{
+    const code=String(item?.partNo||'').replace(/\s+/g,'').toUpperCase();
+    if(!code) return;
     setRateLoadingId(item.id);
     try{
-      const response=await getPartRate(item.partNo);
-      const result=rateForManualPart(item.partNo,response);
-      setParts(list=>list.map(x=>x.id===item.id?{...x,rate:result.rate,description:x.description||result.description,source:result.rate?'Historical DB (Post Warranty / Paid Order, 18% GST added)':'Manual'}:x));
-      if(!result.rate) Alert.alert('Historical rate','No qualifying Post Warranty / Paid Order rate found. Enter rate manually.');
+      const response=await getPartRate(code);
+      const result=rateForManualPart(code,response);
+      setParts(list=>list.map(x=>x.id===item.id?{
+        ...x,
+        partNo:response?.part?.partNo||code,
+        rate:result.rate,
+        description:x.description||result.description,
+        source:result.rate?'Historical DB (Post Warranty / Paid Order, 18% GST added)':'Manual'
+      }:x));
+      if(!result.rate) Alert.alert('Historical rate','No qualifying Post Warranty / Paid Order rate found for this exact part number. Enter rate manually.');
     }catch(e){Alert.alert('Rate lookup failed',e.message);}
     finally{setRateLoadingId(null);}
   };

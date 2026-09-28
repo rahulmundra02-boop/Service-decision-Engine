@@ -239,7 +239,7 @@ function EstimateScreen({mode,data,user,onBack}) {
     const partRows=allParts.map(x=>`<tr><td>${esc(x.partNo||'-')}</td><td>${esc(x.description||'-')}</td><td class="center">${esc(x.qty||0)}</td><td class="right">${moneyPdf(x.rate)}</td><td class="right">${moneyPdf((Number(x.qty)||0)*(Number(x.rate)||0))}</td></tr>`).join('');
     const labourRows=allLabour.map(x=>`<tr><td colspan="2">${esc(x.description||'-')}</td><td class="center">${esc(x.qty||0)}</td><td class="right">${moneyPdf(x.rate)}</td><td class="right">${moneyPdf((Number(x.qty)||0)*(Number(x.rate)||0))}</td></tr>`).join('');
     const infoCells=`<table class="info"><tr>
-        <td><b>Customer</b><br/>${esc(vehicle.customer_name||'-')}</td>
+        <td><b>Customer</b><br/>${esc(customerName||'-')}</td>
         <td><b>Reg. No.</b><br/>${esc(vehicle.registration||'-')}</td>
         <td><b>VIN</b><br/>${esc(vehicle.vin||'-')}</td>
       </tr><tr>

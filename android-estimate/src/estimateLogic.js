@@ -232,7 +232,8 @@ function allowedQuantity(key, code, quantity) {
   if (!(q > 0)) return false;
   const minParts = (MINIMUM_QUANTITY_PARTS[key] || []).map(normalizeCode);
   const appliesMin = minParts.includes(normalizeCode(code));
-  const min = appliesMin ? Number(MINIMUM_SERVICE_QUANTITY[key] || 0) : 0;
+  if (!appliesMin) return true;
+  const min = Number(MINIMUM_SERVICE_QUANTITY[key] || 0);
   const max = Number(MAXIMUM_SERVICE_QUANTITY[key] || 0);
   return q >= min && (!max || q <= max);
 }

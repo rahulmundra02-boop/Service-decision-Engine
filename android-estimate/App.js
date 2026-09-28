@@ -21,14 +21,31 @@ function Button({title,onPress,secondary=false,disabled=false}) {
   </Pressable>;
 }
 
-function Field({label,value,onChangeText,placeholder,keyboardType='default',onBlur,onSubmitEditing,returnKeyType='done'}) {
-  return <View style={styles.field}><Text style={styles.label}>{label}</Text><TextInput value={String(value??'')} onChangeText={onChangeText} onBlur={onBlur} onSubmitEditing={onSubmitEditing} returnKeyType={returnKeyType} placeholder={placeholder} keyboardType={keyboardType} autoCapitalize="characters" style={styles.input}/></View>;
+function Field({label,value,onChangeText,placeholder,keyboardType='default',onBlur,onSubmitEditing,returnKeyType='done',autoComplete,secureTextEntry=false,autoCapitalize='characters'}) {
+  return <View style={styles.field}>
+    <Text style={styles.label}>{label}</Text>
+    <TextInput
+      value={String(value??'')}
+      onChangeText={onChangeText}
+      onBlur={onBlur}
+      onSubmitEditing={onSubmitEditing}
+      returnKeyType={returnKeyType}
+      placeholder={placeholder}
+      keyboardType={keyboardType}
+      autoCapitalize={autoCapitalize}
+      autoCorrect={false}
+      secureTextEntry={secureTextEntry}
+      autoComplete={autoComplete}
+      importantForAutofill={autoComplete ? 'yes' : 'auto'}
+      style={styles.input}
+    />
+  </View>;
 }
 
 function ItemCard({item,onChange,onDelete,onRateLookup,rateLoading=false}) {
   const set=(k,v)=>onChange({...item,[k]:v});
   const isAutomatic=Boolean(item.serviceKey);
-  return <View style={styles.itemCard}>
+  return <View style={[styles.itemCard,item.type==='part'?styles.partItemCard:styles.labourItemCard]}>
     <View style={styles.rowBetween}>
       <View style={styles.itemHeadingRow}>
         <Text style={styles.itemTitle}>{item.type==='part'?'Part':'Labour'}</Text>
@@ -61,8 +78,8 @@ function LoginScreen({onLogin}) {
     <View style={styles.loginWrap}>
       <Text style={styles.brand}>SERVICE ESTIMATE</Text>
       <Text style={styles.sub}>Ashok Leyland • Estimate App</Text>
-      <Field label="Email / Mobile" value={identifier} onChangeText={setIdentifier} placeholder="Enter login"/>
-      <Field label="Password" value={password} onChangeText={setPassword} placeholder="Password"/>
+      <Field label="Email / Mobile" value={identifier} onChangeText={setIdentifier} placeholder="Enter login" autoComplete="username" autoCapitalize="none"/>
+      <Field label="Password" value={password} onChangeText={setPassword} placeholder="Password" autoComplete="current-password" secureTextEntry autoCapitalize="none"/>
       <Button title={busy?'Signing in...':'Sign In'} onPress={submit} disabled={busy}/>
     </View></KeyboardAvoidingView></SafeAreaView>;
 }
@@ -235,14 +252,14 @@ function EstimateScreen({mode,data,user,onBack}) {
         </Pressable>)}
       </View>}
 
-      <View style={styles.card}>
-        <View style={styles.rowBetween}><Text style={styles.cardTitle}>Parts</Text><Pressable onPress={addPart}><Text style={styles.add}>+ Add Part</Text></Pressable></View>
+      <View style={[styles.card,styles.partsCard]}>
+        <View style={styles.rowBetween}><Text style={styles.cardTitle}>Parts</Text><Pressable onPress={addPart}><Text style={[styles.add,styles.partAdd]}>+ Add Part</Text></Pressable></View>
         {parts.map(item=><ItemCard key={item.id} item={item} onChange={x=>updatePart(item.id,x)} onDelete={()=>remove(setParts,item.id)} onRateLookup={lookupRate} rateLoading={rateLoadingId===item.id}/>)}
         {!parts.length&&<Text style={styles.empty}>No parts added.</Text>}
       </View>
 
-      <View style={styles.card}>
-        <View style={styles.rowBetween}><Text style={styles.cardTitle}>Labour</Text><Pressable onPress={addLabour}><Text style={styles.add}>+ Add Labour</Text></Pressable></View>
+      <View style={[styles.card,styles.labourCard]}>
+        <View style={styles.rowBetween}><Text style={styles.cardTitle}>Labour</Text><Pressable onPress={addLabour}><Text style={[styles.add,styles.labourAdd]}>+ Add Labour</Text></Pressable></View>
         {labour.map(item=><ItemCard key={item.id} item={item} onChange={x=>updateLabour(item.id,x)} onDelete={()=>remove(setLabour,item.id)} onRateLookup={()=>{}}/>)}
         {!labour.length&&<Text style={styles.empty}>No labour added.</Text>}
       </View>
@@ -303,28 +320,30 @@ export default function App(){
 }
 
 const styles=StyleSheet.create({
-  safe:{flex:1,backgroundColor:'#f4f7f9'},container:{padding:16,paddingBottom:40},
-  loginWrap:{flex:1,justifyContent:'center',padding:20},center:{flex:1,justifyContent:'center',alignItems:'center'},
-  brand:{fontSize:28,fontWeight:'800',color:'#12304a',marginBottom:6},sub:{fontSize:15,color:'#607080',marginBottom:24},
-  heading:{fontSize:24,fontWeight:'800',color:'#12304a'},helper:{color:'#607080',marginBottom:18,marginTop:6},
-  field:{marginBottom:12},label:{fontSize:13,fontWeight:'700',color:'#425466',marginBottom:6},
-  input:{backgroundColor:'#fff',borderWidth:1,borderColor:'#d6dde4',borderRadius:10,paddingHorizontal:12,paddingVertical:11,fontSize:16},
-  button:{backgroundColor:'#12304a',paddingVertical:14,borderRadius:10,alignItems:'center',marginVertical:7},
-  secondaryButton:{backgroundColor:'#fff',borderWidth:1,borderColor:'#12304a'},buttonText:{color:'#fff',fontSize:16,fontWeight:'800'},
+  safe:{flex:1,backgroundColor:'#f3f6fb'},container:{padding:10,paddingBottom:28},
+  loginWrap:{flex:1,justifyContent:'center',padding:14},center:{flex:1,justifyContent:'center',alignItems:'center'},
+  brand:{fontSize:20,fontWeight:'800',color:'#12304a',marginBottom:4},sub:{fontSize:11,color:'#607080',marginBottom:16},
+  heading:{fontSize:18,fontWeight:'800',color:'#12304a'},helper:{color:'#607080',marginBottom:12,marginTop:4,fontSize:11},
+  field:{marginBottom:8},label:{fontSize:10,fontWeight:'700',color:'#425466',marginBottom:4},
+  input:{backgroundColor:'#fff',borderWidth:1,borderColor:'#d6dde4',borderRadius:7,paddingHorizontal:9,paddingVertical:7,fontSize:13},
+  button:{backgroundColor:'#12304a',paddingVertical:10,borderRadius:8,alignItems:'center',marginVertical:5},
+  secondaryButton:{backgroundColor:'#fff',borderWidth:1,borderColor:'#12304a'},buttonText:{color:'#fff',fontSize:13,fontWeight:'800'},
   secondaryText:{color:'#12304a'},disabled:{opacity:.5},rowBetween:{flexDirection:'row',justifyContent:'space-between',alignItems:'center'},
-  card:{backgroundColor:'#fff',borderRadius:14,padding:14,marginTop:14,shadowColor:'#000',shadowOpacity:.05,shadowRadius:8,elevation:2},
-  vehicleCard:{backgroundColor:'#eaf2f7',borderRadius:14,padding:14,marginTop:14},cardTitle:{fontSize:17,fontWeight:'800',color:'#12304a',marginBottom:10},
-  vehicleMain:{fontSize:20,fontWeight:'800',marginBottom:3},vehicleDetail:{marginTop:2,color:'#344554'},muted:{color:'#6b7785',marginTop:4},back:{color:'#c46b17',fontWeight:'800'},
-  aggregate:{padding:13,borderWidth:1,borderColor:'#e0e5ea',borderRadius:9,marginBottom:8},aggregateSelected:{borderColor:'#12304a',backgroundColor:'#edf4f8'},
-  aggregateText:{fontSize:15,fontWeight:'700',color:'#23313f'},add:{color:'#c46b17',fontWeight:'800'},empty:{color:'#8793a0',paddingVertical:8},
-  itemCard:{borderTopWidth:1,borderTopColor:'#edf0f2',paddingTop:12,marginTop:12},itemTitle:{fontWeight:'800',color:'#12304a'},delete:{color:'#b3261e',fontWeight:'700'},
-  twoCol:{flexDirection:'row',gap:10},col:{flex:1},lineAmount:{fontWeight:'800',marginTop:3},source:{fontSize:11,color:'#71808f',marginTop:4},
-  totalCard:{backgroundColor:'#12304a',borderRadius:14,padding:18,marginTop:14,flexDirection:'row',justifyContent:'space-between',alignItems:'center'},
-  totalLabel:{color:'#fff',fontSize:16,fontWeight:'700'},total:{color:'#fff',fontSize:22,fontWeight:'900'},
-  totalHint:{color:'#dbe5ec',fontSize:11,marginTop:3},sectionHint:{color:'#71808f',fontSize:12,marginTop:-6,marginBottom:10},
-  sectionHeader:{marginBottom:2},itemHeadingRow:{flexDirection:'row',alignItems:'center',gap:7},
-  badge:{fontSize:9,fontWeight:'900',paddingHorizontal:7,paddingVertical:3,borderRadius:10},autoBadge:{backgroundColor:'#e7f1f7',color:'#12304a'},
-  manualBadge:{backgroundColor:'#fff0e2',color:'#a75b12'},modeCard:{backgroundColor:'#fff',borderRadius:16,padding:16,marginTop:18,elevation:2},
-  modeTitle:{fontSize:19,fontWeight:'800',color:'#12304a'},modeHint:{fontSize:13,color:'#71808f',marginTop:-5,marginBottom:8},
-  lookupHint:{fontSize:12,color:'#71808f',lineHeight:18,marginTop:8}
+  card:{backgroundColor:'#fff',borderRadius:10,padding:10,marginTop:10,shadowColor:'#000',shadowOpacity:.05,shadowRadius:6,elevation:2},
+  partsCard:{borderLeftWidth:4,borderLeftColor:'#1976d2'},labourCard:{borderLeftWidth:4,borderLeftColor:'#ef7d22'},
+  vehicleCard:{backgroundColor:'#e7f1fa',borderRadius:10,padding:10,marginTop:10},cardTitle:{fontSize:14,fontWeight:'800',color:'#12304a',marginBottom:7},
+  vehicleMain:{fontSize:16,fontWeight:'800',marginBottom:2},vehicleDetail:{marginTop:1,color:'#344554',fontSize:11},muted:{color:'#6b7785',marginTop:3,fontSize:11},back:{color:'#c46b17',fontWeight:'800',fontSize:11},
+  aggregate:{padding:9,borderWidth:1,borderColor:'#e0e5ea',borderRadius:7,marginBottom:6},aggregateSelected:{borderColor:'#1976d2',backgroundColor:'#e8f2ff'},
+  aggregateText:{fontSize:12,fontWeight:'700',color:'#23313f'},add:{fontWeight:'800',fontSize:11},partAdd:{color:'#1976d2'},labourAdd:{color:'#ef7d22'},empty:{color:'#8793a0',paddingVertical:6,fontSize:11},
+  itemCard:{borderRadius:8,padding:8,marginTop:8,borderWidth:1},partItemCard:{backgroundColor:'#f4f9ff',borderColor:'#cfe3fa'},labourItemCard:{backgroundColor:'#fff8f0',borderColor:'#f4d5b8'},
+  itemTitle:{fontWeight:'800',color:'#12304a',fontSize:12},delete:{color:'#b3261e',fontWeight:'700',fontSize:10},
+  twoCol:{flexDirection:'row',gap:7},col:{flex:1},lineAmount:{fontWeight:'800',marginTop:2,fontSize:11},source:{fontSize:9,color:'#71808f',marginTop:3},
+  totalCard:{backgroundColor:'#12304a',borderRadius:10,padding:12,marginTop:10,flexDirection:'row',justifyContent:'space-between',alignItems:'center'},
+  totalLabel:{color:'#fff',fontSize:13,fontWeight:'700'},total:{color:'#fff',fontSize:17,fontWeight:'900'},
+  totalHint:{color:'#dbe5ec',fontSize:9,marginTop:2},sectionHint:{color:'#71808f',fontSize:10,marginTop:-4,marginBottom:7},
+  sectionHeader:{marginBottom:2},itemHeadingRow:{flexDirection:'row',alignItems:'center',gap:5},
+  badge:{fontSize:8,fontWeight:'900',paddingHorizontal:5,paddingVertical:2,borderRadius:8},autoBadge:{backgroundColor:'#e7f1f7',color:'#12304a'},
+  manualBadge:{backgroundColor:'#fff0e2',color:'#a75b12'},modeCard:{backgroundColor:'#fff',borderRadius:12,padding:11,marginTop:12,elevation:2},
+  modeTitle:{fontSize:15,fontWeight:'800',color:'#12304a'},modeHint:{fontSize:10,color:'#71808f',marginTop:-4,marginBottom:6},
+  lookupHint:{fontSize:10,color:'#71808f',lineHeight:15,marginTop:6}
 });

@@ -1,10 +1,12 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, BackHandler, Keyboard, KeyboardAvoidingView, Platform, Pressable,
-  SafeAreaView, ScrollView, Share, StyleSheet, Text, TextInput, View
+  SafeAreaView, ScrollView, Share, StyleSheet, Text, TextInput, View, Image
 } from 'react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { restoreSession, login, logout, getVehicleByRegistration, getPartRate, saveEstimate } from './src/api';
 import { AGGREGATES, buildServiceItems, makeManualItem, rateForManualPart, totals } from './src/estimateLogic';
 
@@ -45,6 +47,12 @@ function Field({label,value,onChangeText,placeholder,keyboardType='default',onBl
 function ItemCard({item,onChange,onDelete,onRateLookup,rateLoading=false}) {
   const set=(k,v)=>onChange({...item,[k]:v});
   const isAutomatic=Boolean(item.serviceKey);
+  const partNoRef=useRef(null);
+  const descriptionRef=useRef(null);
+  const qtyRef=useRef(null);
+  const rateRef=useRef(null);
+  const focusQty=()=>setTimeout(()=>qtyRef.current?.focus(),40);
+  const focusRate=()=>setTimeout(()=>rateRef.current?.focus(),40);
   return <View style={[styles.itemCard,item.type==='part'?styles.partItemCard:styles.labourItemCard]}>
     <View style={styles.rowBetween}>
       <View style={styles.itemHeadingRow}>
@@ -53,13 +61,44 @@ function ItemCard({item,onChange,onDelete,onRateLookup,rateLoading=false}) {
       </View>
       <Pressable onPress={onDelete}><Text style={styles.delete}>Delete</Text></Pressable>
     </View>
-    {item.type==='part' && <Field label="Part No." value={item.partNo} onChangeText={v=>set('partNo',v.toUpperCase())} onBlur={()=>onRateLookup(item)} placeholder="Enter part number"/>}
-    <Field label="Description" value={item.description} onChangeText={v=>set('description',v)} placeholder="Description"/>
-    <View style={styles.twoCol}>
-      <View style={styles.col}><Field label="Qty" value={item.qty} onChangeText={v=>set('qty',v)} keyboardType="decimal-pad"/></View>
-      <View style={styles.col}><Field label={item.type==='part'?'Rate (Incl. GST)':'Rate (Excl. GST)'} value={item.rate} onChangeText={v=>set('rate',v)} keyboardType="decimal-pad"/></View>
+    {item.type==='part' && <View style={styles.field}>
+      <Text style={styles.label}>Part No.</Text>
+      <TextInput
+        ref={partNoRef}
+        value={String(item.partNo??'')}
+        onChangeText={v=>set('partNo',v.toUpperCase())}
+        onBlur={()=>onRateLookup(item)}
+        onSubmitEditing={()=>{onRateLookup(item);focusQty();}}
+        returnKeyType="next"
+        placeholder="Enter part number"
+        autoCapitalize="characters"
+        autoCorrect={false}
+        style={styles.input}
+      />
+    </View>}
+    <View style={styles.field}>
+      <Text style={styles.label}>Description</Text>
+      <TextInput
+        ref={descriptionRef}
+        value={String(item.description??'')}
+        onChangeText={v=>set('description',v)}
+        onSubmitEditing={focusQty}
+        returnKeyType="next"
+        placeholder="Description"
+        style={styles.input}
+      />
     </View>
-    {item.type==='part' && <Button title={rateLoading?'Getting Historical Rate...':'Get Historical Rate'} secondary onPress={()=>onRateLookup(item)} disabled={rateLoading||!String(item.partNo||'').trim()}/>} 
+    <View style={styles.twoCol}>
+      <View style={styles.col}><View style={styles.field}>
+        <Text style={styles.label}>Qty</Text>
+        <TextInput ref={qtyRef} value={String(item.qty??'')} onChangeText={v=>set('qty',v)} keyboardType="decimal-pad" onSubmitEditing={focusRate} returnKeyType="next" style={styles.input}/>
+      </View></View>
+      <View style={styles.col}><View style={styles.field}>
+        <Text style={styles.label}>{item.type==='part'?'Rate (Incl. GST)':'Rate (Excl. GST)'}</Text>
+        <TextInput ref={rateRef} value={String(item.rate??'')} onChangeText={v=>set('rate',v)} keyboardType="decimal-pad" returnKeyType="done" style={styles.input}/>
+      </View></View>
+    </View>
+    {item.type==='part' && <Button title={rateLoading?'Getting Historical Rate...':'Get Historical Rate'} secondary onPress={()=>onRateLookup(item)} disabled={rateLoading||!String(item.partNo||'').trim()}/>}
     <Text style={styles.lineAmount}>Amount: {money((Number(item.qty)||0)*(Number(item.rate)||0))}</Text>
     {item.source ? <Text style={styles.source}>{item.source}</Text> : null}
   </View>;
@@ -131,8 +170,8 @@ function EstimateScreen({mode,data,user,onBack}) {
 
   const updatePart=(id,item)=>setParts(list=>list.map(x=>x.id===id?item:x));
   const updateLabour=(id,item)=>setLabour(list=>list.map(x=>x.id===id?item:x));
-  const addPart=()=>setParts(x=>[...x,makeManualItem('part')]);
-  const addLabour=()=>setLabour(x=>[...x,makeManualItem('labour')]);
+  const addPart=()=>setParts(x=>[makeManualItem('part'),...x]);
+  const addLabour=()=>setLabour(x=>[makeManualItem('labour'),...x]);
   const remove=(setter,id)=>setter(list=>list.filter(x=>x.id!==id));
 
   const lookupRate=async(item)=>{
@@ -178,31 +217,11 @@ function EstimateScreen({mode,data,user,onBack}) {
     const selectedNames=selected.map(key=>AGGREGATES.find(x=>x[1]===key)?.[0]).filter(Boolean);
     const moneyPdf=n=>`INR ${Number(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
     const esc=v=>String(v??'-').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    const partRows=allParts.length ? allParts.map(x=>`<tr><td>${esc(x.partNo||'-')}</td><td>${esc(x.description||'-')}</td><td class="center">${esc(x.qty||0)}</td><td class="right">${moneyPdf(x.rate)}</td><td class="right">${moneyPdf((Number(x.qty)||0)*(Number(x.rate)||0))}</td></tr>`).join('') : '<tr><td>-</td><td>No parts added</td><td class="center">-</td><td class="right">-</td><td class="right">INR 0.00</td></tr>';
-    const labourRows=allLabour.length ? allLabour.map(x=>`<tr><td colspan="2">${esc(x.description||'-')}</td><td class="center">${esc(x.qty||0)}</td><td class="right">${moneyPdf(x.rate)}</td><td class="right">${moneyPdf((Number(x.qty)||0)*(Number(x.rate)||0))}</td></tr>`).join('') : '<tr><td colspan="2">No labour added</td><td class="center">-</td><td class="right">-</td><td class="right">INR 0.00</td></tr>';
-    const html=`<html><head><style>
-      @page{size:A4;margin:10mm}
-      body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:0;font-size:10px}
-      .title{text-align:center;font-size:20px;font-weight:700;margin:0 0 4px}
-      .workshop{text-align:center;font-size:11px;font-weight:700;margin-bottom:3px}
-      .note{text-align:center;font-size:8px;color:#666;margin-bottom:8px}
-      .topline{display:flex;justify-content:space-between;font-size:8px;margin-bottom:7px}
-      table{width:100%;border-collapse:collapse;table-layout:fixed}
-      td,th{border:1px solid #999;padding:5px;vertical-align:middle;word-wrap:break-word}
-      th{font-weight:700;background:#f1f1f1}
-      .info td{width:33.33%;height:28px}
-      .section{font-weight:700;font-size:11px;margin:9px 0 4px}
-      .services{border:1px solid #999;padding:6px;min-height:15px}
-      .center{text-align:center}.right{text-align:right}
-      .total{width:42%;margin-left:auto;margin-top:8px}
-      .total td{padding:5px}.grand td{font-weight:700;font-size:11px}
-      .sign{margin-top:22px;width:32%;margin-left:auto;text-align:center;border-top:1px solid #555;padding-top:4px}
-    </style></head><body>
-      <div class="title">${mode==='service'?'SERVICE ESTIMATE':'REPAIR ESTIMATE'}</div>
-      <div class="workshop">Ashok Leyland • Estimate App</div>
-      <div class="note">Estimate only - subject to actual inspection and applicable rates.</div>
-      <div class="topline"><span>Estimate No. (Session): ${esc(estimateNo)}</span><span>Prepared: ${formatDateOnly(new Date())}</span></div>
-      <table class="info"><tr>
+    const dealerName=String(user?.dealer_name||user?.dealerName||vehicle?.dealer_name||vehicle?.dealerName||'').trim();
+    const signature=await AsyncStorage.getItem('estimate_user_signature');
+    const partRows=allParts.map(x=>`<tr><td>${esc(x.partNo||'-')}</td><td>${esc(x.description||'-')}</td><td class="center">${esc(x.qty||0)}</td><td class="right">${moneyPdf(x.rate)}</td><td class="right">${moneyPdf((Number(x.qty)||0)*(Number(x.rate)||0))}</td></tr>`).join('');
+    const labourRows=allLabour.map(x=>`<tr><td colspan="2">${esc(x.description||'-')}</td><td class="center">${esc(x.qty||0)}</td><td class="right">${moneyPdf(x.rate)}</td><td class="right">${moneyPdf((Number(x.qty)||0)*(Number(x.rate)||0))}</td></tr>`).join('');
+    const infoCells=`<table class="info"><tr>
         <td><b>Customer</b><br/>${esc(vehicle.customer_name||'-')}</td>
         <td><b>Reg. No.</b><br/>${esc(vehicle.registration||'-')}</td>
         <td><b>VIN</b><br/>${esc(vehicle.vin||'-')}</td>
@@ -210,17 +229,47 @@ function EstimateScreen({mode,data,user,onBack}) {
         <td><b>Model</b><br/>${esc(vehicle.model||'-')}</td>
         <td><b>Current Reading</b><br/>${esc(currentReading)}</td>
         <td><b>Sale Date</b><br/>${esc(formatDateOnly(vehicle.sale_date))}</td>
-      </tr></table>
-      <div class="section">Selected Aggregate Services</div>
-      <div class="services">${selectedNames.length?esc(selectedNames.join(', ')):'No aggregate service selected'}</div>
-      <div class="section">Parts</div>
-      <table><thead><tr><th style="width:15%">Part No.</th><th style="width:43%">Description</th><th style="width:10%">Qty</th><th style="width:16%">Rate (Incl. GST)</th><th style="width:16%">Amount</th></tr></thead><tbody>${partRows}</tbody></table>
-      <div class="section">Labour</div>
-      <table><thead><tr><th colspan="2" style="width:58%">Description</th><th style="width:10%">Qty</th><th style="width:16%">Rate</th><th style="width:16%">Amount</th></tr></thead><tbody>${labourRows}</tbody></table>
+      </tr></table>`;
+    const aggregateBlock=selectedNames.length?`<div class="section">Selected Aggregate Services</div><div class="services">${esc(selectedNames.join(', '))}</div>`:'';
+    const partsBlock=allParts.length?`<div class="section partsHead">Parts</div><table class="items"><thead><tr><th style="width:15%">Part No.</th><th style="width:43%">Description</th><th style="width:10%">Qty</th><th style="width:16%">Rate (Incl. GST)</th><th style="width:16%">Amount</th></tr></thead><tbody>${partRows}</tbody></table>`:'';
+    const labourBlock=allLabour.length?`<div class="section labourHead">Labour</div><table class="items"><thead><tr><th colspan="2" style="width:58%">Description</th><th style="width:10%">Qty</th><th style="width:16%">Rate (Excl. GST)</th><th style="width:16%">Amount</th></tr></thead><tbody>${labourRows}</tbody></table>`:'';
+    const signatureBlock=signature?`<div class="sign"><img src="${signature}" /><div>Authorized Signatory</div></div>`:'<div class="sign"><div>Authorized Signatory</div></div>';
+    const html=`<html><head><style>
+      @page{size:A4;margin:10mm}
+      body{font-family:Arial,Helvetica,sans-serif;color:#17212b;margin:0;font-size:10px}
+      .title{text-align:center;font-size:20px;font-weight:800;color:#12304a;margin:0 0 4px}
+      .workshop{text-align:center;font-size:12px;font-weight:800;color:#1976d2;margin-bottom:3px}
+      .note{text-align:center;font-size:8px;color:#64748b;margin-bottom:8px}
+      .topline{display:flex;justify-content:space-between;font-size:8px;margin-bottom:7px}
+      table{width:100%;border-collapse:collapse;table-layout:fixed}
+      td,th{border:1px solid #aab4c0;padding:5px;vertical-align:middle;word-wrap:break-word}
+      th{font-weight:800;background:#eaf2ff;color:#17324d}
+      .info td{width:33.33%;height:28px;background:#f8fbff}
+      .section{font-weight:800;font-size:11px;margin:9px 0 4px;color:#12304a}
+      .partsHead{color:#1976d2}.labourHead{color:#ef7d22}
+      .services{border:1px solid #aab4c0;background:#f4f9ff;padding:6px;min-height:15px;color:#17324d}
+      .center{text-align:center}.right{text-align:right;white-space:nowrap}
+      .items th:nth-child(4),.items th:nth-child(5),.items td:nth-child(4),.items td:nth-child(5){white-space:nowrap}
+      .items td:nth-child(4),.items td:nth-child(5){font-size:9px}
+      .total{width:45%;margin-left:auto;margin-top:8px}
+      .total td{padding:5px}.total td:last-child{white-space:nowrap}
+      .grand td{font-weight:800;font-size:11px;background:#eaf7ef}
+      .sign{margin-top:20px;width:34%;margin-left:auto;text-align:center;min-height:45px}
+      .sign img{max-width:120px;max-height:45px;display:block;margin:0 auto 3px}
+      .disclaimer{margin-top:16px;padding:7px;border-top:1px solid #cbd5e1;font-size:8px;color:#64748b;text-align:center}
+    </style></head><body>
+      <div class="title">${mode==='service'?'SERVICE ESTIMATE':'REPAIR ESTIMATE'}</div>
+      ${dealerName?`<div class="workshop">${esc(dealerName)}</div>`:''}
+      <div class="note">This is an approximate estimate. The actual amount may vary depending on actual work, parts used and applicable rates.</div>
+      <div class="topline"><span>Estimate No. (Session): ${esc(estimateNo)}</span><span>Prepared: ${formatDateOnly(new Date())}</span></div>
+      ${infoCells}
+      ${aggregateBlock}
+      ${partsBlock}
+      ${labourBlock}
       <table class="total"><tr><td><b>Parts Total (GST Incl.)</b></td><td class="right">${moneyPdf(t.partsTotal)}</td></tr><tr><td>Labour Subtotal</td><td class="right">${moneyPdf(labourSubtotal)}</td></tr><tr><td>GST on Labour (18%)</td><td class="right">${moneyPdf(labourGst)}</td></tr><tr class="grand"><td>Grand Total</td><td class="right">${moneyPdf(t.total)}</td></tr></table>
-      <div class="sign">Authorized Signatory</div>
-    </body></html>`;
-    try{
+      ${signatureBlock}
+      <div class="disclaimer">Approximate estimate only; final billing may change after inspection and actual parts/labour used.</div>
+    </body></html>`;    try{
       const result=await Print.printToFileAsync({html});
       if(await Sharing.isAvailableAsync()) await Sharing.shareAsync(result.uri,{mimeType:'application/pdf',dialogTitle:'Share Estimate PDF'});
       else await Share.share({message:`Estimate ${estimateNo} Total ${money(t.total)}`});
@@ -271,6 +320,38 @@ function EstimateScreen({mode,data,user,onBack}) {
   </KeyboardAvoidingView></SafeAreaView>;
 }
 
+function SignatureScreen({signature,onSave,onBack}) {
+  const [busy,setBusy]=useState(false);
+  const choose=async(source)=>{
+    setBusy(true);
+    try{
+      let result;
+      if(source==='camera'){
+        const permission=await ImagePicker.requestCameraPermissionsAsync();
+        if(!permission.granted){Alert.alert('Permission required','Camera permission is required for the signature photo.');return;}
+        result=await ImagePicker.launchCameraAsync({mediaTypes:['images'],allowsEditing:true,aspect:[3,1],quality:0.8,base64:true});
+      }else{
+        result=await ImagePicker.launchImageLibraryAsync({mediaTypes:['images'],allowsEditing:true,aspect:[3,1],quality:0.8,base64:true});
+      }
+      if(!result.canceled&&result.assets?.[0]?.base64){
+        const uri=`data:image/jpeg;base64,${result.assets[0].base64}`;
+        await AsyncStorage.setItem('estimate_user_signature',uri);
+        onSave(uri);
+        Alert.alert('Signature','Signature saved. It will appear automatically on the estimate.');
+      }
+    }catch(e){Alert.alert('Signature',e.message);}finally{setBusy(false);}
+  };
+  const clear=async()=>{await AsyncStorage.removeItem('estimate_user_signature');onSave('');};
+  return <SafeAreaView style={styles.safe}><ScrollView contentContainerStyle={styles.container}>
+    <View style={styles.rowBetween}><Text style={styles.heading}>User Signature</Text><Pressable onPress={onBack}><Text style={styles.back}>Back</Text></Pressable></View>
+    <Text style={styles.lookupHint}>Upload or click a photo of the user's signature. It will be used by default in the Authorized Signatory area.</Text>
+    {signature?<View style={styles.signaturePreview}><Image source={{uri:signature}} style={styles.signatureImage}/><Text style={styles.signatureSaved}>Signature saved</Text></View>:<Text style={styles.empty}>No signature saved.</Text>}
+    <Button title={busy?'Opening camera...':'Click Signature Photo'} onPress={()=>choose('camera')} disabled={busy}/>
+    <Button title="Upload Signature Photo" secondary onPress={()=>choose('gallery')} disabled={busy}/>
+    {signature?<Button title="Remove Saved Signature" secondary onPress={clear}/>:null}
+  </ScrollView></SafeAreaView>;
+}
+
 function formatDateOnly(value) {
   if (!value) return '-';
   const d = new Date(value);
@@ -290,11 +371,17 @@ export default function App(){
   const [user,setUser]=useState(null);
   const [mode,setMode]=useState(null);
   const [vehicleData,setVehicleData]=useState(null);
+  const [signatureScreen,setSignatureScreen]=useState(false);
+  const [signature,setSignature]=useState('');
 
-  React.useEffect(()=>{restoreSession().then(setUser).finally(()=>setLoading(false));},[]);
+  React.useEffect(()=>{
+    restoreSession().then(setUser).finally(()=>setLoading(false));
+    AsyncStorage.getItem('estimate_user_signature').then(v=>setSignature(v||''));
+  },[]);
 
   React.useEffect(()=>{
     const onBackPress=()=>{
+      if(signatureScreen){setSignatureScreen(false);return true;}
       if(vehicleData){setVehicleData(null);return true;}
       if(mode){setMode(null);return true;}
       return false;
@@ -305,6 +392,7 @@ export default function App(){
 
   if(loading) return <SafeAreaView style={styles.safe}><View style={styles.center}><ActivityIndicator size="large"/><Text style={styles.muted}>Loading...</Text></View></SafeAreaView>;
   if(!user) return <LoginScreen onLogin={setUser}/>;
+  if(signatureScreen) return <SignatureScreen signature={signature} onSave={setSignature} onBack={()=>setSignatureScreen(false)}/>;
   if(!mode) return <SafeAreaView style={styles.safe}><ScrollView contentContainerStyle={styles.container}>
     <Text style={styles.brand}>SERVICE ESTIMATE</Text><Text style={styles.sub}>Welcome {user.personName||''}</Text>
     <View style={styles.modeCard}>
@@ -313,6 +401,7 @@ export default function App(){
       <Button title="Service Estimate" onPress={()=>setMode('service')}/>
       <Button title="Repair Estimate" onPress={()=>setMode('repair')} secondary/>
     </View>
+    <Button title="User Signature" onPress={()=>setSignatureScreen(true)} secondary/>
     <Button title="Logout" onPress={async()=>{await logout();setUser(null);}} secondary/>
   </ScrollView></SafeAreaView>;
   if(!vehicleData) return <VehicleScreen mode={mode} onVehicle={setVehicleData}/>;
@@ -345,5 +434,8 @@ const styles=StyleSheet.create({
   badge:{fontSize:8,fontWeight:'900',paddingHorizontal:5,paddingVertical:2,borderRadius:8},autoBadge:{backgroundColor:'#e7f1f7',color:'#12304a'},
   manualBadge:{backgroundColor:'#fff0e2',color:'#a75b12'},modeCard:{backgroundColor:'#fff',borderRadius:12,padding:11,marginTop:12,elevation:2},
   modeTitle:{fontSize:15,fontWeight:'800',color:'#12304a'},modeHint:{fontSize:10,color:'#71808f',marginTop:-4,marginBottom:6},
-  lookupHint:{fontSize:10,color:'#71808f',lineHeight:15,marginTop:6}
+  lookupHint:{fontSize:10,color:'#71808f',lineHeight:15,marginTop:6},
+  signaturePreview:{backgroundColor:'#fff',borderRadius:10,padding:12,marginTop:14,borderWidth:1,borderColor:'#d6dde4',alignItems:'center'},
+  signatureImage:{width:'100%',height:80,resizeMode:'contain',backgroundColor:'#fff'},
+  signatureSaved:{fontSize:10,color:'#2e7d32',fontWeight:'800',marginTop:5}
 });

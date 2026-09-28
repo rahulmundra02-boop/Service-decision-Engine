@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
-  ActivityIndicator, Alert, BackHandler, KeyboardAvoidingView, Platform, Pressable,
+  ActivityIndicator, Alert, BackHandler, Keyboard, KeyboardAvoidingView, Platform, Pressable,
   SafeAreaView, ScrollView, Share, StyleSheet, Text, TextInput, View
 } from 'react-native';
 import * as Print from 'expo-print';
@@ -21,8 +21,8 @@ function Button({title,onPress,secondary=false,disabled=false}) {
   </Pressable>;
 }
 
-function Field({label,value,onChangeText,placeholder,keyboardType='default',onBlur}) {
-  return <View style={styles.field}><Text style={styles.label}>{label}</Text><TextInput value={String(value??'')} onChangeText={onChangeText} onBlur={onBlur} placeholder={placeholder} keyboardType={keyboardType} autoCapitalize="characters" style={styles.input}/></View>;
+function Field({label,value,onChangeText,placeholder,keyboardType='default',onBlur,onSubmitEditing,returnKeyType='done'}) {
+  return <View style={styles.field}><Text style={styles.label}>{label}</Text><TextInput value={String(value??'')} onChangeText={onChangeText} onBlur={onBlur} onSubmitEditing={onSubmitEditing} returnKeyType={returnKeyType} placeholder={placeholder} keyboardType={keyboardType} autoCapitalize="characters" style={styles.input}/></View>;
 }
 
 function ItemCard({item,onChange,onDelete,onRateLookup,rateLoading=false}) {
@@ -36,11 +36,11 @@ function ItemCard({item,onChange,onDelete,onRateLookup,rateLoading=false}) {
       </View>
       <Pressable onPress={onDelete}><Text style={styles.delete}>Delete</Text></Pressable>
     </View>
-    {item.type==='part' && <Field label="Part No." value={item.partNo} onChangeText={v=>set('partNo',v.toUpperCase())} placeholder="Enter part number"/>}
+    {item.type==='part' && <Field label="Part No." value={item.partNo} onChangeText={v=>set('partNo',v.toUpperCase())} onBlur={()=>onRateLookup(item)} placeholder="Enter part number"/>}
     <Field label="Description" value={item.description} onChangeText={v=>set('description',v)} placeholder="Description"/>
     <View style={styles.twoCol}>
       <View style={styles.col}><Field label="Qty" value={item.qty} onChangeText={v=>set('qty',v)} keyboardType="decimal-pad"/></View>
-      <View style={styles.col}><Field label="Rate (Incl. GST)" value={item.rate} onChangeText={v=>set('rate',v)} keyboardType="decimal-pad"/></View>
+      <View style={styles.col}><Field label={item.type==='part'?'Rate (Incl. GST)':'Rate'} value={item.rate} onChangeText={v=>set('rate',v)} keyboardType="decimal-pad"/></View>
     </View>
     {item.type==='part' && <Button title={rateLoading?'Getting Historical Rate...':'Get Historical Rate'} secondary onPress={()=>onRateLookup(item)} disabled={rateLoading||!String(item.partNo||'').trim()}/>} 
     <Text style={styles.lineAmount}>Amount: {money((Number(item.qty)||0)*(Number(item.rate)||0))}</Text>
@@ -79,11 +79,11 @@ function VehicleScreen({mode,onVehicle}) {
       onVehicle(data);
     }catch(e){Alert.alert('Vehicle lookup failed',e.message);}finally{setBusy(false);}
   };
-  return <SafeAreaView style={styles.safe}><ScrollView contentContainerStyle={styles.container}>
+  return <SafeAreaView style={styles.safe}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.container}>
     <Text style={styles.heading}>{mode==='service'?'Service Estimate':'Repair Estimate'}</Text>
     <Text style={styles.helper}>{mode==='service'?'Vehicle → Aggregate → Automatic Parts/Labour':'Vehicle → Manual Parts/Labour'}</Text>
-    <Field label="Vehicle No." value={reg} onChangeText={setReg} placeholder="e.g. GJ39XX0000"/>
-    <Button title={busy?'Loading vehicle...':'Load Vehicle'} onPress={lookup} disabled={busy}/>
+    <Field label="Vehicle No." value={reg} onChangeText={setReg} placeholder="e.g. GJ39XX0000" onSubmitEditing={lookup} returnKeyType="search"/>
+    <Button title={busy?'Loading vehicle...':'Load Vehicle'} onPress={()=>{Keyboard.dismiss();lookup();}} disabled={busy}/>
     <Text style={styles.lookupHint}>Vehicle data, service history and applicable estimate information will be loaded from the existing backend.</Text>
   </ScrollView></SafeAreaView>;
 }
@@ -144,10 +144,57 @@ function EstimateScreen({mode,data,user,onBack}) {
   };
 
   const print=async()=>{
-    const all=[...parts,...labour];
-    const lines=all.map(x=>`<tr><td>${x.type==='part'?x.partNo:x.partNo||''}</td><td>${x.description||''}</td><td>${x.qty||0}</td><td>${Number(x.rate||0).toFixed(2)}</td><td>${((Number(x.qty)||0)*(Number(x.rate)||0)).toFixed(2)}</td></tr>`).join('');
-    const t=totals(parts,labour);
-    const html=`<html><body style="font-family:Arial;padding:24px"><h2>${mode==='service'?'Service Estimate':'Repair Estimate'}</h2><p><b>Estimate No:</b> ${estimateNo}</p><p><b>Vehicle:</b> ${vehicle.registration||''}<br/><b>Customer:</b> ${vehicle.customer_name||''}<br/><b>Model:</b> ${vehicle.model||''}<br/><b>Chassis:</b> ${vehicle.vin||''}</p><table style="width:100%;border-collapse:collapse" border="1" cellpadding="6"><tr><th>Part/Labour</th><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th></tr>${lines}</table><h3>Total: ${money(t.total)}</h3></body></html>`;
+    const allParts=parts||[];
+    const allLabour=labour||[];
+    const t=totals(allParts,allLabour);
+    const labourSubtotal=allLabour.reduce((sum,x)=>sum+(Number(x.qty)||0)*(Number(x.rate)||0),0);
+    const labourGst=labourSubtotal*0.18;
+    const currentReading=latestReading(rows);
+    const selectedNames=selected.map(key=>AGGREGATES.find(x=>x[1]===key)?.[0]).filter(Boolean);
+    const moneyPdf=n=>`INR ${Number(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+    const esc=v=>String(v??'-').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const partRows=allParts.length ? allParts.map(x=>`<tr><td>${esc(x.partNo||'-')}</td><td>${esc(x.description||'-')}</td><td class="center">${esc(x.qty||0)}</td><td class="right">${moneyPdf(x.rate)}</td><td class="right">${moneyPdf((Number(x.qty)||0)*(Number(x.rate)||0))}</td></tr>`).join('') : '<tr><td>-</td><td>No parts added</td><td class="center">-</td><td class="right">-</td><td class="right">INR 0.00</td></tr>';
+    const labourRows=allLabour.length ? allLabour.map(x=>`<tr><td colspan="2">${esc(x.description||'-')}</td><td class="center">${esc(x.qty||0)}</td><td class="right">${moneyPdf(x.rate)}</td><td class="right">${moneyPdf((Number(x.qty)||0)*(Number(x.rate)||0))}</td></tr>`).join('') : '<tr><td colspan="2">No labour added</td><td class="center">-</td><td class="right">-</td><td class="right">INR 0.00</td></tr>';
+    const html=`<html><head><style>
+      @page{size:A4;margin:10mm}
+      body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:0;font-size:10px}
+      .title{text-align:center;font-size:20px;font-weight:700;margin:0 0 4px}
+      .workshop{text-align:center;font-size:11px;font-weight:700;margin-bottom:3px}
+      .note{text-align:center;font-size:8px;color:#666;margin-bottom:8px}
+      .topline{display:flex;justify-content:space-between;font-size:8px;margin-bottom:7px}
+      table{width:100%;border-collapse:collapse;table-layout:fixed}
+      td,th{border:1px solid #999;padding:5px;vertical-align:middle;word-wrap:break-word}
+      th{font-weight:700;background:#f1f1f1}
+      .info td{width:33.33%;height:28px}
+      .section{font-weight:700;font-size:11px;margin:9px 0 4px}
+      .services{border:1px solid #999;padding:6px;min-height:15px}
+      .center{text-align:center}.right{text-align:right}
+      .total{width:42%;margin-left:auto;margin-top:8px}
+      .total td{padding:5px}.grand td{font-weight:700;font-size:11px}
+      .sign{margin-top:22px;width:32%;margin-left:auto;text-align:center;border-top:1px solid #555;padding-top:4px}
+    </style></head><body>
+      <div class="title">${mode==='service'?'SERVICE ESTIMATE':'REPAIR ESTIMATE'}</div>
+      <div class="workshop">Ashok Leyland • Estimate App</div>
+      <div class="note">Estimate only - subject to actual inspection and applicable rates.</div>
+      <div class="topline"><span>Estimate No. (Session): ${esc(estimateNo)}</span><span>Prepared: ${formatDateOnly(new Date())}</span></div>
+      <table class="info"><tr>
+        <td><b>Customer</b><br/>${esc(vehicle.customer_name||'-')}</td>
+        <td><b>Reg. No.</b><br/>${esc(vehicle.registration||'-')}</td>
+        <td><b>VIN</b><br/>${esc(vehicle.vin||'-')}</td>
+      </tr><tr>
+        <td><b>Model</b><br/>${esc(vehicle.model||'-')}</td>
+        <td><b>Current Reading</b><br/>${esc(currentReading)}</td>
+        <td><b>Sale Date</b><br/>${esc(formatDateOnly(vehicle.sale_date))}</td>
+      </tr></table>
+      <div class="section">Selected Aggregate Services</div>
+      <div class="services">${selectedNames.length?esc(selectedNames.join(', ')):'No aggregate service selected'}</div>
+      <div class="section">Parts</div>
+      <table><thead><tr><th style="width:15%">Part No.</th><th style="width:43%">Description</th><th style="width:10%">Qty</th><th style="width:16%">Rate (Incl. GST)</th><th style="width:16%">Amount</th></tr></thead><tbody>${partRows}</tbody></table>
+      <div class="section">Labour</div>
+      <table><thead><tr><th colspan="2" style="width:58%">Description</th><th style="width:10%">Qty</th><th style="width:16%">Rate</th><th style="width:16%">Amount</th></tr></thead><tbody>${labourRows}</tbody></table>
+      <table class="total"><tr><td><b>Parts Total (GST Incl.)</b></td><td class="right">${moneyPdf(t.partsTotal)}</td></tr><tr><td>Labour Subtotal</td><td class="right">${moneyPdf(labourSubtotal)}</td></tr><tr><td>GST on Labour (18%)</td><td class="right">${moneyPdf(labourGst)}</td></tr><tr class="grand"><td>Grand Total</td><td class="right">${moneyPdf(t.total)}</td></tr></table>
+      <div class="sign">Authorized Signatory</div>
+    </body></html>`;
     try{
       const result=await Print.printToFileAsync({html});
       if(await Sharing.isAvailableAsync()) await Sharing.shareAsync(result.uri,{mimeType:'application/pdf',dialogTitle:'Share Estimate PDF'});
@@ -155,9 +202,14 @@ function EstimateScreen({mode,data,user,onBack}) {
     }catch(e){Alert.alert('PDF',e.message);}
   };
 
-  const t=useMemo(()=>totals(parts,labour),[parts,labour]);
+  const t=useMemo(()=>{
+    const base=totals(parts,labour);
+    const labourSubtotal=labour.reduce((sum,x)=>sum+(Number(x.qty)||0)*(Number(x.rate)||0),0);
+    const labourGst=labourSubtotal*0.18;
+    return {...base, partsTotal:parts.reduce((sum,x)=>sum+(Number(x.qty)||0)*(Number(x.rate)||0),0), labourSubtotal, labourGst, total:base.partsTotal+labourSubtotal+labourGst};
+  },[parts,labour]);
   return <SafeAreaView style={styles.safe}><KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==='ios'?'padding':undefined}>
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.container}>
       <View style={styles.rowBetween}>
         <View><Text style={styles.heading}>{mode==='service'?'Service Estimate':'Repair Estimate'}</Text><Text style={styles.muted}>{estimateNo}</Text></View>
         <Pressable onPress={onBack}><Text style={styles.back}>Vehicle</Text></Pressable>
@@ -197,6 +249,20 @@ function EstimateScreen({mode,data,user,onBack}) {
       <Button title="Print / Share PDF" secondary onPress={print}/>
     </ScrollView>
   </KeyboardAvoidingView></SafeAreaView>;
+}
+
+function formatDateOnly(value) {
+  if (!value) return '-';
+  const d = new Date(value);
+  if (!Number.isFinite(d.getTime())) return String(value).slice(0,10);
+  return d.toLocaleDateString('en-IN',{day:'2-digit',month:'2-digit',year:'numeric'});
+}
+
+function latestReading(rows) {
+  const valid=(rows||[]).filter(r=>r?.cumulative_reading!==undefined && r?.cumulative_reading!==null && String(r.cumulative_reading).trim()!=='')
+    .sort((a,b)=>new Date(b.job_date||0)-new Date(a.job_date||0));
+  if (!valid.length) return '-';
+  return `${valid[0].cumulative_reading} ${valid[0].cumulative_unit||''}`.trim();
 }
 
 export default function App(){

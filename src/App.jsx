@@ -6741,6 +6741,7 @@ clone.style.transformOrigin = "top left";
               <div className={`excel-tab ${mode === "bulk" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("bulk"); setError(""); setAnalysis(null); }}>Bulk Vehicle</div>
               <div className={`excel-tab ${mode === "schedule" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("schedule"); setError(""); logUsage("Service Schedule Viewed", { mode:"schedule" }); }}>Service Schedule Chart</div>
               <div className={`excel-tab ${estimateOpen ? "active" : ""}`} onClick={() => { setMode("estimate"); if (analysis) void openEstimate(); else openStandaloneEstimate(); }}>Prepare Estimate</div>
+              <div className={`excel-tab ${mode === "saved-estimates" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("saved-estimates"); setError(""); }}>Saved Estimates</div>
               <div className={`excel-tab ${mode === "warranty-tags" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("warranty-tags"); setError(""); }}>Warranty Tag Print</div>
             </div>
             {mode !== "warranty-tags" && (
@@ -6824,6 +6825,30 @@ clone.style.transformOrigin = "top left";
                 onClear={clear}
                 onOpenSavedEstimate={openSavedEstimate}
               />
+            ) : mode === "saved-estimates" ? (
+              <div style={{padding:18}}>
+                <div className="sheet-heading">SAVED ESTIMATES</div>
+                <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",margin:"12px 0"}}>
+                  <input className="excel-input" style={{flex:"1 1 280px",maxWidth:520}} value={savedEstimateSearch} onChange={e=>setSavedEstimateSearch(e.target.value)} placeholder="Search Vehicle No. or Estimate No." />
+                  <button className="excel-button" onClick={()=>setSavedEstimateSearch("")}>Clear Search</button>
+                  <button className="excel-button green" onClick={openStandaloneEstimate}>+ New Estimate</button>
+                </div>
+                {savedEstimatesLoading ? <div className="small-note">Loading saved estimates...</div> : (
+                  filteredSavedEstimates.length ? (
+                    <div className="saved-estimate-list">
+                      {filteredSavedEstimates.map(item => (
+                        <button key={item.id} type="button" className="saved-estimate-row" onClick={() => openSavedEstimate(item.id)}>
+                          <span><b>{item.vehicle_no || "Vehicle No. not entered"}</b><small>{item.estimate_no} · {formatDate(item.saved_at || item.updated_at)}</small></span>
+                          <span>Open →</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="small-note">{savedEstimateSearch ? "No saved estimate matches your search." : "No saved estimates yet."}</div>
+                  )
+                )}
+                <div style={{marginTop:18,paddingTop:10,borderTop:"1px solid #ddd",fontSize:11,color:"#666"}}>Saved estimates are stored only in this browser's local data. They are not uploaded to the online database.</div>
+              </div>
             ) : mode === "warranty-tags" ? (
               <WarrantyTagPanel user={user} onBack={() => setMode("home")} />
             ) : mode === "single" ? (

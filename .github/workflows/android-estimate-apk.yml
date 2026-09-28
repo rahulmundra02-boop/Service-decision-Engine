@@ -2,6 +2,9 @@ name: Android Estimate APK
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - android-estimate-beta
 
 jobs:
   build-android-apk:
@@ -20,8 +23,6 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 20.19.4
-          cache: npm
-          cache-dependency-path: android-estimate/package.json
 
       - name: Setup Java
         uses: actions/setup-java@v5

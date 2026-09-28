@@ -7,7 +7,7 @@
     "userInterfaceStyle": "light",
     "android": {
       "package": "com.rahulmundra.serviceestimate",
-      "versionCode": 3,
+      "versionCode": 4,
       "softwareKeyboardLayoutMode": "resize"
     },
     "extra": {

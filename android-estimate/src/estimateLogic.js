@@ -136,8 +136,10 @@ function historicalItem(type, key, rows, partNo, globalRates) {
     id: `${type}-${key}-${code}-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,
     type, serviceKey:key, partNo:code,
     description:String(source.part_description || source.standardized_part || PART_STANDARDIZATION[code] || '').trim(),
-    qty, rate:Number((finalRate * 1.18).toFixed(2)), baseRate:finalRate,
-    source: finalRate ? 'Historical DB (18% GST added)' : 'Manual'
+    qty,
+    rate:Number((type === 'part' ? finalRate * 1.18 : finalRate).toFixed(2)),
+    baseRate:finalRate,
+    source: finalRate ? (type === 'part' ? 'Historical DB (18% GST added)' : 'Historical DB - Labour base rate') : 'Manual'
   };
 }
 

@@ -3,7 +3,10 @@ const PART_STANDARDIZATION = {
   G9999994: 'Gear Oil', GB699991: 'Axle Oil',
   PSB99994: 'Steering Oil', PD600391: 'Steering Oil Filter',
   CFD99991: 'Clutch Oil', U9999995: 'Clutch Oil',
-  C9999993: 'Coolant', S9999997: 'Hub Grease', F1771900: 'Hub Grease',
+  C9999993: 'Coolant',
+  S9999997: 'Hub Grease', F1721500: 'GASKET HUB CAP FRONT FA90',
+  FJ607400: 'GASKET-10TG HUB-12 HOLES', F1771900: 'Hub Grease',
+  CLOTH: 'CLOTH',
   P5105609: 'Fuel Filter', P5105688: 'Air Filter',
   XFM00500: 'DEF Filter Air', PET00001: 'DEF Filter Suction',
   XFM00800: 'DEF Inline Filter', PD600968: 'APDA Filter'
@@ -18,30 +21,55 @@ export const AGGREGATES = [
 
 const REFERENCE_PARTS = {
   engineOil: ['EN699991', 'F7A01500'],
-  gearOil: ['G9999994'], axleOil: ['GB699991'],
-  steeringOil: ['PSB99994', 'PD600391'], clutchOil: ['CFD99991', 'U9999995'],
-  defInline: ['XFM00800'], coolant: ['C9999993'],
-  hubGrease: ['S9999997', 'F1771900'], fuelFilter: ['P5105609'],
-  airFilter: ['P5105688'], defFilter: ['XFM00500', 'PET00001'], apdaFilter: ['PD600968']
+  gearOil: ['G9999994'],
+  axleOil: ['GB699991'],
+  steeringOil: ['PSB99994', 'PD600391'],
+  clutchOil: ['CFD99991', 'U9999995'],
+  defInline: ['XFM00800'],
+  coolant: ['C9999993'],
+  hubGrease: ['S9999997', 'F1721500', 'FJ607400', 'CLOTH', 'F1771900'],
+  fuelFilter: ['P5105609'],
+  airFilter: ['P5105688'],
+  defFilter: ['XFM00500', 'PET00001'],
+  apdaFilter: ['PD600968']
 };
 
 const MINIMUM_SERVICE_QUANTITY = {
   engineOil: 12,
   gearOil: 6,
+  axleOil: 0,
   steeringOil: 3,
   clutchOil: 0.5,
   coolant: 15,
   hubGrease: 3
 };
 
+const MAXIMUM_SERVICE_QUANTITY = {
+  engineOil: 21,
+  gearOil: 9,
+  axleOil: 33,
+  steeringOil: 3,
+  clutchOil: 0.5,
+  coolant: 25,
+  hubGrease: 7
+};
+
 const MINIMUM_QUANTITY_PARTS = {
   engineOil: ['EN699991'],
   gearOil: ['G9999994'],
+  axleOil: ['GB699991'],
   steeringOil: ['PSB99994'],
   clutchOil: ['CFD99991', 'U9999995'],
   coolant: ['C9999993'],
-  hubGrease: ['S9999997', 'F1771900']
+  hubGrease: ['S9999997']
 };
+
+const FIXED_HUB_PARTS = [
+  ['S9999997', 3, 'Hub Grease'],
+  ['F1721500', 2, 'GASKET HUB CAP FRONT FA90'],
+  ['FJ607400', 2, 'GASKET-10TG HUB-12 HOLES'],
+  ['CLOTH', 2, 'CLOTH']
+];
 
 const LABOUR = {
   airFilter: ['AIS110', 'R and R Air Filter And Replace Element'],
@@ -95,6 +123,15 @@ function bestRate(rows, paidOnly = false) {
   return valid.length ? Math.max(...valid.map(r => Number(r.rate))) : 0;
 }
 
+function globalRate(code, globalRates) {
+  const wanted = normalizeCode(code);
+  return (globalRates || [])
+    .filter(x => normalizeCode(x?.part_code) === wanted)
+    .map(x => Number(x?.rate))
+    .filter(x => x > 0)
+    .reduce((max, x) => Math.max(max, x), 0);
+}
+
 function latestQty(rows, fallback = 1) {
   const valid = rows.filter(r => Number(r?.quantity) > 0).sort((a,b) => rank(b)-rank(a));
   return valid.length ? Number(valid[0].quantity) : fallback;
@@ -123,7 +160,8 @@ function matchesLabour(row, key) {
     axleOil: t => t.includes('REAR AXLE') || t.includes('REAR AXEL') || t.includes('AXLE OIL'),
     steeringOil: t => t.includes('STEERING') && (t.includes('OIL') || t.includes('BOX') || t.includes('FLUID')),
     clutchOil: t => t.includes('CLUTCH') && (t.includes('OIL') || t.includes('BLEED') || t.includes('REFILL')),
-    coolant: t => t.includes('COOLANT'), fuelFilter: t => t.includes('FUEL') && t.includes('FILTER'),
+    coolant: t => t.includes('COOLANT'),
+    fuelFilter: t => t.includes('FUEL') && t.includes('FILTER'),
     airFilter: t => t.includes('AIR') && t.includes('FILTER'),
     hubGrease: t => t.includes('HUB') && t.includes('GREAS'),
     defFilter: t => t.includes('DEF') && (t.includes('SUCTION') || t.includes('FILTER')),
@@ -133,40 +171,77 @@ function matchesLabour(row, key) {
   return tests[key] ? tests[key](text) : false;
 }
 
-function historicalItem(type, key, rows, partNo, globalRates) {
-  if (!rows.length) return null;
-
-  const orderedRows = rows
+function historicalItem(type, key, rows, partNo, globalRates, fixedQty = null, fixedDescription = '') {
+  const safeRows = Array.isArray(rows) ? rows : [];
+  const orderedRows = safeRows
     .filter(r => Number(r?.quantity) > 0)
     .sort((a,b) => Number(b.quantity) - Number(a.quantity) || rank(b) - rank(a));
 
-  const selectedRow = orderedRows[0];
-  if (!selectedRow) return null;
+  const selectedRow = orderedRows[0] || {};
+  const code = normalizeCode(partNo || selectedRow?.part_code);
+  if (!code) return null;
 
-  const qty = type === 'labour' ? latestQty(rows, 1) : Number(selectedRow.quantity);
+  const qty = fixedQty !== null
+    ? Number(fixedQty)
+    : type === 'labour'
+      ? latestQty(safeRows, 1)
+      : Number(selectedRow.quantity);
+
   if (!(qty > 0)) return null;
 
-  const rate = bestRate(rows, type === 'part');
-  const code = normalizeCode(partNo || selectedRow?.part_code);
-  let finalRate = rate;
+  const historyRate = bestRate(safeRows, type === 'part');
+  const dbRate = globalRate(code, globalRates);
+  const finalRate = Math.max(historyRate, dbRate);
+  const sourceRow = safeRows.slice().sort((a,b) => rank(b)-rank(a))[0] || {};
 
-  if (type === 'part' && code) {
-    const global = (globalRates || [])
-      .filter(x => normalizeCode(x?.part_code) === code)
-      .map(x => Number(x?.rate)).filter(x => x > 0);
-    if (global.length) finalRate = Math.max(...global);
-  }
-
-  const source = rows.slice().sort((a,b) => rank(b)-rank(a))[0] || {};
   return {
     id: `${type}-${key}-${code}-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,
     type, serviceKey:key, partNo:code,
-    description:String(selectedRow.part_description || selectedRow.standardized_part || source.part_description || source.standardized_part || PART_STANDARDIZATION[code] || '').trim(),
+    description:String(
+      selectedRow.part_description ||
+      selectedRow.standardized_part ||
+      sourceRow.part_description ||
+      sourceRow.standardized_part ||
+      fixedDescription ||
+      PART_STANDARDIZATION[code] ||
+      ''
+    ).trim(),
     qty,
     rate:Number((type === 'part' ? finalRate * 1.18 : finalRate).toFixed(2)),
     baseRate:finalRate,
-    source: finalRate ? (type === 'part' ? 'Historical DB (18% GST added)' : 'Historical DB - Labour base rate') : 'Manual'
+    source:finalRate ? (type === 'part' ? 'Historical DB (18% GST added)' : 'Historical DB - Labour base rate') : 'Manual'
   };
+}
+
+function allowedQuantity(key, code, quantity) {
+  const q = Number(quantity);
+  if (!(q > 0)) return false;
+  const minParts = (MINIMUM_QUANTITY_PARTS[key] || []).map(normalizeCode);
+  const appliesMin = minParts.includes(normalizeCode(code));
+  const min = appliesMin ? Number(MINIMUM_SERVICE_QUANTITY[key] || 0) : 0;
+  const max = Number(MAXIMUM_SERVICE_QUANTITY[key] || 0);
+  return q >= min && (!max || q <= max);
+}
+
+function exactPartRows(rows, code, key) {
+  return (rows || []).filter(r =>
+    category(r) === 'part' &&
+    normalizeCode(r?.part_code) === normalizeCode(code) &&
+    allowedQuantity(key, code, r?.quantity)
+  );
+}
+
+function bestAlternativePart(key, codes, vehicle, model, globalRates) {
+  const options = [];
+  for (const code of codes) {
+    const vehicleRows = exactPartRows(vehicle, code, key);
+    const modelRows = exactPartRows(model, code, key);
+    const candidates = vehicleRows.length ? vehicleRows : modelRows;
+    const item = historicalItem('part', key, candidates, code, globalRates);
+    if (item) options.push(item);
+  }
+  if (!options.length) return null;
+  return options.sort((a,b) => Number(b.qty) - Number(a.qty))[0];
 }
 
 export function buildServiceItems(rows = [], modelRows = [], globalRates = [], selectedKeys = []) {
@@ -175,25 +250,29 @@ export function buildServiceItems(rows = [], modelRows = [], globalRates = [], s
   const output = [];
 
   for (const key of selectedKeys) {
-    for (const code of (REFERENCE_PARTS[key] || [])) {
-      const minimumQty = (MINIMUM_QUANTITY_PARTS[key] || []).includes(code)
-        ? Number(MINIMUM_SERVICE_QUANTITY[key] || 0)
-        : 0;
+    if (key === 'clutchOil') {
+      const clutch = bestAlternativePart(key, REFERENCE_PARTS[key], vehicle, model, globalRates);
+      if (clutch) output.push(clutch);
+    } else if (key === 'hubGrease') {
+      for (const [code, qty, description] of FIXED_HUB_PARTS) {
+        const vehicleRows = exactPartRows(vehicle, code, key);
+        const modelRowsForCode = exactPartRows(model, code, key);
+        const candidates = vehicleRows.length ? vehicleRows : modelRowsForCode;
+        const item = historicalItem('part', key, candidates, code, globalRates, qty, description);
+        if (item) output.push(item);
+      }
 
-      const qualifies = r =>
-        category(r)==='part' &&
-        normalizeCode(r?.part_code)===code &&
-        Number(r?.quantity)>0 &&
-        Number(r?.quantity) >= minimumQty;
-
-      const exactVehicle = vehicle.filter(qualifies);
-      const exactModel = model.filter(qualifies);
-
-      // Use the vehicle's own history first. If it does not have a qualifying
-      // quantity, use history from the exact same model.
-      const candidates = exactVehicle.length ? exactVehicle : exactModel;
-      const item = historicalItem('part', key, candidates, code, globalRates);
+      const modelSpecific = exactPartRows(model, 'F1771900', 'hubGrease');
+      const item = historicalItem('part', key, modelSpecific, 'F1771900', globalRates);
       if (item) output.push(item);
+    } else {
+      for (const code of (REFERENCE_PARTS[key] || [])) {
+        const vehicleRows = exactPartRows(vehicle, code, key);
+        const modelRowsForCode = exactPartRows(model, code, key);
+        const candidates = vehicleRows.length ? vehicleRows : modelRowsForCode;
+        const item = historicalItem('part', key, candidates, code, globalRates);
+        if (item) output.push(item);
+      }
     }
 
     const labourRows = vehicle.filter(r => matchesLabour(r,key));
@@ -227,22 +306,16 @@ export function makeManualItem(type='part') {
 
 export function rateForManualPart(partNo, response) {
   const part = response?.part;
-  if (!part) return { rate: 0, description: '' };
+  if (!part) return { rate:0, description:'' };
   const inclGst = Number(part.rateInclGst || 0);
   const baseRate = Number(part.rate || 0);
   const rate = inclGst > 0 ? inclGst : (baseRate > 0 ? Number((baseRate * 1.18).toFixed(2)) : 0);
-  return { rate, description: String(part.description || '') };
+  return { rate, description:String(part.description || '') };
 }
 
 export function totals(parts, labour) {
-  const partsTotal = (parts || []).reduce((sum, r) => sum + (Number(r.qty)||0) * (Number(r.rate)||0), 0);
-  const labourSubtotal = (labour || []).reduce((sum, r) => sum + (Number(r.qty)||0) * (Number(r.rate)||0), 0);
+  const partsTotal = (parts || []).reduce((sum,r) => sum + (Number(r.qty)||0)*(Number(r.rate)||0),0);
+  const labourSubtotal = (labour || []).reduce((sum,r) => sum + (Number(r.qty)||0)*(Number(r.rate)||0),0);
   const labourGst = labourSubtotal * 0.18;
-  return {
-    partsTotal,
-    labourSubtotal,
-    labourGst,
-    subtotal: partsTotal + labourSubtotal,
-    total: partsTotal + labourSubtotal + labourGst
-  };
+  return { partsTotal, labourSubtotal, labourGst, subtotal:partsTotal+labourSubtotal, total:partsTotal+labourSubtotal+labourGst };
 }

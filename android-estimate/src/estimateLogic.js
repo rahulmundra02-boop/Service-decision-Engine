@@ -61,7 +61,7 @@ const MINIMUM_QUANTITY_PARTS = {
   steeringOil: ['PSB99994'],
   clutchOil: ['CFD99991', 'U9999995'],
   coolant: ['C9999993'],
-  hubGrease: ['S9999997']
+  hubGrease: ['S9999997', 'F1771900']
 };
 
 const FIXED_HUB_PARTS = [

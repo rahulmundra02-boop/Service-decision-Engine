@@ -189,7 +189,10 @@ export function makeManualItem(type='part') {
 export function rateForManualPart(partNo, response) {
   const part = response?.part;
   if (!part) return { rate: 0, description: '' };
-  return { rate: Number(part.rateInclGst || 0), description: String(part.description || '') };
+  const inclGst = Number(part.rateInclGst || 0);
+  const baseRate = Number(part.rate || 0);
+  const rate = inclGst > 0 ? inclGst : (baseRate > 0 ? Number((baseRate * 1.18).toFixed(2)) : 0);
+  return { rate, description: String(part.description || '') };
 }
 
 export function totals(parts, labour) {

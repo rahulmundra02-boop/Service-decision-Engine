@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, BackHandler, Keyboard, KeyboardAvoidingView, Platform, Pressable,
   SafeAreaView, ScrollView, Share, StatusBar, StyleSheet, Text, TextInput, View, Image
@@ -44,15 +44,55 @@ function Field({label,value,onChangeText,placeholder,keyboardType='default',onBl
   </View>;
 }
 
-function ItemCard({item,onChange,onDelete,onRateLookup,rateLoading=false}) {
+function ItemCard({item,onChange,onDelete,onRateLookup,rateLoading=false,autoFocusPart=false,autoFocusLabour=false,scrollRef,scrollYRef,onPartNoSubmit}) {
   const set=(k,v)=>onChange({...item,[k]:v});
   const isAutomatic=Boolean(item.serviceKey);
   const partNoRef=useRef(null);
   const descriptionRef=useRef(null);
   const qtyRef=useRef(null);
   const rateRef=useRef(null);
-  const focusQty=()=>setTimeout(()=>qtyRef.current?.focus(),40);
-  const focusRate=()=>setTimeout(()=>rateRef.current?.focus(),40);
+
+  const ensureVisible=(inputRef)=>{
+    setTimeout(()=>{
+      const keyboardListener=Keyboard.addListener('keyboardDidShow',event=>{
+        inputRef.current?.measure((_x,_y,_w,h,_pageX,pageY)=>{
+          const keyboardTop=event.endCoordinates?.screenY || 0;
+          const currentScroll=Number(scrollYRef?.current || 0);
+          const target=currentScroll + pageY + h - keyboardTop + 28;
+          if(target>currentScroll) scrollRef?.current?.scrollTo({y:target,animated:true});
+        });
+        keyboardListener.remove();
+      });
+    },60);
+  };
+
+  const focusQty=()=>setTimeout(()=>qtyRef.current?.focus(),60);
+  const focusRate=()=>setTimeout(()=>rateRef.current?.focus(),60);
+
+  useEffect(()=>{
+    if(autoFocusPart){
+      setTimeout(()=>{
+        partNoRef.current?.focus();
+        ensureVisible(partNoRef);
+      },120);
+    }
+  },[autoFocusPart]);
+
+  useEffect(()=>{
+    if(autoFocusLabour){
+      setTimeout(()=>{
+        descriptionRef.current?.focus();
+        ensureVisible(descriptionRef);
+      },120);
+    }
+  },[autoFocusLabour]);
+
+  const handlePartSubmit=()=>{
+    if(onPartNoSubmit && !onPartNoSubmit(item)) return;
+    onRateLookup(item);
+    focusQty();
+  };
+
   return <View style={[styles.itemCard,item.type==='part'?styles.partItemCard:styles.labourItemCard]}>
     <View style={styles.rowBetween}>
       <View style={styles.itemHeadingRow}>
@@ -61,44 +101,83 @@ function ItemCard({item,onChange,onDelete,onRateLookup,rateLoading=false}) {
       </View>
       <Pressable onPress={onDelete}><Text style={styles.delete}>Delete</Text></Pressable>
     </View>
-    {item.type==='part' && <View style={styles.field}>
-      <Text style={styles.label}>Part No.</Text>
-      <TextInput
-        ref={partNoRef}
-        value={String(item.partNo??'')}
-        onChangeText={v=>set('partNo',v.toUpperCase())}
-        onBlur={()=>onRateLookup(item)}
-        onSubmitEditing={()=>{onRateLookup(item);focusQty();}}
-        returnKeyType="next"
-        placeholder="Enter part number"
-        autoCapitalize="characters"
-        autoCorrect={false}
-        style={styles.input}
-      />
-    </View>}
-    <View style={styles.field}>
+
+    {item.type==='part' ? <View style={styles.partInfoRow}>
+      <View style={styles.partNoCol}>
+        <View style={styles.field}>
+          <Text style={styles.label}>Part No.</Text>
+          <TextInput
+            ref={partNoRef}
+            value={String(item.partNo??'')}
+            onChangeText={v=>set('partNo',v.toUpperCase())}
+            onFocus={()=>ensureVisible(partNoRef)}
+            onBlur={()=>{ if(String(item.partNo||'').trim()) onRateLookup(item); }}
+            onSubmitEditing={handlePartSubmit}
+            returnKeyType="next"
+            placeholder="Part No."
+            maxLength={12}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            style={styles.input}
+          />
+        </View>
+      </View>
+      <View style={styles.descriptionCol}>
+        <View style={styles.field}>
+          <Text style={styles.label}>Description</Text>
+          <TextInput
+            ref={descriptionRef}
+            value={String(item.description??'')}
+            onChangeText={v=>set('description',v)}
+            onFocus={()=>ensureVisible(descriptionRef)}
+            onSubmitEditing={focusQty}
+            returnKeyType="next"
+            placeholder="Part Description"
+            style={styles.input}
+          />
+        </View>
+      </View>
+    </View> : <View style={styles.field}>
       <Text style={styles.label}>Description</Text>
       <TextInput
         ref={descriptionRef}
         value={String(item.description??'')}
         onChangeText={v=>set('description',v)}
+        onFocus={()=>ensureVisible(descriptionRef)}
         onSubmitEditing={focusQty}
         returnKeyType="next"
-        placeholder="Description"
+        placeholder="Labour Description"
         style={styles.input}
       />
-    </View>
+    </View>}
+
     <View style={styles.twoCol}>
       <View style={styles.col}><View style={styles.field}>
         <Text style={styles.label}>Qty</Text>
-        <TextInput ref={qtyRef} value={String(item.qty??'')} onChangeText={v=>set('qty',v)} keyboardType="decimal-pad" onSubmitEditing={focusRate} returnKeyType="next" style={styles.input}/>
+        <TextInput
+          ref={qtyRef}
+          value={String(item.qty??'')}
+          onChangeText={v=>set('qty',v)}
+          onFocus={()=>ensureVisible(qtyRef)}
+          keyboardType="decimal-pad"
+          onSubmitEditing={focusRate}
+          returnKeyType="next"
+          style={styles.input}
+        />
       </View></View>
       <View style={styles.col}><View style={styles.field}>
         <Text style={styles.label}>{item.type==='part'?'MRP / Rate (Incl. GST)':'Rate (Excl. GST)'}</Text>
-        <TextInput ref={rateRef} value={String(item.rate??'')} onChangeText={v=>set('rate',v)} keyboardType="decimal-pad" returnKeyType="done" style={styles.input}/>
+        <TextInput
+          ref={rateRef}
+          value={String(item.rate??'')}
+          onChangeText={v=>set('rate',v)}
+          onFocus={()=>ensureVisible(rateRef)}
+          keyboardType="decimal-pad"
+          returnKeyType="done"
+          style={styles.input}
+        />
       </View></View>
     </View>
-    {item.type==='part' && <Button title={rateLoading?'Getting Historical Rate...':'Get Historical Rate'} secondary onPress={()=>onRateLookup(item)} disabled={rateLoading||!String(item.partNo||'').trim()}/>}
     <Text style={styles.lineAmount}>Amount: {money((Number(item.qty)||0)*(Number(item.rate)||0))}</Text>
     {item.source ? <Text style={styles.source}>{item.source}</Text> : null}
   </View>;
@@ -113,7 +192,7 @@ function LoginScreen({onLogin}) {
     setBusy(true);
     try{const data=await login(identifier,password);onLogin(data.user);}catch(e){Alert.alert('Login failed',e.message);}finally{setBusy(false);}
   };
-  return <SafeAreaView style={styles.safe}><KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==='ios'?'padding':undefined}>
+  return <SafeAreaView style={styles.safe}><KeyboardAvoidingView style={{flex:1}} behavior="height" keyboardVerticalOffset={0}>
     <View style={styles.loginWrap}>
       <Text style={styles.brand}>SERVICE ESTIMATE</Text>
       <Text style={styles.sub}>Ashok Leyland • Estimate App</Text>
@@ -156,6 +235,8 @@ function VehicleScreen({mode,onVehicle}) {
 
 function EstimateScreen({mode,data,user,onBack,savedEstimate,onSaved}) {
   const vehicle=data.vehicle||{};
+  const scrollRef=useRef(null);
+  const scrollYRef=useRef(0);
   const rows=data.rows||[];
   const modelRows=data.modelRows||[];
   const globalRates=data.globalPartRates||[];
@@ -167,6 +248,8 @@ function EstimateScreen({mode,data,user,onBack,savedEstimate,onSaved}) {
   const [estimateNo,setEstimateNo]=useState(savedEstimate?.estimateNo || newEstimateNo());
   const [customerName,setCustomerName]=useState(savedEstimate?.vehicle?.customer_name || vehicle.customer_name||'');
   const [savedRecordId,setSavedRecordId]=useState(savedEstimate?.id || null);
+  const [focusPartId,setFocusPartId]=useState(null);
+  const [focusLabourId,setFocusLabourId]=useState(null);
 
   React.useEffect(()=>{
     if(savedEstimate){
@@ -194,9 +277,37 @@ function EstimateScreen({mode,data,user,onBack,savedEstimate,onSaved}) {
 
   const updatePart=(id,item)=>setParts(list=>list.map(x=>x.id===id?item:x));
   const updateLabour=(id,item)=>setLabour(list=>list.map(x=>x.id===id?item:x));
-  const addPart=()=>setParts(x=>[makeManualItem('part'),...x]);
-  const addLabour=()=>setLabour(x=>[makeManualItem('labour'),...x]);
+
+  const addPart=()=>{
+    Keyboard.dismiss();
+    const item=makeManualItem('part');
+    setParts(x=>[item,...x]);
+    setFocusLabourId(null);
+    setFocusPartId(item.id);
+  };
+
+  const addLabour=()=>{
+    Keyboard.dismiss();
+    const item=makeManualItem('labour');
+    setLabour(x=>[item,...x]);
+    setFocusPartId(null);
+    setFocusLabourId(item.id);
+  };
+
   const remove=(setter,id)=>setter(list=>list.filter(x=>x.id!==id));
+
+  const normalizePartNo=value=>String(value||'').replace(/\s+/g,'').toUpperCase();
+
+  const validatePartNo=(item)=>{
+    const code=normalizePartNo(item?.partNo);
+    if(!code) return true;
+    const duplicate=parts.some(x=>x.id!==item.id && normalizePartNo(x.partNo)===code);
+    if(duplicate){
+      Alert.alert('Duplicate Part','Same Part No. is already entered.');
+      return false;
+    }
+    return true;
+  };
 
   const lookupRate=async(item)=>{
     const code=String(item?.partNo||'').replace(/\s+/g,'').toUpperCase();
@@ -217,19 +328,32 @@ function EstimateScreen({mode,data,user,onBack,savedEstimate,onSaved}) {
     finally{setRateLoadingId(null);}
   };
 
+  const duplicatePartNumbers = useMemo(()=>{
+    const counts=new Map();
+    for(const item of parts){
+      const code=normalizePartNo(item.partNo);
+      if(code) counts.set(code,(counts.get(code)||0)+1);
+    }
+    return [...counts.entries()].filter(([,count])=>count>1).map(([code])=>code);
+  },[parts]);
+
   const incompleteLines = useMemo(()=>{
     if(!parts.length && !labour.length) return true;
-    return [...parts,...labour].some(x =>
+    return duplicatePartNumbers.length>0 || [...parts,...labour].some(x =>
       !String(x.description||'').trim() ||
       Number(x.qty||0)<=0 ||
       Number(x.rate||0)<=0 ||
       (x.type==='part' && !String(x.partNo||'').trim())
     );
-  },[parts,labour]);
+  },[parts,labour,duplicatePartNumbers]);
 
   const save=async()=>{
     if(!vehicle.registration){Alert.alert('Estimate','Vehicle information is missing.');return;}
     if(!customerName.trim()){Alert.alert('Estimate','Enter customer name before saving.');return;}
+    if(duplicatePartNumbers.length){
+      Alert.alert('Duplicate Part','Same Part No. is already entered. Please use a different Part No.');
+      return;
+    }
     if(incompleteLines){
       Alert.alert('Estimate incomplete','Complete every Part/Labour line. Part No., Description, Qty and Rate must be filled, and Qty/Rate must be greater than 0.');
       return;
@@ -332,7 +456,14 @@ function EstimateScreen({mode,data,user,onBack,savedEstimate,onSaved}) {
 
   const t=useMemo(()=>totals(parts,labour),[parts,labour]);
   return <SafeAreaView style={styles.safe}><KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==='ios'?'padding':undefined}>
-    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.container}>
+    <ScrollView
+      ref={scrollRef}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="none"
+      onScroll={e=>{scrollYRef.current=e.nativeEvent.contentOffset.y;}}
+      scrollEventThrottle={16}
+      contentContainerStyle={[styles.container,{paddingBottom:360}]}
+    >
       <View style={styles.rowBetween}>
         <View><Text style={styles.heading}>{mode==='service'?'Service Estimate':'Repair Estimate'}</Text><Text style={styles.muted}>{estimateNo}</Text></View>
         <Pressable onPress={onBack}><Text style={styles.back}>Vehicle</Text></Pressable>
@@ -361,13 +492,33 @@ function EstimateScreen({mode,data,user,onBack,savedEstimate,onSaved}) {
 
       <View style={[styles.card,styles.partsCard]}>
         <View style={styles.rowBetween}><Text style={styles.cardTitle}>Parts</Text><Pressable onPress={addPart}><Text style={[styles.add,styles.partAdd]}>+ Add Part</Text></Pressable></View>
-        {parts.map(item=><ItemCard key={item.id} item={item} onChange={x=>updatePart(item.id,x)} onDelete={()=>remove(setParts,item.id)} onRateLookup={lookupRate} rateLoading={rateLoadingId===item.id}/>)}
+        {parts.map(item=><ItemCard
+          key={item.id}
+          item={item}
+          onChange={x=>{updatePart(item.id,x);if(focusPartId===item.id)setFocusPartId(null);}}
+          onDelete={()=>remove(setParts,item.id)}
+          onRateLookup={lookupRate}
+          rateLoading={rateLoadingId===item.id}
+          autoFocusPart={focusPartId===item.id}
+          scrollRef={scrollRef}
+          scrollYRef={scrollYRef}
+          onPartNoSubmit={validatePartNo}
+        />)}
         {!parts.length&&<Text style={styles.empty}>No parts added.</Text>}
       </View>
 
       <View style={[styles.card,styles.labourCard]}>
         <View style={styles.rowBetween}><Text style={styles.cardTitle}>Labour</Text><Pressable onPress={addLabour}><Text style={[styles.add,styles.labourAdd]}>+ Add Labour</Text></Pressable></View>
-        {labour.map(item=><ItemCard key={item.id} item={item} onChange={x=>updateLabour(item.id,x)} onDelete={()=>remove(setLabour,item.id)} onRateLookup={()=>{}}/>)}
+        {labour.map(item=><ItemCard
+          key={item.id}
+          item={item}
+          onChange={x=>{updateLabour(item.id,x);if(focusLabourId===item.id)setFocusLabourId(null);}}
+          onDelete={()=>remove(setLabour,item.id)}
+          onRateLookup={()=>{}}
+          autoFocusLabour={focusLabourId===item.id}
+          scrollRef={scrollRef}
+          scrollYRef={scrollYRef}
+        />)}
         {!labour.length&&<Text style={styles.empty}>No labour added.</Text>}
       </View>
 

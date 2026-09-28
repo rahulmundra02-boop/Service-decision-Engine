@@ -131,7 +131,17 @@ function VehicleScreen({mode,onVehicle}) {
     setBusy(true);
     try{
       const data=await getVehicleByRegistration(reg);
-      if(!data.vehicle){Alert.alert('Vehicle not found','No vehicle data found for this registration number.');return;}
+      if(!data.vehicle){
+        onVehicle({
+          success:true,
+          rows:[],
+          modelRows:[],
+          globalPartRates:[],
+          vehicle:{registration:reg,customer_name:''},
+          missingVehicle:true
+        });
+        return;
+      }
       onVehicle(data);
     }catch(e){Alert.alert('Vehicle lookup failed',e.message);}finally{setBusy(false);}
   };
@@ -155,16 +165,21 @@ function EstimateScreen({mode,data,user,onBack}) {
   const [saving,setSaving]=useState(false);
   const [rateLoadingId,setRateLoadingId]=useState(null);
   const [estimateNo]=useState(newEstimateNo());
+  const [customerName,setCustomerName]=useState(vehicle.customer_name||'');
 
   const toggleAggregate=(key)=>{
-    const next=selected.includes(key)?selected.filter(x=>x!==key):[...selected,key];
+    const wasSelected=selected.includes(key);
+    const next=wasSelected?selected.filter(x=>x!==key):[...selected,key];
     setSelected(next);
     if(mode==='service'){
-      const currentManualParts=parts.filter(x=>!x.serviceKey);
-      const currentManualLabour=labour.filter(x=>!x.serviceKey);
-      const items=buildServiceItems(rows,modelRows,globalRates,next);
-      setParts([...items.filter(x=>x.type==='part'),...currentManualParts]);
-      setLabour([...items.filter(x=>x.type==='labour'),...currentManualLabour]);
+      if(wasSelected){
+        setParts(list=>list.filter(x=>x.serviceKey!==key));
+        setLabour(list=>list.filter(x=>x.serviceKey!==key));
+      }else{
+        const items=buildServiceItems(rows,modelRows,globalRates,[key]);
+        setParts(list=>[...items.filter(x=>x.type==='part'),...list]);
+        setLabour(list=>[...items.filter(x=>x.type==='labour'),...list]);
+      }
     }
   };
 
@@ -197,9 +212,10 @@ function EstimateScreen({mode,data,user,onBack}) {
     if(!vehicle.registration){Alert.alert('Estimate','Vehicle information is missing.');return;}
     setSaving(true);
     try{
+      if(!customerName.trim()){Alert.alert('Estimate','Enter customer name before saving.');return;}
       await saveEstimate({
         estimateNo, vehicleNo:vehicle.registration,
-        vehicle,
+        vehicle:{...vehicle,customer_name:customerName.trim()},
         selectedServices:selected.map(k=>AGGREGATES.find(x=>x[1]===k)?.[0]).filter(Boolean),
         parts, labour
       });
@@ -208,6 +224,7 @@ function EstimateScreen({mode,data,user,onBack}) {
   };
 
   const print=async()=>{
+    if(!customerName.trim()){Alert.alert('Estimate','Enter customer name before printing.');return;}
     const allParts=parts||[];
     const allLabour=labour||[];
     const t=totals(allParts,allLabour);
@@ -287,7 +304,11 @@ function EstimateScreen({mode,data,user,onBack}) {
       <View style={styles.vehicleCard}>
         <Text style={styles.cardTitle}>Vehicle</Text>
         <Text style={styles.vehicleMain}>{vehicle.registration||'-'}</Text>
-        <Text style={styles.vehicleDetail}>Customer: {vehicle.customer_name||'-'}</Text>
+        {data.missingVehicle ? <View style={styles.manualCustomerBox}>
+        <Text style={styles.manualCustomerTitle}>Customer Name</Text>
+        <TextInput value={customerName} onChangeText={setCustomerName} placeholder="Enter customer name" autoCapitalize="words" style={styles.input}/>
+        <Text style={styles.manualCustomerHint}>Vehicle number is already captured. Only customer name is required manually because this vehicle is not available in the database.</Text>
+      </View> : <Text style={styles.vehicleDetail}>Customer: {vehicle.customer_name||'-'}</Text>}
         <Text style={styles.vehicleDetail}>Model: {vehicle.model||'-'}</Text>
         <Text style={styles.vehicleDetail}>Engine: {vehicle.engine||'-'}</Text>
         <Text style={styles.vehicleDetail}>Chassis: {vehicle.vin||'-'}</Text>
@@ -437,5 +458,8 @@ const styles=StyleSheet.create({
   lookupHint:{fontSize:10,color:'#71808f',lineHeight:15,marginTop:6},
   signaturePreview:{backgroundColor:'#fff',borderRadius:10,padding:12,marginTop:14,borderWidth:1,borderColor:'#d6dde4',alignItems:'center'},
   signatureImage:{width:'100%',height:80,resizeMode:'contain',backgroundColor:'#fff'},
-  signatureSaved:{fontSize:10,color:'#2e7d32',fontWeight:'800',marginTop:5}
+  signatureSaved:{fontSize:10,color:'#2e7d32',fontWeight:'800',marginTop:5},
+  manualCustomerBox:{backgroundColor:'#fff8e8',borderWidth:1,borderColor:'#f0c36b',borderRadius:8,padding:8,marginTop:6},
+  manualCustomerTitle:{fontSize:11,fontWeight:'800',color:'#8a5a00',marginBottom:4},
+  manualCustomerHint:{fontSize:9,color:'#8a6b2e',lineHeight:13,marginTop:4}
 });

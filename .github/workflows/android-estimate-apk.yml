@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - android-estimate-beta
+    paths:
+      - "android-estimate/**"
 
 jobs:
   build-android-apk:

@@ -19,9 +19,15 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow access to select the user signature photo.",
+          "photosPermission": "Allow access to select the user signature or letterhead photo.",
           "cameraPermission": "Allow camera access to capture the user signature photo.",
           "microphonePermission": false
+        }
+      ],
+      [
+        "react-native-document-scanner-plugin",
+        {
+          "cameraPermission": "Allow camera access to scan the estimate letterhead."
         }
       ]
     ]

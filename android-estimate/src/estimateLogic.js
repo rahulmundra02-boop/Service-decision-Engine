@@ -25,6 +25,24 @@ const REFERENCE_PARTS = {
   airFilter: ['P5105688'], defFilter: ['XFM00500', 'PET00001'], apdaFilter: ['PD600968']
 };
 
+const MINIMUM_SERVICE_QUANTITY = {
+  engineOil: 12,
+  gearOil: 6,
+  steeringOil: 3,
+  clutchOil: 0.5,
+  coolant: 15,
+  hubGrease: 3
+};
+
+const MINIMUM_QUANTITY_PARTS = {
+  engineOil: ['EN699991'],
+  gearOil: ['G9999994'],
+  steeringOil: ['PSB99994'],
+  clutchOil: ['CFD99991', 'U9999995'],
+  coolant: ['C9999993'],
+  hubGrease: ['S9999997', 'F1771900']
+};
+
 const LABOUR = {
   airFilter: ['AIS110', 'R and R Air Filter And Replace Element'],
   defFilter: ['ATS455Z', 'R & R DEF tank suction filter'],
@@ -117,11 +135,19 @@ function matchesLabour(row, key) {
 
 function historicalItem(type, key, rows, partNo, globalRates) {
   if (!rows.length) return null;
-  const qty = latestQty(rows, type === 'labour' ? 1 : 0);
+
+  const orderedRows = rows
+    .filter(r => Number(r?.quantity) > 0)
+    .sort((a,b) => Number(b.quantity) - Number(a.quantity) || rank(b) - rank(a));
+
+  const selectedRow = orderedRows[0];
+  if (!selectedRow) return null;
+
+  const qty = type === 'labour' ? latestQty(rows, 1) : Number(selectedRow.quantity);
   if (!(qty > 0)) return null;
 
   const rate = bestRate(rows, type === 'part');
-  const code = normalizeCode(partNo || rows[0]?.part_code);
+  const code = normalizeCode(partNo || selectedRow?.part_code);
   let finalRate = rate;
 
   if (type === 'part' && code) {
@@ -135,7 +161,7 @@ function historicalItem(type, key, rows, partNo, globalRates) {
   return {
     id: `${type}-${key}-${code}-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,
     type, serviceKey:key, partNo:code,
-    description:String(source.part_description || source.standardized_part || PART_STANDARDIZATION[code] || '').trim(),
+    description:String(selectedRow.part_description || selectedRow.standardized_part || source.part_description || source.standardized_part || PART_STANDARDIZATION[code] || '').trim(),
     qty,
     rate:Number((type === 'part' ? finalRate * 1.18 : finalRate).toFixed(2)),
     baseRate:finalRate,
@@ -150,8 +176,21 @@ export function buildServiceItems(rows = [], modelRows = [], globalRates = [], s
 
   for (const key of selectedKeys) {
     for (const code of (REFERENCE_PARTS[key] || [])) {
-      const exactVehicle = vehicle.filter(r => category(r)==='part' && normalizeCode(r?.part_code)===code && Number(r?.quantity)>0);
-      const exactModel = model.filter(r => category(r)==='part' && normalizeCode(r?.part_code)===code && Number(r?.quantity)>0);
+      const minimumQty = (MINIMUM_QUANTITY_PARTS[key] || []).includes(code)
+        ? Number(MINIMUM_SERVICE_QUANTITY[key] || 0)
+        : 0;
+
+      const qualifies = r =>
+        category(r)==='part' &&
+        normalizeCode(r?.part_code)===code &&
+        Number(r?.quantity)>0 &&
+        Number(r?.quantity) >= minimumQty;
+
+      const exactVehicle = vehicle.filter(qualifies);
+      const exactModel = model.filter(qualifies);
+
+      // Use the vehicle's own history first. If it does not have a qualifying
+      // quantity, use history from the exact same model.
       const candidates = exactVehicle.length ? exactVehicle : exactModel;
       const item = historicalItem('part', key, candidates, code, globalRates);
       if (item) output.push(item);

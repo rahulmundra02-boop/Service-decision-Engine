@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, BackHandler, Keyboard, KeyboardAvoidingView, Platform, Pressable,
-  SafeAreaView, ScrollView, Share, StyleSheet, Text, TextInput, View, Image
+  SafeAreaView, ScrollView, Share, StatusBar, StyleSheet, Text, TextInput, View, Image
 } from 'react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -367,8 +367,8 @@ function SignatureScreen({signature,onSave,onBack}) {
     <View style={styles.rowBetween}><Text style={styles.heading}>User Signature</Text><Pressable onPress={onBack}><Text style={styles.back}>Back</Text></Pressable></View>
     <Text style={styles.lookupHint}>Upload or click a photo of the user's signature. It will be used by default in the Authorized Signatory area.</Text>
     {signature?<View style={styles.signaturePreview}><Image source={{uri:signature}} style={styles.signatureImage}/><Text style={styles.signatureSaved}>Signature saved</Text></View>:<Text style={styles.empty}>No signature saved.</Text>}
-    <Button title={busy?'Opening camera...':'Click Signature Photo'} onPress={()=>choose('camera')} disabled={busy}/>
-    <Button title="Upload Signature Photo" secondary onPress={()=>choose('gallery')} disabled={busy}/>
+    <Button title={busy?'Opening camera...':'Capture with Camera'} onPress={()=>choose('camera')} disabled={busy}/>
+    <Button title="Upload from Gallery" secondary onPress={()=>choose('gallery')} disabled={busy}/>
     {signature?<Button title="Remove Saved Signature" secondary onPress={clear}/>:null}
   </ScrollView></SafeAreaView>;
 }
@@ -422,7 +422,7 @@ export default function App(){
       <Button title="Service Estimate" onPress={()=>setMode('service')}/>
       <Button title="Repair Estimate" onPress={()=>setMode('repair')} secondary/>
     </View>
-    <Button title="User Signature" onPress={()=>setSignatureScreen(true)} secondary/>
+    <Button title="User Seal/Signature" onPress={()=>setSignatureScreen(true)} secondary/>
     <Button title="Logout" onPress={async()=>{await logout();setUser(null);}} secondary/>
   </ScrollView></SafeAreaView>;
   if(!vehicleData) return <VehicleScreen mode={mode} onVehicle={setVehicleData}/>;
@@ -430,7 +430,7 @@ export default function App(){
 }
 
 const styles=StyleSheet.create({
-  safe:{flex:1,backgroundColor:'#f3f6fb'},container:{padding:10,paddingBottom:28},
+  safe:{flex:1,backgroundColor:'#f3f6fb',paddingTop:Platform.OS==='android'?(StatusBar.currentHeight||0)+4:0},container:{padding:10,paddingBottom:28},
   loginWrap:{flex:1,justifyContent:'center',padding:14},center:{flex:1,justifyContent:'center',alignItems:'center'},
   brand:{fontSize:20,fontWeight:'800',color:'#12304a',marginBottom:4},sub:{fontSize:11,color:'#607080',marginBottom:16},
   heading:{fontSize:18,fontWeight:'800',color:'#12304a'},helper:{color:'#607080',marginBottom:12,marginTop:4,fontSize:11},

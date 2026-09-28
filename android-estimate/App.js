@@ -154,7 +154,7 @@ function VehicleScreen({mode,onVehicle}) {
   </ScrollView></SafeAreaView>;
 }
 
-function EstimateScreen({mode,data,user,onBack}) {
+function EstimateScreen({mode,data,user,onBack,savedEstimate,onSaved}) {
   const vehicle=data.vehicle||{};
   const rows=data.rows||[];
   const modelRows=data.modelRows||[];
@@ -164,8 +164,17 @@ function EstimateScreen({mode,data,user,onBack}) {
   const [labour,setLabour]=useState([]);
   const [saving,setSaving]=useState(false);
   const [rateLoadingId,setRateLoadingId]=useState(null);
-  const [estimateNo]=useState(newEstimateNo());
-  const [customerName,setCustomerName]=useState(vehicle.customer_name||'');
+  const [estimateNo,setEstimateNo]=useState(savedEstimate?.estimateNo || newEstimateNo());
+  const [customerName,setCustomerName]=useState(savedEstimate?.vehicle?.customer_name || vehicle.customer_name||'');
+  const [savedRecordId,setSavedRecordId]=useState(savedEstimate?.id || null);
+
+  React.useEffect(()=>{
+    if(savedEstimate){
+      setSelected(Array.isArray(savedEstimate.selectedServicesKeys)?savedEstimate.selectedServicesKeys:[]);
+      setParts(Array.isArray(savedEstimate.parts)?savedEstimate.parts:[]);
+      setLabour(Array.isArray(savedEstimate.labour)?savedEstimate.labour:[]);
+    }
+  },[savedEstimate?.id]);
 
   const toggleAggregate=(key)=>{
     const wasSelected=selected.includes(key);
@@ -203,28 +212,51 @@ function EstimateScreen({mode,data,user,onBack}) {
         description:x.description||result.description,
         source:result.rate?'Historical DB (Post Warranty / Paid Order, 18% GST added)':'Manual'
       }:x));
-      if(!result.rate) Alert.alert('Historical rate','No qualifying Post Warranty / Paid Order rate found for this exact part number. Enter rate manually.');
+      if(!result.rate) Alert.alert('Part rate not found','Part No. is either incorrect or not available in DMS. If the Part No. is correct, enter Description and MRP manually.');
     }catch(e){Alert.alert('Rate lookup failed',e.message);}
     finally{setRateLoadingId(null);}
   };
 
+  const incompleteLines = useMemo(()=>{
+    if(!parts.length && !labour.length) return true;
+    return [...parts,...labour].some(x =>
+      !String(x.description||'').trim() ||
+      Number(x.qty||0)<=0 ||
+      Number(x.rate||0)<=0 ||
+      (x.type==='part' && !String(x.partNo||'').trim())
+    );
+  },[parts,labour]);
+
   const save=async()=>{
     if(!vehicle.registration){Alert.alert('Estimate','Vehicle information is missing.');return;}
+    if(!customerName.trim()){Alert.alert('Estimate','Enter customer name before saving.');return;}
+    if(incompleteLines){
+      Alert.alert('Estimate incomplete','Complete every Part/Labour line. Part No., Description, Qty and Rate must be filled, and Qty/Rate must be greater than 0.');
+      return;
+    }
     setSaving(true);
     try{
-      if(!customerName.trim()){Alert.alert('Estimate','Enter customer name before saving.');return;}
-      await saveEstimate({
-        estimateNo, vehicleNo:vehicle.registration,
+      const record={
+        id:savedRecordId || "local-"+Date.now()+"-"+Math.random().toString(36).slice(2,8),
+        estimateNo,
+        vehicleNo:String(vehicle.registration||'').replace(/\s+/g,'').toUpperCase(),
         vehicle:{...vehicle,customer_name:customerName.trim()},
         selectedServices:selected.map(k=>AGGREGATES.find(x=>x[1]===k)?.[0]).filter(Boolean),
-        parts, labour
-      });
-      Alert.alert('Saved',`${estimateNo} saved successfully.`);
+        selectedServicesKeys:selected,
+        parts, labour,
+        savedAt:new Date().toISOString()
+      };
+      await onSaved(record);
+      Alert.alert('Saved',estimateNo+' saved successfully.');
     }catch(e){Alert.alert('Save failed',e.message);}finally{setSaving(false);}
   };
 
-  const print=async()=>{
+    const print=async()=>{
     if(!customerName.trim()){Alert.alert('Estimate','Enter customer name before printing.');return;}
+    if(incompleteLines){
+      Alert.alert('Estimate incomplete','Complete every Part/Labour line before printing the PDF.');
+      return;
+    }
     const allParts=parts||[];
     const allLabour=labour||[];
     const t=totals(allParts,allLabour);
@@ -340,10 +372,49 @@ function EstimateScreen({mode,data,user,onBack}) {
       </View>
 
       <View style={styles.totalCard}><View><Text style={styles.totalLabel}>Grand Total</Text><Text style={styles.totalHint}>All rates shown inclusive of GST</Text></View><Text style={styles.total}>{money(t.total)}</Text></View>
-      <Button title={saving?'Saving...':'Save Estimate'} onPress={save} disabled={saving}/>
-      <Button title="Print / Share PDF" secondary onPress={print}/>
+      {!incompleteLines && <>
+        <Button title={saving?'Saving...':'Save Estimate'} onPress={save} disabled={saving}/>
+        <Button title="Print / Share PDF" secondary onPress={print}/>
+      </>}
+      {incompleteLines && <View style={styles.incompleteBox}>
+        <Text style={styles.incompleteTitle}>Estimate output locked</Text>
+        <Text style={styles.incompleteText}>Complete every line before saving or printing. Qty and Rate must be greater than 0.</Text>
+      </View>}
+      <View style={styles.disclaimerBox}>
+        <Text style={styles.disclaimerText}>Disclaimer: This estimate is prepared from the information entered and available historical rate data. Final billing is subject to actual inspection, parts availability and applicable rates.</Text>
+      </View>
     </ScrollView>
   </KeyboardAvoidingView></SafeAreaView>;
+}
+
+function SavedEstimatesScreen({records,onOpen,onNew,onBack}) {
+  const [query,setQuery]=useState('');
+  const filtered=useMemo(()=>{
+    const q=String(query||'').trim().toLowerCase();
+    const list=[...(records||[])].sort((a,b)=>new Date(b.savedAt||0)-new Date(a.savedAt||0));
+    if(!q) return list;
+    return list.filter(x=>String(x.vehicleNo||'').toLowerCase().includes(q)||String(x.estimateNo||'').toLowerCase().includes(q));
+  },[records,query]);
+  return <SafeAreaView style={styles.safe}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.container}>
+    <View style={styles.rowBetween}>
+      <View><Text style={styles.heading}>Saved Estimates</Text><Text style={styles.muted}>Saved only on this device</Text></View>
+      <Pressable onPress={onBack}><Text style={styles.back}>Home</Text></Pressable>
+    </View>
+    <TextInput value={query} onChangeText={setQuery} placeholder="Search Vehicle No. or Estimate No." style={styles.input}/>
+    <Button title="+ New Estimate" onPress={onNew}/>
+    {!filtered.length && <Text style={styles.empty}>{query?'No matching saved estimate.':'No saved estimates yet.'}</Text>}
+    {filtered.map(item=><Pressable key={item.id} onPress={()=>onOpen(item)} style={styles.savedRow}>
+      <View style={{flex:1}}>
+        <Text style={styles.savedVehicle}>{item.vehicleNo||'-'}</Text>
+        <Text style={styles.savedEstimateNo}>{item.estimateNo||'-'}</Text>
+        <Text style={styles.savedDate}>{formatDateTime(item.savedAt)}</Text>
+      </View>
+      <Text style={styles.savedOpen}>Open</Text>
+    </Pressable>)}
+    <View style={styles.disclaimerBox}>
+      <Text style={styles.disclaimerText}>Saved estimates are stored in this mobile app on this device. They are not uploaded to the online database.</Text>
+    </View>
+  </ScrollView></SafeAreaView>;
 }
 
 function SignatureScreen({signature,onSave,onBack}) {
@@ -388,6 +459,13 @@ function SignatureScreen({signature,onSave,onBack}) {
   </ScrollView></SafeAreaView>;
 }
 
+function formatDateTime(value) {
+  if (!value) return '-';
+  const d = new Date(value);
+  if (!Number.isFinite(d.getTime())) return String(value);
+  return d.toLocaleString('en-IN',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+
 function formatDateOnly(value) {
   if (!value) return '-';
   const d = new Date(value);
@@ -408,7 +486,35 @@ export default function App(){
   const [mode,setMode]=useState(null);
   const [vehicleData,setVehicleData]=useState(null);
   const [signatureScreen,setSignatureScreen]=useState(false);
+  const [savedScreen,setSavedScreen]=useState(false);
+  const [savedEstimates,setSavedEstimates]=useState([]);
+  const [editingSaved,setEditingSaved]=useState(null);
   const [signature,setSignature]=useState('');
+
+  const savedKey = "service_estimate_saved_"+String(user?.id || user?.email || user?.personName || "default").toLowerCase();
+
+  const loadSavedEstimates=async()=>{
+    try{
+      const raw=await AsyncStorage.getItem(savedKey);
+      const list=raw?JSON.parse(raw):[];
+      setSavedEstimates(Array.isArray(list)?list:[]);
+    }catch{setSavedEstimates([]);}
+  };
+
+  const saveLocalEstimate=async(record)=>{
+    const current=[...(savedEstimates||[])];
+    const next=[record,...current.filter(x=>x.id!==record.id)];
+    next.sort((a,b)=>new Date(b.savedAt||0)-new Date(a.savedAt||0));
+    await AsyncStorage.setItem(savedKey,JSON.stringify(next));
+    setSavedEstimates(next);
+  };
+
+  const openSavedEstimate=(record)=>{
+    setEditingSaved({...record,selectedServicesKeys:Array.isArray(record.selectedServicesKeys)?record.selectedServicesKeys:[]});
+    setVehicleData({rows:[],modelRows:[],globalPartRates:[],vehicle:record.vehicle||{registration:record.vehicleNo},missingVehicle:false});
+    setMode(record.mode||"repair");
+    setSavedScreen(false);
+  };
 
   React.useEffect(()=>{
     restoreSession().then(setUser).finally(()=>setLoading(false));
@@ -416,8 +522,13 @@ export default function App(){
   },[]);
 
   React.useEffect(()=>{
+    if(user) loadSavedEstimates();
+  },[user?.id,user?.email,user?.personName]);
+
+  React.useEffect(()=>{
     const onBackPress=()=>{
       if(signatureScreen){setSignatureScreen(false);return true;}
+      if(savedScreen){setSavedScreen(false);return true;}
       if(vehicleData){setVehicleData(null);return true;}
       if(mode){setMode(null);return true;}
       return false;
@@ -429,6 +540,7 @@ export default function App(){
   if(loading) return <SafeAreaView style={styles.safe}><View style={styles.center}><ActivityIndicator size="large"/><Text style={styles.muted}>Loading...</Text></View></SafeAreaView>;
   if(!user) return <LoginScreen onLogin={setUser}/>;
   if(signatureScreen) return <SignatureScreen signature={signature} onSave={setSignature} onBack={()=>setSignatureScreen(false)}/>;
+  if(savedScreen) return <SavedEstimatesScreen records={savedEstimates} onOpen={openSavedEstimate} onNew={()=>{setEditingSaved(null);setVehicleData(null);setMode('repair');setSavedScreen(false);}} onBack={()=>setSavedScreen(false)}/>;
   if(!mode) return <SafeAreaView style={styles.safe}><ScrollView contentContainerStyle={styles.container}>
     <Text style={styles.brand}>SERVICE ESTIMATE</Text><Text style={styles.sub}>Welcome {user.personName||''}</Text>
     <View style={styles.modeCard}>
@@ -437,11 +549,12 @@ export default function App(){
       <Button title="Service Estimate" onPress={()=>setMode('service')}/>
       <Button title="Repair Estimate" onPress={()=>setMode('repair')} secondary/>
     </View>
+    <Button title="Saved Estimates" onPress={()=>{loadSavedEstimates();setSavedScreen(true);}} secondary/>
     <Button title="User Seal/Signature" onPress={()=>setSignatureScreen(true)} secondary/>
     <Button title="Logout" onPress={async()=>{await logout();setUser(null);}} secondary/>
   </ScrollView></SafeAreaView>;
-  if(!vehicleData) return <VehicleScreen mode={mode} onVehicle={setVehicleData}/>;
-  return <EstimateScreen mode={mode} data={vehicleData} user={user} onBack={()=>{setVehicleData(null);}}/>;
+  if(!vehicleData) return <VehicleScreen mode={mode} onVehicle={data=>{setEditingSaved(null);setVehicleData(data);}}/>;
+  return <EstimateScreen mode={mode} data={vehicleData} user={user} savedEstimate={editingSaved} onSaved={async record=>{await saveLocalEstimate({...record,mode});setEditingSaved(null);}} onBack={()=>{setEditingSaved(null);setVehicleData(null);}}/>;
 }
 
 const styles=StyleSheet.create({
@@ -476,5 +589,15 @@ const styles=StyleSheet.create({
   signatureSaved:{fontSize:10,color:'#2e7d32',fontWeight:'800',marginTop:5},
   manualCustomerBox:{backgroundColor:'#fff8e8',borderWidth:1,borderColor:'#f0c36b',borderRadius:8,padding:8,marginTop:6},
   manualCustomerTitle:{fontSize:11,fontWeight:'800',color:'#8a5a00',marginBottom:4},
-  manualCustomerHint:{fontSize:9,color:'#8a6b2e',lineHeight:13,marginTop:4}
+  manualCustomerHint:{fontSize:9,color:'#8a6b2e',lineHeight:13,marginTop:4},
+  incompleteBox:{backgroundColor:'#fff4e5',borderWidth:1,borderColor:'#f0b45b',borderRadius:8,padding:10,marginTop:10},
+  incompleteTitle:{fontSize:12,fontWeight:'900',color:'#9a5b00'},
+  incompleteText:{fontSize:10,color:'#795548',lineHeight:14,marginTop:3},
+  disclaimerBox:{borderTopWidth:1,borderTopColor:'#d6dde4',paddingTop:8,marginTop:14},
+  disclaimerText:{fontSize:9,color:'#71808f',lineHeight:13,textAlign:'center'},
+  savedRow:{backgroundColor:'#fff',borderWidth:1,borderColor:'#d6dde4',borderRadius:9,padding:11,marginTop:8,flexDirection:'row',alignItems:'center'},
+  savedVehicle:{fontSize:14,fontWeight:'900',color:'#12304a'},
+  savedEstimateNo:{fontSize:11,fontWeight:'700',color:'#425466',marginTop:2},
+  savedDate:{fontSize:9,color:'#71808f',marginTop:3},
+  savedOpen:{fontSize:11,fontWeight:'900',color:'#1976d2',marginLeft:8}
 });

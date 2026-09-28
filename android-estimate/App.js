@@ -44,7 +44,7 @@ function Field({label,value,onChangeText,placeholder,keyboardType='default',onBl
   </View>;
 }
 
-function ItemCard({item,onChange,onDelete,onRateLookup,rateLoading=false,autoFocusPart=false,autoFocusLabour=false,scrollRef,scrollYRef,onPartNoSubmit}) {
+function ItemCard({item,onChange,onDelete,onRateLookup,rateLoading=false,autoFocusPart=false,autoFocusLabour=false,scrollRef,scrollYRef,keyboardTopRef,onPartNoSubmit}) {
   const set=(k,v)=>onChange({...item,[k]:v});
   const isAutomatic=Boolean(item.serviceKey);
   const partNoRef=useRef(null);
@@ -53,16 +53,32 @@ function ItemCard({item,onChange,onDelete,onRateLookup,rateLoading=false,autoFoc
   const rateRef=useRef(null);
 
   const ensureVisible=(inputRef)=>{
+    const measureAndScroll=(keyboardTop)=>{
+      if(!keyboardTop) return;
+      inputRef.current?.measure((_x,_y,_w,h,_pageX,pageY)=>{
+        const currentScroll=Number(scrollYRef?.current || 0);
+        const target=currentScroll + pageY + h - keyboardTop + 28;
+        if(target>currentScroll) scrollRef?.current?.scrollTo({y:target,animated:true});
+      });
+    };
+
     setTimeout(()=>{
+      if(keyboardTopRef?.current){
+        measureAndScroll(keyboardTopRef.current);
+        return;
+      }
+
       const keyboardListener=Keyboard.addListener('keyboardDidShow',event=>{
-        inputRef.current?.measure((_x,_y,_w,h,_pageX,pageY)=>{
-          const keyboardTop=event.endCoordinates?.screenY || 0;
-          const currentScroll=Number(scrollYRef?.current || 0);
-          const target=currentScroll + pageY + h - keyboardTop + 28;
-          if(target>currentScroll) scrollRef?.current?.scrollTo({y:target,animated:true});
-        });
+        measureAndScroll(event.endCoordinates?.screenY || 0);
         keyboardListener.remove();
       });
+
+      setTimeout(()=>{
+        if(keyboardTopRef?.current){
+          measureAndScroll(keyboardTopRef.current);
+          keyboardListener.remove();
+        }
+      },350);
     },60);
   };
 
@@ -236,6 +252,17 @@ function EstimateScreen({mode,data,user,onBack,savedEstimate,onSaved}) {
   const vehicle=data.vehicle||{};
   const scrollRef=useRef(null);
   const scrollYRef=useRef(0);
+  const keyboardTopRef=useRef(null);
+
+  useEffect(()=>{
+    const show=Keyboard.addListener('keyboardDidShow',event=>{
+      keyboardTopRef.current=event.endCoordinates?.screenY || null;
+    });
+    const hide=Keyboard.addListener('keyboardDidHide',()=>{
+      keyboardTopRef.current=null;
+    });
+    return ()=>{show.remove();hide.remove();};
+  },[]);
   const rows=data.rows||[];
   const modelRows=data.modelRows||[];
   const globalRates=data.globalPartRates||[];
@@ -499,6 +526,7 @@ function EstimateScreen({mode,data,user,onBack,savedEstimate,onSaved}) {
           autoFocusPart={focusPartId===item.id}
           scrollRef={scrollRef}
           scrollYRef={scrollYRef}
+          keyboardTopRef={keyboardTopRef}
           onPartNoSubmit={validatePartNo}
         />)}
         {!parts.length&&<Text style={styles.empty}>No parts added.</Text>}
@@ -515,6 +543,7 @@ function EstimateScreen({mode,data,user,onBack,savedEstimate,onSaved}) {
           autoFocusLabour={focusLabourId===item.id}
           scrollRef={scrollRef}
           scrollYRef={scrollYRef}
+          keyboardTopRef={keyboardTopRef}
         />)}
         {!labour.length&&<Text style={styles.empty}>No labour added.</Text>}
       </View>

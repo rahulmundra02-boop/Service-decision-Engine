@@ -7,9 +7,11 @@
     "userInterfaceStyle": "light",
     "android": {
       "package": "com.rahulmundra.serviceestimate",
-      "versionCode": 11,
+      "versionCode": 12,
       "softwareKeyboardLayoutMode": "resize",
       "permissions": [
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
         "REQUEST_INSTALL_PACKAGES"
       ]
     },

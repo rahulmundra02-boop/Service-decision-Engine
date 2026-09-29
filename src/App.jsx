@@ -4384,6 +4384,7 @@ function ServiceDecisionApp({ user }) {
   const [estimateSavedId, setEstimateSavedId] = useState(null);
   const [savedEstimates, setSavedEstimates] = useState([]);
   const [savedEstimatesLoading, setSavedEstimatesLoading] = useState(false);
+  const [savedEstimateSearch, setSavedEstimateSearch] = useState("");
   const [estimateSaveBusy, setEstimateSaveBusy] = useState(false);
   const [bulkSearch, setBulkSearch] = useState("");
   const [bulkQuickFilter, setBulkQuickFilter] = useState("all");
@@ -5445,6 +5446,13 @@ function ServiceDecisionApp({ user }) {
   useEffect(() => {
     if (user?.id) void loadSavedEstimates();
   }, [user?.id]);
+
+  const filteredSavedEstimates = useMemo(() => {
+    const query = String(savedEstimateSearch || "").trim().toLowerCase();
+    const list = [...savedEstimates].sort((a,b) => new Date(b.saved_at || b.updated_at || 0).getTime() - new Date(a.saved_at || a.updated_at || 0).getTime());
+    if (!query) return list;
+    return list.filter(item => [item.vehicle_no, item.estimate_no].some(value => String(value || "").toLowerCase().includes(query)));
+  }, [savedEstimates, savedEstimateSearch]);
 
   async function lookupEstimateVehicle() {
     const registration=String(estimateVehicleNo||"").replace(/\s+/g,"").trim().toUpperCase();

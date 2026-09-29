@@ -525,6 +525,7 @@ function EstimateScreen({mode,data,user,onBack,savedEstimate,onSaved}) {
     const esc=v=>String(v??'-').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const dealerName=String(user?.dealer_name||user?.dealerName||vehicle?.dealer_name||vehicle?.dealerName||'').trim();
     const signature=await AsyncStorage.getItem('estimate_user_signature');
+    const signatureSvg=await AsyncStorage.getItem('estimate_user_signature_svg');
     const letterhead=await AsyncStorage.getItem('estimate_letterhead');
     const partRows=allParts.map(x=>`<tr><td>${esc(x.partNo||'-')}</td><td>${esc(x.description||'-')}</td><td class="center">${esc(x.qty||0)}</td><td class="right">${moneyPdf(x.rate)}</td><td class="right">${moneyPdf((Number(x.qty)||0)*(Number(x.rate)||0))}</td></tr>`).join('');
     const labourRows=allLabour.map(x=>`<tr><td colspan="2">${esc(x.description||'-')}</td><td class="center">${esc(x.qty||0)}</td><td class="right">${moneyPdf(x.rate)}</td><td class="right">${moneyPdf((Number(x.qty)||0)*(Number(x.rate)||0))}</td></tr>`).join('');
@@ -544,7 +545,7 @@ function EstimateScreen({mode,data,user,onBack,savedEstimate,onSaved}) {
         </tr></table>`;
     const partsBlock=allParts.length?`<div class="section partsHead">Parts</div><table class="items"><thead><tr><th style="width:14%">Part No.</th><th style="width:39%">Description</th><th style="width:9%">Qty</th><th style="width:19%">Rate<br/>(Incl. GST)</th><th style="width:19%">Amount</th></tr></thead><tbody>${partRows}</tbody></table>`:'';
     const labourBlock=allLabour.length?`<div class="section labourHead">Labour</div><table class="items"><thead><tr><th colspan="2" style="width:58%">Description</th><th style="width:9%">Qty</th><th style="width:19%">Rate<br/>(Excl. GST)</th><th style="width:14%">Amount</th></tr></thead><tbody>${labourRows}</tbody></table>`:'';
-    const signatureBlock=signature?`<div class="sign"><img src="${signature}" /><div>Authorized Signatory</div></div>`:'<div class="sign"><div>Authorized Signatory</div></div>';
+    const signatureBlock=signatureSvg ? `<div class="sign"><div class="signatureSvg">${signatureSvg}</div><div>Authorized Signatory</div></div>` :`<div class="sign"><img src="${signature}" /><div>Authorized Signatory</div></div>`:'<div class="sign"><div>Authorized Signatory</div></div>';
     const html=`<html><head><style>
       @page{size:A4;margin:0}
       body{font-family:Arial,Helvetica,sans-serif;color:#17212b;margin:0;font-size:10px}
@@ -569,8 +570,9 @@ function EstimateScreen({mode,data,user,onBack,savedEstimate,onSaved}) {
       .total{width:45%;margin-left:auto;margin-top:8px}
       .total td{padding:5px}.total td:last-child{white-space:nowrap}
       .grand td{font-weight:900;font-size:15px;background:#eaf7ef}
-      .sign{margin-top:20px;width:34%;margin-left:auto;text-align:center;min-height:45px}
-      .sign img{max-width:120px;max-height:45px;display:block;margin:0 auto 3px}
+      .sign{margin-top:20px;width:34%;margin-left:auto;text-align:center;min-height:55px}
+      .signatureSvg{width:120px;height:45px;margin:0 auto 3px;display:flex;align-items:center;justify-content:center}
+      .signatureSvg svg{width:120px;height:45px;display:block}
       .disclaimer{margin-top:16px;padding:7px;border-top:1px solid #cbd5e1;font-size:8px;color:#64748b;text-align:center}
     </style></head><body>
       ${letterhead?`<div class="letterheadBg"><img src="${esc(letterhead)}" /></div>`:''}
@@ -715,6 +717,8 @@ function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) 
   const [strokeWidth,setStrokeWidth]=useState(2.5);
   const [fullScreen,setFullScreen]=useState(false);
   const [padSize,setPadSize]=useState({width:1,height:1});
+  const padSizeRef=useRef({width:1,height:1});
+  const strokeWidthRef=useRef(2.5);
   const currentStrokeRef=useRef([]);
 
   React.useEffect(()=>{
@@ -728,9 +732,10 @@ function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) 
   },[onBack,fullScreen]);
 
   const startStroke=(e)=>{
+    const size=padSizeRef.current;
     const p={
-      x:Math.max(0,Math.min(padSize.width,e.nativeEvent.locationX)),
-      y:Math.max(0,Math.min(padSize.height,e.nativeEvent.locationY))
+      x:Math.max(0,Math.min(size.width,e.nativeEvent.locationX)),
+      y:Math.max(0,Math.min(size.height,e.nativeEvent.locationY))
     };
     currentStrokeRef.current=[p];
     setStrokes(prev=>[...prev,[p]]);
@@ -738,9 +743,10 @@ function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) 
   };
 
   const moveStroke=(e)=>{
+    const size=padSizeRef.current;
     const p={
-      x:Math.max(0,Math.min(padSize.width,e.nativeEvent.locationX)),
-      y:Math.max(0,Math.min(padSize.height,e.nativeEvent.locationY))
+      x:Math.max(0,Math.min(size.width,e.nativeEvent.locationX)),
+      y:Math.max(0,Math.min(size.height,e.nativeEvent.locationY))
     };
     setStrokes(prev=>{
       if(!prev.length) return prev;
@@ -768,8 +774,8 @@ function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) 
     }
     setBusy(true);
     try{
-      const sourceWidth=Math.max(1,padSize.width);
-      const sourceHeight=Math.max(1,padSize.height);
+      const sourceWidth=Math.max(1,padSizeRef.current.width);
+      const sourceHeight=Math.max(1,padSizeRef.current.height);
       const svgWidth=1200;
       const svgHeight=Math.max(420,Math.round(svgWidth*(sourceHeight/sourceWidth)));
       const scaleX=svgWidth/sourceWidth;
@@ -778,11 +784,12 @@ function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) 
         .filter(stroke=>stroke.length>1)
         .map(stroke=>{
           const points=stroke.map(p=>`${Math.max(0,Math.min(svgWidth,p.x*scaleX))},${Math.max(0,Math.min(svgHeight,p.y*scaleY))}`).join(' ');
-          return `<polyline points="${points}" fill="none" stroke="#1456c0" stroke-width="${Math.max(3,strokeWidth*3)}" stroke-linecap="round" stroke-linejoin="round"/>`;
+          return `<polyline points="${points}" fill="none" stroke="#1456c0" stroke-width="${Math.max(3,strokeWidthRef.current*3)}" stroke-linecap="round" stroke-linejoin="round"/>`;
         }).join('');
       const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}" preserveAspectRatio="xMidYMid meet"><g>${paths}</g></svg>`;
       const signatureUri='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
       await AsyncStorage.setItem('estimate_user_signature',signatureUri);
+      await AsyncStorage.setItem('estimate_user_signature_svg',svg);
       onSave(signatureUri);
       setFullScreen(false);
       Alert.alert('Saved','Signature saved. Only the blue drawn strokes will appear on the estimate.');
@@ -795,9 +802,12 @@ function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) 
 
   const clearSignature=async()=>{
     await AsyncStorage.removeItem('estimate_user_signature');
+    await AsyncStorage.removeItem('estimate_user_signature_svg');
     onSave('');
     clearCanvas();
   };
+
+  React.useEffect(()=>{ strokeWidthRef.current=strokeWidth; },[strokeWidth]);
 
   const lineFor=(a,b,index)=>{
     if(!a||!b) return null;
@@ -822,7 +832,11 @@ function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) 
   const drawBoard=(large=false)=><View
     onLayout={e=>{
       const {width,height}=e.nativeEvent.layout;
-      if(width>0&&height>0) setPadSize({width,height});
+      if(width>0&&height>0){
+        const next={width,height};
+        padSizeRef.current=next;
+        setPadSize(next);
+      }
     }}
     style={[styles.signaturePad,large&&styles.signaturePadFull]}
     {...panResponder.panHandlers}
@@ -902,7 +916,7 @@ function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) 
     <Pressable onPress={()=>setFullScreen(true)} style={styles.signaturePreview}>
       <Text style={styles.cardTitle}>User Signature</Text>
       <View style={styles.signatureTapBox}>
-        {signature?<Image source={{uri:signature}} style={styles.signatureImage}/>:<Text style={styles.signatureTapText}>Tap here to sign</Text>}
+        {signature?<View style={styles.savedSignatureMark}><Text style={styles.savedSignatureStroke}>Signature saved ✓</Text></View>:<Text style={styles.signatureTapText}>Tap here to sign</Text>}
       </View>
       <Text style={styles.signaturePadStatus}>Tap to open full-screen signing • Pen: {strokeWidth.toFixed(1)}</Text>
     </Pressable>

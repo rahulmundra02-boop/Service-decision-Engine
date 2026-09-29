@@ -2,6 +2,11 @@ name: Android Estimate APK
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - android-estimate-beta
+    paths:
+      - "android-estimate/app.json"
 
 permissions:
   contents: write
@@ -31,25 +36,6 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-
-      - name: Auto increment Android version code
-        run: |
-          node - <<'NODE'
-          const fs = require('fs');
-          const path = 'app.json';
-          const config = JSON.parse(fs.readFileSync(path, 'utf8'));
-          const current = Number(config.expo?.android?.versionCode || 0);
-          if (!current) throw new Error('android.versionCode is missing in app.json');
-          config.expo.android.versionCode = current + 1;
-          fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
-          console.log('Android versionCode:', config.expo.android.versionCode);
-          NODE
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app.json
-          git commit -m "Auto increment Android version code"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
 
       - name: Read release version
         id: release_version

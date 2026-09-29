@@ -697,67 +697,132 @@ function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) 
   const [strokes,setStrokes]=useState([]);
   const [drawing,setDrawing]=useState(false);
   const [strokeWidth,setStrokeWidth]=useState(2.5);
+  const [fullScreen,setFullScreen]=useState(false);
+  const [padSize,setPadSize]=useState({width:1,height:1});
   const currentStrokeRef=useRef([]);
 
   React.useEffect(()=>{
-    const handleBack=()=>{onBack();return true;};
+    const handleBack=()=>{
+      if(fullScreen){setFullScreen(false);return true;}
+      onBack();
+      return true;
+    };
     const subscription=BackHandler.addEventListener('hardwareBackPress',handleBack);
     return ()=>subscription.remove();
-  },[onBack]);
+  },[onBack,fullScreen]);
 
-  const panResponder=useRef(PanResponder.create({
-    onStartShouldSetPanResponder:()=>true,
-    onMoveShouldSetPanResponder:()=>true,
-    onPanResponderGrant:e=>{
-      const p={x:e.nativeEvent.locationX,y:e.nativeEvent.locationY};
-      currentStrokeRef.current=[p];
-      setStrokes(prev=>[...prev,currentStrokeRef.current]);
-      setDrawing(true);
-    },
-    onPanResponderMove:e=>{
-      const p={x:e.nativeEvent.locationX,y:e.nativeEvent.locationY};
-      currentStrokeRef.current=[...currentStrokeRef.current,p];
-      setStrokes(prev=>{const next=[...prev];next[next.length-1]=currentStrokeRef.current;return next;});
-    },
-    onPanResponderRelease:()=>{currentStrokeRef.current=[];setDrawing(false);},
-    onPanResponderTerminate:()=>{currentStrokeRef.current=[];setDrawing(false);}
-  })).current;
+  const startStroke=(e)=>{
+    const p={
+      x:Math.max(0,Math.min(padSize.width,e.nativeEvent.locationX)),
+      y:Math.max(0,Math.min(padSize.height,e.nativeEvent.locationY))
+    };
+    currentStrokeRef.current=[p];
+    setStrokes(prev=>[...prev,[p]]);
+    setDrawing(true);
+  };
+
+  const moveStroke=(e)=>{
+    const p={
+      x:Math.max(0,Math.min(padSize.width,e.nativeEvent.locationX)),
+      y:Math.max(0,Math.min(padSize.height,e.nativeEvent.locationY))
+    };
+    setStrokes(prev=>{
+      if(!prev.length) return prev;
+      const next=prev.map((stroke,index)=>index===prev.length-1?[...stroke,p]:stroke);
+      currentStrokeRef.current=next[next.length-1];
+      return next;
+    });
+  };
+
+  const finishStroke=()=>{
+    currentStrokeRef.current=[];
+    setDrawing(false);
+  };
+
+  const clearCanvas=()=>{
+    setStrokes([]);
+    currentStrokeRef.current=[];
+    setDrawing(false);
+  };
 
   const saveSignature=async()=>{
     if(!strokes.length || !strokes.some(stroke=>stroke.length>1)){
-      Alert.alert('Signature','Please sign inside the white box first.');
+      Alert.alert('Signature','Please sign inside the white board first.');
       return;
     }
     setBusy(true);
     try{
-      const width=700;
-      const height=220;
+      const sourceWidth=Math.max(1,padSize.width);
+      const sourceHeight=Math.max(1,padSize.height);
+      const svgWidth=1200;
+      const svgHeight=Math.max(420,Math.round(svgWidth*(sourceHeight/sourceWidth)));
+      const scaleX=svgWidth/sourceWidth;
+      const scaleY=svgHeight/sourceHeight;
       const paths=strokes
         .filter(stroke=>stroke.length>1)
         .map(stroke=>{
-          const points=stroke.map(p=>`${Math.max(0,Math.min(width,p.x*2.5))},${Math.max(0,Math.min(height,p.y*1.45))}`).join(' ');
-          return `<polyline points="${points}" fill="none" stroke="#1456c0" stroke-width="${strokeWidth*2.5}" stroke-linecap="round" stroke-linejoin="round"/>`;
+          const points=stroke.map(p=>`${Math.max(0,Math.min(svgWidth,p.x*scaleX))},${Math.max(0,Math.min(svgHeight,p.y*scaleY))}`).join(' ');
+          return `<polyline points="${points}" fill="none" stroke="#1456c0" stroke-width="${Math.max(3,strokeWidth*3)}" stroke-linecap="round" stroke-linejoin="round"/>`;
         }).join('');
-      const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><g>${paths}</g></svg>`;
+      const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}" preserveAspectRatio="xMidYMid meet"><g>${paths}</g></svg>`;
       const signatureUri='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
       await AsyncStorage.setItem('estimate_user_signature',signatureUri);
       onSave(signatureUri);
-      Alert.alert('Saved','Signature saved. Only the blue drawn signature will appear on the estimate.');
-    }catch(e){Alert.alert('Signature',e.message||'Could not save signature.');}
-    finally{setBusy(false);}
+      setFullScreen(false);
+      Alert.alert('Saved','Signature saved. Only the blue drawn strokes will appear on the estimate.');
+    }catch(e){
+      Alert.alert('Signature',e.message||'Could not save signature.');
+    }finally{
+      setBusy(false);
+    }
   };
 
-  const clearCanvas=()=>{setStrokes([]);currentStrokeRef.current=[];};
-  const clearSignature=async()=>{await AsyncStorage.removeItem('estimate_user_signature');onSave('');clearCanvas();};
+  const clearSignature=async()=>{
+    await AsyncStorage.removeItem('estimate_user_signature');
+    onSave('');
+    clearCanvas();
+  };
 
   const lineFor=(a,b,index)=>{
     if(!a||!b) return null;
     const dx=b.x-a.x,dy=b.y-a.y;
     const length=Math.sqrt(dx*dx+dy*dy);
-    if(length<1) return null;
+    if(length<0.5) return null;
     const angle=Math.atan2(dy,dx)*180/Math.PI;
-    return <View key={index} style={[styles.signatureStroke,{left:a.x,top:a.y-(strokeWidth/2),width:length,height:strokeWidth,backgroundColor:'#1456c0',borderRadius:strokeWidth/2,transform:[{rotate:angle+'deg'}]}]}/>
+    return <View key={index} style={[
+      styles.signatureStroke,
+      {
+        left:a.x,
+        top:a.y-(strokeWidth/2),
+        width:length,
+        height:strokeWidth,
+        backgroundColor:'#1456c0',
+        borderRadius:strokeWidth/2,
+        transform:[{rotate:angle+'deg'}]
+      }
+    ]}/>;
   };
+
+  const drawBoard=(large=false)=><View
+    onLayout={e=>{
+      const {width,height}=e.nativeEvent.layout;
+      if(width>0&&height>0) setPadSize({width,height});
+    }}
+    style={[styles.signaturePad,large&&styles.signaturePadFull]}
+    {...panResponder.panHandlers}
+  >
+    {strokes.map((stroke,si)=>stroke.map((point,pi)=>lineFor(point,stroke[pi+1],si+'-'+pi)))}
+    {!strokes.length && <Text style={styles.signaturePadHint}>Sign here with your finger</Text>}
+  </View>;
+
+  const panResponder=useRef(PanResponder.create({
+    onStartShouldSetPanResponder:()=>true,
+    onMoveShouldSetPanResponder:()=>true,
+    onPanResponderGrant:startStroke,
+    onPanResponderMove:moveStroke,
+    onPanResponderRelease:finishStroke,
+    onPanResponderTerminate:finishStroke
+  })).current;
 
   const scanLetterhead=async()=>{
     setBusy(true);
@@ -797,23 +862,35 @@ function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) 
     }catch(e){Alert.alert('Letter Head',e.message);}finally{setBusy(false);}
   };
 
+  if(fullScreen) return <SafeAreaView style={styles.signatureFullScreen}>
+    <View style={styles.signatureFullHeader}>
+      <Pressable onPress={()=>setFullScreen(false)} disabled={busy}><Text style={styles.signatureFullBack}>Cancel</Text></Pressable>
+      <Text style={styles.signatureFullTitle}>Sign Here</Text>
+      <Pressable onPress={saveSignature} disabled={busy}><Text style={styles.signatureFullSave}>{busy?'Saving...':'Save'}</Text></Pressable>
+    </View>
+    <View style={styles.signatureFullControls}>
+      <Text style={styles.signatureFullLabel}>Pen thickness</Text>
+      {[1.5,2.5,4,6].map(w=><Pressable key={w} onPress={()=>setStrokeWidth(w)} style={[styles.strokeButton,strokeWidth===w&&styles.strokeButtonSelected]}><Text style={[styles.strokeButtonText,strokeWidth===w&&styles.strokeButtonTextSelected]}>{w}</Text></Pressable>)}
+      <Pressable onPress={clearCanvas} style={styles.signatureClearSmall}><Text style={styles.signatureClearSmallText}>Clear</Text></Pressable>
+    </View>
+    <View style={styles.signatureFullPadWrap}>
+      {drawBoard(true)}
+    </View>
+    <Text style={styles.signatureFullHint}>{drawing?'Drawing...':'Draw your signature anywhere inside the white board'}</Text>
+  </SafeAreaView>;
+
   return <SafeAreaView style={styles.safe}><ScrollView contentContainerStyle={styles.container}>
     <Text style={styles.heading}>Sign and Letter Head</Text>
-    <Text style={styles.lookupHint}>Sign directly on the white board with your finger. Camera/gallery signature upload is not used. The saved signature will appear on the estimate PDF.</Text>
+    <Text style={styles.lookupHint}>Tap the signature box to open a full-screen white board. Only blue signature strokes are saved, not the white background.</Text>
 
-    <View style={styles.signaturePreview}>
+    <Pressable onPress={()=>setFullScreen(true)} style={styles.signaturePreview}>
       <Text style={styles.cardTitle}>User Signature</Text>
-      <Text style={styles.signaturePadStatus}>Pen thickness: {strokeWidth.toFixed(1)}</Text>
-      <View style={styles.strokeControls}>{[1.5,2.5,4,6].map(w=><Pressable key={w} onPress={()=>setStrokeWidth(w)} style={[styles.strokeButton,strokeWidth===w&&styles.strokeButtonSelected]}><Text style={[styles.strokeButtonText,strokeWidth===w&&styles.strokeButtonTextSelected]}>{w}</Text></Pressable>)}</View>
-      <View style={styles.signaturePad} {...panResponder.panHandlers}>
-        {strokes.map((stroke,si)=>stroke.map((point,pi)=>lineFor(point,stroke[pi+1],si+'-'+pi)))}
-        {!strokes.length && <Text style={styles.signaturePadHint}>Sign here with your finger</Text>}
+      <View style={styles.signatureTapBox}>
+        {signature?<Image source={{uri:signature}} style={styles.signatureImage}/>:<Text style={styles.signatureTapText}>Tap here to sign</Text>}
       </View>
-      <Text style={styles.signaturePadStatus}>{drawing?'Drawing...':'Use the white board above'}</Text>
-      {signature?<Text style={styles.signatureSaved}>Signature saved</Text>:null}
-    </View>
-    <Button title={busy?'Saving...':'Save Signature'} onPress={saveSignature} disabled={busy}/>
-    <Button title="Clear Signature Pad" secondary onPress={clearCanvas} disabled={busy}/>
+      <Text style={styles.signaturePadStatus}>Tap to open full-screen signing • Pen: {strokeWidth.toFixed(1)}</Text>
+    </Pressable>
+
     {signature?<Button title="Remove Saved Signature" secondary onPress={clearSignature}/>:null}
 
     <View style={styles.signaturePreview}>
@@ -826,7 +903,6 @@ function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) 
     {letterhead?<Button title="Remove Saved Letter Head" secondary onPress={async()=>{await AsyncStorage.removeItem('estimate_letterhead');onLetterheadSave('');}}/>:null}
   </ScrollView></SafeAreaView>;
 }
-
 function formatDateTime(value) {
   if (!value) return '-';
   const d = new Date(value);
@@ -1027,6 +1103,20 @@ const styles=StyleSheet.create({
   letterheadPreview:{width:'100%',height:180,resizeMode:'contain',backgroundColor:'#fff'},
   signatureSaved:{fontSize:10,color:'#2e7d32',fontWeight:'800',marginTop:5},
   signaturePad:{width:'100%',height:150,backgroundColor:'#fff',borderWidth:1,borderColor:'#8d99a6',borderRadius:8,overflow:'hidden',position:'relative'},
+  signaturePadFull:{height:'100%',borderWidth:2,borderColor:'#65798b',borderRadius:4},
+  signatureTapBox:{width:'100%',height:90,borderWidth:1,borderColor:'#d0d8df',borderRadius:8,backgroundColor:'#fff',justifyContent:'center',alignItems:'center',overflow:'hidden'},
+  signatureTapText:{fontSize:14,fontWeight:'800',color:'#8a969f'},
+  signatureFullScreen:{flex:1,backgroundColor:'#e9eef3',paddingTop:Platform.OS==='android'?(StatusBar.currentHeight||0):0},
+  signatureFullHeader:{height:58,backgroundColor:'#12304a',flexDirection:'row',alignItems:'center',justifyContent:'space-between',paddingHorizontal:16},
+  signatureFullBack:{color:'#fff',fontSize:14,fontWeight:'800'},
+  signatureFullTitle:{color:'#fff',fontSize:17,fontWeight:'900'},
+  signatureFullSave:{color:'#fff',fontSize:14,fontWeight:'900'},
+  signatureFullControls:{backgroundColor:'#fff',padding:8,flexDirection:'row',alignItems:'center',gap:6},
+  signatureFullLabel:{fontSize:10,fontWeight:'800',color:'#425466',marginRight:2},
+  signatureClearSmall:{paddingHorizontal:10,paddingVertical:6,borderWidth:1,borderColor:'#b3261e',borderRadius:7,marginLeft:'auto'},
+  signatureClearSmallText:{fontSize:10,fontWeight:'800',color:'#b3261e'},
+  signatureFullPadWrap:{flex:1,padding:10},
+  signatureFullHint:{fontSize:10,color:'#607080',textAlign:'center',paddingVertical:7},
   strokeControls:{flexDirection:'row',gap:7,marginBottom:7,alignItems:'center'},
   strokeButton:{paddingHorizontal:12,paddingVertical:6,borderRadius:7,borderWidth:1,borderColor:'#c7d0da',backgroundColor:'#fff'},
   strokeButtonSelected:{borderColor:'#1456c0',backgroundColor:'#eaf1ff'},

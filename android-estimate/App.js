@@ -224,7 +224,7 @@ function LoginScreen({onLogin}) {
   const submit=async()=>{
     if(!identifier.trim()||!password){Alert.alert('Login','Enter email/mobile and password.');return;}
     setBusy(true);
-    try{const data=await login(identifier,password);onLogin(data.user);}catch(e){Alert.alert('Login failed',e.message);}finally{setBusy(false);}
+    try{const data=await login(identifier,password,true);onLogin(data.user);}catch(e){Alert.alert('Login failed',e.message);}finally{setBusy(false);}
   };
 
   const biometricLogin=async()=>{

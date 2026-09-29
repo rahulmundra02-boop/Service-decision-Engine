@@ -10,6 +10,7 @@ import * as IntentLauncher from 'expo-intent-launcher';
 import * as Sharing from 'expo-sharing';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as ImagePicker from 'expo-image-picker';
+import { Image as ExpoImage } from 'expo-image';
 import DocumentScanner from 'react-native-document-scanner-plugin';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { restoreSession, login, logout, getSecureSessionToken, getVehicleByRegistration, getPartRate } from './src/api';
@@ -916,7 +917,7 @@ function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) 
     <Pressable onPress={()=>setFullScreen(true)} style={styles.signaturePreview}>
       <Text style={styles.cardTitle}>User Signature</Text>
       <View style={styles.signatureTapBox}>
-        {signature?<View style={styles.savedSignatureMark}><Text style={styles.savedSignatureStroke}>Signature saved ✓</Text></View>:<Text style={styles.signatureTapText}>Tap here to sign</Text>}
+        {signature?<ExpoImage source={signature} style={styles.signatureImage} contentFit="contain"/>:<Text style={styles.signatureTapText}>Tap here to sign</Text>}
       </View>
       <Text style={styles.signaturePadStatus}>Tap to open full-screen signing • Pen: {strokeWidth.toFixed(1)}</Text>
     </Pressable>

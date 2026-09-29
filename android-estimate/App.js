@@ -274,6 +274,7 @@ function UpdateScreen({update,onLater}) {
       const safeVersion=String(update.version||'latest').replace(/[^a-zA-Z0-9._-]/g,'_');
       const safeBuild=String(update.build||'').replace(/[^0-9]/g,'');
       const fileUri=`${FileSystem.cacheDirectory}AL-Service-Estimate-${safeVersion}-build-${safeBuild}.apk`;
+      await FileSystem.deleteAsync(fileUri,{idempotent:true});
       const result=await FileSystem.downloadAsync(update.downloadUrl,fileUri);
       const contentUri=await FileSystem.getContentUriAsync(result.uri);
       await IntentLauncher.startActivityAsync('android.intent.action.VIEW',{
@@ -898,27 +899,16 @@ export default function App(){
       try{
         if(Platform.OS!=='android') return;
         const currentBuild=Number(Application.nativeBuildVersion||0);
-        const response=await fetch('https://api.github.com/repos/rahulmundra02-boop/Service-decision-Engine/releases/latest',{
-          headers:{
-            Accept:'application/vnd.github+json',
-            'X-GitHub-Api-Version':'2026-03-10'
-          }
-        });
+        const response=await fetch('https://github.com/rahulmundra02-boop/Service-decision-Engine/releases/latest/download/latest.json?t='+Date.now());
         if(!response.ok) return;
         const release=await response.json();
-        const tag=String(release?.tag_name||'');
-        const buildMatch=tag.match(/build(\\d+)/i);
-        const latestBuild=Number(buildMatch?.[1]||0);
-        const asset=Array.isArray(release?.assets)
-          ? release.assets.find(x=>String(x?.name||'').toLowerCase()==='app-release.apk')
-          : null;
-        if(!cancelled && latestBuild>currentBuild && asset?.browser_download_url){
-          const versionMatch=tag.match(/android-v(.+)-build\\d+$/i);
+        const latestBuild=Number(release?.build||0);
+        if(!cancelled && latestBuild>currentBuild && release?.downloadUrl){
           setUpdateInfo({
-            version:versionMatch?.[1]||release?.name||'New',
+            version:String(release?.version||'New'),
             build:latestBuild,
-            downloadUrl:asset.browser_download_url,
-            notes:String(release?.body||'').trim()
+            downloadUrl:String(release.downloadUrl),
+            notes:'A new Android build is available. Download and install the latest update.'
           });
         }
       }catch{}

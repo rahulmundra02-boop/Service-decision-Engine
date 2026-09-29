@@ -45,7 +45,7 @@ export async function login(identifier, password) {
     })
   });
   await AsyncStorage.setItem(TOKEN_KEY, data.token);
-  try { await SecureStore.setItemAsync(SECURE_TOKEN_KEY, data.token, { requireAuthentication: true, authenticationPrompt: 'Authenticate to unlock Service Estimate' }); } catch {}
+  try { await SecureStore.setItemAsync(SECURE_TOKEN_KEY, data.token); } catch {}
   await AsyncStorage.setItem(USER_KEY, JSON.stringify(data.user || {}));
   return data;
 }

@@ -22,6 +22,19 @@ function authToken(req) {
   return clean(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
 }
 
+let schemaEnsured = false;
+async function initSchemaOnce(client) {
+  if (!schemaEnsured) {
+    try {
+      await initSchemaOnce(client);
+      schemaEnsured = true;
+    } catch (err) {
+      schemaEnsured = false;
+      throw err;
+    }
+  }
+}
+
 async function ensureSchema(client) {
   await client.query(`
     CREATE TABLE IF NOT EXISTS saved_estimates (
@@ -86,7 +99,7 @@ export default async function handler(req, res) {
 
   try {
     await client.query("BEGIN");
-    await ensureSchema(client);
+    await initSchemaOnce(client);
 
     const user = await getCurrentUser(client, req);
     if (!user) {

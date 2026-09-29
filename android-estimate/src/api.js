@@ -1,9 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 
 export const API_BASE_URL = 'https://service-decision-engine.vercel.app';
 
 const TOKEN_KEY = 'service_estimate_auth_token';
 const USER_KEY = 'service_estimate_user';
+const SECURE_TOKEN_KEY = 'service_estimate_secure_token';
 
 async function request(path, options = {}) {
   const token = await AsyncStorage.getItem(TOKEN_KEY);
@@ -43,6 +45,7 @@ export async function login(identifier, password) {
     })
   });
   await AsyncStorage.setItem(TOKEN_KEY, data.token);
+  try { await SecureStore.setItemAsync(SECURE_TOKEN_KEY, data.token, { requireAuthentication: true, authenticationPrompt: 'Authenticate to unlock Service Estimate' }); } catch {}
   await AsyncStorage.setItem(USER_KEY, JSON.stringify(data.user || {}));
   return data;
 }
@@ -50,10 +53,11 @@ export async function login(identifier, password) {
 export async function logout() {
   try { await request('/api/auth', { method: 'POST', body: JSON.stringify({ action: 'logout' }) }); } catch {}
   await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]);
+  try { await SecureStore.deleteItemAsync(SECURE_TOKEN_KEY); } catch {}
 }
 
-export async function restoreSession() {
-  const token = await AsyncStorage.getItem(TOKEN_KEY);
+export async function restoreSession(tokenOverride = null) {
+  const token = tokenOverride || await AsyncStorage.getItem(TOKEN_KEY);
   if (!token) return null;
   try {
     const data = await request('/api/auth', { method: 'POST', body: JSON.stringify({ action: 'me' }) });
@@ -63,6 +67,10 @@ export async function restoreSession() {
     await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]);
     return null;
   }
+}
+
+export async function getSecureSessionToken() {
+  try { return await SecureStore.getItemAsync(SECURE_TOKEN_KEY); } catch { return null; }
 }
 
 export async function getVehicleByRegistration(registration) {

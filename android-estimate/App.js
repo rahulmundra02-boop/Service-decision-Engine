@@ -491,6 +491,7 @@ function EstimateScreen({mode,data,user,onBack,savedEstimate,onSaved}) {
       .letterheadBg{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0}
       .letterheadBg img{width:100%;height:100%;display:block}
       .pageContent{position:relative;z-index:1;padding:10mm}
+      .signatureOnly{display:block;max-width:120px;max-height:45px;object-fit:contain;background:transparent}
       table{width:100%;border-collapse:collapse;table-layout:fixed}
       td,th{border:1px solid #aab4c0;padding:5px;vertical-align:middle;word-wrap:break-word}
       th{font-weight:800;background:#eaf2ff;color:#17324d;height:34px;line-height:10px;white-space:normal;overflow-wrap:anywhere;font-size:9px;padding:4px}
@@ -647,6 +648,7 @@ function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) 
   const [busy,setBusy]=useState(false);
   const [strokes,setStrokes]=useState([]);
   const [drawing,setDrawing]=useState(false);
+  const [strokeWidth,setStrokeWidth]=useState(2.5);
   const padRef=useRef(null);
   const currentStrokeRef=useRef([]);
 
@@ -700,7 +702,7 @@ function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) 
     const length=Math.sqrt(dx*dx+dy*dy);
     if(length<1) return null;
     const angle=Math.atan2(dy,dx)*180/Math.PI;
-    return <View key={index} style={[styles.signatureStroke,{left:a.x,top:a.y-1,width:length,transform:[{rotate:angle+'deg'}]}]}/>;
+    return <View key={index} style={[styles.signatureStroke,{left:a.x,top:a.y-(strokeWidth/2),width:length,height:strokeWidth,backgroundColor:'#1456c0',borderRadius:strokeWidth/2,transform:[{rotate:angle+'deg'}]}]}/>
   };
 
   const scanLetterhead=async()=>{
@@ -747,6 +749,8 @@ function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) 
 
     <View style={styles.signaturePreview}>
       <Text style={styles.cardTitle}>User Signature</Text>
+      <Text style={styles.signaturePadStatus}>Pen thickness: {strokeWidth.toFixed(1)}</Text>
+      <View style={styles.strokeControls}>{[1.5,2.5,4,6].map(w=><Pressable key={w} onPress={()=>setStrokeWidth(w)} style={[styles.strokeButton,strokeWidth===w&&styles.strokeButtonSelected]}><Text style={[styles.strokeButtonText,strokeWidth===w&&styles.strokeButtonTextSelected]}>{w}</Text></Pressable>)}</View>
       <View ref={padRef} collapsable={false} style={styles.signaturePad} {...panResponder.panHandlers}>
         {strokes.map((stroke,si)=>stroke.map((point,pi)=>lineFor(point,stroke[pi+1],si+'-'+pi)))}
         {!strokes.length && <Text style={styles.signaturePadHint}>Sign here with your finger</Text>}
@@ -933,7 +937,12 @@ const styles=StyleSheet.create({
   letterheadPreview:{width:'100%',height:180,resizeMode:'contain',backgroundColor:'#fff'},
   signatureSaved:{fontSize:10,color:'#2e7d32',fontWeight:'800',marginTop:5},
   signaturePad:{width:'100%',height:150,backgroundColor:'#fff',borderWidth:1,borderColor:'#8d99a6',borderRadius:8,overflow:'hidden',position:'relative'},
-  signatureStroke:{position:'absolute',height:3,backgroundColor:'#111',borderRadius:2,transformOrigin:'left center'},
+  strokeControls:{flexDirection:'row',gap:7,marginBottom:7,alignItems:'center'},
+  strokeButton:{paddingHorizontal:12,paddingVertical:6,borderRadius:7,borderWidth:1,borderColor:'#c7d0da',backgroundColor:'#fff'},
+  strokeButtonSelected:{borderColor:'#1456c0',backgroundColor:'#eaf1ff'},
+  strokeButtonText:{fontSize:10,fontWeight:'700',color:'#425466'},
+  strokeButtonTextSelected:{color:'#1456c0'},
+  signatureStroke:{position:'absolute',transformOrigin:'left center'},
   signaturePadHint:{position:'absolute',alignSelf:'center',top:65,color:'#b0b7bf',fontSize:12,fontWeight:'700'},
   signaturePadStatus:{fontSize:9,color:'#71808f',marginTop:4},
   manualCustomerBox:{backgroundColor:'#fff8e8',borderWidth:1,borderColor:'#f0c36b',borderRadius:8,padding:8,marginTop:6},

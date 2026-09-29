@@ -11,6 +11,7 @@ import * as Sharing from 'expo-sharing';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as ImagePicker from 'expo-image-picker';
 import { Image as ExpoImage } from 'expo-image';
+import * as XLSX from 'xlsx';
 import DocumentScanner from 'react-native-document-scanner-plugin';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { restoreSession, login, logout, getSecureSessionToken, getVehicleByRegistration, getPartRate } from './src/api';
@@ -510,7 +511,82 @@ function EstimateScreen({mode,data,user,onBack,savedEstimate,onSaved}) {
     }catch(e){Alert.alert('Save failed',e.message);}finally{setSaving(false);}
   };
 
-    const print=async()=>{
+    const exportExcel=async()=>{
+    if(!customerName.trim()){Alert.alert('Estimate','Enter customer name before exporting.');return;}
+    if(incompleteLines){
+      Alert.alert('Estimate incomplete','Complete every Part/Labour line before exporting to Excel.');
+      return;
+    }
+    try{
+      const allParts=parts||[];
+      const allLabour=labour||[];
+      const t=totals(allParts,allLabour);
+      const labourSubtotal=allLabour.reduce((sum,x)=>sum+(Number(x.qty)||0)*(Number(x.rate)||0),0);
+      const labourGst=labourSubtotal*0.18;
+      const rows=[
+        ['SERVICE ESTIMATE',''],
+        ['Estimate No.',estimateNo],
+        ['Customer',customerName.trim()],
+        ['Vehicle No.',vehicle.registration||''],
+        ['VIN',vehicle.vin||''],
+        ['Model',vehicle.model||''],
+        ['Sale Date',formatDateOnly(vehicle.sale_date)],
+        [],
+        ['PARTS','','','',''],
+        ['Part No.','Description','Qty','Rate (Incl. GST)','Amount'],
+        ...allParts.map(x=>[
+          x.partNo||'',
+          x.description||'',
+          Number(x.qty)||0,
+          Number(x.rate)||0,
+          (Number(x.qty)||0)*(Number(x.rate)||0)
+        ]),
+        [],
+        ['LABOUR','','','',''],
+        ['Description','Qty','Rate (Excl. GST)','Amount'],
+        ...allLabour.map(x=>[
+          x.description||'',
+          Number(x.qty)||0,
+          Number(x.rate)||0,
+          (Number(x.qty)||0)*(Number(x.rate)||0)
+        ]),
+        [],
+        ['Parts Total (GST Incl.)',t.partsTotal],
+        ['Labour Subtotal',labourSubtotal],
+        ['GST on Labour (18%)',labourGst],
+        ['Grand Total',t.total],
+        [],
+        ['Note','This Excel file is editable. Signature and letter head are intentionally not included.']
+      ];
+
+      const worksheet=XLSX.utils.aoa_to_sheet(rows);
+      worksheet['!cols']=[
+        {wch:18},{wch:42},{wch:12},{wch:18},{wch:18}
+      ];
+      const workbook=XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook,worksheet,'Estimate');
+
+      const baseName=String(vehicle.registration||estimateNo||'Estimate')
+        .replace(/[^a-zA-Z0-9_-]/g,'_');
+      const fileUri=FileSystem.cacheDirectory+`Estimate-${baseName}-${Date.now()}.xlsx`;
+      const base64=XLSX.write(workbook,{bookType:'xlsx',type:'base64'});
+      await FileSystem.writeAsStringAsync(fileUri,base64,{encoding:FileSystem.EncodingType.Base64});
+
+      if(await Sharing.isAvailableAsync()){
+        await Sharing.shareAsync(fileUri,{
+          mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          dialogTitle:'Export Estimate to Excel',
+          UTI:'com.microsoft.excel.xlsx'
+        });
+      }else{
+        await Share.share({message:'Excel file created: '+fileUri});
+      }
+    }catch(e){
+      Alert.alert('Excel Export',e.message||'Could not create the Excel file.');
+    }
+  };
+
+  const print=async()=>{
     if(!customerName.trim()){Alert.alert('Estimate','Enter customer name before printing.');return;}
     if(incompleteLines){
       Alert.alert('Estimate incomplete','Complete every Part/Labour line before printing the PDF.');
@@ -667,6 +743,7 @@ function EstimateScreen({mode,data,user,onBack,savedEstimate,onSaved}) {
       {!incompleteLines && <>
         <Button title={saving?'Saving...':'Save Estimate'} onPress={save} disabled={saving}/>
         <Button title="Print / Share PDF" secondary onPress={print}/>
+        <Button title="Export to Excel" secondary onPress={exportExcel}/>
       </>}
       {incompleteLines && <View style={styles.incompleteBox}>
         <Text style={styles.incompleteTitle}>Estimate output locked</Text>

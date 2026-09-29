@@ -1,13 +1,7 @@
 name: Android Estimate APK
-# manual build trigger
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - android-estimate-beta
-    paths:
-      - ".github/workflows/android-estimate-apk.yml"
 
 permissions:
   contents: write

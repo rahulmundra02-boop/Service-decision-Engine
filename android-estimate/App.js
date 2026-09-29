@@ -44,7 +44,8 @@ function Field({label,value,onChangeText,placeholder,keyboardType='default',onBl
       secureTextEntry={secureTextEntry}
       autoComplete={autoComplete}
       importantForAutofill={autoComplete ? 'yes' : 'auto'}
-      style={styles.input}
+      style={[styles.input, secureTextEntry && styles.passwordInput]}
+      textContentType={Platform.OS==='ios' ? (autoComplete==='username'?'username':autoComplete==='current-password'?'password':undefined) : undefined}
     />
   </View>;
 }
@@ -990,7 +991,7 @@ export default function App(){
       try{
         if(Platform.OS!=='android') return;
         const currentBuild=Number(Application.nativeBuildVersion||0);
-        const response=await fetch('https://github.com/rahulmundra02-boop/Service-decision-Engine/releases/latest/download/latest.json?t='+Date.now());
+        const response=await fetch('https://service-decision-engine.vercel.app/mobile/latest.json?t='+Date.now());
         if(!response.ok) return;
         const release=await response.json();
         const latestBuild=Number(release?.build||0);

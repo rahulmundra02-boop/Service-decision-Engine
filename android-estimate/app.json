@@ -29,6 +29,18 @@
         {
           "cameraPermission": "Allow camera access to scan the estimate letterhead."
         }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow Service Estimate to use biometric authentication."
+        }
+      ],
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": true
+        }
       ]
     ]
   }

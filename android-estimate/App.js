@@ -1,14 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, BackHandler, Keyboard, KeyboardAvoidingView, PermissionsAndroid, Platform, Pressable,
+  ActivityIndicator, Alert, AppState, BackHandler, Keyboard, KeyboardAvoidingView, PermissionsAndroid, Platform, Pressable, PanResponder,
   SafeAreaView, ScrollView, Share, StatusBar, StyleSheet, Text, TextInput, View, Image
 } from 'react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import * as LocalAuthentication from 'expo-local-authentication';
 import * as ImagePicker from 'expo-image-picker';
 import DocumentScanner from 'react-native-document-scanner-plugin';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { restoreSession, login, logout, getVehicleByRegistration, getPartRate } from './src/api';
+import { captureRef } from 'react-native-view-shot';
+import { restoreSession, login, logout, getSecureSessionToken, getVehicleByRegistration, getPartRate } from './src/api';
 import { AGGREGATES, buildServiceItems, makeManualItem, rateForManualPart, totals } from './src/estimateLogic';
 
 const money = n => `₹${Number(n || 0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
@@ -203,11 +205,51 @@ function LoginScreen({onLogin}) {
   const [identifier,setIdentifier]=useState('');
   const [password,setPassword]=useState('');
   const [busy,setBusy]=useState(false);
+  const [biometricReady,setBiometricReady]=useState(false);
+
+  useEffect(()=>{
+    let mounted=true;
+    (async()=>{
+      try{
+        const token=await getSecureSessionToken();
+        const hardware=await LocalAuthentication.hasHardwareAsync();
+        const enrolled=await LocalAuthentication.isEnrolledAsync();
+        if(mounted) setBiometricReady(Boolean(token&&hardware&&enrolled));
+      }catch{ if(mounted) setBiometricReady(false); }
+    })();
+    return ()=>{mounted=false;};
+  },[]);
+
   const submit=async()=>{
     if(!identifier.trim()||!password){Alert.alert('Login','Enter email/mobile and password.');return;}
     setBusy(true);
     try{const data=await login(identifier,password);onLogin(data.user);}catch(e){Alert.alert('Login failed',e.message);}finally{setBusy(false);}
   };
+
+  const biometricLogin=async()=>{
+    setBusy(true);
+    try{
+      const token=await getSecureSessionToken();
+      if(!token){setBiometricReady(false);return;}
+      const auth=await LocalAuthentication.authenticateAsync({
+        promptMessage:'Unlock Service Estimate',
+        cancelLabel:'Use Password',
+        disableDeviceFallback:false
+      });
+      if(!auth.success) return;
+      const data=await restoreSession(token);
+      if(!data) {
+        setBiometricReady(false);
+        Alert.alert('Session expired','Please sign in again using your password.');
+        return;
+      }
+      onLogin(data);
+    }catch(e){
+      setBiometricReady(false);
+      Alert.alert('Biometric login',e.message||'Biometric authentication failed.');
+    }finally{setBusy(false);}
+  };
+
   return <SafeAreaView style={styles.safe}><KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==='ios'?'padding':undefined}>
     <View style={styles.loginWrap}>
       <Text style={styles.brand}>SERVICE ESTIMATE</Text>
@@ -215,7 +257,9 @@ function LoginScreen({onLogin}) {
       <Field label="Email / Mobile" value={identifier} onChangeText={setIdentifier} placeholder="Enter login" autoComplete="username" autoCapitalize="none"/>
       <Field label="Password" value={password} onChangeText={setPassword} placeholder="Password" autoComplete="current-password" secureTextEntry autoCapitalize="none"/>
       <Button title={busy?'Signing in...':'Sign In'} onPress={submit} disabled={busy}/>
-    </View></KeyboardAvoidingView></SafeAreaView>;
+      {biometricReady && <Button title="Use Fingerprint / Face Unlock" secondary onPress={biometricLogin} disabled={busy}/>}
+    </View>
+  </KeyboardAvoidingView></SafeAreaView>;
 }
 
 function VehicleScreen({mode,onVehicle}) {
@@ -600,42 +644,60 @@ function SavedEstimatesScreen({records,onOpen,onNew,onBack}) {
 
 function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) {
   const [busy,setBusy]=useState(false);
+  const [strokes,setStrokes]=useState([]);
+  const [drawing,setDrawing]=useState(false);
+  const padRef=useRef(null);
+  const currentStrokeRef=useRef([]);
 
   React.useEffect(()=>{
-    const handleBack=()=>{
-      onBack();
-      return true;
-    };
+    const handleBack=()=>{onBack();return true;};
     const subscription=BackHandler.addEventListener('hardwareBackPress',handleBack);
     return ()=>subscription.remove();
   },[onBack]);
 
-  const saveImageFromAsset=async(asset,key,setter,successText)=>{
-    if(!asset?.base64) return;
-    const mime=String(asset.mimeType||'image/jpeg');
-    const uri='data:'+mime+';base64,'+asset.base64;
-    await AsyncStorage.setItem(key,uri);
-    setter(uri);
-    Alert.alert('Saved',successText);
-  };
+  const panResponder=useRef(PanResponder.create({
+    onStartShouldSetPanResponder:()=>true,
+    onMoveShouldSetPanResponder:()=>true,
+    onPanResponderGrant:e=>{
+      const p={x:e.nativeEvent.locationX,y:e.nativeEvent.locationY};
+      currentStrokeRef.current=[p];
+      setStrokes(prev=>[...prev,currentStrokeRef.current]);
+      setDrawing(true);
+    },
+    onPanResponderMove:e=>{
+      const p={x:e.nativeEvent.locationX,y:e.nativeEvent.locationY};
+      currentStrokeRef.current=[...currentStrokeRef.current,p];
+      setStrokes(prev=>{const next=[...prev];next[next.length-1]=currentStrokeRef.current;return next;});
+    },
+    onPanResponderRelease:()=>{currentStrokeRef.current=[];setDrawing(false);},
+    onPanResponderTerminate:()=>{currentStrokeRef.current=[];setDrawing(false);}
+  })).current;
 
-  const chooseSignature=async(source)=>{
+  const saveSignature=async()=>{
+    if(!strokes.length || !strokes.some(stroke=>stroke.length>1)){
+      Alert.alert('Signature','Please sign inside the white box first.');
+      return;
+    }
     setBusy(true);
     try{
-      let result;
-      if(source==='camera'){
-        const permission=await ImagePicker.requestCameraPermissionsAsync();
-        if(!permission.granted){Alert.alert('Permission required','Camera permission is required for the signature photo.');return;}
-        result=await ImagePicker.launchCameraAsync({mediaTypes:['images'],allowsEditing:true,aspect:[3,1],quality:0.8,base64:true});
-      }else{
-        const permission=await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if(!permission.granted){Alert.alert('Permission required','Photo library permission is required.');return;}
-        result=await ImagePicker.launchImageLibraryAsync({mediaTypes:['images'],allowsEditing:true,aspect:[3,1],quality:0.8,base64:true});
-      }
-      if(!result.canceled&&result.assets?.[0]){
-        await saveImageFromAsset(result.assets[0],'estimate_user_signature',onSave,'Signature saved. It will appear automatically on the estimate.');
-      }
-    }catch(e){Alert.alert('Signature',e.message);}finally{setBusy(false);}
+      const uri=await captureRef(padRef,{format:'png',quality:1,result:'tmpfile'});
+      await AsyncStorage.setItem('estimate_user_signature',uri);
+      onSave(uri);
+      Alert.alert('Saved','Signature saved. It will appear automatically on the estimate.');
+    }catch(e){Alert.alert('Signature',e.message||'Could not save signature.');}
+    finally{setBusy(false);}
+  };
+
+  const clearCanvas=()=>{setStrokes([]);currentStrokeRef.current=[];};
+  const clearSignature=async()=>{await AsyncStorage.removeItem('estimate_user_signature');onSave('');clearCanvas();};
+
+  const lineFor=(a,b,index)=>{
+    if(!a||!b) return null;
+    const dx=b.x-a.x,dy=b.y-a.y;
+    const length=Math.sqrt(dx*dx+dy*dy);
+    if(length<1) return null;
+    const angle=Math.atan2(dy,dx)*180/Math.PI;
+    return <View key={index} style={[styles.signatureStroke,{left:a.x,top:a.y-1,width:length,transform:[{rotate:angle+'deg'}]}]}/>;
   };
 
   const scanLetterhead=async()=>{
@@ -648,11 +710,7 @@ function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) 
           return;
         }
       }
-      const result=await DocumentScanner.scanDocument({
-        responseType:'base64',
-        maxNumDocuments:1,
-        croppedImageQuality:85
-      });
+      const result=await DocumentScanner.scanDocument({responseType:'base64',maxNumDocuments:1,croppedImageQuality:85});
       const scanned=Array.isArray(result?.scannedImages)?result.scannedImages[0]:null;
       if(result?.status==='success'&&scanned){
         const value=String(scanned);
@@ -671,25 +729,30 @@ function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) 
       if(!permission.granted){Alert.alert('Permission required','Photo library permission is required.');return;}
       const result=await ImagePicker.launchImageLibraryAsync({mediaTypes:['images'],allowsEditing:true,quality:0.85,base64:true});
       if(!result.canceled&&result.assets?.[0]){
-        await saveImageFromAsset(result.assets[0],'estimate_letterhead',onLetterheadSave,'Letter head saved. It will be used as the estimate background on every page.');
+        const asset=result.assets[0];
+        const uri=asset.base64?'data:'+(asset.mimeType||'image/jpeg')+';base64,'+asset.base64:asset.uri;
+        await AsyncStorage.setItem('estimate_letterhead',uri);
+        onLetterheadSave(uri);
+        Alert.alert('Saved','Letter head saved. It will be used as the estimate background on every page.');
       }
     }catch(e){Alert.alert('Letter Head',e.message);}finally{setBusy(false);}
   };
 
-  const clearSignature=async()=>{await AsyncStorage.removeItem('estimate_user_signature');onSave('');};
-  const clearLetterhead=async()=>{await AsyncStorage.removeItem('estimate_letterhead');onLetterheadSave('');};
-
   return <SafeAreaView style={styles.safe}><ScrollView contentContainerStyle={styles.container}>
     <Text style={styles.heading}>Sign and Letter Head</Text>
-    <Text style={styles.lookupHint}>User signature and letter head are saved only on this device. The letter head is scanned with automatic corner detection and crop, then used as the estimate background on every PDF page.</Text>
+    <Text style={styles.lookupHint}>Sign directly on the white board with your finger. Camera/gallery signature upload is not used. The saved signature will appear on the estimate PDF.</Text>
 
     <View style={styles.signaturePreview}>
       <Text style={styles.cardTitle}>User Signature</Text>
-      {signature?<Image source={{uri:signature}} style={styles.signatureImage}/>:<Text style={styles.empty}>No signature saved.</Text>}
+      <View ref={padRef} collapsable={false} style={styles.signaturePad} {...panResponder.panHandlers}>
+        {strokes.map((stroke,si)=>stroke.map((point,pi)=>lineFor(point,stroke[pi+1],si+'-'+pi)))}
+        {!strokes.length && <Text style={styles.signaturePadHint}>Sign here with your finger</Text>}
+      </View>
+      <Text style={styles.signaturePadStatus}>{drawing?'Drawing...':'Use the white board above'}</Text>
       {signature?<Text style={styles.signatureSaved}>Signature saved</Text>:null}
     </View>
-    <Button title={busy?'Please wait...':'Capture Signature'} onPress={()=>chooseSignature('camera')} disabled={busy}/>
-    <Button title="Upload Signature from Gallery" secondary onPress={()=>chooseSignature('gallery')} disabled={busy}/>
+    <Button title={busy?'Saving...':'Save Signature'} onPress={saveSignature} disabled={busy}/>
+    <Button title="Clear Signature Pad" secondary onPress={clearCanvas} disabled={busy}/>
     {signature?<Button title="Remove Saved Signature" secondary onPress={clearSignature}/>:null}
 
     <View style={styles.signaturePreview}>
@@ -699,7 +762,7 @@ function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) 
     </View>
     <Button title={busy?'Opening scanner...':'Scan / Capture Letter Head'} onPress={scanLetterhead} disabled={busy}/>
     <Button title="Upload Letter Head from Gallery" secondary onPress={uploadLetterhead} disabled={busy}/>
-    {letterhead?<Button title="Remove Saved Letter Head" secondary onPress={clearLetterhead}/>:null}
+    {letterhead?<Button title="Remove Saved Letter Head" secondary onPress={async()=>{await AsyncStorage.removeItem('estimate_letterhead');onLetterheadSave('');}}/>:null}
   </ScrollView></SafeAreaView>;
 }
 
@@ -762,10 +825,42 @@ export default function App(){
   };
 
   React.useEffect(()=>{
-    restoreSession().then(setUser).finally(()=>setLoading(false));
     AsyncStorage.getItem('estimate_user_signature').then(v=>setSignature(v||''));
     AsyncStorage.getItem('estimate_letterhead').then(v=>setLetterhead(v||''));
+    setLoading(false);
   },[]);
+
+  React.useEffect(()=>{
+    if(!user) return;
+    let cancelled=false;
+    const checkSession=async()=>{
+      const fresh=await restoreSession();
+      if(cancelled) return;
+      if(!fresh){
+        await logout();
+        if(!cancelled){
+          setUser(null);
+          setMode(null);
+          setVehicleData(null);
+          setSavedScreen(false);
+          setSignatureScreen(false);
+          Alert.alert('Session ended','Your login session is no longer active. Please sign in again.');
+        }
+      }else{
+        setUser(fresh);
+      }
+    };
+    checkSession();
+    const timer=setInterval(checkSession,30000);
+    const subscription=AppState.addEventListener('change',state=>{
+      if(state==='active') checkSession();
+    });
+    return ()=>{
+      cancelled=true;
+      clearInterval(timer);
+      subscription.remove();
+    };
+  },[user?.id]);
 
   React.useEffect(()=>{
     if(user) loadSavedEstimates();
@@ -834,6 +929,10 @@ const styles=StyleSheet.create({
   signatureImage:{width:'100%',height:80,resizeMode:'contain',backgroundColor:'#fff'},
   letterheadPreview:{width:'100%',height:180,resizeMode:'contain',backgroundColor:'#fff'},
   signatureSaved:{fontSize:10,color:'#2e7d32',fontWeight:'800',marginTop:5},
+  signaturePad:{width:'100%',height:150,backgroundColor:'#fff',borderWidth:1,borderColor:'#8d99a6',borderRadius:8,overflow:'hidden',position:'relative'},
+  signatureStroke:{position:'absolute',height:3,backgroundColor:'#111',borderRadius:2,transformOrigin:'left center'},
+  signaturePadHint:{position:'absolute',alignSelf:'center',top:65,color:'#b0b7bf',fontSize:12,fontWeight:'700'},
+  signaturePadStatus:{fontSize:9,color:'#71808f',marginTop:4},
   manualCustomerBox:{backgroundColor:'#fff8e8',borderWidth:1,borderColor:'#f0c36b',borderRadius:8,padding:8,marginTop:6},
   manualCustomerTitle:{fontSize:11,fontWeight:'800',color:'#8a5a00',marginBottom:4},
   manualCustomerHint:{fontSize:9,color:'#8a6b2e',lineHeight:13,marginTop:4},

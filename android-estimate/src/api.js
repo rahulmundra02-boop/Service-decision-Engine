@@ -34,14 +34,15 @@ async function request(path, options = {}) {
   return data;
 }
 
-export async function login(identifier, password) {
+export async function login(identifier, password, terminateExistingSession = false) {
   const data = await request('/api/auth', {
     method: 'POST',
     body: JSON.stringify({
       action: 'login',
       identifier,
       password,
-      deviceName: 'Service Estimate Android'
+      deviceName: 'Service Estimate Android',
+      terminateExistingSession
     })
   });
   await AsyncStorage.setItem(TOKEN_KEY, data.token);

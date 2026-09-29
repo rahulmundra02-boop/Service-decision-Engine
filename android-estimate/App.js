@@ -6,6 +6,7 @@ import {
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as LocalAuthentication from 'expo-local-authentication';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import DocumentScanner from 'react-native-document-scanner-plugin';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -680,8 +681,10 @@ function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) 
     }
     setBusy(true);
     try{
-      const uri=await captureRef(padRef,{format:'png',quality:1,result:'tmpfile'});
-      await AsyncStorage.setItem('estimate_user_signature',uri);
+      const tempUri=await captureRef(padRef,{format:'png',quality:1,result:'tmpfile'});
+      const permanentUri=(FileSystem.documentDirectory||FileSystem.cacheDirectory)+'estimate-signature.png';
+      await FileSystem.copyAsync({from:tempUri,to:permanentUri});
+      await AsyncStorage.setItem('estimate_user_signature',permanentUri);
       onSave(uri);
       Alert.alert('Saved','Signature saved. It will appear automatically on the estimate.');
     }catch(e){Alert.alert('Signature',e.message||'Could not save signature.');}

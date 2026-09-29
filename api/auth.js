@@ -7,7 +7,7 @@ const pool = new Pool({
   max: 4,
 });
 
-const SESSION_DAYS = 30;
+const SESSION_DAYS = 0.5;
 const SESSION_INACTIVITY_HOURS = 12;
 const DEFAULT_ADMIN_EMAIL = "rahul.mundra02@gmail.com";
 const DEFAULT_ADMIN_MOBILE = "9461768278";

@@ -477,8 +477,8 @@ function EstimateScreen({mode,data,user,onBack,savedEstimate,onSaved}) {
           <td><b>Current Reading</b><br/>${esc(currentReading)}</td>
           <td><b>Sale Date</b><br/>${esc(formatDateOnly(vehicle.sale_date))}</td>
         </tr></table>`;
-    const partsBlock=allParts.length?`<div class="section partsHead">Parts</div><table class="items"><thead><tr><th style="width:15%">Part No.</th><th style="width:43%">Description</th><th style="width:10%">Qty</th><th style="width:16%">Rate (Incl. GST)</th><th style="width:16%">Amount</th></tr></thead><tbody>${partRows}</tbody></table>`:'';
-    const labourBlock=allLabour.length?`<div class="section labourHead">Labour</div><table class="items"><thead><tr><th colspan="2" style="width:58%">Description</th><th style="width:10%">Qty</th><th style="width:16%">Rate (Excl. GST)</th><th style="width:16%">Amount</th></tr></thead><tbody>${labourRows}</tbody></table>`:'';
+    const partsBlock=allParts.length?`<div class="section partsHead">Parts</div><table class="items"><thead><tr><th style="width:14%">Part No.</th><th style="width:39%">Description</th><th style="width:9%">Qty</th><th style="width:19%">Rate<br/>(Incl. GST)</th><th style="width:19%">Amount</th></tr></thead><tbody>${partRows}</tbody></table>`:'';
+    const labourBlock=allLabour.length?`<div class="section labourHead">Labour</div><table class="items"><thead><tr><th colspan="2" style="width:58%">Description</th><th style="width:9%">Qty</th><th style="width:19%">Rate<br/>(Excl. GST)</th><th style="width:14%">Amount</th></tr></thead><tbody>${labourRows}</tbody></table>`:'';
     const signatureBlock=signature?`<div class="sign"><img src="${signature}" /><div>Authorized Signatory</div></div>`:'<div class="sign"><div>Authorized Signatory</div></div>';
     const html=`<html><head><style>
       @page{size:A4;margin:0}
@@ -492,7 +492,7 @@ function EstimateScreen({mode,data,user,onBack,savedEstimate,onSaved}) {
       .pageContent{position:relative;z-index:1;padding:10mm}
       table{width:100%;border-collapse:collapse;table-layout:fixed}
       td,th{border:1px solid #aab4c0;padding:5px;vertical-align:middle;word-wrap:break-word}
-      th{font-weight:800;background:#eaf2ff;color:#17324d;height:34px;line-height:11px;white-space:normal}
+      th{font-weight:800;background:#eaf2ff;color:#17324d;height:34px;line-height:10px;white-space:normal;overflow-wrap:anywhere;font-size:9px;padding:4px}
       .info td{width:33.33%;height:28px;background:#f8fbff}
       .section{font-weight:800;font-size:11px;margin:9px 0 4px;color:#12304a}
       .partsHead{color:#1976d2}.labourHead{color:#ef7d22}

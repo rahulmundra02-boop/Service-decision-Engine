@@ -685,7 +685,7 @@ function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) 
       const permanentUri=(FileSystem.documentDirectory||FileSystem.cacheDirectory)+'estimate-signature.png';
       await FileSystem.copyAsync({from:tempUri,to:permanentUri});
       await AsyncStorage.setItem('estimate_user_signature',permanentUri);
-      onSave(uri);
+      onSave(permanentUri);
       Alert.alert('Saved','Signature saved. It will appear automatically on the estimate.');
     }catch(e){Alert.alert('Signature',e.message||'Could not save signature.');}
     finally{setBusy(false);}

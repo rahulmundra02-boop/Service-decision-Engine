@@ -208,6 +208,7 @@ function LoginScreen({onLogin}) {
   const [password,setPassword]=useState('');
   const [busy,setBusy]=useState(false);
   const [biometricReady,setBiometricReady]=useState(false);
+  const [biometricLabel,setBiometricLabel]=useState('Use Fingerprint / Face Unlock');
 
   useEffect(()=>{
     let mounted=true;
@@ -216,7 +217,13 @@ function LoginScreen({onLogin}) {
         const token=await getSecureSessionToken();
         const hardware=await LocalAuthentication.hasHardwareAsync();
         const enrolled=await LocalAuthentication.isEnrolledAsync();
-        if(mounted) setBiometricReady(Boolean(token&&hardware&&enrolled));
+        const types=await LocalAuthentication.supportedAuthenticationTypesAsync();
+        const hasFingerprint=types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT);
+        const hasFace=types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION);
+        if(mounted){
+          setBiometricReady(Boolean(token&&hardware&&enrolled));
+          setBiometricLabel(hasFingerprint?'Use Fingerprint':hasFace?'Use Face Unlock':'Use Biometric Unlock');
+        }
       }catch{ if(mounted) setBiometricReady(false); }
     })();
     return ()=>{mounted=false;};
@@ -234,11 +241,19 @@ function LoginScreen({onLogin}) {
       const token=await getSecureSessionToken();
       if(!token){setBiometricReady(false);return;}
       const auth=await LocalAuthentication.authenticateAsync({
-        promptMessage:'Unlock Service Estimate',
+        promptMessage:'Verify your fingerprint',
+        promptDescription:'Use your registered fingerprint to sign in to Service Estimate.',
         cancelLabel:'Use Password',
-        disableDeviceFallback:false
+        disableDeviceFallback:true,
+        biometricsSecurityLevel:'strong',
+        requireConfirmation:true
       });
-      if(!auth.success) return;
+      if(!auth.success){
+        if(auth.error&&auth.error!=='user_cancel'&&auth.error!=='app_cancel'&&auth.error!=='system_cancel'){
+          Alert.alert('Fingerprint login','Fingerprint authentication was not completed. Please try again or use your password.');
+        }
+        return;
+      }
       const data=await restoreSession(token);
       if(!data) {
         setBiometricReady(false);

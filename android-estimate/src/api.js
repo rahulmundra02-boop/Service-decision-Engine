@@ -7,8 +7,8 @@ const TOKEN_KEY = 'service_estimate_auth_token';
 const USER_KEY = 'service_estimate_user';
 const SECURE_TOKEN_KEY = 'service_estimate_secure_token';
 
-async function request(path, options = {}) {
-  const token = await AsyncStorage.getItem(TOKEN_KEY);
+async function request(path, options = {}, tokenOverride = null) {
+  const token = tokenOverride || await AsyncStorage.getItem(TOKEN_KEY);
   const headers = {
     Accept: 'application/json',
     'Content-Type': 'application/json',
@@ -61,7 +61,7 @@ export async function restoreSession(tokenOverride = null) {
   const token = tokenOverride || await AsyncStorage.getItem(TOKEN_KEY);
   if (!token) return null;
   try {
-    const data = await request('/api/auth', { method: 'POST', body: JSON.stringify({ action: 'me' }) });
+    const data = await request('/api/auth', { method: 'POST', body: JSON.stringify({ action: 'me' }) }, token);
     await AsyncStorage.setItem(USER_KEY, JSON.stringify(data.user || {}));
     return data.user || null;
   } catch {

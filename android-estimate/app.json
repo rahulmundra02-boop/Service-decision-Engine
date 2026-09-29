@@ -8,7 +8,10 @@
     "android": {
       "package": "com.rahulmundra.serviceestimate",
       "versionCode": 4,
-      "softwareKeyboardLayoutMode": "resize"
+      "softwareKeyboardLayoutMode": "resize",
+      "permissions": [
+        "REQUEST_INSTALL_PACKAGES"
+      ]
     },
     "extra": {
       "eas": {

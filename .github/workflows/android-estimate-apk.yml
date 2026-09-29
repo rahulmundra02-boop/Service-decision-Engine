@@ -1,4 +1,5 @@
 name: Android Estimate APK
+# manual build trigger
 
 on:
   workflow_dispatch:

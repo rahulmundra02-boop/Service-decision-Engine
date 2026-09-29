@@ -545,7 +545,7 @@ function EstimateScreen({mode,data,user,onBack,savedEstimate,onSaved}) {
         </tr></table>`;
     const partsBlock=allParts.length?`<div class="section partsHead">Parts</div><table class="items"><thead><tr><th style="width:14%">Part No.</th><th style="width:39%">Description</th><th style="width:9%">Qty</th><th style="width:19%">Rate<br/>(Incl. GST)</th><th style="width:19%">Amount</th></tr></thead><tbody>${partRows}</tbody></table>`:'';
     const labourBlock=allLabour.length?`<div class="section labourHead">Labour</div><table class="items"><thead><tr><th colspan="2" style="width:58%">Description</th><th style="width:9%">Qty</th><th style="width:19%">Rate<br/>(Excl. GST)</th><th style="width:14%">Amount</th></tr></thead><tbody>${labourRows}</tbody></table>`:'';
-    const signatureBlock=signatureSvg ? `<div class="sign"><div class="signatureSvg">${signatureSvg}</div><div>Authorized Signatory</div></div>` :`<div class="sign"><img src="${signature}" /><div>Authorized Signatory</div></div>`:'<div class="sign"><div>Authorized Signatory</div></div>';
+    const signatureBlock=signatureSvg ? `<div class="sign"><div class="signatureSvg">${signatureSvg}</div><div>Authorized Signatory</div></div>` : '<div class="sign"><div>Authorized Signatory</div></div>';
     const html=`<html><head><style>
       @page{size:A4;margin:0}
       body{font-family:Arial,Helvetica,sans-serif;color:#17212b;margin:0;font-size:10px}

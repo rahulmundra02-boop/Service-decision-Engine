@@ -70,6 +70,26 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Publish public mobile update files
+        run: |
+          rm -rf ../stable-publish
+          git fetch origin master
+          git worktree add ../stable-publish origin/master
+          mkdir -p ../stable-publish/public/mobile
+          cp android/app/build/outputs/apk/release/app-release.apk ../stable-publish/public/mobile/AL-Service-Estimate-latest.apk
+          cat > ../stable-publish/public/mobile/latest.json <<EOF
+          {
+            "version": "${{ steps.release_version.outputs.version }}",
+            "build": ${{ steps.release_version.outputs.build }},
+            "downloadUrl": "https://service-decision-engine.vercel.app/mobile/AL-Service-Estimate-latest.apk"
+          }
+          EOF
+          cd ../stable-publish
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f public/mobile/AL-Service-Estimate-latest.apk public/mobile/latest.json
+          git commit -m "Publish Android build ${{ steps.release_version.outputs.build }}" || echo "No public mobile update changes"
+          git push origin HEAD:master
       - name: Publish APK release
         working-directory: android-estimate
         env:

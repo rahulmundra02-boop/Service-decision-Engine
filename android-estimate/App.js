@@ -6,11 +6,9 @@ import {
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as LocalAuthentication from 'expo-local-authentication';
-import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import DocumentScanner from 'react-native-document-scanner-plugin';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { captureRef } from 'react-native-view-shot';
 import { restoreSession, login, logout, getSecureSessionToken, getVehicleByRegistration, getPartRate } from './src/api';
 import { AGGREGATES, buildServiceItems, makeManualItem, rateForManualPart, totals } from './src/estimateLogic';
 
@@ -683,12 +681,19 @@ function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) 
     }
     setBusy(true);
     try{
-      const tempUri=await captureRef(padRef,{format:'png',quality:1,result:'tmpfile'});
-      const permanentUri=(FileSystem.documentDirectory||FileSystem.cacheDirectory)+'estimate-signature.png';
-      await FileSystem.copyAsync({from:tempUri,to:permanentUri});
-      await AsyncStorage.setItem('estimate_user_signature',permanentUri);
-      onSave(permanentUri);
-      Alert.alert('Saved','Signature saved. It will appear automatically on the estimate.');
+      const width=700;
+      const height=220;
+      const paths=strokes
+        .filter(stroke=>stroke.length>1)
+        .map(stroke=>{
+          const points=stroke.map(p=>`${Math.max(0,Math.min(width,p.x*2.5))},${Math.max(0,Math.min(height,p.y*1.45))}`).join(' ');
+          return `<polyline points="${points}" fill="none" stroke="#1456c0" stroke-width="${strokeWidth*2.5}" stroke-linecap="round" stroke-linejoin="round"/>`;
+        }).join('');
+      const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><g>${paths}</g></svg>`;
+      const signatureUri='data:image/svg+xml;base64,'+global.btoa(unescape(encodeURIComponent(svg)));
+      await AsyncStorage.setItem('estimate_user_signature',signatureUri);
+      onSave(signatureUri);
+      Alert.alert('Saved','Signature saved. Only the blue drawn signature will appear on the estimate.');
     }catch(e){Alert.alert('Signature',e.message||'Could not save signature.');}
     finally{setBusy(false);}
   };

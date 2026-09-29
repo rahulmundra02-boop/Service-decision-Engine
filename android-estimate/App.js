@@ -14,7 +14,7 @@ import { Image as ExpoImage } from 'expo-image';
 import * as XLSX from 'xlsx';
 import DocumentScanner from 'react-native-document-scanner-plugin';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { restoreSession, login, logout, getSecureSessionToken, getVehicleByRegistration, getPartRate } from './src/api';
+import { restoreSession, login, logout, getSecureSessionToken, getBiometricCredentials, getVehicleByRegistration, getPartRate } from './src/api';
 import { AGGREGATES, buildServiceItems, makeManualItem, rateForManualPart, totals } from './src/estimateLogic';
 
 const money = n => `₹${Number(n || 0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
@@ -217,6 +217,10 @@ function LoginScreen({onLogin}) {
     let mounted=true;
     (async()=>{
       try{
+        const savedCreds=await getBiometricCredentials();
+        if(savedCreds?.identifier && mounted){
+          setIdentifier(savedCreds.identifier);
+        }
         const token=await getSecureSessionToken();
         const hardware=await LocalAuthentication.hasHardwareAsync();
         const enrolled=await LocalAuthentication.isEnrolledAsync();
@@ -224,7 +228,7 @@ function LoginScreen({onLogin}) {
         const hasFingerprint=types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT);
         const hasFace=types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION);
         if(mounted){
-          setBiometricReady(Boolean(token&&hardware&&enrolled));
+          setBiometricReady(Boolean((savedCreds || token) && hardware && enrolled));
           setBiometricLabel(hasFingerprint?'Use Fingerprint':hasFace?'Use Face Unlock':'Use Biometric Unlock');
         }
       }catch{ if(mounted) setBiometricReady(false); }
@@ -241,31 +245,47 @@ function LoginScreen({onLogin}) {
   const biometricLogin=async()=>{
     setBusy(true);
     try{
-      const token=await getSecureSessionToken();
-      if(!token){setBiometricReady(false);return;}
+      const hardware=await LocalAuthentication.hasHardwareAsync();
+      const enrolled=await LocalAuthentication.isEnrolledAsync();
+      if(!hardware || !enrolled){
+        Alert.alert('Biometric Login','Fingerprint or biometric authentication is not set up on this device.');
+        return;
+      }
+
       const auth=await LocalAuthentication.authenticateAsync({
         promptMessage:'Verify your fingerprint',
         promptDescription:'Use your registered fingerprint to sign in to Service Estimate.',
         cancelLabel:'Use Password',
-        disableDeviceFallback:true,
-        biometricsSecurityLevel:'strong',
-        requireConfirmation:true
+        disableDeviceFallback:false,
       });
+
       if(!auth.success){
         if(auth.error&&auth.error!=='user_cancel'&&auth.error!=='app_cancel'&&auth.error!=='system_cancel'){
           Alert.alert('Fingerprint login','Fingerprint authentication was not completed. Please try again or use your password.');
         }
         return;
       }
-      const data=await restoreSession(token);
-      if(!data) {
-        setBiometricReady(false);
-        Alert.alert('Session expired','Please sign in again using your password.');
-        return;
+
+      const token=await getSecureSessionToken();
+      if(token){
+        const sessionUser=await restoreSession(token);
+        if(sessionUser){
+          onLogin(sessionUser);
+          return;
+        }
       }
-      onLogin(data);
+
+      const savedCreds=await getBiometricCredentials();
+      if(savedCreds?.identifier && savedCreds?.password){
+        const loginData=await login(savedCreds.identifier,savedCreds.password,true);
+        if(loginData?.user){
+          onLogin(loginData.user);
+          return;
+        }
+      }
+
+      Alert.alert('Session expired','Please sign in once with your password to re-enable fingerprint unlock.');
     }catch(e){
-      setBiometricReady(false);
       Alert.alert('Biometric login',e.message||'Biometric authentication failed.');
     }finally{setBusy(false);}
   };
@@ -273,11 +293,11 @@ function LoginScreen({onLogin}) {
   return <SafeAreaView style={styles.safe}><KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==='ios'?'padding':undefined}>
     <View style={styles.loginWrap}>
       <Text style={styles.brand}>SERVICE ESTIMATE</Text>
-      <Text style={styles.sub}>Ashok Leyland • Estimate App</Text>
+      <Text style={styles.sub}>Ashok Leyland   Estimate App</Text>
       <Field label="Email / Mobile" value={identifier} onChangeText={setIdentifier} placeholder="Enter login" autoComplete="username" autoCapitalize="none"/>
       <Field label="Password" value={password} onChangeText={setPassword} placeholder="Password" autoComplete="current-password" secureTextEntry autoCapitalize="none"/>
       <Button title={busy?'Signing in...':'Sign In'} onPress={submit} disabled={busy}/>
-      {biometricReady && <Button title="Use Fingerprint / Face Unlock" secondary onPress={biometricLogin} disabled={busy}/>}
+      {biometricReady && <Button title={biometricLabel} secondary onPress={biometricLogin} disabled={busy}/>}
     </View>
   </KeyboardAvoidingView></SafeAreaView>;
 }

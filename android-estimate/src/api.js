@@ -15,9 +15,10 @@ async function request(path, options = {}, tokenOverride = null) {
     'Content-Type': 'application/json',
     ...(options.headers || {})
   };
-  if (token) headers.Authorization = `Bearer $token`;
+  if (token) headers.Authorization = 'Bearer ' + token;
 
-  const response = await fetch(`$path`, {
+  const url = API_BASE_URL + path;
+  const response = await fetch(url, {
     ...options,
     headers
   });
@@ -27,7 +28,7 @@ async function request(path, options = {}, tokenOverride = null) {
   try { data = text ? JSON.parse(text) : {}; } catch { data = { error: text || 'Invalid server response.' }; }
 
   if (!response.ok) {
-    const error = new Error(data.error || `Request failed (${response.status})`);
+    const error = new Error(data.error || 'Request failed (' + response.status + ')');
     error.status = response.status;
     error.data = data;
     throw error;
@@ -105,13 +106,13 @@ export async function getSecureSessionToken() {
 export async function getVehicleByRegistration(registration) {
   const value = String(registration || '').replace(/\s+/g, '').toUpperCase();
   if (!value) throw new Error('Vehicle number is required.');
-  return request(`/api/save-history?registration=${encodeURIComponent(value)}`);
+  return request('/api/save-history?registration=' + encodeURIComponent(value));
 }
 
 export async function getPartRate(partNo) {
   const value = String(partNo || '').replace(/\s+/g, '').toUpperCase();
   if (!value) return { success: true, part: null };
-  return request(`/api/save-history?partNo=${encodeURIComponent(value)}`);
+  return request('/api/save-history?partNo=' + encodeURIComponent(value));
 }
 
 export async function saveEstimate(payload) {

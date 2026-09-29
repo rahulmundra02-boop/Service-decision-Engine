@@ -19,8 +19,7 @@
     "expo-image-picker": "~17.0.11",
     "react-native-document-scanner-plugin": "2.0.4",
     "expo-local-authentication": "~17.0.9",
-    "expo-secure-store": "~15.0.8",
-    "react-native-view-shot": "~4.0.3"
+    "expo-secure-store": "~15.0.8"
   },
   "devDependencies": {
     "@babel/core": "^7.28.0",

@@ -7,6 +7,7 @@ on:
       - android-estimate-beta
     paths:
       - "android-estimate/app.json"
+      - ".github/workflows/android-estimate-apk.yml"
 
 permissions:
   contents: write

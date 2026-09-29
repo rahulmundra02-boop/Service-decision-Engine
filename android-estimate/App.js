@@ -521,7 +521,6 @@ function EstimateScreen({mode,data,user,onBack,savedEstimate,onSaved}) {
     const t=totals(allParts,allLabour);
     const labourSubtotal=allLabour.reduce((sum,x)=>sum+(Number(x.qty)||0)*(Number(x.rate)||0),0);
     const labourGst=labourSubtotal*0.18;
-    const currentReading=latestReading(rows);
     const moneyPdf=n=>`INR ${Number(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
     const esc=v=>String(v??'-').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const dealerName=String(user?.dealer_name||user?.dealerName||vehicle?.dealer_name||vehicle?.dealerName||'').trim();
@@ -541,8 +540,7 @@ function EstimateScreen({mode,data,user,onBack,savedEstimate,onSaved}) {
           <td><b>VIN</b><br/>${esc(vehicle.vin||'-')}</td>
         </tr><tr>
           <td><b>Model</b><br/>${esc(vehicle.model||'-')}</td>
-          <td><b>Current Reading</b><br/>${esc(currentReading)}</td>
-          <td><b>Sale Date</b><br/>${esc(formatDateOnly(vehicle.sale_date))}</td>
+          <td colspan="2"><b>Sale Date</b><br/>${esc(formatDateOnly(vehicle.sale_date))}</td>
         </tr></table>`;
     const partsBlock=allParts.length?`<div class="section partsHead">Parts</div><table class="items"><thead><tr><th style="width:14%">Part No.</th><th style="width:39%">Description</th><th style="width:9%">Qty</th><th style="width:19%">Rate<br/>(Incl. GST)</th><th style="width:19%">Amount</th></tr></thead><tbody>${partRows}</tbody></table>`:'';
     const labourBlock=allLabour.length?`<div class="section labourHead">Labour</div><table class="items"><thead><tr><th colspan="2" style="width:58%">Description</th><th style="width:9%">Qty</th><th style="width:19%">Rate<br/>(Excl. GST)</th><th style="width:14%">Amount</th></tr></thead><tbody>${labourRows}</tbody></table>`:'';
@@ -572,8 +570,8 @@ function EstimateScreen({mode,data,user,onBack,savedEstimate,onSaved}) {
       .total td{padding:5px}.total td:last-child{white-space:nowrap}
       .grand td{font-weight:900;font-size:15px;background:#eaf7ef}
       .sign{margin-top:20px;width:34%;margin-left:auto;text-align:center;min-height:55px}
-      .signatureSvg{width:120px;height:45px;margin:0 auto 3px;display:flex;align-items:center;justify-content:center}
-      .signatureSvg svg{width:120px;height:45px;display:block}
+      .signatureSvg{width:140px;height:55px;margin:0 auto 3px;display:flex;align-items:center;justify-content:center}
+      .signatureSvg svg{width:100%;height:100%;display:block}
       .disclaimer{margin-top:16px;padding:7px;border-top:1px solid #cbd5e1;font-size:8px;color:#64748b;text-align:center}
     </style></head><body>
       ${letterhead?`<div class="letterheadBg"><img src="${esc(letterhead)}" /></div>`:''}
@@ -780,32 +778,47 @@ function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) 
     }
     setBusy(true);
     try{
+      const drawnPoints=strokes.filter(stroke=>stroke.length>1).flat();
+      const xs=drawnPoints.map(p=>Number(p.x)||0);
+      const ys=drawnPoints.map(p=>Number(p.y)||0);
+      const minX=Math.min(...xs);
+      const maxX=Math.max(...xs);
+      const minY=Math.min(...ys);
+      const maxY=Math.max(...ys);
       const sourceWidth=Math.max(1,padSizeRef.current.width);
       const sourceHeight=Math.max(1,padSizeRef.current.height);
+      const padding=Math.max(12,Math.min(sourceWidth,sourceHeight)*0.04);
+      const cropMinX=Math.max(0,minX-padding);
+      const cropMaxX=Math.min(sourceWidth,maxX+padding);
+      const cropMinY=Math.max(0,minY-padding);
+      const cropMaxY=Math.min(sourceHeight,maxY+padding);
+      const cropWidth=Math.max(1,cropMaxX-cropMinX);
+      const cropHeight=Math.max(1,cropMaxY-cropMinY);
       const svgWidth=1200;
-      const svgHeight=Math.max(420,Math.round(svgWidth*(sourceHeight/sourceWidth)));
-      const scaleX=svgWidth/sourceWidth;
-      const scaleY=svgHeight/sourceHeight;
-      const paths=strokes
-        .filter(stroke=>stroke.length>1)
-        .map(stroke=>{
-          const points=stroke.map(p=>`${Math.max(0,Math.min(svgWidth,p.x*scaleX))},${Math.max(0,Math.min(svgHeight,p.y*scaleY))}`).join(' ');
-          return `<polyline points="${points}" fill="none" stroke="#1456c0" stroke-width="${Math.max(3,strokeWidthRef.current*3)}" stroke-linecap="round" stroke-linejoin="round"/>`;
-        }).join('');
+      const svgHeight=Math.max(120,Math.round(svgWidth*(cropHeight/cropWidth)));
+      const scaleX=svgWidth/cropWidth;
+      const scaleY=svgHeight/cropHeight;
+      const paths=strokes.filter(stroke=>stroke.length>1).map(stroke=>{
+        const points=stroke.map(p=>{
+          const x=Math.max(0,Math.min(svgWidth,(p.x-cropMinX)*scaleX));
+          const y=Math.max(0,Math.min(svgHeight,(p.y-cropMinY)*scaleY));
+          return `${x},${y}`;
+        }).join(' ');
+        return `<polyline points="${points}" fill="none" stroke="#1456c0" stroke-width="${Math.max(3,strokeWidthRef.current*3)}" stroke-linecap="round" stroke-linejoin="round"/>`;
+      }).join('');
       const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}" preserveAspectRatio="xMidYMid meet"><g>${paths}</g></svg>`;
       const signatureUri='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
       await AsyncStorage.setItem('estimate_user_signature',signatureUri);
       await AsyncStorage.setItem('estimate_user_signature_svg',svg);
       onSave(signatureUri);
       setFullScreen(false);
-      Alert.alert('Saved','Signature saved. Only the blue drawn strokes will appear on the estimate.');
+      Alert.alert('Saved','Signature saved in the same orientation and proportion in which it was drawn.');
     }catch(e){
       Alert.alert('Signature',e.message||'Could not save signature.');
     }finally{
       setBusy(false);
     }
   };
-
   const clearSignature=async()=>{
     await AsyncStorage.removeItem('estimate_user_signature');
     await AsyncStorage.removeItem('estimate_user_signature_svg');
@@ -963,12 +976,6 @@ function formatDateOnly(value) {
   return d.toLocaleDateString('en-IN',{day:'2-digit',month:'2-digit',year:'numeric'});
 }
 
-function latestReading(rows) {
-  const valid=(rows||[]).filter(r=>r?.cumulative_reading!==undefined && r?.cumulative_reading!==null && String(r.cumulative_reading).trim()!=='')
-    .sort((a,b)=>new Date(b.job_date||0)-new Date(a.job_date||0));
-  if (!valid.length) return '-';
-  return `${valid[0].cumulative_reading} ${valid[0].cumulative_unit||''}`.trim();
-}
 
 export default function App(){
   const [loading,setLoading]=useState(true);

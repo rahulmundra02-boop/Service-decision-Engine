@@ -66,6 +66,20 @@ function generateToken() {
   return crypto.randomBytes(32).toString("hex");
 }
 
+let authSchemaEnsured = false;
+async function initAuthSchemaOnce(client) {
+  if (!authSchemaEnsured) {
+    try {
+      await ensureSchema(client);
+      await bootstrapAdmin(client);
+      authSchemaEnsured = true;
+    } catch (err) {
+      authSchemaEnsured = false;
+      throw err;
+    }
+  }
+}
+
 async function ensureSchema(client) {
   await client.query(`
     CREATE TABLE IF NOT EXISTS app_users (
@@ -444,8 +458,7 @@ export default async function handler(req, res) {
 
   try {
     await client.query("BEGIN");
-    await ensureSchema(client);
-    await bootstrapAdmin(client);
+    await initAuthSchemaOnce(client);
 
     if (action === "login") {
       const identifier = clean(body.identifier);

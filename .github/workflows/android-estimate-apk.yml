@@ -9,6 +9,10 @@ on:
       - "android-estimate/app.json"
       - ".github/workflows/android-estimate-apk.yml"
 
+concurrency:
+  group: android-estimate-apk
+  cancel-in-progress: true
+
 permissions:
   contents: write
 

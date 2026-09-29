@@ -719,6 +719,8 @@ function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) 
   const [fullScreen,setFullScreen]=useState(false);
   const [padSize,setPadSize]=useState({width:1,height:1});
   const padSizeRef=useRef({width:1,height:1});
+  const padOriginRef=useRef({x:0,y:0});
+  const padRef=useRef(null);
   const strokeWidthRef=useRef(2.5);
   const currentStrokeRef=useRef([]);
 
@@ -732,23 +734,26 @@ function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) 
     return ()=>subscription.remove();
   },[onBack,fullScreen]);
 
-  const startStroke=(e)=>{
+  const getLocalPoint=(e)=>{
     const size=padSizeRef.current;
-    const p={
-      x:Math.max(0,Math.min(size.width,e.nativeEvent.locationX)),
-      y:Math.max(0,Math.min(size.height,e.nativeEvent.locationY))
+    const origin=padOriginRef.current;
+    const pageX=Number(e.nativeEvent.pageX);
+    const pageY=Number(e.nativeEvent.pageY);
+    return {
+      x:Math.max(0,Math.min(size.width,pageX-origin.x)),
+      y:Math.max(0,Math.min(size.height,pageY-origin.y))
     };
+  };
+
+  const startStroke=(e)=>{
+    const p=getLocalPoint(e);
     currentStrokeRef.current=[p];
     setStrokes(prev=>[...prev,[p]]);
     setDrawing(true);
   };
 
   const moveStroke=(e)=>{
-    const size=padSizeRef.current;
-    const p={
-      x:Math.max(0,Math.min(size.width,e.nativeEvent.locationX)),
-      y:Math.max(0,Math.min(size.height,e.nativeEvent.locationY))
-    };
+    const p=getLocalPoint(e);
     setStrokes(prev=>{
       if(!prev.length) return prev;
       const next=prev.map((stroke,index)=>index===prev.length-1?[...stroke,p]:stroke);
@@ -831,12 +836,22 @@ function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) 
   };
 
   const drawBoard=(large=false)=><View
+    ref={padRef}
     onLayout={e=>{
       const {width,height}=e.nativeEvent.layout;
       if(width>0&&height>0){
         const next={width,height};
         padSizeRef.current=next;
         setPadSize(next);
+        requestAnimationFrame(()=>{
+          if(padRef.current?.measureInWindow){
+            padRef.current.measureInWindow((x,y,w,h)=>{
+              padOriginRef.current={x,y};
+              padSizeRef.current={width:w||width,height:h||height};
+              setPadSize({width:w||width,height:h||height});
+            });
+          }
+        });
       }
     }}
     style={[styles.signaturePad,large&&styles.signaturePadFull]}

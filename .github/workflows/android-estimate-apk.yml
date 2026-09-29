@@ -85,7 +85,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="android-v${{ steps.release_version.outputs.version }}-build${{ steps.release_version.outputs.build }}"
-          gh release create "$TAG" android/app/build/outputs/apk/release/app-release.apk \
+          cat > latest.json <<EOF
+          {
+            "version": "${{ steps.release_version.outputs.version }}",
+            "build": ${{ steps.release_version.outputs.build }},
+            "downloadUrl": "https://github.com/${{ github.repository }}/releases/latest/download/AL-Service-Estimate-release.apk"
+          }
+          EOF
+          gh release create "$TAG" android/app/build/outputs/apk/release/app-release.apk latest.json \
             --repo "${{ github.repository }}" \
             --target "$(git rev-parse HEAD)" \
             --title "AL Service Estimate v${{ steps.release_version.outputs.version }} (Build ${{ steps.release_version.outputs.build }})" \

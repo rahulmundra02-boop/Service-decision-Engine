@@ -2,12 +2,6 @@ name: Android Estimate APK
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - android-estimate-beta
-    paths:
-      - "android-estimate/**"
-
 jobs:
   build-android-apk:
     name: Build Android APK

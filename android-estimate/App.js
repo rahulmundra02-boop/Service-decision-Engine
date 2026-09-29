@@ -4,6 +4,9 @@ import {
   SafeAreaView, ScrollView, Share, StatusBar, StyleSheet, Text, TextInput, View, Image
 } from 'react-native';
 import * as Print from 'expo-print';
+import * as Application from 'expo-application';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as IntentLauncher from 'expo-intent-launcher';
 import * as Sharing from 'expo-sharing';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as ImagePicker from 'expo-image-picker';
@@ -259,6 +262,52 @@ function LoginScreen({onLogin}) {
       {biometricReady && <Button title="Use Fingerprint / Face Unlock" secondary onPress={biometricLogin} disabled={busy}/>}
     </View>
   </KeyboardAvoidingView></SafeAreaView>;
+}
+
+function UpdateScreen({update,onLater}) {
+  const [busy,setBusy]=useState(false);
+
+  const downloadAndInstall=async()=>{
+    if(!update?.downloadUrl) return;
+    setBusy(true);
+    try{
+      const safeVersion=String(update.version||'latest').replace(/[^a-zA-Z0-9._-]/g,'_');
+      const safeBuild=String(update.build||'').replace(/[^0-9]/g,'');
+      const fileUri=`${FileSystem.cacheDirectory}AL-Service-Estimate-${safeVersion}-build-${safeBuild}.apk`;
+      const result=await FileSystem.downloadAsync(update.downloadUrl,fileUri);
+      const contentUri=await FileSystem.getContentUriAsync(result.uri);
+      await IntentLauncher.startActivityAsync('android.intent.action.VIEW',{
+        data:contentUri,
+        type:'application/vnd.android.package-archive',
+        flags:1
+      });
+    }catch(e){
+      Alert.alert(
+        'Update',
+        e?.message||'The update could not be downloaded or opened. Please try again.'
+      );
+    }finally{
+      setBusy(false);
+    }
+  };
+
+  return <SafeAreaView style={styles.safe}>
+    <View style={styles.updateWrap}>
+      <View style={styles.updateCard}>
+        <Text style={styles.updateIcon}>↑</Text>
+        <Text style={styles.updateTitle}>New Update Available</Text>
+        <Text style={styles.updateText}>A newer version of Service Estimate is available.</Text>
+        <View style={styles.updateVersionBox}>
+          <Text style={styles.updateVersionLabel}>Latest version</Text>
+          <Text style={styles.updateVersion}>{update.version||'-'}  •  Build {update.build||'-'}</Text>
+        </View>
+        {update.notes?<Text style={styles.updateNotes}>{update.notes}</Text>:null}
+        <Button title={busy?'Downloading...':'Download & Install'} onPress={downloadAndInstall} disabled={busy}/>
+        <Button title="Later" secondary onPress={onLater} disabled={busy}/>
+        <Text style={styles.updateHint}>The APK will download automatically. Android may ask you to confirm the installation.</Text>
+      </View>
+    </View>
+  </SafeAreaView>;
 }
 
 function VehicleScreen({mode,onVehicle}) {
@@ -647,7 +696,6 @@ function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) 
   const [strokes,setStrokes]=useState([]);
   const [drawing,setDrawing]=useState(false);
   const [strokeWidth,setStrokeWidth]=useState(2.5);
-  const padRef=useRef(null);
   const currentStrokeRef=useRef([]);
 
   React.useEffect(()=>{
@@ -690,7 +738,7 @@ function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) 
           return `<polyline points="${points}" fill="none" stroke="#1456c0" stroke-width="${strokeWidth*2.5}" stroke-linecap="round" stroke-linejoin="round"/>`;
         }).join('');
       const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><g>${paths}</g></svg>`;
-      const signatureUri='data:image/svg+xml;base64,'+global.btoa(unescape(encodeURIComponent(svg)));
+      const signatureUri='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
       await AsyncStorage.setItem('estimate_user_signature',signatureUri);
       onSave(signatureUri);
       Alert.alert('Saved','Signature saved. Only the blue drawn signature will appear on the estimate.');
@@ -756,7 +804,7 @@ function SignatureScreen({signature,letterhead,onSave,onLetterheadSave,onBack}) 
       <Text style={styles.cardTitle}>User Signature</Text>
       <Text style={styles.signaturePadStatus}>Pen thickness: {strokeWidth.toFixed(1)}</Text>
       <View style={styles.strokeControls}>{[1.5,2.5,4,6].map(w=><Pressable key={w} onPress={()=>setStrokeWidth(w)} style={[styles.strokeButton,strokeWidth===w&&styles.strokeButtonSelected]}><Text style={[styles.strokeButtonText,strokeWidth===w&&styles.strokeButtonTextSelected]}>{w}</Text></Pressable>)}</View>
-      <View ref={padRef} collapsable={false} style={styles.signaturePad} {...panResponder.panHandlers}>
+      <View style={styles.signaturePad} {...panResponder.panHandlers}>
         {strokes.map((stroke,si)=>stroke.map((point,pi)=>lineFor(point,stroke[pi+1],si+'-'+pi)))}
         {!strokes.length && <Text style={styles.signaturePadHint}>Sign here with your finger</Text>}
       </View>
@@ -810,6 +858,8 @@ export default function App(){
   const [editingSaved,setEditingSaved]=useState(null);
   const [signature,setSignature]=useState('');
   const [letterhead,setLetterhead]=useState('');
+  const [updateInfo,setUpdateInfo]=useState(null);
+  const [updateDismissed,setUpdateDismissed]=useState(false);
 
   const savedKey = "service_estimate_saved_"+String(user?.id || user?.email || user?.personName || "default").toLowerCase();
 
@@ -840,6 +890,40 @@ export default function App(){
     AsyncStorage.getItem('estimate_user_signature').then(v=>setSignature(v||''));
     AsyncStorage.getItem('estimate_letterhead').then(v=>setLetterhead(v||''));
     setLoading(false);
+  },[]);
+
+  React.useEffect(()=>{
+    let cancelled=false;
+    (async()=>{
+      try{
+        if(Platform.OS!=='android') return;
+        const currentBuild=Number(Application.nativeBuildVersion||0);
+        const response=await fetch('https://api.github.com/repos/rahulmundra02-boop/Service-decision-Engine/releases/latest',{
+          headers:{
+            Accept:'application/vnd.github+json',
+            'X-GitHub-Api-Version':'2026-03-10'
+          }
+        });
+        if(!response.ok) return;
+        const release=await response.json();
+        const tag=String(release?.tag_name||'');
+        const buildMatch=tag.match(/build(\\d+)/i);
+        const latestBuild=Number(buildMatch?.[1]||0);
+        const asset=Array.isArray(release?.assets)
+          ? release.assets.find(x=>String(x?.name||'').toLowerCase()==='app-release.apk')
+          : null;
+        if(!cancelled && latestBuild>currentBuild && asset?.browser_download_url){
+          const versionMatch=tag.match(/android-v(.+)-build\\d+$/i);
+          setUpdateInfo({
+            version:versionMatch?.[1]||release?.name||'New',
+            build:latestBuild,
+            downloadUrl:asset.browser_download_url,
+            notes:String(release?.body||'').trim()
+          });
+        }
+      }catch{}
+    })();
+    return ()=>{cancelled=true;};
   },[]);
 
   React.useEffect(()=>{
@@ -891,6 +975,7 @@ export default function App(){
   },[mode,vehicleData,signatureScreen,savedScreen]);
 
   if(loading) return <SafeAreaView style={styles.safe}><View style={styles.center}><ActivityIndicator size="large"/><Text style={styles.muted}>Loading...</Text></View></SafeAreaView>;
+  if(updateInfo && !updateDismissed) return <UpdateScreen update={updateInfo} onLater={()=>setUpdateDismissed(true)}/>;
   if(!user) return <LoginScreen onLogin={setUser}/>;
   if(signatureScreen) return <SignatureScreen signature={signature} letterhead={letterhead} onSave={setSignature} onLetterheadSave={setLetterhead} onBack={()=>setSignatureScreen(false)}/>;
   if(savedScreen) return <SavedEstimatesScreen records={savedEstimates} onOpen={openSavedEstimate} onNew={()=>{setEditingSaved(null);setVehicleData(null);setMode('repair');setSavedScreen(false);}} onBack={()=>setSavedScreen(false)}/>;
@@ -912,6 +997,16 @@ export default function App(){
 
 const styles=StyleSheet.create({
   safe:{flex:1,backgroundColor:'#f3f6fb',paddingTop:Platform.OS==='android'?(StatusBar.currentHeight||0)+4:0},container:{padding:10,paddingBottom:28},
+  updateWrap:{flex:1,justifyContent:'center',padding:16},
+  updateCard:{backgroundColor:'#fff',borderRadius:14,padding:18,borderWidth:1,borderColor:'#d6dde4',elevation:3},
+  updateIcon:{width:48,height:48,borderRadius:24,backgroundColor:'#e8f2ff',color:'#1456c0',fontSize:30,fontWeight:'900',textAlign:'center',lineHeight:46,alignSelf:'center',marginBottom:10},
+  updateTitle:{fontSize:20,fontWeight:'900',color:'#12304a',textAlign:'center'},
+  updateText:{fontSize:12,color:'#607080',lineHeight:18,textAlign:'center',marginTop:6},
+  updateVersionBox:{backgroundColor:'#f3f7fb',borderRadius:9,padding:10,marginTop:14},
+  updateVersionLabel:{fontSize:9,fontWeight:'700',color:'#71808f',textAlign:'center'},
+  updateVersion:{fontSize:14,fontWeight:'900',color:'#12304a',textAlign:'center',marginTop:2},
+  updateNotes:{fontSize:10,color:'#607080',lineHeight:15,marginTop:10,textAlign:'center'},
+  updateHint:{fontSize:9,color:'#8a959f',lineHeight:13,textAlign:'center',marginTop:8},
   loginWrap:{flex:1,justifyContent:'center',padding:14},center:{flex:1,justifyContent:'center',alignItems:'center'},
   brand:{fontSize:20,fontWeight:'800',color:'#12304a',marginBottom:4},sub:{fontSize:11,color:'#607080',marginBottom:16},
   heading:{fontSize:18,fontWeight:'800',color:'#12304a'},helper:{color:'#607080',marginBottom:12,marginTop:4,fontSize:11},

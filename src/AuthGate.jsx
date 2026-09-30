@@ -64,7 +64,7 @@ export default function AuthGate({ children }) {
   const [analyticsRange, setAnalyticsRange] = useState(30);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsIncludeAdmins, setAnalyticsIncludeAdmins] = useState(true);
-  const [jobCardCacheSettings, setJobCardCacheSettings] = useState({ enabled:true, intervalHours:24, version:1, lastRebuildAt:null, lastAutoRebuildAt:null, nextRebuildAt:null, cachedJobCards:0 });
+  const [jobCardCacheSettings, setJobCardCacheSettings] = useState({ enabled:true, intervalHours:24, version:1, lastRebuildAt:null, nextRebuildAt:null, cachedJobCards:0 });
   const [emergencyDbUploadCutoff, setEmergencyDbUploadCutoff] = useState(false);
   const [sessionConflict, setSessionConflict] = useState(null);
   const [pendingLoginCredentials, setPendingLoginCredentials] = useState(null);
@@ -72,9 +72,6 @@ export default function AuthGate({ children }) {
   const [campaignUploadBusy, setCampaignUploadBusy] = useState(false);
   const [campaignUploadMessage, setCampaignUploadMessage] = useState("");
   const [campaignUploadError, setCampaignUploadError] = useState("");
-  const [staleChassisBuckets, setStaleChassisBuckets] = useState({"7plus":[],"6":[],"5":[],"4":[],"3":[],"2":[],"1":[]});
-  const [staleChassisLoading, setStaleChassisLoading] = useState(false);
-
 
   useEffect(() => {
     const token = localStorage.getItem(TOKEN_KEY);
@@ -247,26 +244,6 @@ export default function AuthGate({ children }) {
     setMessage(data.message || "Emergency DB upload cutoff updated.");
   });
 
-  const loadStaleChassis = async () => {
-    setStaleChassisLoading(true);
-    try {
-      const data = await api("admin-stale-chassis", {}, localStorage.getItem(TOKEN_KEY));
-      setStaleChassisBuckets({
-        "7plus":Array.isArray(data?.buckets?.["7plus"]) ? data.buckets["7plus"] : [],
-        "6":Array.isArray(data?.buckets?.["6"]) ? data.buckets["6"] : [],
-        "5":Array.isArray(data?.buckets?.["5"]) ? data.buckets["5"] : [],
-        "4":Array.isArray(data?.buckets?.["4"]) ? data.buckets["4"] : [],
-        "3":Array.isArray(data?.buckets?.["3"]) ? data.buckets["3"] : [],
-        "2":Array.isArray(data?.buckets?.["2"]) ? data.buckets["2"] : [],
-        "1":Array.isArray(data?.buckets?.["1"]) ? data.buckets["1"] : []
-      });
-    } catch (e) {
-      setError(e.message || "Unable to load stale chassis list.");
-    } finally {
-      setStaleChassisLoading(false);
-    }
-  };
-
   const loadCampaignMeta = async () => {
     try {
       const data = await api("admin-campaign-meta", {}, localStorage.getItem(TOKEN_KEY));
@@ -420,7 +397,6 @@ export default function AuthGate({ children }) {
       loadJobCardCacheSettings();
       loadEmergencyDbUploadCutoff();
       loadCampaignMeta();
-      loadStaleChassis();
     }
   }, [user?.role, adminOpen, analyticsIncludeAdmins]);
 
@@ -669,9 +645,6 @@ export default function AuthGate({ children }) {
           campaignUploadMessage={campaignUploadMessage}
           campaignUploadError={campaignUploadError}
           onUploadCampaignExcel={uploadCampaignExcel}
-          staleChassisBuckets={staleChassisBuckets}
-          staleChassisLoading={staleChassisLoading}
-          onLoadStaleChassis={loadStaleChassis}
         />
       ) : cloneElement(children, { user })}
     </div>
@@ -687,11 +660,9 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
   return <div className="auth-modal-backdrop"><div className="auth-modal" style={{maxWidth:820,width:"min(820px,calc(100vw - 32px))",maxHeight:"90vh",overflow:"auto",boxSizing:"border-box"}}><h2>Profile & Dashboard Settings</h2><p className="auth-hint">Ye settings sirf aapki user ID ke liye save hongi. Table width header divider ko mouse se drag karke set hogi.</p><label>Person Name</label><input value={form.personName} onChange={e=>setForm({...form,personName:e.target.value})}/><label>Dealer / Workshop Name</label><input value={form.dealerName} onChange={e=>setForm({...form,dealerName:e.target.value})}/><label>Mobile</label><input value={form.mobile} onChange={e=>setForm({...form,mobile:e.target.value})}/><label className="booking-field-label">Advance Booking Contact 1 {!form.booking1 && <span className="booking-field-dot" />}</label><input value={form.booking1} onChange={e=>setForm({...form,booking1:e.target.value})} placeholder="Optional mobile number"/><label className="booking-field-label">Advance Booking Contact 2 {!form.booking2 && <span className="booking-field-dot" />}</label><input value={form.booking2} onChange={e=>setForm({...form,booking2:e.target.value})} placeholder="Optional mobile number"/><label>WhatsApp Opening Line (Optional)</label><textarea value={form.whatsappOpeningLine} onChange={e=>setForm({...form,whatsappOpeningLine:e.target.value})} placeholder="Applies to the top of the WhatsApp due message. Leave blank if no extra line is required." rows={3} style={{minHeight:72,resize:"vertical"}}/><div className="auth-hint">This is your personal wording. It will be saved with your user ID and reused in future WhatsApp due summaries.</div><div style={{fontWeight:800}}>Single Vehicle Service History Table</div><div className="auth-hint">Checkbox = show/hide · Text box = custom heading · width by mouse drag.</div><div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:"6px 12px",margin:"8px 0 16px",minWidth:0}}>{singleCols.map(([k,l])=>editor("singleColumns",k,l))}</div><div style={{fontWeight:800}}>Bulk Vehicle Due / Service Summary Table</div><div className="auth-hint">Checkbox = show/hide · Text box = custom heading · width by mouse drag.</div><div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:"6px 12px",margin:"8px 0",minWidth:0}}>{bulkCols.map(([k,l])=>editor("bulkColumns",k,l))}<div style={{display:"grid",gridTemplateColumns:"28px 1fr",gap:7,alignItems:"center"}}><span></span><input value={(form.bulkColumnLabels||{}).serial||"S.No. / Due"} onChange={e=>setLabel("bulkColumnLabels","serial",e.target.value)} placeholder="S.No. / Due"/></div></div><div className="auth-modal-actions"><button className="auth-secondary" onClick={onClose}>Cancel</button><button className="auth-primary" onClick={onSave} disabled={loading}>Save Profile & Settings</button></div></div></div>;
 }
 
-function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel, staleChassisBuckets, staleChassisLoading, onLoadStaleChassis }) {
+function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel }) {
   const analyticsDetailRef = useRef(null);
   const [view, setView] = useState("overview");
-  const [serviceUpdateOpen, setServiceUpdateOpen] = useState(false);
-  const [copiedServiceBucket, setCopiedServiceBucket] = useState("");
 
   const selected = analyticsUserId
     ? analytics.summary.find(u => Number(u.id) === Number(analyticsUserId))
@@ -761,94 +732,10 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
           {metricCard("Total Users", totals.users)}
           {metricCard("Active Users", totals.active)}
           {metricCard("Total Logins", totals.logins)}
-          {metricCard("Total Vehicles", Number(analytics.totalVehicles || 0).toLocaleString("en-IN"))}
+          {metricCard("Vehicles Analysed", totals.vehicles)}
           {metricCard("Excel Files", totals.files)}
           {metricCard("Activities", totals.activities)}
         </div>
-
-        {!serviceUpdateOpen ? (
-          <div className="admin-panel-card service-update-entry-card">
-            <div className="service-update-entry-content">
-              <div>
-                <div className="admin-panel-card-title">Service Update Priority</div>
-                <div className="admin-panel-card-sub">Vehicle DB ke last updated date ke basis par chassis ko 1 day se 7+ days tak priority-wise dekhein.</div>
-              </div>
-              <button className="auth-primary service-update-open-btn" type="button" onClick={()=>setServiceUpdateOpen(true)}>
-                Open Service Update List
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="admin-panel-card service-update-detail-card">
-            <div className="service-update-detail-header">
-              <div>
-                <div className="admin-panel-card-title">Service Update Pending</div>
-                <div className="admin-panel-card-sub">DB me vehicle ka last updated date ke basis par chassis ko age-wise priority buckets me dekhein.</div>
-              </div>
-              <div className="service-update-detail-actions">
-                <button className="auth-secondary" type="button" onClick={()=>setServiceUpdateOpen(false)}>Back</button>
-                <button className="auth-primary" type="button" onClick={onLoadStaleChassis} disabled={staleChassisLoading}>
-                  {staleChassisLoading ? "Loading..." : "Refresh List"}
-                </button>
-              </div>
-            </div>
-
-            <div className="service-update-count-grid">
-              {[["7plus","7 Days or More"],["6","6 Days Old"],["5","5 Days Old"],["4","4 Days Old"],["3","3 Days Old"],["2","2 Days Old"],["1","1 Day Old"]].map(([key,label])=>(
-                <div key={key} className="service-update-count-box">
-                  <div className="service-update-count-label">{label}</div>
-                  <div className="service-update-count-value">{(staleChassisBuckets?.[key]||[]).length.toLocaleString("en-IN")}</div>
-                  <div className="service-update-count-sub">chassis</div>
-                </div>
-              ))}
-            </div>
-
-            <div className="service-update-list-grid">
-              {[["7plus","7 Days or More"],["6","6 Days Old"],["5","5 Days Old"],["4","4 Days Old"],["3","3 Days Old"],["2","2 Days Old"],["1","1 Day Old"]].map(([key,label])=>{
-                const list=staleChassisBuckets?.[key]||[];
-                const copyList=async()=>{
-                  try {
-                    const text=list.join("\n");
-                    if(navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
-                    else {
-                      const area=document.createElement("textarea");
-                      area.value=text;
-                      area.style.position="fixed";
-                      area.style.opacity="0";
-                      document.body.appendChild(area);
-                      area.select();
-                      document.execCommand("copy");
-                      area.remove();
-                    }
-                    setCopiedServiceBucket(key);
-                    setTimeout(()=>setCopiedServiceBucket(current=>current===key ? "" : current),1800);
-                  } catch(e) {
-                    setCopiedServiceBucket("error:"+key);
-                    setTimeout(()=>setCopiedServiceBucket(current=>current==="error:"+key ? "" : current),1800);
-                  }
-                };
-                return (
-                  <div key={key} className="service-update-list-box">
-                    <div className="service-update-list-header">
-                      <div className="service-update-list-title">{label} <span>({list.length.toLocaleString("en-IN")})</span></div>
-                      <button type="button" className="service-update-copy-btn" onClick={copyList} disabled={!list.length}>
-                        {copiedServiceBucket===key ? "Copied ✓" : copiedServiceBucket==="error:"+key ? "Copy Failed" : "Copy to Clipboard"}
-                      </button>
-                    </div>
-                    <div className="service-update-list-scroll">
-                      {list.length ? list.map((chassis,index)=>(
-                        <div key={chassis+"-"+index} className="service-update-chassis-row">{chassis}</div>
-                      )) : (
-                        <div className="service-update-empty">{staleChassisLoading ? "Loading..." : "No chassis in this bucket."}</div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
 
         <div className="admin-panel-card" style={{marginTop:16,padding:"18px 20px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
@@ -868,8 +755,8 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
                 {[6,12,24,48,168].map(v=><option key={v} value={v}>{v===168?"7 Days":v+" Hours"}</option>)}
               </select>
             </div>
-            <div><div className="admin-panel-card-sub">Last Manual Rebuild Signal</div><strong>{jobCardCacheSettings?.lastRebuildAt ? new Date(jobCardCacheSettings.lastRebuildAt).toLocaleString("en-IN") : "Not yet rebuilt"}</strong></div>
-            <div><div className="admin-panel-card-sub">Last Automatic Cache Rebuild</div><strong>{jobCardCacheSettings?.lastAutoRebuildAt ? new Date(jobCardCacheSettings.lastAutoRebuildAt).toLocaleString("en-IN") : "Not yet rebuilt"}</strong></div>
+            <div><div className="admin-panel-card-sub">Last Global Index Update</div><strong>{jobCardCacheSettings?.lastRebuildAt ? new Date(jobCardCacheSettings.lastRebuildAt).toLocaleString("en-IN") : "Not yet rebuilt"}</strong></div>
+            <div><div className="admin-panel-card-sub">Next Rebuild</div><strong>{jobCardCacheSettings?.nextRebuildAt ? new Date(jobCardCacheSettings.nextRebuildAt).toLocaleString("en-IN") : "—"}</strong></div>
             <div><div className="admin-panel-card-sub">Cached Job Cards</div><strong>{Number(jobCardCacheSettings?.cachedJobCards || 0).toLocaleString("en-IN")}</strong></div>
           </div>
           <div style={{display:"flex",gap:10,marginTop:16,flexWrap:"wrap"}}>

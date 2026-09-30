@@ -1,0 +1,32 @@
+{
+  "name": "service-estimate-android",
+  "version": "0.2.0",
+  "private": true,
+  "main": "node_modules/expo/AppEntry.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "build:android": "eas build --platform android --profile preview"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "expo": "~54.0.0",
+    "expo-file-system": "~19.0.17",
+    "expo-print": "~15.0.8",
+    "expo-sharing": "~14.0.7",
+    "react": "19.1.0",
+    "react-native": "0.81.5",
+    "expo-image-picker": "~17.0.11",
+    "react-native-document-scanner-plugin": "2.0.4",
+    "expo-local-authentication": "~17.0.9",
+    "expo-secure-store": "~15.0.8",
+    "expo-application": "~7.0.8",
+    "expo-intent-launcher": "~13.0.8",
+    "expo-image": "~3.0.11",
+    "xlsx": "0.18.5"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.28.0",
+    "babel-preset-expo": "~54.0.12"
+  }
+}

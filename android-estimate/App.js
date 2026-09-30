@@ -962,23 +962,33 @@ function MissingVehicleScreen({ registration, mode, onVehicle, onBack }) {
       try {
         const raw = await getModelList();
         if (mounted) {
-          // Default comprehensive Ashok Leyland 4-digit models
-          const standardModels = [
+          const fallbackModels = [
             '5525', '4925', '4828', '4825', '4225', '4220', '4123',
             '3518', '3118', '2820', '2518', '1920', '1618', '1415',
             '1214', '1114'
           ];
-          const combined = new Set(standardModels);
-          if (Array.isArray(raw)) {
+          const modelSet = new Set();
+          if (Array.isArray(raw) && raw.length > 0) {
             raw.forEach((m) => {
               const str = String(m || '').trim();
-              const match = str.match(/\b(\d{4})\b/);
-              if (match) combined.add(match[1]);
-              else if (/^\d{4}$/.test(str)) combined.add(str);
+              if (str) modelSet.add(str);
             });
+          } else {
+            fallbackModels.forEach((m) => modelSet.add(m));
           }
-          // Sort strictly by descending order: 5525 > 4925 > 4828 > 4825 > 4225 > 4220...
-          const sorted = Array.from(combined).sort((a, b) => Number(b) - Number(a));
+
+          const extract4Digit = (str) => {
+            const match = String(str || '').match(/\b(\d{4})\b/) || String(str || '').match(/\d{4}/);
+            return match ? parseInt(match[0], 10) : 0;
+          };
+
+          // Sort strictly by descending order based on the 4-digit model number
+          const sorted = Array.from(modelSet).sort((a, b) => {
+            const numA = extract4Digit(a);
+            const numB = extract4Digit(b);
+            if (numB !== numA) return numB - numA;
+            return a.localeCompare(b);
+          });
           setModelList(sorted);
         }
       } catch {
@@ -995,14 +1005,14 @@ function MissingVehicleScreen({ registration, mode, onVehicle, onBack }) {
   }, []);
 
   const filteredModels = useMemo(() => {
-    const q = String(modelSearch || '').trim();
+    const q = String(modelSearch || '').trim().toLowerCase();
     if (!q) return modelList;
-    return modelList.filter((m) => m.includes(q));
+    return modelList.filter((m) => m.toLowerCase().includes(q));
   }, [modelList, modelSearch]);
 
   const proceed = async () => {
     if (!selectedModel) {
-      Alert.alert('Model Required', 'Please select a 4-digit vehicle model from the list.');
+      Alert.alert('Model Required', 'Please select a vehicle model from the list.');
       return;
     }
     if (!customerName.trim()) {
@@ -1042,25 +1052,25 @@ function MissingVehicleScreen({ registration, mode, onVehicle, onBack }) {
           <Text style={styles.missingRegLabel}>REGISTRATION NUMBER</Text>
           <Text style={styles.missingRegValue}>{registration}</Text>
           <Text style={styles.missingRegHint}>
-            This registration is not registered yet. Please select its 4-digit model and customer
+            This registration is not registered yet. Please select its vehicle model and customer
             name to proceed with aggregate service estimation.
           </Text>
         </View>
 
-        {/* Step 2: 4-digit Model Scroll List (Descending Order) */}
+        {/* Step 2: Model Scroll List (Descending Order by 4-digit series) */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Select 4-Digit Model</Text>
+          <Text style={styles.cardTitle}>Select Vehicle Model</Text>
           <Text style={styles.sectionHint}>
-            Scroll and select the model (sorted descending). Model parts and rates will load from DB.
+            Select the model from the database (sorted descending by 4-digit series). Model parts and rates will load automatically.
           </Text>
 
           {/* Quick filter input */}
           <TextInput
             value={modelSearch}
             onChangeText={setModelSearch}
-            placeholder="Search 4-digit model (e.g. 5525)..."
+            placeholder="Search model (e.g. 5525, 4220, NA5525)..."
             placeholderTextColor="#8a99a8"
-            keyboardType="number-pad"
+            autoCapitalize="characters"
             style={[styles.input, { marginBottom: 8 }]}
           />
 
@@ -1074,6 +1084,8 @@ function MissingVehicleScreen({ registration, mode, onVehicle, onBack }) {
               <ScrollView nestedScrollEnabled showsVerticalScrollIndicator>
                 {filteredModels.map((m) => {
                   const isSelected = selectedModel === m;
+                  const numMatch = m.match(/\b\d{4}\b/) || m.match(/\d{4}/);
+                  const seriesText = numMatch ? `${numMatch[0]} Series` : 'Ashok Leyland';
                   return (
                     <TouchableOpacity
                       key={m}
@@ -1086,15 +1098,17 @@ function MissingVehicleScreen({ registration, mode, onVehicle, onBack }) {
                       <View style={[styles.modelRadio, isSelected && styles.modelRadioSelected]}>
                         {isSelected ? <View style={styles.modelRadioDot} /> : null}
                       </View>
-                      <Text
-                        style={[
-                          styles.modelItemText,
-                          isSelected && styles.modelItemTextSelected
-                        ]}
-                      >
-                        Model {m}
-                      </Text>
-                      <Text style={styles.modelItemTag}>Ashok Leyland</Text>
+                      <View style={{ flex: 1, paddingRight: 8 }}>
+                        <Text
+                          style={[
+                            styles.modelItemText,
+                            isSelected && styles.modelItemTextSelected
+                          ]}
+                        >
+                          {m}
+                        </Text>
+                      </View>
+                      <Text style={styles.modelItemTag}>{seriesText}</Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -1188,19 +1202,19 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
     );
     const manualParts = parts.filter((x) => !x.serviceKey);
     const manualLabour = labour.filter((x) => !x.serviceKey);
-    setParts([...built.parts, ...manualParts]);
-    setLabour([...built.labour, ...manualLabour]);
+    setParts([...manualParts, ...built.parts]);
+    setLabour([...manualLabour, ...built.labour]);
   };
 
   const addPart = () => {
     const item = makeManualItem('part');
-    setParts((prev) => [...prev, item]);
+    setParts((prev) => [item, ...prev]);
     setFocusPartId(item.id);
   };
 
   const addLabour = () => {
     const item = makeManualItem('labour');
-    setLabour((prev) => [...prev, item]);
+    setLabour((prev) => [item, ...prev]);
     setFocusLabourId(item.id);
   };
 

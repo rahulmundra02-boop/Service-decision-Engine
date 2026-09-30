@@ -2373,7 +2373,7 @@ export default function App() {
         if (Platform.OS !== 'android') return;
         const currentBuild = Number(Application.nativeBuildVersion || 0);
         const response = await fetch(
-          'https://service-decision-engine.vercel.app/mobile/latest.json?t=' + Date.now()
+          'https://service-decision-engine.vercel.app/mobile/latest-beta.json?t=' + Date.now()
         );
         if (!response.ok) return;
         const release = await response.json();
@@ -2383,7 +2383,7 @@ export default function App() {
             version: String(release?.version || 'New'),
             build: latestBuild,
             downloadUrl: String(release.downloadUrl),
-            notes: 'A new Android build is available. Download and install the latest update.'
+            notes: 'A new Android Beta build is available. Download and install the latest update.'
           });
         }
       } catch {}

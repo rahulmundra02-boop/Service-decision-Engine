@@ -47,6 +47,7 @@ import {
 import {
   AGGREGATES,
   buildServiceItems,
+  prebuildAllAggregates,
   makeManualItem,
   rateForManualPart,
   totals
@@ -1235,22 +1236,34 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
     };
   }, []);
 
+  // Pre-calculate all aggregate items once when entering the screen (Instant 0ms selection)
+  const prebuiltAggregates = useMemo(() => {
+    return prebuildAllAggregates(
+      data.rows || [],
+      data.modelRows || [],
+      data.globalPartRates || []
+    );
+  }, [data]);
+
   const toggleAggregate = (key) => {
     const nextSelected = selected.includes(key)
       ? selected.filter((x) => x !== key)
       : [...selected, key];
     setSelected(nextSelected);
 
-    const built = buildServiceItems(
-      nextSelected,
-      data.rows || [],
-      data.modelRows || [],
-      data.globalPartRates || []
-    );
+    const builtParts = [];
+    const builtLabour = [];
+    for (const k of nextSelected) {
+      const items =
+        prebuiltAggregates[k] ||
+        buildServiceItems([k], data.rows || [], data.modelRows || [], data.globalPartRates || []);
+      if (items?.parts) builtParts.push(...items.parts);
+      if (items?.labour) builtLabour.push(...items.labour);
+    }
     const manualParts = parts.filter((x) => !x.serviceKey);
     const manualLabour = labour.filter((x) => !x.serviceKey);
-    setParts([...manualParts, ...built.parts]);
-    setLabour([...manualLabour, ...built.labour]);
+    setParts([...manualParts, ...builtParts]);
+    setLabour([...manualLabour, ...builtLabour]);
   };
 
   const addPart = () => {

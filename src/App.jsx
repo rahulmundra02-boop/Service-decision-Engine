@@ -1575,12 +1575,49 @@ function aggregateHistory(records) {
 
 function isScheduledHistoryVisit(visit, vehicle, decision) {
   if (!Array.isArray(visit) || !visit.length) return false;
-  return getVisitParts(visit, vehicle, decision).some((part) => part.eligible);
+  return getVisitParts(visit, vehicle, decision).some((part) => part.historyEligible);
 }
 
 function isMappedServiceLine(record) {
   const code = normalizePartCode(record?.partCode);
   return !!code && Object.prototype.hasOwnProperty.call(PART_STANDARDIZATION, code);
+}
+
+function isScheduleHistoryLine(record) {
+  const code = normalizePartCode(record?.partCode);
+  const text = String(
+    record?.standardizedPart || record?.partDescription || record?.part || ""
+  ).toUpperCase();
+
+  // Schedule Service History must not apply Service Decision quantity
+  // thresholds. Any recognized service part/history item is displayable,
+  // including low-quantity top-ups.
+  if (code && Object.prototype.hasOwnProperty.call(PART_STANDARDIZATION, code)) {
+    return true;
+  }
+
+  return [
+    "ENGINE OIL",
+    "ENGINE OIL FILTER",
+    "GEAR OIL",
+    "AXLE OIL",
+    "HUB GREASE",
+    "CLUTCH OIL",
+    "STEERING OIL",
+    "STEERING OIL FILTER",
+    "COOLANT",
+    "AIR FILTER",
+    "FUEL FILTER",
+    "DEF FILTER",
+    "APDA FILTER",
+    "DEF INLINE FILTER",
+    "CNG FILTER",
+    "SPARK PLUG",
+    "FREE SERVICE",
+    "WHEEL ALIGNMENT",
+    "BODY BUILDING CHECK",
+    "PDI SERVICE"
+  ].some(name => text.includes(name));
 }
 
 function getVisitDate(visit) {
@@ -1767,7 +1804,11 @@ function getVisitParts(visit, vehicle, decision) {
     if (!text) return null;
     return {
       text,
+      // eligible is reserved for Service Decision calculation rules.
+      // historyEligible is independent of quantity thresholds so Schedule
+      // Service History can show genuine service records and top-ups.
       eligible: isCalculationEligibleLine(record, visit, vehicle, decision),
+      historyEligible: isScheduleHistoryLine(record),
     };
   }).filter(Boolean);
 }
@@ -6791,7 +6832,7 @@ clone.style.transformOrigin = "top left";
     {index < singleTableColumns.length - 1 && <span className="column-resizer" onPointerDown={e=>resizeTableColumn("single",key,e)} />}
   </th>
 ))}</tr></thead><tbody>
-{visibleSingleVisits.length ? visibleSingleVisits.map((visit,i)=>{const visitDate=getVisitDate(visit),jobCard=getVisitJobCard(visit),visitReading=getVisitReading(visit,analysis.vehicle,decisionBasis),allParts=getVisitParts(visit,analysis.vehicle,analysis.decision),parts=historyViewMode === "full" ? allParts : allParts.filter(part => part.eligible);return <tr key={i}>
+{visibleSingleVisits.length ? visibleSingleVisits.map((visit,i)=>{const visitDate=getVisitDate(visit),jobCard=getVisitJobCard(visit),visitReading=getVisitReading(visit,analysis.vehicle,decisionBasis),allParts=getVisitParts(visit,analysis.vehicle,analysis.decision),parts=historyViewMode === "full" ? allParts : allParts.filter(part => part.historyEligible);return <tr key={i}>
 {isSingleColumnVisible("date")&&<td style={tableColumnStyle("single","date")}>{formatDateShort(visitDate)}</td>}
 {isSingleColumnVisible("jobCard")&&<td style={tableColumnStyle("single","jobCard")}>{jobCard}</td>}
 {isSingleColumnVisible("reading")&&<td style={tableColumnStyle("single","reading")}>{visitReading?`${formatNumber(visitReading)} ${decisionBasis === "HRS" ? "HRS" : "KM"}`:"-"}</td>}

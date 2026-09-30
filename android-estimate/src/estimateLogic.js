@@ -11,7 +11,7 @@ const PART_STANDARDIZATION = {
   S9999997: 'Hub Grease',
   F1721500: 'GASKET HUB CAP FRONT FA90',
   FJ607400: 'GASKET-10TG HUB-12 HOLES',
-  H500120: 'SEAL / GASKET HUB',
+  H5001220: 'SPLIT PIN',
   F1771900: 'WHEEL BEARING GREASE / SEAL',
   CLOTH: 'CLOTH',
   P5105609: 'Fuel Filter',
@@ -46,7 +46,7 @@ export const REFERENCE_PARTS = {
   clutchOil: ['CFD99991', 'U9999995'],
   defInline: ['XFM00800'],
   coolant: ['C9999993'],
-  hubGrease: ['S9999997', 'F1721500', 'FJ607400', 'H500120', 'F1771900', 'CLOTH'],
+  hubGrease: ['S9999997', 'F1721500', 'FJ607400', 'H5001220', 'F1771900', 'CLOTH'],
   fuelFilter: ['P5105609'],
   airFilter: ['P5105688', 'P5105689'],
   defFilter: ['XFM00500', 'PET00001'],
@@ -62,7 +62,7 @@ export const REFERENCE_PARTS = {
  * - Clutch oil: 0.5 (Fixed)
  * - Coolant: 15-30 (range, default 20)
  * - Hub grease: 3-7 (range, default 3) -> Only applicable to S9999997 (grease).
- *   FJ607400, F1721500, F1771900, H500120 & Cloth are gaskets/seals/hardware; range is NOT applicable to them.
+ *   FJ607400, F1721500, F1771900, H5001220 & Cloth are gaskets/seals/hardware; range is NOT applicable to them.
  */
 export const AGGREGATE_RULES = {
   engineOil: {
@@ -127,7 +127,7 @@ export const ORIGINAL_AL_DESCRIPTIONS = {
   S9999997: 'HUB GREASE (BLUE)',
   F1721500: 'GASKET HUB CAP FRONT FA90',
   FJ607400: 'GASKET-10TG HUB-12 HOLES',
-  H500120: 'SEAL / GASKET HUB',
+  H5001220: 'SPLIT PIN',
   F1771900: 'WHEEL BEARING GREASE / SEAL',
   CLOTH: 'CLEANING CLOTH / COTTON WASTE',
   P5105609: 'FUEL FILTER ELEMENT KIT',
@@ -172,6 +172,7 @@ export const normalizeCode = (v) =>
   String(v || '')
     .toUpperCase()
     .replace(/\s+/g, '')
+    .replace(/\([A-Z0-9]+\)$/i, '')
     .trim();
 
 function category(row) {
@@ -272,7 +273,7 @@ function matchesLabour(row, key) {
  *    - Takes top 10 most recent rows.
  *    - Calculates the most frequent quantity (MODE - maximum time quantity).
  *    - If no DB rows exist in the range, returns defaultQty.
- * 4. For non-grease parts under Hub Grease (FJ607400, F1721500, F1771900, H500120, CLOTH)
+ * 4. For non-grease parts under Hub Grease (FJ607400, F1721500, F1771900, H5001220, CLOTH)
  *    and other regular parts: normal historical mode is applied, fallback 1.
  */
 export function determineQuantity(key, code, vehicleRows = [], modelRows = []) {
@@ -336,7 +337,7 @@ export function determineQuantity(key, code, vehicleRows = [], modelRows = []) {
     }
   }
 
-  // Non-range parts (filters, gaskets FJ607400, F1721500, F1771900, H500120, CLOTH, etc.)
+  // Non-range parts (filters, gaskets FJ607400, F1721500, F1771900, H5001220, CLOTH, etc.)
   // Range is NOT applicable to them!
   const matchesPartCode = (r) =>
     category(r) === 'part' &&
@@ -489,12 +490,12 @@ export function buildServiceItems(a = [], b = [], c = [], d = []) {
       );
       if (greaseItem) output.push(greaseItem);
 
-      // 2. Gaskets & Non-grease parts (FJ607400, F1721500, F1771900, H500120, CLOTH)
+      // 2. Gaskets & Non-grease parts (FJ607400, F1721500, F1771900, H5001220, CLOTH)
       // Range 3-7 DOES NOT apply to these gaskets/hardware per user specification!
       const nonGreaseParts = [
         ['F1721500', 'GASKET HUB CAP FRONT FA90'],
         ['FJ607400', 'GASKET-10TG HUB-12 HOLES'],
-        ['H500120', 'SEAL / GASKET HUB'],
+        ['H5001220', 'SPLIT PIN'],
         ['F1771900', 'WHEEL BEARING GREASE / SEAL'],
         ['CLOTH', 'CLEANING CLOTH / COTTON WASTE']
       ];

@@ -158,7 +158,6 @@ const PART_STANDARDIZATION = {
   'PD601427': 'Air Filter Kit',
   'P1800240': 'APDA Filter',
   'PD600968': 'APDA Filter',
-  'PD601037': 'APDA Filter',
   'PD601147': 'APDA Filter',
   'F1E02100': 'APDA Filter (Assy)',
   'F1E02200': 'APDA Filter (Assy)',
@@ -178,11 +177,6 @@ const PART_STANDARDIZATION = {
   'COA99994': 'Coolant',
   'COD99991': 'Coolant',
   'COD99994': 'Coolant',
-  'CFD99991': 'Clutch Oil',
-  'U9999995': 'Clutch Oil',
-  'CLA99994': 'Clutch Oil',
-  'U9999999': 'Clutch Oil',
-  'U9999996': 'Clutch Oil',
   'MB404069': 'DEF Filter air',
   'XFM00200': 'DEF Filter Air',
   'XFM00300': 'DEF Filter Air',
@@ -194,7 +188,6 @@ const PART_STANDARDIZATION = {
   'XFZ00100': 'DEF Filter Nack',
   'PET00001': 'DEF Filter Suction',
   'XFZ00200': 'DEF Filter Suction',
-  'XFZ03200': 'DEF Filter Suction',
   'XFZ01000': 'DEF Filter Suction',
   'XFZ02900': 'DEF Filter Suction',
   'XFM00800': 'DEF Inline Filter',
@@ -269,7 +262,6 @@ const PART_STANDARDIZATION = {
   'P5000639': 'Fuel Filter',
   'P5104332': 'Fuel Filter',
   'P5104480': 'Fuel Filter',
-  'F7B02900': 'Fuel Filter',
   'P5104481': 'Fuel Filter',
   'X8820800': 'Fuel Filter',
   'P7A00031': 'Fuel Filter',
@@ -313,9 +305,9 @@ const PART_STANDARDIZATION = {
   'P5105701': 'Fuel Filter & Engine Oil Filter Kit',
   'P5105702': 'Fuel Filter & Engine Oil Filter Kit',
   'P5106461': 'Fuel Filter & Engine Oil Filter Kit',
-  'P0Z01606': 'Engine Oil Filter',
+  'P0Z01606': 'Fuel Filter Kit',
   'P5104010': 'Fuel Filter Kit',
-  'P5104012': 'Fuel Filter & Engine Oil Filter Kit',
+  'P5104012': 'Fuel Filter Kit',
   'P5104719': 'Fuel Filter Kit',
   'P5104722': 'Fuel Filter Kit',
   'P5104723': 'Fuel Filter Kit',
@@ -357,7 +349,6 @@ const PART_STANDARDIZATION = {
   'P5104184': 'Hub Grease Kit',
   'P5104185': 'Hub Grease Kit',
   'P5104186': 'Hub Grease Kit',
-  'F1771900': 'Hub Grease',
   'P5104738': 'Hub Grease Kit',
   'P5104739': 'Hub Grease Kit',
   'P5104740': 'Hub Grease Kit',
@@ -611,14 +602,7 @@ function normalizePartCode(value) {
 function standardizePart(code, description) {
   const key = normalizePartCode(code);
   if (key && PART_STANDARDIZATION[key]) return PART_STANDARDIZATION[key];
-
-  // Service Decision uses the Standard Part Name as its aggregate identity.
-  // Keep Clutch Oil history under one standard name even when a DMS export
-  // contains a new/unmapped clutch-oil part number with a valid description.
-  const fallback = String(description ?? "").trim();
-  if (fallback.toUpperCase().includes("CLUTCH OIL")) return "Clutch Oil";
-
-  return fallback;
+  return String(description ?? "").trim();
 }
 
 
@@ -749,12 +733,7 @@ async function addJobCardsToBrowserIndex(jobCards, lastId = null) {
   const normalizedJobCards = [...new Set(
     (jobCards || []).map(normalizeJobCard).filter(Boolean)
   )];
-  const state = jobCardIndexMemory || {
-    jobCards: new Set(),
-    lastId: 0,
-    globalVersion: 0,
-    syncedAt: 0
-  };
+  const state = jobCardIndexMemory || { jobCards: new Set(), lastId: 0 };
   const db = await openJobCardIndexDb();
 
   await new Promise((resolve, reject) => {
@@ -772,12 +751,7 @@ async function addJobCardsToBrowserIndex(jobCards, lastId = null) {
     if (Number.isFinite(nextLastId) && nextLastId > state.lastId) {
       state.lastId = nextLastId;
     }
-    metaStore.put({
-      key: JOB_CARD_INDEX_META_KEY,
-      lastId: state.lastId,
-      globalVersion: Number(state.globalVersion || 0),
-      syncedAt: Number(state.syncedAt || 0)
-    });
+    metaStore.put({ key: JOB_CARD_INDEX_META_KEY, lastId: state.lastId });
     transaction.oncomplete = resolve;
     transaction.onerror = () => reject(
       transaction.error || new Error("Unable to update Job Card cache.")
@@ -834,32 +808,6 @@ async function syncJobCardIndex(apiBaseUrl) {
   return jobCardIndexSyncPromise;
 }
 
-async function reportJobCardCacheRebuildComplete() {
-  const token = localStorage.getItem("serviceDecisionAuthToken");
-  if (!token) return null;
-
-  try {
-    const response = await fetch("/api/auth", {
-      method:"POST",
-      headers:{
-        "Content-Type":"application/json",
-        Authorization:"Bearer " + token
-      },
-      body:JSON.stringify({action:"job-card-cache-rebuild-complete"})
-    });
-    const payload = await response.json().catch(()=>null);
-    if (!response.ok || !payload?.success) {
-      throw new Error(payload?.error || "Unable to report Job Card cache rebuild completion.");
-    }
-    return payload;
-  } catch (error) {
-    // Reporting is telemetry only. A failed status update must never block
-    // or fail the already-completed browser cache rebuild.
-    console.warn("Job Card cache rebuild completion reporting failed:", error);
-    return null;
-  }
-}
-
 async function getHybridNewJobCards(apiBaseUrl, jobCards, checkNewJobCardsFn) {
   const uniqueJobCards = [...new Set(
     (jobCards || []).map(normalizeJobCard).filter(Boolean)
@@ -889,10 +837,6 @@ async function getHybridNewJobCards(apiBaseUrl, jobCards, checkNewJobCardsFn) {
         globalVersion:Number(policy.version || 0),
         syncedAt:Date.now()
       });
-
-      // The browser cache has now been physically rebuilt and synced.
-      // Report completion only after the IndexedDB metadata is successfully saved.
-      await reportJobCardCacheRebuildComplete();
     }
 
     const cached = state.jobCards || new Set();
@@ -2481,7 +2425,7 @@ function buildCustomerGroups(results, dealerName = "") {
     if (!map.has(key)) map.set(key, { id:key, name, customerKeys:[key], vehicles:[], dealerName:cleanDealerName });
     map.get(key).vehicles.push(item);
   }
-  return Array.from(map.values()).sort((a, b) => String(a.name || "").trim().localeCompare(String(b.name || "").trim(), undefined, { sensitivity: "base" }));
+  return Array.from(map.values());
 }
 
 function mergeCustomerGroups(groups, selectedIds, mergedName) {
@@ -2499,7 +2443,7 @@ function mergeCustomerGroups(groups, selectedIds, mergedName) {
     vehicles: selectedGroups.flatMap(g => g.vehicles),
     dealerName: String(selectedGroups.find(g => String(g?.dealerName || "").trim())?.dealerName || "").trim()
   };
-  return [...others, merged].sort((a, b) => String(a.name || "").trim().localeCompare(String(b.name || "").trim(), undefined, { sensitivity: "base" }));
+  return [...others, merged].sort((a,b) => a.name.localeCompare(b.name));
 }
 
 function escapeHtml(value) {
@@ -2911,10 +2855,10 @@ const ESTIMATE_REFERENCE_PARTS = {
   gearOil: ["G9999994"],
   axleOil: ["GB699991"],
   steeringOil: ["PSB99994", "PD600391"],
-  clutchOil: ["CFD99991", "U9999995"],
+  clutchOil: ["CFD99991"],
   defInline: ["XFM00800"],
   coolant: ["C9999993"],
-  hubGrease: ["S9999997", "FJ607400", "F1721500", "H5001220", "F1771900"],
+  hubGrease: ["S9999997", "FJ607400", "F1721500", "H5001220"],
   fuelFilter: ["P5105609"],
   airFilter: ["P5105688"],
   defFilter: ["XFM00500", "PET00001"],
@@ -2926,7 +2870,6 @@ const HUB_GREASE_STANDARD_CODES = new Set([
   "FJ607400",
   "F1721500",
   "H5001220",
-  "F1771900",
 ]);
 
 const ESTIMATE_LABOUR_REFERENCE = {
@@ -3135,32 +3078,18 @@ function estimateChooseBestQuantity(rows = []) {
   };
 }
 
-function estimateIsPaidOrderRow(row = {}) {
-  const repairLine = String(row?.repair_line_item_type ?? row?.repairTypeLine ?? "")
-    .toUpperCase()
-    .replace(/\s+/g, "");
-
-  return repairLine.includes("POSTWARRANTY") && repairLine.includes("PAIDORDER");
-}
-
-function estimateChooseBestRate(rows = [], paidOnly = false) {
+function estimateChooseBestRate(rows = []) {
   const valid = rows
     .map((row, index) => ({
       row,
       rate: Number(row?.rate),
       rank: estimateRowRank(row, index),
     }))
-    .filter(item =>
-      (!paidOnly || estimateIsPaidOrderRow(item.row)) &&
-      Number.isFinite(item.rate) &&
-      item.rate > 0
-    );
+    .filter(item => Number.isFinite(item.rate) && item.rate > 0);
 
   if (!valid.length) return 0;
-
   valid.sort((a, b) => b.rank - a.rank);
-  const latestTen = valid.slice(0, 10);
-  return Math.max(...latestTen.map(item => item.rate));
+  return valid[0].rate;
 }
 
 function estimateBuildHistoricalItem(type, serviceKey, rows, code = "") {
@@ -3178,10 +3107,8 @@ function estimateBuildHistoricalItem(type, serviceKey, rows, code = "") {
   };
   if (effectiveQtyChoice.qty <= 0) return null;
 
-  const rate = estimateChooseBestRate(rows, type === "part");
-  const paidRows = rows.filter(estimateIsPaidOrderRow);
-  const sourcePool = paidRows.length ? paidRows : rows;
-  const sourceRow = sourcePool
+  const rate = estimateChooseBestRate(rows);
+  const sourceRow = rows
     .slice()
     .sort((a, b) => estimateRowRank(b, 0) - estimateRowRank(a, 0))[0];
 
@@ -3333,18 +3260,11 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
   function latestGlobalPartRate(partCode) {
     const code = normalizePartCode(partCode);
     if (!code) return 0;
-
-    // /api/save-history already applies the pricing rule for global part rates:
-    // Post warranty / Paid Order only -> latest 10 job cards -> maximum rate.
-    // Do not re-apply estimateIsPaidOrderRow() here because globalPartRates
-    // intentionally contains only the final selected rate and does not carry
-    // repair_line_item_type.
-    const matching = allModelRates
-      .filter(item => normalizePartCode(item?.part_code) === code)
-      .map(item => Number(item?.rate))
-      .filter(rate => Number.isFinite(rate) && rate > 0);
-
-    return matching.length ? Math.max(...matching) : 0;
+    const row = allModelRates.find(item =>
+      normalizePartCode(item?.part_code) === code &&
+      Number(item?.rate) > 0
+    );
+    return Number(row?.rate || 0);
   }
 
   function applyGlobalPartRate(item) {
@@ -3974,35 +3894,6 @@ function WarrantyTagFourUp({tag}){
   </div>;
 }
 
-const WARRANTY_REMOVED_PARTS_STORAGE_PREFIX="serviceDecisionWarrantyRemovedParts:";
-
-function warrantyRemovedPartsStorageKey(user){
-  const userId=String(user?.id ?? user?.email ?? user?.personName ?? "default").trim();
-  return WARRANTY_REMOVED_PARTS_STORAGE_PREFIX+(userId||"default");
-}
-
-function loadWarrantyRemovedParts(user){
-  try{
-    const raw=localStorage.getItem(warrantyRemovedPartsStorageKey(user));
-    const parsed=raw?JSON.parse(raw):[];
-    return Array.isArray(parsed)
-      ? parsed.map(normalizePartCode).filter(Boolean)
-      : [];
-  }catch{
-    return [];
-  }
-}
-
-function saveWarrantyRemovedParts(user,partNos){
-  try{
-    const unique=[...new Set((partNos||[]).map(normalizePartCode).filter(Boolean))];
-    localStorage.setItem(warrantyRemovedPartsStorageKey(user),JSON.stringify(unique));
-    return unique;
-  }catch{
-    return partNos||[];
-  }
-}
-
 function WarrantyTagPanel({user,onBack}){
   const [claimFile,setClaimFile]=useState(null);
   const [summaryFile,setSummaryFile]=useState(null);
@@ -4010,7 +3901,6 @@ function WarrantyTagPanel({user,onBack}){
   const [summaryDataset,setSummaryDataset]=useState(null);
   const [tags,setTags]=useState([]);
   const [removedDescriptions,setRemovedDescriptions]=useState([]);
-  const [rememberedRemovedPartNos,setRememberedRemovedPartNos]=useState(()=>loadWarrantyRemovedParts(user));
   const [repairFilter,setRepairFilter]=useState("ALL");
   const [printLayout,setPrintLayout]=useState("10");
   const [busy,setBusy]=useState(false);
@@ -4018,10 +3908,6 @@ function WarrantyTagPanel({user,onBack}){
   const [error,setError]=useState("");
   const [message,setMessage]=useState("");
   const printRootRef=useRef(null);
-
-  useEffect(()=>{
-    setRememberedRemovedPartNos(loadWarrantyRemovedParts(user));
-  },[user?.id,user?.email,user?.personName]);
 
   const processClaimFile=async file=>{
     setBusy(true);setError("");setMessage("");
@@ -4107,44 +3993,21 @@ function WarrantyTagPanel({user,onBack}){
     return Array.from(map.entries()).sort((a,b)=>a[0].localeCompare(b[0]));
   },[tags,repairFilter]);
 
-  const isDescriptionRemembered=desc=>{
-    const matchingPartNos=tags
-      .filter(tag=>warrantyText(tag.partDesc)===desc)
-      .map(tag=>normalizePartCode(tag.partNo))
-      .filter(Boolean);
-    return matchingPartNos.length>0 && matchingPartNos.every(partNo=>rememberedRemovedPartNos.includes(partNo));
-  };
-
   const visibleTags=useMemo(()=>{
     return tags.filter(tag=>{
       const desc=warrantyText(tag.partDesc);
-      const partNo=normalizePartCode(tag.partNo);
       if(removedDescriptions.includes(desc)) return false;
-      if(partNo && rememberedRemovedPartNos.includes(partNo)) return false;
       const tagRepairType=getWarrantyRepairType(tag.claimType);
-      if(repairFilter==="AMC" && tagRepairType!=="AMC") return false;
-      if(repairFilter==="NON_AMC" && tagRepairType!=="NON_AMC") return false;
+      if(repairFilter==="AMC") return tagRepairType==="AMC";
+      if(repairFilter==="NON_AMC") return tagRepairType==="NON_AMC";
       return true;
     });
-  },[tags,removedDescriptions,rememberedRemovedPartNos,repairFilter]);
+  },[tags,removedDescriptions,repairFilter]);
 
   const removeDescription=desc=>{
-    const partNosToRemember=tags
-      .filter(tag=>warrantyText(tag.partDesc)===desc)
-      .map(tag=>normalizePartCode(tag.partNo))
-      .filter(Boolean);
-    const next=saveWarrantyRemovedParts(user,[...rememberedRemovedPartNos,...partNosToRemember]);
-    setRememberedRemovedPartNos(next);
     setRemovedDescriptions(prev=>prev.includes(desc)?prev:[...prev,desc]);
   };
   const restoreDescription=desc=>{
-    const partNosToRestore=tags
-      .filter(tag=>warrantyText(tag.partDesc)===desc)
-      .map(tag=>normalizePartCode(tag.partNo))
-      .filter(Boolean);
-    const restoreSet=new Set(partNosToRestore);
-    const next=saveWarrantyRemovedParts(user,rememberedRemovedPartNos.filter(partNo=>!restoreSet.has(partNo)));
-    setRememberedRemovedPartNos(next);
     setRemovedDescriptions(prev=>prev.filter(x=>x!==desc));
   };
 
@@ -4231,7 +4094,7 @@ function WarrantyTagPanel({user,onBack}){
             <div className="warranty-tag-control-title">Part Descriptions in Current Format</div>
             <div className="warranty-tag-part-list">
               {descriptionOptions.map(([desc,count])=>{
-                const removed=removedDescriptions.includes(desc)||isDescriptionRemembered(desc);
+                const removed=removedDescriptions.includes(desc);
                 return <div className={"warranty-tag-part-item "+(removed?"removed":"")} key={desc}>
                   <span>{desc}</span>
                   {removed
@@ -4256,7 +4119,7 @@ function WarrantyTagPanel({user,onBack}){
 
         <div className="warranty-tag-print-controls no-print">
           <strong>Tag Print Area</strong>
-          <span>{visibleTags.length.toLocaleString("en-IN")} tags selected · {Math.ceil(visibleTags.length/(printLayout==="4"?4:10))} A4 page(s)</span>
+          <span>{visibleTags.length.toLocaleString("en-IN")} tags selected · {Math.ceil(visibleTags.length/10)} A4 page(s)</span>
           <button className="excel-button green" type="button" disabled={!visibleTags.length} onClick={printTags}>Print Tags</button>
           <button className="excel-button" type="button" disabled={!visibleTags.length||pdfBusy} onClick={downloadPdf}>{pdfBusy?"Creating PDF...":"Download PDF"}</button>
         </div>
@@ -4384,7 +4247,6 @@ function ServiceDecisionApp({ user }) {
   const [estimateSavedId, setEstimateSavedId] = useState(null);
   const [savedEstimates, setSavedEstimates] = useState([]);
   const [savedEstimatesLoading, setSavedEstimatesLoading] = useState(false);
-  const [savedEstimateSearch, setSavedEstimateSearch] = useState("");
   const [estimateSaveBusy, setEstimateSaveBusy] = useState(false);
   const [bulkSearch, setBulkSearch] = useState("");
   const [bulkQuickFilter, setBulkQuickFilter] = useState("all");
@@ -4610,33 +4472,6 @@ function ServiceDecisionApp({ user }) {
     );
   }
 
-  async function touchVehicleRefreshInBackend(vins) {
-    const uniqueVins = [...new Set(
-      (vins || [])
-        .map(value => String(value ?? "").trim().toUpperCase())
-        .filter(Boolean)
-    )];
-    if (!uniqueVins.length) return null;
-
-    const response = await fetch(API_BASE_URL + "/api/save-history", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "touch-vehicle-refresh",
-        vins: uniqueVins,
-      }),
-    });
-
-    let payload = null;
-    try { payload = await response.json(); } catch { payload = null; }
-
-    if (!response.ok || !payload?.success) {
-      throw new Error(payload?.error || ("Vehicle refresh timestamp update failed (" + response.status + ")"));
-    }
-
-    return payload;
-  }
-
   async function saveHistoryToBackend({ records, vehicle }) {
     const response = await fetch(`${API_BASE_URL}/api/save-history`, {
       method: "POST",
@@ -4778,23 +4613,6 @@ function ServiceDecisionApp({ user }) {
             if (recordsForBackend.length) {
               void saveHistoryInBackground(recordsForBackend);
             }
-
-            // Mark every VIN present in the uploaded history as refreshed,
-            // including vehicles where all uploaded Job Cards already existed
-            // in the database and therefore no new Job Card save was triggered.
-            const uploadedVins = [...new Set(
-              parsedRows
-                .map(record => String(record?.vin || "").trim().toUpperCase())
-                .filter(Boolean)
-            )];
-
-            if (uploadedVins.length) {
-              try {
-                await touchVehicleRefreshInBackend(uploadedVins);
-              } catch (touchError) {
-                console.error("Vehicle refresh timestamp update failed:", touchError);
-              }
-            }
           }
         }
       }
@@ -4867,12 +4685,7 @@ function ServiceDecisionApp({ user }) {
           mode:"bulk",
           vehicleCount:results.length,
           fileCount:uploadedFiles.length,
-          details:{
-            rows:parsed.records.length,
-            customers:groups.length,
-            automatic:true,
-            vins:[...new Set(results.map(item=>String(item?.vin || item?.vehicle?.vin || "").trim().toUpperCase()).filter(Boolean))]
-          }
+          details:{ rows:parsed.records.length, customers:groups.length, automatic:true }
         });
         setError(`Multiple Vehicle Detected: ${uniqueVins.length} unique VINs found. Automatically switched to Bulk Service.`);
         return;
@@ -4965,11 +4778,7 @@ function ServiceDecisionApp({ user }) {
         mode:"bulk",
         vehicleCount:results.length,
         fileCount:uploadedFiles.length,
-        details:{
-          rows:parsed.records.length,
-          customers:groups.length,
-          vins:[...new Set(results.map(item=>String(item?.vin || item?.vehicle?.vin || "").trim().toUpperCase()).filter(Boolean))]
-        }
+        details:{ rows:parsed.records.length, customers:groups.length }
       });
     } catch (e) {
       setBulkResults([]);
@@ -5447,13 +5256,6 @@ function ServiceDecisionApp({ user }) {
     if (user?.id) void loadSavedEstimates();
   }, [user?.id]);
 
-  const filteredSavedEstimates = useMemo(() => {
-    const query = String(savedEstimateSearch || "").trim().toLowerCase();
-    const list = [...savedEstimates].sort((a,b) => new Date(b.saved_at || b.updated_at || 0).getTime() - new Date(a.saved_at || a.updated_at || 0).getTime());
-    if (!query) return list;
-    return list.filter(item => [item.vehicle_no, item.estimate_no].some(value => String(value || "").toLowerCase().includes(query)));
-  }, [savedEstimates, savedEstimateSearch]);
-
   async function lookupEstimateVehicle() {
     const registration=String(estimateVehicleNo||"").replace(/\s+/g,"").trim().toUpperCase();
     setEstimateVehicleNo(registration);
@@ -5719,27 +5521,8 @@ function ServiceDecisionApp({ user }) {
     pdf.text("Authorized Signatory",165,y,{align:"center"});
 
     if(autoPrint){
-      // Open the generated A4 PDF through a Blob URL. Some browsers block
-      // jsPDF's legacy bloburl/window.open combination, which made Print A4
-      // appear to do nothing.
       pdf.autoPrint();
-      const blob = pdf.output("blob");
-      const url = URL.createObjectURL(blob);
-      const printWindow = window.open(url, "_blank");
-
-      if (!printWindow) {
-        // Popup-blocker fallback: create a user-triggered temporary link.
-        const link = document.createElement("a");
-        link.href = url;
-        link.target = "_blank";
-        link.rel = "noopener";
-        link.style.display = "none";
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-      }
-
-      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+      window.open(pdf.output("bloburl"),"_blank");
     } else {
       const fileName=("Service_Estimate_"+(vehicle.reg||vehicle.vin||"Vehicle")+".pdf")
         .replace(/[^a-z0-9_.-]+/gi,"_");
@@ -5837,8 +5620,8 @@ clone.style.transformOrigin = "top left";
   const lineBreakOverlay = document.createElement("div");
   lineBreakOverlay.textContent = value;
   lineBreakOverlay.style.position = "absolute";
-  lineBreakOverlay.style.left = Math.max(0, rect.left - sourceRect.left) + "px";
-  lineBreakOverlay.style.top = Math.max(0, rect.top - sourceRect.top) + "px";
+  lineBreakOverlay.style.left = rect.left + "px";
+  lineBreakOverlay.style.top = rect.top + "px";
   lineBreakOverlay.style.width = rect.width + "px";
   lineBreakOverlay.style.height = rect.height + "px";
   lineBreakOverlay.style.boxSizing = "border-box";
@@ -6694,7 +6477,7 @@ clone.style.transformOrigin = "top left";
         .warranty-tag-4up-grid>div,.warranty-tag-4up-grid>strong{border-bottom:0.35mm solid #111;box-sizing:border-box;padding:1.05mm 0.8mm;min-width:0;overflow:hidden;overflow-wrap:anywhere}
         .warranty-tag-4up-grid>div{border-right:0.35mm solid #111;font-weight:700}
         .warranty-tag-4up-grid>strong{font-weight:800}
-        .warranty-tag-4up-qty{float:right;margin-left:3mm;margin-right:8mm}
+        .warranty-tag-4up-qty{float:right;margin-left:3mm}
         .warranty-tag-4up-check-title{height:7mm;display:flex;align-items:center;justify-content:center;font-size:7.5px;font-weight:700;border-top:0.35mm solid #111}
         .warranty-tag-4up-checks{height:17mm;display:grid;grid-template-columns:repeat(3,1fr);align-items:center;text-align:center}
         .warranty-tag-4up-checks>div{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.5mm;font-size:7px}
@@ -6749,7 +6532,6 @@ clone.style.transformOrigin = "top left";
               <div className={`excel-tab ${mode === "bulk" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("bulk"); setError(""); setAnalysis(null); }}>Bulk Vehicle</div>
               <div className={`excel-tab ${mode === "schedule" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("schedule"); setError(""); logUsage("Service Schedule Viewed", { mode:"schedule" }); }}>Service Schedule Chart</div>
               <div className={`excel-tab ${estimateOpen ? "active" : ""}`} onClick={() => { setMode("estimate"); if (analysis) void openEstimate(); else openStandaloneEstimate(); }}>Prepare Estimate</div>
-              <div className={`excel-tab ${mode === "saved-estimates" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("saved-estimates"); setError(""); }}>Saved Estimates</div>
               <div className={`excel-tab ${mode === "warranty-tags" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("warranty-tags"); setError(""); }}>Warranty Tag Print</div>
             </div>
             {mode !== "warranty-tags" && (
@@ -6833,30 +6615,6 @@ clone.style.transformOrigin = "top left";
                 onClear={clear}
                 onOpenSavedEstimate={openSavedEstimate}
               />
-            ) : mode === "saved-estimates" ? (
-              <div style={{padding:18}}>
-                <div className="sheet-heading">SAVED ESTIMATES</div>
-                <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",margin:"12px 0"}}>
-                  <input className="excel-input" style={{flex:"1 1 280px",maxWidth:520}} value={savedEstimateSearch} onChange={e=>setSavedEstimateSearch(e.target.value)} placeholder="Search Vehicle No. or Estimate No." />
-                  <button className="excel-button" onClick={()=>setSavedEstimateSearch("")}>Clear Search</button>
-                  <button className="excel-button green" onClick={openStandaloneEstimate}>+ New Estimate</button>
-                </div>
-                {savedEstimatesLoading ? <div className="small-note">Loading saved estimates...</div> : (
-                  filteredSavedEstimates.length ? (
-                    <div className="saved-estimate-list">
-                      {filteredSavedEstimates.map(item => (
-                        <button key={item.id} type="button" className="saved-estimate-row" onClick={() => openSavedEstimate(item.id)}>
-                          <span><b>{item.vehicle_no || "Vehicle No. not entered"}</b><small>{item.estimate_no} · {formatDate(item.saved_at || item.updated_at)}</small></span>
-                          <span>Open →</span>
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="small-note">{savedEstimateSearch ? "No saved estimate matches your search." : "No saved estimates yet."}</div>
-                  )
-                )}
-                <div style={{marginTop:18,paddingTop:10,borderTop:"1px solid #ddd",fontSize:11,color:"#666"}}>Saved estimates are stored only in this browser's local data. They are not uploaded to the online database.</div>
-              </div>
             ) : mode === "warranty-tags" ? (
               <WarrantyTagPanel user={user} onBack={() => setMode("home")} />
             ) : mode === "single" ? (

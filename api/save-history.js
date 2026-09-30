@@ -88,6 +88,8 @@ export default async function handler(req, res) {
     const vin = String(req.query?.vin || "").trim().toUpperCase();
     const registration = String(req.query?.registration || "").replace(/\s+/g, "").trim().toUpperCase();
     const partNo = String(req.query?.partNo || "").trim().toUpperCase().replace(/\s+/g, "");
+    const modelsFlag = req.query?.models;
+    const modelParam = String(req.query?.model || "").trim();
 
     const client = await pool.connect();
     try {

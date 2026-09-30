@@ -91,6 +91,57 @@ export default async function handler(req, res) {
 
     const client = await pool.connect();
     try {
+      if (modelsFlag) {
+        const modelResult = await client.query(
+          "SELECT DISTINCT TRIM(model) AS model FROM vehicles " +
+          "WHERE model IS NOT NULL AND TRIM(model) <> '' " +
+          "ORDER BY TRIM(model) ASC"
+        );
+        const models = modelResult.rows.map(r => r.model).filter(Boolean);
+        return res.status(200).json({ success: true, models });
+      }
+
+      if (modelParam && !registration && !vin) {
+        const modelResult = await client.query(
+          "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
+          "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
+          "jc.driver_phone, jc.service_contact_person_phone, " +
+          "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
+          "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
+          "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
+          "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +
+          "WHERE UPPER(TRIM(v.model))=UPPER(TRIM($1)) OR UPPER(TRIM(v.model)) LIKE '%' || UPPER(TRIM($1)) || '%' " +
+          "ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id ASC LIMIT 2000",
+          [modelParam]
+        );
+        const rateResult = await client.query(
+          "WITH paid_rates AS ( " +
+          "SELECT sh.part_code, sh.part_description, sh.rate, jc.job_date, jc.id AS job_card_id, sh.id AS service_history_id, " +
+          "ROW_NUMBER() OVER (PARTITION BY UPPER(REPLACE(TRIM(sh.part_code), ' ', '')) " +
+          "ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC) AS rn " +
+          "FROM service_history sh JOIN job_cards jc ON jc.id=sh.job_card_id " +
+          "JOIN vehicles v ON v.id=jc.vehicle_id " +
+          "WHERE sh.item_category LIKE 'P002%' AND sh.part_code IS NOT NULL " +
+          "AND UPPER(REPLACE(COALESCE(sh.repair_line_item_type, ''), ' ', '')) LIKE '%POSTWARRANTY/PAIDORDER%' " +
+          "AND sh.rate IS NOT NULL AND sh.rate > 0 " +
+          "), latest_ten AS ( " +
+          "SELECT * FROM paid_rates WHERE rn <= 10 " +
+          "), max_rates AS ( " +
+          "SELECT DISTINCT ON (UPPER(REPLACE(TRIM(part_code), ' ', ''))) " +
+          "part_code, part_description, rate, job_date, job_card_id, service_history_id " +
+          "FROM latest_ten " +
+          "ORDER BY UPPER(REPLACE(TRIM(part_code), ' ', '')), rate DESC, job_date DESC NULLS LAST, job_card_id DESC, service_history_id DESC " +
+          ") " +
+          "SELECT part_code, part_description, rate, job_date FROM max_rates"
+        );
+        return res.status(200).json({
+          success: true,
+          model: modelParam,
+          rows: [],
+          modelRows: modelResult.rows,
+          globalPartRates: rateResult.rows
+        });
+      }
       if (partNo) {
         const result = await client.query(
           "WITH paid_rates AS ( " +
@@ -163,7 +214,7 @@ export default async function handler(req, res) {
         }
         const rateResult = await client.query(
           "WITH paid_rates AS ( " +
-          "SELECT sh.part_code, sh.rate, jc.job_date, jc.id AS job_card_id, sh.id AS service_history_id, " +
+          "SELECT sh.part_code, sh.part_description, sh.rate, jc.job_date, jc.id AS job_card_id, sh.id AS service_history_id, " +
           "ROW_NUMBER() OVER (PARTITION BY UPPER(REPLACE(TRIM(sh.part_code), ' ', '')) " +
           "ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC) AS rn " +
           "FROM service_history sh JOIN job_cards jc ON jc.id=sh.job_card_id " +
@@ -175,11 +226,11 @@ export default async function handler(req, res) {
           "SELECT * FROM paid_rates WHERE rn <= 10 " +
           "), max_rates AS ( " +
           "SELECT DISTINCT ON (UPPER(REPLACE(TRIM(part_code), ' ', ''))) " +
-          "part_code, rate, job_date, job_card_id, service_history_id " +
+          "part_code, part_description, rate, job_date, job_card_id, service_history_id " +
           "FROM latest_ten " +
           "ORDER BY UPPER(REPLACE(TRIM(part_code), ' ', '')), rate DESC, job_date DESC NULLS LAST, job_card_id DESC, service_history_id DESC " +
           ") " +
-          "SELECT part_code, rate, job_date FROM max_rates"
+          "SELECT part_code, part_description, rate, job_date FROM max_rates"
         );
         return res.status(200).json({
           success:true,
@@ -225,7 +276,7 @@ export default async function handler(req, res) {
 
       const rateResult = await client.query(
         "WITH paid_rates AS ( " +
-          "SELECT sh.part_code, sh.rate, jc.job_date, jc.id AS job_card_id, sh.id AS service_history_id, " +
+          "SELECT sh.part_code, sh.part_description, sh.rate, jc.job_date, jc.id AS job_card_id, sh.id AS service_history_id, " +
           "ROW_NUMBER() OVER (PARTITION BY UPPER(REPLACE(TRIM(sh.part_code), ' ', '')) " +
           "ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC) AS rn " +
           "FROM service_history sh JOIN job_cards jc ON jc.id=sh.job_card_id " +
@@ -237,11 +288,11 @@ export default async function handler(req, res) {
           "SELECT * FROM paid_rates WHERE rn <= 10 " +
           "), max_rates AS ( " +
           "SELECT DISTINCT ON (UPPER(REPLACE(TRIM(part_code), ' ', ''))) " +
-          "part_code, rate, job_date, job_card_id, service_history_id " +
+          "part_code, part_description, rate, job_date, job_card_id, service_history_id " +
           "FROM latest_ten " +
           "ORDER BY UPPER(REPLACE(TRIM(part_code), ' ', '')), rate DESC, job_date DESC NULLS LAST, job_card_id DESC, service_history_id DESC " +
           ") " +
-          "SELECT part_code, rate, job_date FROM max_rates"
+          "SELECT part_code, part_description, rate, job_date FROM max_rates"
       );
 
       return res.status(200).json({
@@ -281,6 +332,57 @@ export default async function handler(req, res) {
 
     const client = await pool.connect();
     try {
+      if (modelsFlag) {
+        const modelResult = await client.query(
+          "SELECT DISTINCT TRIM(model) AS model FROM vehicles " +
+          "WHERE model IS NOT NULL AND TRIM(model) <> '' " +
+          "ORDER BY TRIM(model) ASC"
+        );
+        const models = modelResult.rows.map(r => r.model).filter(Boolean);
+        return res.status(200).json({ success: true, models });
+      }
+
+      if (modelParam && !registration && !vin) {
+        const modelResult = await client.query(
+          "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
+          "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
+          "jc.driver_phone, jc.service_contact_person_phone, " +
+          "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
+          "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
+          "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
+          "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +
+          "WHERE UPPER(TRIM(v.model))=UPPER(TRIM($1)) OR UPPER(TRIM(v.model)) LIKE '%' || UPPER(TRIM($1)) || '%' " +
+          "ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id ASC LIMIT 2000",
+          [modelParam]
+        );
+        const rateResult = await client.query(
+          "WITH paid_rates AS ( " +
+          "SELECT sh.part_code, sh.part_description, sh.rate, jc.job_date, jc.id AS job_card_id, sh.id AS service_history_id, " +
+          "ROW_NUMBER() OVER (PARTITION BY UPPER(REPLACE(TRIM(sh.part_code), ' ', '')) " +
+          "ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC) AS rn " +
+          "FROM service_history sh JOIN job_cards jc ON jc.id=sh.job_card_id " +
+          "JOIN vehicles v ON v.id=jc.vehicle_id " +
+          "WHERE sh.item_category LIKE 'P002%' AND sh.part_code IS NOT NULL " +
+          "AND UPPER(REPLACE(COALESCE(sh.repair_line_item_type, ''), ' ', '')) LIKE '%POSTWARRANTY/PAIDORDER%' " +
+          "AND sh.rate IS NOT NULL AND sh.rate > 0 " +
+          "), latest_ten AS ( " +
+          "SELECT * FROM paid_rates WHERE rn <= 10 " +
+          "), max_rates AS ( " +
+          "SELECT DISTINCT ON (UPPER(REPLACE(TRIM(part_code), ' ', ''))) " +
+          "part_code, part_description, rate, job_date, job_card_id, service_history_id " +
+          "FROM latest_ten " +
+          "ORDER BY UPPER(REPLACE(TRIM(part_code), ' ', '')), rate DESC, job_date DESC NULLS LAST, job_card_id DESC, service_history_id DESC " +
+          ") " +
+          "SELECT part_code, part_description, rate, job_date FROM max_rates"
+        );
+        return res.status(200).json({
+          success: true,
+          model: modelParam,
+          rows: [],
+          modelRows: modelResult.rows,
+          globalPartRates: rateResult.rows
+        });
+      }
       const result = await client.query(
         "SELECT id, UPPER(TRIM(job_card_no)) AS job_card_no " +
         "FROM job_cards " +
@@ -324,6 +426,57 @@ export default async function handler(req, res) {
 
     const client = await pool.connect();
     try {
+      if (modelsFlag) {
+        const modelResult = await client.query(
+          "SELECT DISTINCT TRIM(model) AS model FROM vehicles " +
+          "WHERE model IS NOT NULL AND TRIM(model) <> '' " +
+          "ORDER BY TRIM(model) ASC"
+        );
+        const models = modelResult.rows.map(r => r.model).filter(Boolean);
+        return res.status(200).json({ success: true, models });
+      }
+
+      if (modelParam && !registration && !vin) {
+        const modelResult = await client.query(
+          "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
+          "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
+          "jc.driver_phone, jc.service_contact_person_phone, " +
+          "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
+          "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
+          "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
+          "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +
+          "WHERE UPPER(TRIM(v.model))=UPPER(TRIM($1)) OR UPPER(TRIM(v.model)) LIKE '%' || UPPER(TRIM($1)) || '%' " +
+          "ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id ASC LIMIT 2000",
+          [modelParam]
+        );
+        const rateResult = await client.query(
+          "WITH paid_rates AS ( " +
+          "SELECT sh.part_code, sh.part_description, sh.rate, jc.job_date, jc.id AS job_card_id, sh.id AS service_history_id, " +
+          "ROW_NUMBER() OVER (PARTITION BY UPPER(REPLACE(TRIM(sh.part_code), ' ', '')) " +
+          "ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC) AS rn " +
+          "FROM service_history sh JOIN job_cards jc ON jc.id=sh.job_card_id " +
+          "JOIN vehicles v ON v.id=jc.vehicle_id " +
+          "WHERE sh.item_category LIKE 'P002%' AND sh.part_code IS NOT NULL " +
+          "AND UPPER(REPLACE(COALESCE(sh.repair_line_item_type, ''), ' ', '')) LIKE '%POSTWARRANTY/PAIDORDER%' " +
+          "AND sh.rate IS NOT NULL AND sh.rate > 0 " +
+          "), latest_ten AS ( " +
+          "SELECT * FROM paid_rates WHERE rn <= 10 " +
+          "), max_rates AS ( " +
+          "SELECT DISTINCT ON (UPPER(REPLACE(TRIM(part_code), ' ', ''))) " +
+          "part_code, part_description, rate, job_date, job_card_id, service_history_id " +
+          "FROM latest_ten " +
+          "ORDER BY UPPER(REPLACE(TRIM(part_code), ' ', '')), rate DESC, job_date DESC NULLS LAST, job_card_id DESC, service_history_id DESC " +
+          ") " +
+          "SELECT part_code, part_description, rate, job_date FROM max_rates"
+        );
+        return res.status(200).json({
+          success: true,
+          model: modelParam,
+          rows: [],
+          modelRows: modelResult.rows,
+          globalPartRates: rateResult.rows
+        });
+      }
       const existingResult = await client.query(
         "SELECT DISTINCT UPPER(TRIM(job_card_no)) AS job_card_no " +
         "FROM job_cards " +
@@ -365,6 +518,57 @@ export default async function handler(req, res) {
 
     const client = await pool.connect();
     try {
+      if (modelsFlag) {
+        const modelResult = await client.query(
+          "SELECT DISTINCT TRIM(model) AS model FROM vehicles " +
+          "WHERE model IS NOT NULL AND TRIM(model) <> '' " +
+          "ORDER BY TRIM(model) ASC"
+        );
+        const models = modelResult.rows.map(r => r.model).filter(Boolean);
+        return res.status(200).json({ success: true, models });
+      }
+
+      if (modelParam && !registration && !vin) {
+        const modelResult = await client.query(
+          "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
+          "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
+          "jc.driver_phone, jc.service_contact_person_phone, " +
+          "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
+          "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
+          "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
+          "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +
+          "WHERE UPPER(TRIM(v.model))=UPPER(TRIM($1)) OR UPPER(TRIM(v.model)) LIKE '%' || UPPER(TRIM($1)) || '%' " +
+          "ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id ASC LIMIT 2000",
+          [modelParam]
+        );
+        const rateResult = await client.query(
+          "WITH paid_rates AS ( " +
+          "SELECT sh.part_code, sh.part_description, sh.rate, jc.job_date, jc.id AS job_card_id, sh.id AS service_history_id, " +
+          "ROW_NUMBER() OVER (PARTITION BY UPPER(REPLACE(TRIM(sh.part_code), ' ', '')) " +
+          "ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC) AS rn " +
+          "FROM service_history sh JOIN job_cards jc ON jc.id=sh.job_card_id " +
+          "JOIN vehicles v ON v.id=jc.vehicle_id " +
+          "WHERE sh.item_category LIKE 'P002%' AND sh.part_code IS NOT NULL " +
+          "AND UPPER(REPLACE(COALESCE(sh.repair_line_item_type, ''), ' ', '')) LIKE '%POSTWARRANTY/PAIDORDER%' " +
+          "AND sh.rate IS NOT NULL AND sh.rate > 0 " +
+          "), latest_ten AS ( " +
+          "SELECT * FROM paid_rates WHERE rn <= 10 " +
+          "), max_rates AS ( " +
+          "SELECT DISTINCT ON (UPPER(REPLACE(TRIM(part_code), ' ', ''))) " +
+          "part_code, part_description, rate, job_date, job_card_id, service_history_id " +
+          "FROM latest_ten " +
+          "ORDER BY UPPER(REPLACE(TRIM(part_code), ' ', '')), rate DESC, job_date DESC NULLS LAST, job_card_id DESC, service_history_id DESC " +
+          ") " +
+          "SELECT part_code, part_description, rate, job_date FROM max_rates"
+        );
+        return res.status(200).json({
+          success: true,
+          model: modelParam,
+          rows: [],
+          modelRows: modelResult.rows,
+          globalPartRates: rateResult.rows
+        });
+      }
       const result = await client.query(
         "UPDATE vehicles SET last_refreshed_at=NOW() " +
         "WHERE UPPER(TRIM(vin))=ANY($1::text[]) RETURNING vin",

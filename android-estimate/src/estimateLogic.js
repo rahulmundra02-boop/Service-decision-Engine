@@ -210,13 +210,28 @@ function bestRate(rows, paidOnly = false) {
   return sorted.length ? Math.max(...sorted.map((r) => Number(r.rate))) : 0;
 }
 
+function makeGlobalRateMap(globalRates) {
+  if (!Array.isArray(globalRates)) return new Map();
+  if (globalRates._rateMap) return globalRates._rateMap;
+  const map = new Map();
+  for (let i = 0; i < globalRates.length; i++) {
+    const item = globalRates[i];
+    const code = normalizeCode(item?.part_code);
+    const rate = Number(item?.rate || 0);
+    if (code && rate > 0) {
+      const prev = map.get(code) || 0;
+      if (rate > prev) map.set(code, rate);
+    }
+  }
+  globalRates._rateMap = map;
+  return map;
+}
+
 function globalRate(code, globalRates) {
   const wanted = normalizeCode(code);
-  return (globalRates || [])
-    .filter((x) => normalizeCode(x?.part_code) === wanted)
-    .map((x) => Number(x?.rate))
-    .filter((x) => x > 0)
-    .reduce((max, x) => Math.max(max, x), 0);
+  if (!wanted) return 0;
+  const map = makeGlobalRateMap(globalRates);
+  return map.get(wanted) || 0;
 }
 
 function latestQty(rows, fallback = 1) {
@@ -541,6 +556,18 @@ export function buildServiceItems(a = [], b = [], c = [], d = []) {
   result.parts = deduped.filter((x) => x.type === 'part');
   result.labour = deduped.filter((x) => x.type === 'labour');
   return result;
+}
+
+export function prebuildAllAggregates(rows = [], modelRows = [], globalRates = []) {
+  makeGlobalRateMap(globalRates);
+  const cache = {};
+  for (const item of AGGREGATES) {
+    const key = Array.isArray(item) ? item[1] : item?.key;
+    if (key) {
+      cache[key] = buildServiceItems([key], rows, modelRows, globalRates);
+    }
+  }
+  return cache;
 }
 
 export function makeManualItem(type = 'part') {

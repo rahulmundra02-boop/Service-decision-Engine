@@ -135,3 +135,47 @@ export async function getSavedEstimate(id) {
     body: JSON.stringify({ action: 'get', id })
   });
 }
+
+export async function getModelList() {
+  try {
+    const data = await request('/api/save-history?models=1');
+    if (data?.models && Array.isArray(data.models)) return data.models;
+  } catch {}
+  return [];
+}
+
+export async function getServiceDataByModel(model, registration = '', customerName = '') {
+  const m = String(model || '').trim();
+  const reg = String(registration || '').replace(/\s+/g, '').toUpperCase();
+  const cust = String(customerName || '').trim();
+  try {
+    const data = await request('/api/save-history?model=' + encodeURIComponent(m));
+    return {
+      success: true,
+      rows: [],
+      model: m,
+      modelRows: Array.isArray(data.modelRows) ? data.modelRows : [],
+      globalPartRates: Array.isArray(data.globalPartRates) ? data.globalPartRates : [],
+      vehicle: {
+        registration: reg,
+        model: m,
+        customer_name: cust
+      },
+      missingVehicle: true
+    };
+  } catch (err) {
+    return {
+      success: true,
+      rows: [],
+      model: m,
+      modelRows: [],
+      globalPartRates: [],
+      vehicle: {
+        registration: reg,
+        model: m,
+        customer_name: cust
+      },
+      missingVehicle: true
+    };
+  }
+}

@@ -26,7 +26,7 @@ let schemaEnsured = false;
 async function initSchemaOnce(client) {
   if (!schemaEnsured) {
     try {
-      await initSchemaOnce(client);
+      await ensureSchema(client);
       schemaEnsured = true;
     } catch (err) {
       schemaEnsured = false;

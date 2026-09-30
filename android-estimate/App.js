@@ -910,7 +910,15 @@ function HomeScreen({
   );
 }
 
-function VehicleScreen({ mode, onVehicle, onVehicleMissing, onBack }) {
+function VehicleScreen({
+  mode,
+  recentVehicles = [],
+  onSelectVehicle,
+  onClearRecent,
+  onVehicle,
+  onVehicleMissing,
+  onBack
+}) {
   const [reg, setReg] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -941,18 +949,30 @@ function VehicleScreen({ mode, onVehicle, onVehicleMissing, onBack }) {
     }
   };
 
+  const filteredRecent = useMemo(() => {
+    const q = String(reg || '').trim().toUpperCase();
+    if (!q) return recentVehicles || [];
+    return (recentVehicles || []).filter(
+      (v) =>
+        String(v.registration || '').toUpperCase().includes(q) ||
+        String(v.customer_name || '').toUpperCase().includes(q) ||
+        String(v.model || '').toUpperCase().includes(q) ||
+        String(v.vin || '').toUpperCase().includes(q)
+    );
+  }, [recentVehicles, reg]);
+
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.container}>
         <View style={styles.rowBetween}>
           <View>
             <Text style={styles.heading}>
-              {mode === 'service' ? 'Service Estimate' : 'Repair Estimate'}
+              {mode === 'repair' ? 'Repair Estimate' : 'Vehicles / Search'}
             </Text>
             <Text style={styles.helper}>
-              {mode === 'service'
-                ? 'Vehicle → Aggregate → Automatic Parts/Labour'
-                : 'Vehicle → Manual Parts/Labour'}
+              {mode === 'repair'
+                ? 'Vehicle → Manual Parts/Labour'
+                : 'Search vehicle registration or choose from recent searches'}
             </Text>
           </View>
           <Pressable onPress={onBack}>
@@ -983,7 +1003,70 @@ function VehicleScreen({ mode, onVehicle, onVehicleMissing, onBack }) {
           />
         </View>
 
-        <View style={styles.infoBanner}>
+        {/* Recent / Searched Vehicles Section */}
+        <View style={{ marginTop: 18 }}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionHeaderTitle}>
+              Recent Vehicles ({recentVehicles.length})
+            </Text>
+            {recentVehicles.length > 0 && onClearRecent ? (
+              <TouchableOpacity onPress={onClearRecent}>
+                <Text style={{ fontSize: 11, color: '#e02424', fontWeight: '600' }}>
+                  Clear History
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+
+          {filteredRecent.length === 0 ? (
+            <View style={styles.emptyRecentCard}>
+              <Text style={styles.emptyRecentIcon}>🚚</Text>
+              <Text style={styles.emptyRecentText}>
+                {reg ? 'No matching recent vehicle.' : 'No recent vehicle searches yet.'}
+              </Text>
+              <Text style={styles.emptyRecentSub}>
+                {reg
+                  ? `Tap "Load Vehicle ➔" above to search database for ${reg}`
+                  : 'Searched vehicles will appear here for fast one-tap estimate generation.'}
+              </Text>
+            </View>
+          ) : (
+            filteredRecent.map((item, index) => (
+              <TouchableOpacity
+                key={(item.registration || '') + index}
+                style={styles.recentVehicleCard}
+                onPress={() => {
+                  if (onSelectVehicle) {
+                    onSelectVehicle(item.registration);
+                  } else {
+                    setReg(item.registration);
+                  }
+                }}
+              >
+                <View style={styles.recentVehicleIconBox}>
+                  <Text style={styles.recentVehicleIconText}>🚚</Text>
+                </View>
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={styles.recentVehicleReg}>{item.registration}</Text>
+                  {item.customer_name ? (
+                    <Text style={styles.recentVehicleDetail}>
+                      Customer: {item.customer_name}
+                    </Text>
+                  ) : null}
+                  {item.model ? (
+                    <Text style={styles.recentVehicleDetail}>Model: {item.model}</Text>
+                  ) : null}
+                  {item.vin ? (
+                    <Text style={styles.recentVehicleDetail}>Chassis: {item.vin}</Text>
+                  ) : null}
+                </View>
+                <Text style={styles.recentVehicleArrow}>&gt;</Text>
+              </TouchableOpacity>
+            ))
+          )}
+        </View>
+
+        <View style={[styles.infoBanner, { marginTop: 18 }]}>
           <Text style={styles.infoBannerTitle}>Automatic Database Lookup</Text>
           <Text style={styles.lookupHint}>
             If this vehicle is registered in the database, its customer profile, VIN, engine and
@@ -2479,7 +2562,7 @@ export default function App() {
         if (Platform.OS !== 'android') return;
         const currentBuild = Number(Application.nativeBuildVersion || 0);
         const response = await fetch(
-          'https://service-decision-engine.vercel.app/mobile/latest-beta.json?t=' + Date.now()
+          'https://service-decision-engine.vercel.app/mobile/latest.json?t=' + Date.now()
         );
         if (!response.ok) return;
         const release = await response.json();
@@ -2489,7 +2572,7 @@ export default function App() {
             version: String(release?.version || 'New'),
             build: latestBuild,
             downloadUrl: String(release.downloadUrl),
-            notes: 'A new Android Beta build is available. Download and install the latest update.'
+            notes: 'A new Android update is available. Download and install the latest update.'
           });
         }
       } catch {}
@@ -2564,6 +2647,7 @@ export default function App() {
       }
       if (mode) {
         setMode(null);
+        setActiveTab('home');
         return true;
       }
       return false;
@@ -2571,6 +2655,42 @@ export default function App() {
     const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
     return () => subscription.remove();
   }, [mode, vehicleData, missingVehicleReg, signatureScreen, savedScreen, settingsScreen]);
+
+  const handleSelectRecentVehicle = (regNum) => {
+    setMode('service');
+    getVehicleByRegistration(regNum)
+      .then((data) => {
+        if (data?.vehicle) {
+          saveRecentVehicle(data.vehicle);
+          setVehicleData(data);
+        } else {
+          setMissingVehicleReg(regNum);
+        }
+      })
+      .catch(() => {
+        setMissingVehicleReg(regNum);
+      });
+  };
+
+  const clearRecentVehicles = async () => {
+    Alert.alert(
+      'Clear Recent Vehicles',
+      'Are you sure you want to clear your recent vehicle search history?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await AsyncStorage.removeItem(RECENT_VEHICLES_KEY);
+              setRecentVehicles([]);
+            } catch {}
+          }
+        }
+      ]
+    );
+  };
 
   if (loading) {
     return (
@@ -2658,17 +2778,85 @@ export default function App() {
   // Vehicle lookup screen
   if (mode && !vehicleData) {
     return (
-      <VehicleScreen
-        mode={mode}
-        onVehicle={(vData) => {
-          saveRecentVehicle(vData.vehicle);
-          setVehicleData(vData);
-        }}
-        onVehicleMissing={(regNum) => {
-          setMissingVehicleReg(regNum);
-        }}
-        onBack={() => setMode(null)}
-      />
+      <View style={{ flex: 1 }}>
+        <VehicleScreen
+          mode={mode}
+          recentVehicles={recentVehicles}
+          onSelectVehicle={handleSelectRecentVehicle}
+          onClearRecent={clearRecentVehicles}
+          onVehicle={(vData) => {
+            saveRecentVehicle(vData.vehicle);
+            setVehicleData(vData);
+          }}
+          onVehicleMissing={(regNum) => {
+            setMissingVehicleReg(regNum);
+          }}
+          onBack={() => {
+            setMode(null);
+            setActiveTab('home');
+          }}
+        />
+
+        {/* Bottom Navigation Tabs */}
+        <View style={styles.bottomNavWrap}>
+          <TouchableOpacity
+            style={styles.navTabItem}
+            onPress={() => {
+              setMode(null);
+              setActiveTab('home');
+            }}
+          >
+            <Text style={[styles.navTabIcon, activeTab === 'home' && styles.navTabIconActive]}>
+              🏠
+            </Text>
+            <Text style={[styles.navTabLabel, activeTab === 'home' && styles.navTabLabelActive]}>
+              Home
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.navTabItem}
+            onPress={() => {
+              loadSavedEstimates();
+              setSavedScreen(true);
+            }}
+          >
+            <Text style={[styles.navTabIcon, activeTab === 'estimates' && styles.navTabIconActive]}>
+              📄
+            </Text>
+            <Text style={[styles.navTabLabel, activeTab === 'estimates' && styles.navTabLabelActive]}>
+              Estimates
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.navTabItem}
+            onPress={() => {
+              setActiveTab('vehicles');
+              setMode('service');
+            }}
+          >
+            <Text style={[styles.navTabIcon, activeTab === 'vehicles' && styles.navTabIconActive]}>
+              🚛
+            </Text>
+            <Text style={[styles.navTabLabel, activeTab === 'vehicles' && styles.navTabLabelActive]}>
+              Vehicles
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.navTabItem}
+            onPress={() => setSettingsScreen(true)}
+          >
+            <Text style={[styles.navTabIcon, activeTab === 'more' && styles.navTabIconActive]}>
+              •••
+            </Text>
+            <Text style={[styles.navTabLabel, activeTab === 'more' && styles.navTabLabelActive]}>
+              More
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
     );
   }
 
@@ -2698,6 +2886,7 @@ export default function App() {
       <HomeScreen
         user={user}
         onSelectMode={(selectedMode) => {
+          setActiveTab('vehicles');
           setMode(selectedMode);
         }}
         onOpenSaved={() => {
@@ -2705,23 +2894,9 @@ export default function App() {
           setSavedScreen(true);
         }}
         onOpenSign={() => setSignatureScreen(true)}
-        onSelectVehicle={(regNum) => {
-          setMode('service');
-          // Start lookup for this vehicle
-          getVehicleByRegistration(regNum)
-            .then((data) => {
-              if (data?.vehicle) {
-                saveRecentVehicle(data.vehicle);
-                setVehicleData(data);
-              } else {
-                setMissingVehicleReg(regNum);
-              }
-            })
-            .catch(() => {
-              setMissingVehicleReg(regNum);
-            });
-        }}
+        onSelectVehicle={handleSelectRecentVehicle}
         onOpenVehiclesList={() => {
+          setActiveTab('vehicles');
           setMode('service');
         }}
         onLogout={async () => {
@@ -2753,24 +2928,39 @@ export default function App() {
             setSavedScreen(true);
           }}
         >
-          <Text style={styles.navTabIcon}>📄</Text>
-          <Text style={styles.navTabLabel}>Estimates</Text>
+          <Text style={[styles.navTabIcon, activeTab === 'estimates' && styles.navTabIconActive]}>
+            📄
+          </Text>
+          <Text style={[styles.navTabLabel, activeTab === 'estimates' && styles.navTabLabelActive]}>
+            Estimates
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.navTabItem}
-          onPress={() => setMode('service')}
+          onPress={() => {
+            setActiveTab('vehicles');
+            setMode('service');
+          }}
         >
-          <Text style={styles.navTabIcon}>🚛</Text>
-          <Text style={styles.navTabLabel}>Vehicles</Text>
+          <Text style={[styles.navTabIcon, activeTab === 'vehicles' && styles.navTabIconActive]}>
+            🚛
+          </Text>
+          <Text style={[styles.navTabLabel, activeTab === 'vehicles' && styles.navTabLabelActive]}>
+            Vehicles
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.navTabItem}
           onPress={() => setSettingsScreen(true)}
         >
-          <Text style={styles.navTabIcon}>•••</Text>
-          <Text style={styles.navTabLabel}>More</Text>
+          <Text style={[styles.navTabIcon, activeTab === 'more' && styles.navTabIconActive]}>
+            •••
+          </Text>
+          <Text style={[styles.navTabLabel, activeTab === 'more' && styles.navTabLabelActive]}>
+            More
+          </Text>
         </TouchableOpacity>
       </View>
     </View>

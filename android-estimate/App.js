@@ -225,8 +225,10 @@ function ItemCard({
     }
   }, [autoFocusLabour]);
 
-  const handlePartSubmit = () => {
+  const handlePartSubmit = (submittedText = null) => {
+    const p = String(submittedText || item.partNo || '').trim();
     if (onPartNoSubmit && !onPartNoSubmit(item)) return;
+    if (p && onRateLookup) onRateLookup(item, p);
     focusQty();
   };
 
@@ -254,10 +256,18 @@ function ItemCard({
                 value={String(item.partNo ?? '')}
                 onChangeText={(v) => set('partNo', v.toUpperCase())}
                 onFocus={() => ensureVisible(partNoRef)}
-                onEndEditing={() => {
-                  if (String(item.partNo || '').trim()) onRateLookup(item);
+                onBlur={() => {
+                  const p = String(item.partNo || '').trim();
+                  if (p && onRateLookup) onRateLookup(item, p);
                 }}
-                onSubmitEditing={handlePartSubmit}
+                onEndEditing={(e) => {
+                  const p = String(e.nativeEvent?.text || item.partNo || '').trim();
+                  if (p && onRateLookup) onRateLookup(item, p);
+                }}
+                onSubmitEditing={(e) => {
+                  const p = String(e.nativeEvent?.text || item.partNo || '').trim();
+                  handlePartSubmit(p);
+                }}
                 returnKeyType="next"
                 placeholder="Part No."
                 maxLength={12}
@@ -1226,27 +1236,43 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
 
   const remove = (setter, id) => setter((prev) => prev.filter((x) => x.id !== id));
 
-  const lookupRate = async (item) => {
-    const partNo = String(item.partNo || '').replace(/\s+/g, '').toUpperCase();
+  const lookupRate = async (item, directPartNo = null) => {
+    const rawPart = directPartNo || item?.partNo || '';
+    const partNo = String(rawPart).replace(/\s+/g, '').toUpperCase();
     if (!partNo) return;
     setRateLoadingId(item.id);
     try {
       const live = await getPartRate(partNo);
       if (live?.part) {
+        const rateVal = Number(
+          live.part.rateInclGst ??
+          live.part.rate_with_gst ??
+          (live.part.rate ? Number((live.part.rate * 1.18).toFixed(2)) : 0)
+        );
+        const descVal =
+          live.part.description ||
+          live.part.part_description ||
+          item.description ||
+          live.part.partNo ||
+          partNo;
+        const currentQty = Number(item.qty);
         updatePart(item.id, {
-          partNo: live.part.part_no || partNo,
-          description: live.part.part_description || item.description || live.part.part_no,
-          rate: Number(live.part.rate_with_gst || live.part.unit_rate || 0),
+          partNo: live.part.partNo || live.part.part_code || live.part.part_no || partNo,
+          description: descVal,
+          rate: rateVal,
+          qty: !currentQty || currentQty <= 0 ? 1 : currentQty,
           source: 'Live Master Rate'
         });
         return;
       }
       const local = rateForManualPart(partNo, data.modelRows || [], data.globalPartRates || []);
       if (local) {
+        const currentQty = Number(item.qty);
         updatePart(item.id, {
           partNo: local.partNo,
           description: local.description || item.description || local.partNo,
           rate: Number(local.rate || 0),
+          qty: !currentQty || currentQty <= 0 ? 1 : currentQty,
           source: local.source
         });
       }

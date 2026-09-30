@@ -55,13 +55,13 @@ export const REFERENCE_PARTS = {
 
 /**
  * Service Quantity Rules defined strictly per user specification:
- * - Engine oil: 12-22 (range, default 15)
- * - Gear oil: 6-9 (range, default 7)
+ * - Engine oil: 12-22 (range, default 18)
+ * - Gear oil: 6-9 (range, default 8.5)
  * - Steering oil: 3 (Fixed)
- * - Axle oil: 12-33 (range, default 18)
+ * - Axle oil: 12-33 (range, default 16.5)
  * - Clutch oil: 0.5 (Fixed)
  * - Coolant: 15-30 (range, default 20)
- * - Hub grease: 3-7 (range, default 4) -> Only applicable to S9999997 (grease).
+ * - Hub grease: 3-7 (range, default 3) -> Only applicable to S9999997 (grease).
  *   FJ607400, F1721500, F1771900, H500120 & Cloth are gaskets/seals/hardware; range is NOT applicable to them.
  */
 export const AGGREGATE_RULES = {
@@ -69,14 +69,14 @@ export const AGGREGATE_RULES = {
     type: 'range',
     min: 12,
     max: 22,
-    defaultQty: 15,
+    defaultQty: 18,
     applicableParts: ['EN699991']
   },
   gearOil: {
     type: 'range',
     min: 6,
     max: 9,
-    defaultQty: 7,
+    defaultQty: 8.5,
     applicableParts: ['G9999994']
   },
   steeringOil: {
@@ -89,7 +89,7 @@ export const AGGREGATE_RULES = {
     type: 'range',
     min: 12,
     max: 33,
-    defaultQty: 18,
+    defaultQty: 16.5,
     applicableParts: ['GB699991']
   },
   clutchOil: {
@@ -109,7 +109,7 @@ export const AGGREGATE_RULES = {
     type: 'range',
     min: 3,
     max: 7,
-    defaultQty: 4,
+    defaultQty: 3,
     applicableParts: ['S9999997']
   }
 };

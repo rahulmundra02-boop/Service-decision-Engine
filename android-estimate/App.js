@@ -175,6 +175,8 @@ function ItemCard({
   const descriptionRef = useRef(null);
   const qtyRef = useRef(null);
   const rateRef = useRef(null);
+  const lookupTimerRef = useRef(null);
+  const lastLookedUpRef = useRef(String(item.partNo || '').replace(/\s+/g, '').toUpperCase());
 
   const ensureVisible = (inputRef) => {
     const measureAndScroll = (keyboardTop) => {
@@ -225,10 +227,45 @@ function ItemCard({
     }
   }, [autoFocusLabour]);
 
+  const triggerLookup = (code) => {
+    const clean = String(code || '').replace(/\s+/g, '').toUpperCase();
+    if (!clean || clean.length < 4 || clean === lastLookedUpRef.current) return;
+    lastLookedUpRef.current = clean;
+    if (onRateLookup) {
+      onRateLookup(item.id, clean);
+    }
+  };
+
+  const handlePartNoChange = (val) => {
+    const upper = String(val || '').toUpperCase().replace(/\s+/g, '');
+    const currentCode = String(item.partNo || '').toUpperCase().replace(/\s+/g, '');
+    if (upper !== currentCode) {
+      onChange({
+        ...item,
+        partNo: upper,
+        ...(item.serviceKey ? { serviceKey: null } : {})
+      });
+      if (lookupTimerRef.current) clearTimeout(lookupTimerRef.current);
+      if (upper.length >= 4) {
+        lookupTimerRef.current = setTimeout(() => {
+          triggerLookup(upper);
+        }, 350);
+      }
+    } else {
+      set('partNo', upper);
+    }
+  };
+
+  const handlePartNoBlur = () => {
+    if (lookupTimerRef.current) clearTimeout(lookupTimerRef.current);
+    const p = String(item.partNo || '').replace(/\s+/g, '').toUpperCase();
+    if (p.length >= 4) triggerLookup(p);
+  };
+
   const handlePartSubmit = (submittedText = null) => {
-    const p = String(submittedText || item.partNo || '').trim();
-    if (onPartNoSubmit && !onPartNoSubmit(item)) return;
-    if (p && onRateLookup) onRateLookup(item, p);
+    if (lookupTimerRef.current) clearTimeout(lookupTimerRef.current);
+    const p = String(submittedText || item.partNo || '').replace(/\s+/g, '').toUpperCase();
+    if (p.length >= 4) triggerLookup(p);
     focusQty();
   };
 
@@ -250,22 +287,22 @@ function ItemCard({
         <View style={styles.partInfoRow}>
           <View style={styles.partNoCol}>
             <View style={styles.field}>
-              <Text style={styles.label}>Part No.</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Text style={styles.label}>Part No.</Text>
+                {rateLoading && <ActivityIndicator size="small" color="#0052cc" style={{ transform: [{ scale: 0.7 }] }} />}
+              </View>
               <TextInput
                 ref={partNoRef}
                 value={String(item.partNo ?? '')}
-                onChangeText={(v) => set('partNo', v.toUpperCase())}
+                onChangeText={handlePartNoChange}
                 onFocus={() => ensureVisible(partNoRef)}
-                onBlur={() => {
-                  const p = String(item.partNo || '').trim();
-                  if (p && onRateLookup) onRateLookup(item, p);
-                }}
+                onBlur={handlePartNoBlur}
                 onEndEditing={(e) => {
-                  const p = String(e.nativeEvent?.text || item.partNo || '').trim();
-                  if (p && onRateLookup) onRateLookup(item, p);
+                  const p = String(e.nativeEvent?.text || item.partNo || '').replace(/\s+/g, '').toUpperCase();
+                  if (p.length >= 4) triggerLookup(p);
                 }}
                 onSubmitEditing={(e) => {
-                  const p = String(e.nativeEvent?.text || item.partNo || '').trim();
+                  const p = String(e.nativeEvent?.text || item.partNo || '').replace(/\s+/g, '').toUpperCase();
                   handlePartSubmit(p);
                 }}
                 returnKeyType="next"
@@ -1236,11 +1273,12 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
 
   const remove = (setter, id) => setter((prev) => prev.filter((x) => x.id !== id));
 
-  const lookupRate = async (item, directPartNo = null) => {
-    const rawPart = directPartNo || item?.partNo || '';
+  const lookupRate = async (target, directPartNo = null) => {
+    const itemId = typeof target === 'object' ? target?.id : target;
+    const rawPart = directPartNo || (typeof target === 'object' ? target?.partNo : '') || '';
     const partNo = String(rawPart).replace(/\s+/g, '').toUpperCase();
-    if (!partNo) return;
-    setRateLoadingId(item.id);
+    if (!itemId || !partNo) return;
+    setRateLoadingId(itemId);
     try {
       const live = await getPartRate(partNo);
       if (live?.part) {
@@ -1252,30 +1290,45 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
         const descVal =
           live.part.description ||
           live.part.part_description ||
-          item.description ||
           live.part.partNo ||
           partNo;
-        const currentQty = Number(item.qty);
-        updatePart(item.id, {
-          partNo: live.part.partNo || live.part.part_code || live.part.part_no || partNo,
-          description: descVal,
-          rate: rateVal,
-          qty: !currentQty || currentQty <= 0 ? 1 : currentQty,
-          source: 'Live Master Rate'
-        });
+        setParts((prev) =>
+          prev.map((x) => {
+            if (x.id !== itemId) return x;
+            const currentQty = Number(x.qty);
+            return {
+              ...x,
+              partNo: live.part.partNo || live.part.part_code || live.part.part_no || partNo,
+              description: descVal,
+              rate: rateVal,
+              qty: !currentQty || currentQty <= 0 ? 1 : currentQty,
+              serviceKey: null,
+              source: 'Live Master Rate'
+            };
+          })
+        );
         return;
       }
       const local = rateForManualPart(partNo, data.modelRows || [], data.globalPartRates || []);
       if (local) {
-        const currentQty = Number(item.qty);
-        updatePart(item.id, {
-          partNo: local.partNo,
-          description: local.description || item.description || local.partNo,
-          rate: Number(local.rate || 0),
-          qty: !currentQty || currentQty <= 0 ? 1 : currentQty,
-          source: local.source
-        });
+        setParts((prev) =>
+          prev.map((x) => {
+            if (x.id !== itemId) return x;
+            const currentQty = Number(x.qty);
+            return {
+              ...x,
+              partNo: local.partNo,
+              description: local.description || local.partNo,
+              rate: Number(local.rate || 0),
+              qty: !currentQty || currentQty <= 0 ? 1 : currentQty,
+              serviceKey: null,
+              source: local.source
+            };
+          })
+        );
       }
+    } catch (err) {
+      console.warn('lookupRate error:', err);
     } finally {
       setRateLoadingId(null);
     }

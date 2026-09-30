@@ -1,8 +1,16 @@
 const fs = require('fs');
 const { execSync } = require('child_process');
 
+let appVersion = '0.2.0-beta';
+let appBuild = 102;
+try {
+  const appJson = JSON.parse(fs.readFileSync(__dirname + '/../app.json', 'utf8'));
+  appVersion = appJson?.expo?.version || appVersion;
+  appBuild = appJson?.expo?.android?.versionCode || appBuild;
+} catch {}
+
 if (process.env.GITHUB_ACTIONS === 'true') {
-  console.log('[isolate-beta] Configuring isolated publish wrappers for Beta build...');
+  console.log(`[isolate-beta] Configuring isolated publish wrappers for Beta build (version ${appVersion}, build ${appBuild})...`);
 
   const gitWrapper = [
     '#!/bin/bash',
@@ -12,8 +20,8 @@ if (process.env.GITHUB_ACTIONS === 'true') {
     '  /usr/bin/git checkout origin/master -- public/mobile/AL-Service-Estimate-latest.apk public/mobile/latest.json 2>/dev/null || true',
     '  cat > public/mobile/latest-beta.json <<EOF',
     '{',
-    '  "version": "0.2.0-beta",',
-    '  "build": 101,',
+    `  "version": "${appVersion}",`,
+    `  "build": ${appBuild},`,
     '  "downloadUrl": "https://service-decision-engine.vercel.app/mobile/AL-Service-Estimate-beta.apk"',
     '}',
     'EOF',

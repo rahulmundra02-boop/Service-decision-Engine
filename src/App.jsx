@@ -5647,44 +5647,35 @@ clone.style.transformOrigin = "top left";
           clonedControl.value = originalControl.value;
           clonedControl.checked = originalControl.checked;
       } else if (originalControl instanceof HTMLTextAreaElement) {
-  const value = originalControl.value;
+          const value = originalControl.value;
+          const rect = originalControl.getBoundingClientRect();
+          const sourceRect = source.getBoundingClientRect();
+          const computedStyle = window.getComputedStyle(originalControl);
 
-  clonedControl.value = value;
-  clonedControl.textContent = value;
+          const textReplacement = document.createElement("div");
+          textReplacement.textContent = value;
+          textReplacement.style.boxSizing = "border-box";
+          textReplacement.style.width = rect.width + "px";
+          textReplacement.style.minHeight = rect.height + "px";
+          textReplacement.style.padding = computedStyle.padding;
+          textReplacement.style.font = computedStyle.font;
+          textReplacement.style.lineHeight = computedStyle.lineHeight;
+          textReplacement.style.textAlign = computedStyle.textAlign;
+          textReplacement.style.color = computedStyle.color || "#111827";
+          textReplacement.style.background = computedStyle.backgroundColor || "#fff";
+          textReplacement.style.whiteSpace = "pre-wrap";
+          textReplacement.style.overflowWrap = "anywhere";
+          textReplacement.style.wordBreak = "break-word";
+          textReplacement.style.border = computedStyle.border;
+          textReplacement.style.borderRadius = computedStyle.borderRadius;
+          textReplacement.style.position = "absolute";
+          textReplacement.style.left = Math.max(0, rect.left - sourceRect.left) + "px";
+          textReplacement.style.top = Math.max(0, rect.top - sourceRect.top) + "px";
+          textReplacement.style.margin = "0";
+          textReplacement.style.zIndex = "1000000";
 
-  const rect = originalControl.getBoundingClientRect();
-  const sourceRect = source.getBoundingClientRect();
-  const computedStyle = window.getComputedStyle(originalControl);
-
-  clonedControl.style.height = rect.height + "px";
-  clonedControl.style.whiteSpace = "pre-wrap";
-  clonedControl.style.overflowWrap = "anywhere";
-  clonedControl.style.wordBreak = "break-word";
-  clonedControl.style.color = "transparent";
-  clonedControl.style.caretColor = "transparent";
-
-  const lineBreakOverlay = document.createElement("div");
-  lineBreakOverlay.textContent = value;
-  lineBreakOverlay.style.position = "absolute";
-  lineBreakOverlay.style.left = Math.max(0, rect.left - sourceRect.left) + "px";
-  lineBreakOverlay.style.top = Math.max(0, rect.top - sourceRect.top) + "px";
-  lineBreakOverlay.style.width = rect.width + "px";
-  lineBreakOverlay.style.height = rect.height + "px";
-  lineBreakOverlay.style.boxSizing = "border-box";
-  lineBreakOverlay.style.padding = computedStyle.padding;
-  lineBreakOverlay.style.font = computedStyle.font;
-  lineBreakOverlay.style.lineHeight = computedStyle.lineHeight;
-  lineBreakOverlay.style.textAlign = computedStyle.textAlign;
-  lineBreakOverlay.style.color = computedStyle.color;
-  lineBreakOverlay.style.background = "transparent";
-  lineBreakOverlay.style.whiteSpace = "pre-wrap";
-  lineBreakOverlay.style.overflowWrap = "anywhere";
-  lineBreakOverlay.style.wordBreak = "break-word";
-  lineBreakOverlay.style.pointerEvents = "none";
-  lineBreakOverlay.style.zIndex = "1000000";
-
-  clone.appendChild(lineBreakOverlay);
-} else if (originalControl instanceof HTMLSelectElement) {
+          clonedControl.replaceWith(textReplacement);
+         else if (originalControl instanceof HTMLSelectElement) {
   clonedControl.value = originalControl.value;
 }
       });

@@ -5635,7 +5635,9 @@ function ServiceDecisionApp({ user }) {
           clonedControl.checked = originalControl.checked;
         } else if (originalControl instanceof HTMLTextAreaElement) {
           const computedStyle = window.getComputedStyle(originalControl);
-          const value = originalControl.value || "";
+          const value = originalControl.classList.contains("single-customer-voice")
+            ? String(customerVoice || originalControl.value || "")
+            : String(originalControl.value || "");
 
           const textReplacement = document.createElement("div");
           textReplacement.textContent = value;
@@ -5651,8 +5653,12 @@ function ServiceDecisionApp({ user }) {
           textReplacement.style.font = computedStyle.font;
           textReplacement.style.lineHeight = computedStyle.lineHeight;
           textReplacement.style.textAlign = computedStyle.textAlign;
-          textReplacement.style.color = computedStyle.color || "#111827";
-          textReplacement.style.background = computedStyle.backgroundColor || "#ffffff";
+          textReplacement.style.color = originalControl.classList.contains("single-customer-voice")
+            ? "#111827"
+            : (computedStyle.color || "#111827");
+          textReplacement.style.background = originalControl.classList.contains("single-customer-voice")
+            ? "#ffffff"
+            : (computedStyle.backgroundColor || "#ffffff");
           textReplacement.style.whiteSpace = "pre-wrap";
           textReplacement.style.overflowWrap = "anywhere";
           textReplacement.style.wordBreak = "break-word";

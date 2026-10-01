@@ -4679,6 +4679,155 @@ function ServiceDecisionApp({ user }) {
     return parseExcelPaste(excelData);
   };
 
+  const openBulkVehicleDetail = (item) => {
+    const records = Array.isArray(item?.records) ? item.records : [];
+    const vin = String(item?.vin || item?.vehicle?.vin || "").trim().toUpperCase();
+    if (!records.length || !vin) { window.alert("Vehicle detail data is not available."); return; }
+    const token = "serviceDecisionBulkDetail:" + Date.now() + ":" + Math.random().toString(36).slice(2);
+    const channelName = "serviceDecisionBulkDetail:" + token;
+    const payload = { records, vin };
+    const targetOrigin = window.location.origin;
+    let channel = null;
+    let opened = null;
+    let closed = false;
+    const cleanup = () => {
+      if (closed) return;
+      closed = true;
+      if (channel) { try { channel.close(); } catch {} }
+      window.removeEventListener("message", handleReady);
+    };
+    const sendPayload = (eventSource = opened) => {
+      if (!eventSource || closed) return;
+      try {
+        eventSource.postMessage({ type:"serviceDecisionBulkVehicleDetailPayload", token, payload }, targetOrigin);
+      } catch (error) { console.warn("Bulk vehicle detail postMessage failed:", error); }
+    };
+    const handleReady = (event) => {
+      if (closed || event.origin !== targetOrigin) return;
+      if (event.data?.type !== "serviceDecisionBulkVehicleDetailReady" || event.data?.token !== token) return;
+      if (opened && event.source && event.source !== opened) return;
+      sendPayload(event.source || opened);
+      window.setTimeout(cleanup, 500);
+    };
+    try {
+      if ("BroadcastChannel" in window) {
+        channel = new BroadcastChannel(channelName);
+        channel.onmessage = (event) => {
+          if (closed || event.data?.type !== "serviceDecisionBulkVehicleDetailReady" || event.data?.token !== token) return;
+          channel.postMessage({ type:"serviceDecisionBulkVehicleDetailPayload", token, payload });
+          window.setTimeout(cleanup, 500);
+        };
+      }
+      window.addEventListener("message", handleReady);
+      const url = window.location.origin + window.location.pathname + "?bulkVehicleDetail=" + encodeURIComponent(token);
+      opened = window.open(url, "_blank");
+      if (!opened) { cleanup(); window.alert("Browser ne new tab open karna block kar diya. Please allow pop-ups for this site."); return; }
+      if (!channel) window.setTimeout(() => sendPayload(opened), 100);
+    } catch (error) { cleanup(); console.error("Bulk vehicle detail open failed:", error); window.alert("Vehicle detail open nahi ho payi."); }
+  };
+  useEffect(() => {
+    const token = new URLSearchParams(window.location.search).get("bulkVehicleDetail");
+    if (!token) return;
+
+    let cancelled = false;
+    let loaded = false;
+    let channel = null;
+    const targetOrigin = window.location.origin;
+
+    const finish = () => {
+      if (channel) { try { channel.close(); } catch {} }
+      window.removeEventListener("message", handleMessage);
+      try { window.history.replaceState({}, document.title, window.location.pathname); } catch {}
+    };
+
+    const loadVehicleDetail = (payload) => {
+      if (cancelled || loaded) return;
+      const records = Array.isArray(payload?.records) ? payload.records : [];
+      const targetVin = String(payload?.vin || "").trim().toUpperCase();
+      const vehicleRecords = records.filter(record => String(record?.vin || "").trim().toUpperCase() === targetVin);
+      if (!vehicleRecords.length || !targetVin) { setError("Selected vehicle history could not be loaded."); return; }
+      loaded = true;
+
+      try {
+        const parsed = { headers: [], records: vehicleRecords, headerMap: {} };
+        const vehicle = deriveVehicle(vehicleRecords);
+        const running = deriveRunningReading(vehicleRecords, vehicle);
+        const visits = aggregateHistory(vehicleRecords);
+        const decision = calculateDecisions(vehicleRecords, vehicle, running);
+        setAnalysis({ ...parsed, vehicle, running, visits, decision });
+        setOverrideReading("");
+        setAppliedOverride(null);
+        setDecisionBasis(running?.unit === "HRS" ? "HRS" : "KM");
+        setRemark("");
+        setCustomerVoice("");
+        setHistoryViewMode("schedule");
+        setBulkResults([]);
+        setBulkMeta(null);
+        setMode("single");
+        setError("");
+
+        const vinForCampaign = String(vehicle?.vin || targetVin || "").trim().toUpperCase();
+        setCampaigns([]);
+        if (vinForCampaign) {
+          setCampaignLoading(true);
+          void fetch("/api/auth", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(localStorage.getItem("serviceDecisionAuthToken") ? { Authorization: "Bearer " + localStorage.getItem("serviceDecisionAuthToken") } : {})
+            },
+            body: JSON.stringify({ action: "campaigns-by-vin", vin: vinForCampaign })
+          }).then(response => response.json().then(data => ({ response, data })))
+            .then(({ response, data }) => {
+              if (!response.ok || data?.success === false) throw new Error(data?.error || "Campaign lookup failed.");
+              if (!cancelled) setCampaigns(Array.isArray(data?.campaigns) ? data.campaigns : []);
+            }).catch(error => {
+              console.warn("Campaign lookup failed:", error);
+              if (!cancelled) setCampaigns([]);
+            }).finally(() => {
+              if (!cancelled) setCampaignLoading(false);
+            });
+        } else {
+          setCampaignLoading(false);
+        }
+        finish();
+      } catch (error) {
+        console.error("Bulk vehicle detail load failed:", error);
+        setError("Selected vehicle detail load nahi ho payi.");
+      }
+    };
+
+    const handleMessage = (event) => {
+      if (event.origin !== targetOrigin) return;
+      if (event.data?.type !== "serviceDecisionBulkVehicleDetailPayload" || event.data?.token !== token) return;
+      loadVehicleDetail(event.data.payload);
+    };
+
+    window.addEventListener("message", handleMessage);
+
+    if ("BroadcastChannel" in window) {
+      channel = new BroadcastChannel("serviceDecisionBulkDetail:" + token);
+      channel.onmessage = (event) => {
+        if (event.data?.type !== "serviceDecisionBulkVehicleDetailPayload" || event.data?.token !== token) return;
+        loadVehicleDetail(event.data.payload);
+      };
+      channel.postMessage({ type: "serviceDecisionBulkVehicleDetailReady", token });
+    }
+
+    if (window.opener) {
+      try { window.opener.postMessage({ type: "serviceDecisionBulkVehicleDetailReady", token }, targetOrigin); } catch {}
+    }
+
+    const timeout = window.setTimeout(() => {
+      if (!cancelled && !loaded) setError("Vehicle detail load nahi ho payi. Please vehicle link dobara open karein.");
+    }, 12000);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+      finish();
+    };
+  }, []);
   const analyze = () => {
     setError("");
     try {
@@ -5640,9 +5789,7 @@ function ServiceDecisionApp({ user }) {
             : String(originalControl.value || "");
 
           const textReplacement = document.createElement("div");
-          textReplacement.className = originalControl.classList.contains("single-customer-voice")
-            ? "single-customer-voice screenshot-customer-voice"
-            : "screenshot-form-control";
+          textReplacement.className = "single-customer-voice screenshot-customer-voice";
           textReplacement.textContent = value;
           textReplacement.style.boxSizing = "border-box";
           textReplacement.style.display = "block";
@@ -5656,16 +5803,8 @@ function ServiceDecisionApp({ user }) {
           textReplacement.style.font = computedStyle.font;
           textReplacement.style.lineHeight = computedStyle.lineHeight;
           textReplacement.style.textAlign = computedStyle.textAlign;
-          textReplacement.style.setProperty(
-             "color",
-             originalControl.classList.contains("single-customer-voice") ? "#111827" : (computedStyle.color || "#111827"),
-             "important"
-           );
-           textReplacement.style.setProperty(
-             "background",
-             originalControl.classList.contains("single-customer-voice") ? "#ffffff" : (computedStyle.backgroundColor || "#ffffff"),
-             "important"
-           );
+          textReplacement.style.setProperty("color", "#111827", "important");
+           textReplacement.style.setProperty("background", "#ffffff", "important");
           textReplacement.style.whiteSpace = "pre-wrap";
           textReplacement.style.overflowWrap = "anywhere";
           textReplacement.style.wordBreak = "break-word";
@@ -6942,7 +7081,7 @@ function ServiceDecisionApp({ user }) {
                         {bulkSummaryRows.map((item,index) => (
                           <tr key={item.vin || index}>
                             <td style={tableColumnStyle("bulk","serial")}>{index + 1}</td>
-                            {isBulkColumnVisible("customerName") && <td style={tableColumnStyle("bulk","customerName")}>{item.vehicle.customerName || "-"}</td>}{isBulkColumnVisible("vin") && <td style={tableColumnStyle("bulk","vin")}>{item.vin || item.vehicle.vin || "-"}</td>}{isBulkColumnVisible("reg") && <td style={tableColumnStyle("bulk","reg")}>{item.vehicle.reg || "-"}</td>}{isBulkColumnVisible("saleDate") && <td style={tableColumnStyle("bulk","saleDate")}>{item.vehicle.sale ? formatDateShort(item.vehicle.sale) : "-"}</td>}{isBulkColumnVisible("model") && <td style={tableColumnStyle("bulk","model")}>{item.vehicle.model || "-"}</td>}{isBulkColumnVisible("currentReading") && <td style={tableColumnStyle("bulk","currentReading")}>{item.running?.current ? `${formatNumber(item.running.current)} ${item.running.unit || getTargetUnit(item.vehicle)}` : "-"}</td>}{isBulkColumnVisible("services") && <td style={tableColumnStyle("bulk","services")}>{item.services.join(", ")}</td>}
+                            {isBulkColumnVisible("customerName") && <td style={tableColumnStyle("bulk","customerName")}>{item.vehicle.customerName || "-"}</td>}{isBulkColumnVisible("vin") && <td style={tableColumnStyle("bulk","vin")}><button type="button" onClick={() => openBulkVehicleDetail(item)} style={{border:0,background:"transparent",padding:0,color:"#2563eb",textDecoration:"underline",cursor:"pointer",font: "inherit",fontWeight:700}} title="Open vehicle single analysis">{item.vin || item.vehicle.vin || "-"}</button></td>}{isBulkColumnVisible("reg") && <td style={tableColumnStyle("bulk","reg")}>{item.vehicle.reg || "-"}</td>}{isBulkColumnVisible("saleDate") && <td style={tableColumnStyle("bulk","saleDate")}>{item.vehicle.sale ? formatDateShort(item.vehicle.sale) : "-"}</td>}{isBulkColumnVisible("model") && <td style={tableColumnStyle("bulk","model")}>{item.vehicle.model || "-"}</td>}{isBulkColumnVisible("currentReading") && <td style={tableColumnStyle("bulk","currentReading")}>{item.running?.current ? `${formatNumber(item.running.current)} ${item.running.unit || getTargetUnit(item.vehicle)}` : "-"}</td>}{isBulkColumnVisible("services") && <td style={tableColumnStyle("bulk","services")}>{item.services.join(", ")}</td>}
                           </tr>
                         ))}
                         {!bulkSummaryRows.length && (

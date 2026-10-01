@@ -489,87 +489,121 @@ export default function AuthGate({ children }) {
   if (!user) {
     return (
       <div className="auth-page">
-        <div className="auth-card">
-          <div className="auth-brand">Service Decision</div>
-          <div className="auth-subtitle">Vehicle Service Decision & Maintenance Portal</div>
-          {error && <div className="auth-error">{error}</div>}
-          {message && <div className="auth-message">{message}</div>}
-
-          <h2>Sign In</h2>
-          <label>Email / User ID</label>
-          <input id="auth-identifier" placeholder="Enter your registered email" />
-          <label>Password</label>
-          <input id="auth-password" type="password" placeholder="Enter your password" onKeyDown={e => e.key === "Enter" && login()} />
-          <button type="button" className="auth-primary" onClick={() => login(false)} disabled={loading}>Login</button>
-
-          {sessionConflict && (
-            <div className="auth-modal-backdrop">
-              <div className="auth-modal session-conflict-modal">
-                <h2>Existing Session Found</h2>
-                <p className="auth-hint">This account is already active on another device/browser.</p>
-                <div className="session-conflict-details">
-                  <div><strong>Previous device:</strong> {sessionConflict.deviceName || "Unknown device"}</div>
-                  <div><strong>IP address:</strong> {sessionConflict.ipAddress || "Unavailable"}</div>
-                  <div><strong>Last active:</strong> {sessionConflict.lastSeenAt ? new Date(sessionConflict.lastSeenAt).toLocaleString("en-IN") : "Unavailable"}</div>
-                </div>
-                <p className="auth-hint">Do you want to terminate the previous session and continue with this login?</p>
-                <div className="auth-modal-actions">
-                  <button
-                    type="button"
-                    className="auth-secondary"
-                    onClick={() => {
-                      setSessionConflict(null);
-                      setPendingLoginCredentials(null);
-                    }}
-                  >
-                    No / Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="auth-primary"
-                    onClick={() => {
-                      if (!pendingLoginCredentials || loading) return;
-                      void login(true, pendingLoginCredentials);
-                    }}
-                    disabled={loading || !pendingLoginCredentials}
-                  >
-                    {loading ? "Terminating & Signing In..." : "Yes, Terminate Old Session"}
-                  </button>
+        <div className="auth-login-shell">
+          <section className="auth-visual">
+            <div className="auth-visual-overlay">
+              <div className="auth-visual-brand">
+                <div className="auth-al-mark">AL</div>
+                <div>
+                  <div className="auth-visual-brand-name">ASHOK LEYLAND</div>
+                  <div className="auth-visual-tagline">POWERING BUSINESS AHEAD</div>
                 </div>
               </div>
+
+              <div className="auth-visual-copy">
+                <div className="auth-visual-kicker">COMMERCIAL VEHICLE SERVICE</div>
+                <h1>Service Decision</h1>
+                <p>Smart vehicle service analysis for faster decisions, better uptime and stronger service business.</p>
+              </div>
+
+              <div className="auth-benefits">
+                <div><span>✓</span><strong>Accurate</strong><small>Service Analysis</small></div>
+                <div><span>✓</span><strong>Reliable</strong><small>Vehicle Service Planning</small></div>
+                <div><span>₹</span><strong>Revenue</strong><small>Service Opportunity</small></div>
+                <div><span>↗</span><strong>Grow</strong><small>Customer Business</small></div>
+              </div>
             </div>
-          )}
+          </section>
 
-          <button className="auth-secondary" onClick={() => setShowAccountHelp(v => !v)}>
-            {showAccountHelp ? "Hide Account Creation" : "Sign Up / Request Account"}
-          </button>
-
-          {showAccountHelp && (
-            <div className="auth-account-help">
-              <div className="auth-help-title">Account Creation</div>
-              <div className="auth-help-text">Need a Service Decision account? Contact the administrator. Account creation is free and quick.</div>
-              <div className="auth-contact-row"><strong>Email:</strong> {ADMIN_CONTACT_EMAIL}</div>
-              <div className="auth-contact-row"><strong>Contact:</strong> {ADMIN_CONTACT_MOBILE}</div>
+          <section className="auth-card">
+            <div className="auth-card-brand">
+              <div className="auth-service-icon">⚙</div>
+              <div>
+                <div className="auth-brand">Service <span>Decision</span></div>
+                <div className="auth-subtitle">Vehicle Service Decision & Maintenance Portal</div>
+              </div>
             </div>
-          )}
 
-          <button className="auth-secondary" onClick={() => setShowForgotHelp(v => !v)}>
-            {showForgotHelp ? "Hide Password Help" : "Forgot Password?"}
-          </button>
+            <div className="auth-divider" />
+            {error && <div className="auth-error">{error}</div>}
+            {message && <div className="auth-message">{message}</div>}
 
-          {showForgotHelp && (
-            <div className="auth-help-panel">
-              <strong>Forgot Password</strong>
-              <p>Please contact the administrator to reset your password. Password reset is handled manually.</p>
-              <div className="auth-contact-row"><strong>Email:</strong> {ADMIN_CONTACT_EMAIL}</div>
-              <div className="auth-contact-row"><strong>Contact:</strong> {ADMIN_CONTACT_MOBILE}</div>
+            <div className="auth-form-heading">
+              <h2>Welcome Back</h2>
+              <p>Sign in to continue to your service dashboard.</p>
             </div>
-          )}
+
+            <label>Email / User ID</label>
+            <div className="auth-input-wrap">
+              <span>✉</span>
+              <input id="auth-identifier" placeholder="Enter your registered email" />
+            </div>
+
+            <label>Password</label>
+            <div className="auth-input-wrap">
+              <span>▣</span>
+              <input id="auth-password" type="password" placeholder="Enter your password" onKeyDown={e => e.key === "Enter" && login()} />
+            </div>
+
+            <button type="button" className="auth-primary" onClick={() => login(false)} disabled={loading}>
+              {loading ? "Signing In..." : "Login  →"}
+            </button>
+
+            {sessionConflict && (
+              <div className="auth-modal-backdrop">
+                <div className="auth-modal session-conflict-modal">
+                  <h2>Existing Session Found</h2>
+                  <p className="auth-hint">This account is already active on another device/browser.</p>
+                  <div className="session-conflict-details">
+                    <div><strong>Previous device:</strong> {sessionConflict.deviceName || "Unknown device"}</div>
+                    <div><strong>IP address:</strong> {sessionConflict.ipAddress || "Unavailable"}</div>
+                    <div><strong>Last active:</strong> {sessionConflict.lastSeenAt ? new Date(sessionConflict.lastSeenAt).toLocaleString("en-IN") : "Unavailable"}</div>
+                  </div>
+                  <p className="auth-hint">Do you want to terminate the previous session and continue with this login?</p>
+                  <div className="auth-modal-actions">
+                    <button type="button" className="auth-secondary" onClick={() => { setSessionConflict(null); setPendingLoginCredentials(null); }}>
+                      No / Cancel
+                    </button>
+                    <button type="button" className="auth-primary" onClick={() => { if (!pendingLoginCredentials || loading) return; void login(true, pendingLoginCredentials); }} disabled={loading || !pendingLoginCredentials}>
+                      {loading ? "Terminating & Signing In..." : "Yes, Terminate Old Session"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <button className="auth-secondary auth-secondary-outline" onClick={() => setShowAccountHelp(v => !v)}>
+              {showAccountHelp ? "Hide Account Creation" : "Sign Up / Request Account"}
+            </button>
+
+            {showAccountHelp && (
+              <div className="auth-account-help">
+                <div className="auth-help-title">Account Creation</div>
+                <div className="auth-help-text">Need a Service Decision account? Contact the administrator. Account creation is free and quick.</div>
+                <div className="auth-contact-row"><strong>Email:</strong> {ADMIN_CONTACT_EMAIL}</div>
+                <div className="auth-contact-row"><strong>Contact:</strong> {ADMIN_CONTACT_MOBILE}</div>
+              </div>
+            )}
+
+            <button className="auth-forgot-link" onClick={() => setShowForgotHelp(v => !v)}>
+              {showForgotHelp ? "Hide Password Help" : "Forgot Password?"}
+            </button>
+
+            {showForgotHelp && (
+              <div className="auth-help-panel">
+                <strong>Forgot Password</strong>
+                <p>Please contact the administrator to reset your password. Password reset is handled manually.</p>
+                <div className="auth-contact-row"><strong>Email:</strong> {ADMIN_CONTACT_EMAIL}</div>
+                <div className="auth-contact-row"><strong>Contact:</strong> {ADMIN_CONTACT_MOBILE}</div>
+              </div>
+            )}
+
+            <div className="auth-card-footer">Secure access · Service Decision Portal</div>
+          </section>
         </div>
       </div>
     );
   }
-
   return (
     <div className="app-auth-shell">
       <div className="auth-userbar">

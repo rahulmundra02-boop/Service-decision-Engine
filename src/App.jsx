@@ -5588,115 +5588,117 @@ function ServiceDecisionApp({ user }) {
 
     let clone = null;
     try {
-      const heading = source.querySelector(".sheet-heading");
-      const captureStart = heading || source.firstElementChild || source;
-      const viewportHeight = Math.max(window.innerHeight || 700, 700);
-      const maxCaptureHeight = Math.round(viewportHeight * 2.5);
       const sourceRect = source.getBoundingClientRect();
-      const headingRect = captureStart.getBoundingClientRect();
       const sourceWidth = Math.max(1, Math.ceil(sourceRect.width));
-      const sourceHeight = Math.max(
-        1,
-        Math.min(
-          Math.max(source.scrollHeight, headingRect.bottom - sourceRect.top),
-          maxCaptureHeight
-        )
-      );
 
       clone = source.cloneNode(true);
-clone.removeAttribute("id");
+      clone.removeAttribute("id");
 
-const themeRoot = source.closest(".excel-app");
-if (themeRoot) {
-  const themeClass = Array.from(themeRoot.classList).find((className) =>
-    className.startsWith("theme-")
-  );
+      const themeRoot = source.closest(".excel-app");
+      if (themeRoot) {
+        const themeClass = Array.from(themeRoot.classList).find((className) =>
+          className.startsWith("theme-")
+        );
+        if (themeClass) clone.classList.add(themeClass);
 
-  if (themeClass) {
-    clone.classList.add(themeClass);
-  }
+        const computedTheme = window.getComputedStyle(themeRoot);
+        ["--theme", "--theme-dark", "--theme-soft", "--theme-bg", "--theme-accent"].forEach((property) => {
+          const value = computedTheme.getPropertyValue(property).trim();
+          if (value) clone.style.setProperty(property, value);
+        });
+      }
 
-  const computedTheme = window.getComputedStyle(themeRoot);
-  ["--theme", "--theme-dark", "--theme-soft", "--theme-bg", "--theme-accent"].forEach((property) => {
-    const value = computedTheme.getPropertyValue(property).trim();
-    if (value) {
-      clone.style.setProperty(property, value);
-    }
-  });
-}
-
-clone.style.position = "absolute";
-clone.style.left = "-100000px";
-clone.style.top = "0";
-clone.style.width = sourceWidth + "px";
-clone.style.height = sourceHeight + "px";
-clone.style.maxHeight = sourceHeight + "px";
-clone.style.overflow = "hidden";
-clone.style.margin = "0";
-clone.style.boxSizing = "border-box";
-clone.style.zIndex = "999999";
-clone.style.transform = "none";
-clone.style.transformOrigin = "top left";
+      clone.style.position = "absolute";
+      clone.style.left = "-100000px";
+      clone.style.top = "0";
+      clone.style.width = sourceWidth + "px";
+      clone.style.height = "auto";
+      clone.style.maxHeight = "none";
+      clone.style.overflow = "visible";
+      clone.style.margin = "0";
+      clone.style.boxSizing = "border-box";
+      clone.style.zIndex = "999999";
+      clone.style.transform = "none";
+      clone.style.transformOrigin = "top left";
+      clone.style.background = window.getComputedStyle(source).backgroundColor || "#ffffff";
+      clone.style.color = window.getComputedStyle(source).color || "#111827";
 
       const originalControls = source.querySelectorAll("input, textarea, select");
       const clonedControls = clone.querySelectorAll("input, textarea, select");
+
       originalControls.forEach((originalControl, index) => {
         const clonedControl = clonedControls[index];
         if (!clonedControl) return;
+
         if (originalControl instanceof HTMLInputElement) {
           clonedControl.value = originalControl.value;
           clonedControl.checked = originalControl.checked;
-      } else if (originalControl instanceof HTMLTextAreaElement) {
-          const value = originalControl.value;
-          const rect = originalControl.getBoundingClientRect();
-          const sourceRect = source.getBoundingClientRect();
+        } else if (originalControl instanceof HTMLTextAreaElement) {
           const computedStyle = window.getComputedStyle(originalControl);
+          const value = originalControl.value || "";
 
           const textReplacement = document.createElement("div");
           textReplacement.textContent = value;
           textReplacement.style.boxSizing = "border-box";
-          textReplacement.style.width = rect.width + "px";
-          textReplacement.style.minHeight = rect.height + "px";
+          textReplacement.style.display = "block";
+          textReplacement.style.width = "100%";
+          textReplacement.style.minHeight = computedStyle.minHeight;
+          textReplacement.style.height = Math.max(
+            originalControl.getBoundingClientRect().height,
+            42
+          ) + "px";
           textReplacement.style.padding = computedStyle.padding;
           textReplacement.style.font = computedStyle.font;
           textReplacement.style.lineHeight = computedStyle.lineHeight;
           textReplacement.style.textAlign = computedStyle.textAlign;
           textReplacement.style.color = computedStyle.color || "#111827";
-          textReplacement.style.background = computedStyle.backgroundColor || "#fff";
+          textReplacement.style.background = computedStyle.backgroundColor || "#ffffff";
           textReplacement.style.whiteSpace = "pre-wrap";
           textReplacement.style.overflowWrap = "anywhere";
           textReplacement.style.wordBreak = "break-word";
           textReplacement.style.border = computedStyle.border;
           textReplacement.style.borderRadius = computedStyle.borderRadius;
-          textReplacement.style.position = "absolute";
-          textReplacement.style.left = Math.max(0, rect.left - sourceRect.left) + "px";
-          textReplacement.style.top = Math.max(0, rect.top - sourceRect.top) + "px";
-          textReplacement.style.margin = "0";
-          textReplacement.style.zIndex = "1000000";
+          textReplacement.style.outline = "none";
+          textReplacement.style.resize = "none";
+          textReplacement.style.overflow = "visible";
+          textReplacement.style.margin = computedStyle.margin;
+          textReplacement.style.flex = computedStyle.flex;
+          textReplacement.style.alignSelf = computedStyle.alignSelf;
+          textReplacement.style.textIndent = computedStyle.textIndent;
 
           clonedControl.replaceWith(textReplacement);
         } else if (originalControl instanceof HTMLSelectElement) {
-  clonedControl.value = originalControl.value;
-}
+          clonedControl.value = originalControl.value;
+        }
       });
 
       document.body.appendChild(clone);
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      await new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve))
+      );
+
+      const captureHeight = Math.min(
+        Math.max(clone.scrollHeight, clone.getBoundingClientRect().height),
+        6000
+      );
 
       const canvas = await html2canvas(clone, {
         backgroundColor: "#ffffff",
         useCORS: true,
         scale: 2.5,
         width: sourceWidth,
-        height: sourceHeight,
+        height: captureHeight,
         windowWidth: sourceWidth,
-        windowHeight: sourceHeight,
+        windowHeight: captureHeight,
         scrollX: 0,
         scrollY: 0,
       });
 
       const blob = await new Promise((resolve, reject) => {
-        canvas.toBlob((value) => value ? resolve(value) : reject(new Error("Unable to create PNG.")), "image/png");
+        canvas.toBlob(
+          (value) => value ? resolve(value) : reject(new Error("Unable to create PNG.")),
+          "image/png"
+        );
       });
 
       if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") {

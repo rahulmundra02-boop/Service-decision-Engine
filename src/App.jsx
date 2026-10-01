@@ -5640,6 +5640,9 @@ function ServiceDecisionApp({ user }) {
             : String(originalControl.value || "");
 
           const textReplacement = document.createElement("div");
+          textReplacement.className = originalControl.classList.contains("single-customer-voice")
+            ? "single-customer-voice screenshot-customer-voice"
+            : "screenshot-form-control";
           textReplacement.textContent = value;
           textReplacement.style.boxSizing = "border-box";
           textReplacement.style.display = "block";

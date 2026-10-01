@@ -5675,7 +5675,7 @@ clone.style.transformOrigin = "top left";
           textReplacement.style.zIndex = "1000000";
 
           clonedControl.replaceWith(textReplacement);
-         else if (originalControl instanceof HTMLSelectElement) {
+        } else if (originalControl instanceof HTMLSelectElement) {
   clonedControl.value = originalControl.value;
 }
       });

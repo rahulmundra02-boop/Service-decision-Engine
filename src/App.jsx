@@ -5620,8 +5620,8 @@ function ServiceDecisionApp({ user }) {
       clone.style.zIndex = "999999";
       clone.style.transform = "none";
       clone.style.transformOrigin = "top left";
-      clone.style.background = window.getComputedStyle(source).backgroundColor || "#ffffff";
-      clone.style.color = window.getComputedStyle(source).color || "#111827";
+      clone.style.setProperty("background", "#ffffff", "important");
+       clone.style.setProperty("color", "#111827", "important");
 
       const originalControls = source.querySelectorAll("input, textarea, select");
       const clonedControls = clone.querySelectorAll("input, textarea, select");
@@ -5653,12 +5653,16 @@ function ServiceDecisionApp({ user }) {
           textReplacement.style.font = computedStyle.font;
           textReplacement.style.lineHeight = computedStyle.lineHeight;
           textReplacement.style.textAlign = computedStyle.textAlign;
-          textReplacement.style.color = originalControl.classList.contains("single-customer-voice")
-            ? "#111827"
-            : (computedStyle.color || "#111827");
-          textReplacement.style.background = originalControl.classList.contains("single-customer-voice")
-            ? "#ffffff"
-            : (computedStyle.backgroundColor || "#ffffff");
+          textReplacement.style.setProperty(
+             "color",
+             originalControl.classList.contains("single-customer-voice") ? "#111827" : (computedStyle.color || "#111827"),
+             "important"
+           );
+           textReplacement.style.setProperty(
+             "background",
+             originalControl.classList.contains("single-customer-voice") ? "#ffffff" : (computedStyle.backgroundColor || "#ffffff"),
+             "important"
+           );
           textReplacement.style.whiteSpace = "pre-wrap";
           textReplacement.style.overflowWrap = "anywhere";
           textReplacement.style.wordBreak = "break-word";

@@ -42,10 +42,12 @@ import {
   getVehicleByRegistration,
   getPartRate,
   getModelList,
-  getServiceDataByModel
+  getServiceDataByModel,
+  syncServicePartCatalog
 } from './src/api';
 import {
   AGGREGATES,
+  SERVICE_PART_CATALOG,
   buildServiceItems,
   prebuildAllAggregates,
   makeManualItem,
@@ -318,32 +320,48 @@ function ItemCard({
           <View style={styles.descriptionCol}>
             <View style={styles.field}>
               <Text style={styles.label}>Description</Text>
-              <TextInput
-                ref={descriptionRef}
-                value={String(item.description ?? '')}
-                onChangeText={(v) => set('description', v)}
-                onFocus={() => ensureVisible(descriptionRef)}
-                onSubmitEditing={focusQty}
-                returnKeyType="next"
-                placeholder="Part Description"
-                style={styles.input}
-              />
+              {isAutomatic ? (
+                <View style={[styles.input, styles.descriptionReadOnly]}>
+                  <Text numberOfLines={1} ellipsizeMode="tail" style={styles.descriptionReadOnlyText}>
+                    {String(item.description ?? '') || 'Part Description'}
+                  </Text>
+                </View>
+              ) : (
+                <TextInput
+                  ref={descriptionRef}
+                  value={String(item.description ?? '')}
+                  onChangeText={(v) => set('description', v)}
+                  onFocus={() => ensureVisible(descriptionRef)}
+                  onSubmitEditing={focusQty}
+                  returnKeyType="next"
+                  placeholder="Part Description"
+                  style={[styles.input, { textAlign: 'left' }]}
+                />
+              )}
             </View>
           </View>
         </View>
       ) : (
         <View style={styles.field}>
           <Text style={styles.label}>Description</Text>
-          <TextInput
-            ref={descriptionRef}
-            value={String(item.description ?? '')}
-            onChangeText={(v) => set('description', v)}
-            onFocus={() => ensureVisible(descriptionRef)}
-            onSubmitEditing={focusQty}
-            returnKeyType="next"
-            placeholder="Labour Description"
-            style={styles.input}
-          />
+          {isAutomatic ? (
+            <View style={[styles.input, styles.descriptionReadOnly]}>
+              <Text numberOfLines={1} ellipsizeMode="tail" style={styles.descriptionReadOnlyText}>
+                {String(item.description ?? '') || 'Labour Description'}
+              </Text>
+            </View>
+          ) : (
+            <TextInput
+              ref={descriptionRef}
+              value={String(item.description ?? '')}
+              onChangeText={(v) => set('description', v)}
+              onFocus={() => ensureVisible(descriptionRef)}
+              onSubmitEditing={focusQty}
+              returnKeyType="next"
+              placeholder="Labour Description"
+              style={[styles.input, { textAlign: 'left' }]}
+            />
+          )}
         </View>
       )}
 
@@ -433,6 +451,9 @@ function LoginScreen({ onLogin }) {
     setBusy(true);
     try {
       const data = await login(identifier, password, true);
+      // One-time on first login: download/cache the complete service part master.
+      // Later launches only request part numbers that are still missing locally.
+      await syncServicePartCatalog(SERVICE_PART_CATALOG);
       onLogin(data.user);
     } catch (e) {
       Alert.alert('Login failed', e.message);
@@ -480,6 +501,7 @@ function LoginScreen({ onLogin }) {
       if (token) {
         const sessionUser = await restoreSession(token);
         if (sessionUser) {
+          syncServicePartCatalog(SERVICE_PART_CATALOG).catch(() => {});
           onLogin(sessionUser);
           return;
         }
@@ -489,6 +511,7 @@ function LoginScreen({ onLogin }) {
       if (savedCreds?.identifier && savedCreds?.password) {
         const loginData = await login(savedCreds.identifier, savedCreds.password, true);
         if (loginData?.user) {
+          await syncServicePartCatalog(SERVICE_PART_CATALOG);
           onLogin(loginData.user);
           return;
         }
@@ -2060,10 +2083,30 @@ function SignatureScreen({ signature, letterhead, onSave, onLetterheadSave, onBa
     const p = getLocalPoint(e);
     setStrokes((prev) => {
       if (!prev.length) return prev;
-      const next = prev.map((stroke, index) =>
-        index === prev.length - 1 ? [...stroke, p] : stroke
-      );
-      currentStrokeRef.current = next[next.length - 1];
+      const lastIndex = prev.length - 1;
+      const stroke = prev[lastIndex] || [];
+      const last = stroke[stroke.length - 1];
+      if (!last) return prev;
+
+      const dx = p.x - last.x;
+      const dy = p.y - last.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      if (distance < 0.35) return prev;
+
+      // Interpolate touch gaps so Android move-event spacing cannot render a dotted signature.
+      const steps = Math.max(1, Math.ceil(distance / 1.5));
+      const added = [];
+      for (let i = 1; i <= steps; i += 1) {
+        added.push({
+          x: last.x + (dx * i) / steps,
+          y: last.y + (dy * i) / steps
+        });
+      }
+
+      const nextStroke = [...stroke, ...added];
+      const next = [...prev];
+      next[lastIndex] = nextStroke;
+      currentStrokeRef.current = nextStroke;
       return next;
     });
   };
@@ -2620,6 +2663,8 @@ export default function App() {
     if (user) {
       loadSavedEstimates();
       loadRecentVehicles();
+      // On every app open/session, compare the local master and download only missing service parts.
+      syncServicePartCatalog(SERVICE_PART_CATALOG).catch(() => {});
     }
   }, [user?.id, user?.email, user?.personName]);
 
@@ -4310,6 +4355,15 @@ const styles = StyleSheet.create({
   },
   strokeButtonTextSelected: {
     color: '#1456c0'
+  },
+  descriptionReadOnly: {
+    justifyContent: 'center',
+    overflow: 'hidden'
+  },
+  descriptionReadOnlyText: {
+    color: '#17212b',
+    fontSize: 14,
+    textAlign: 'left'
   },
   signatureStroke: {
     position: 'absolute'

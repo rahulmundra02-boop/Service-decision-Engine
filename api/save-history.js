@@ -101,6 +101,8 @@ export default async function handler(req, res) {
       "GBX130","RAX145","STH110","AIR165Z","WHL165A"
     ];
 
+    const client = await pool.connect();
+    try {
     // Compact mobile master lookup: return only the service-part descriptions requested by the app.
     // The Android app keeps this catalog locally and only asks for codes it is still missing.
     const serviceCatalogFlag = String(req.query?.serviceCatalog || "") === "1";
@@ -140,8 +142,6 @@ export default async function handler(req, res) {
       });
     }
 
-    const client = await pool.connect();
-    try {
       if (mobileEstimateFlag && registration) {
         const vehicleResult = await client.query(
           "SELECT v.id, v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date " +
@@ -185,7 +185,9 @@ export default async function handler(req, res) {
           ") SELECT vin, registration, customer_name, engine, model, sale_date, job_card_no, job_date, " +
           "cumulative_reading, cumulative_unit, driver_phone, service_contact_person_phone, item_category, part_code, " +
           "part_description, standardized_part, quantity, rate, repair_line_item_type, complaint_code, repair_type " +
-          "FROM ranked WHERE rn<=10 ORDER BY job_date DESC NULLS LAST, job_card_id DESC, service_history_id DESC;
+          "FROM ranked WHERE rn<=10 ORDER BY job_date DESC NULLS LAST, job_card_id DESC, service_history_id DESC",
+          [vehicle.id, requestedCodes]
+        );
 
         const modelName = String(vehicle.model || "").trim();
         let modelRows = [];

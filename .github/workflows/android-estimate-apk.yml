@@ -1,5 +1,7 @@
 name: Android Estimate Beta APK
 
+# Beta builds come only from android-estimate-commit.
+
 on:
   workflow_dispatch:
   push:

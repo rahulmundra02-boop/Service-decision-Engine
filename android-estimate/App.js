@@ -677,11 +677,26 @@ function UpdateScreen({ update, onLater }) {
       await FileSystem.deleteAsync(fileUri, { idempotent: true });
       const result = await FileSystem.downloadAsync(update.downloadUrl, fileUri);
       const contentUri = await FileSystem.getContentUriAsync(result.uri);
-      await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
-        data: contentUri,
-        type: 'application/vnd.android.package-archive',
-        flags: 1
-      });
+      try {
+        await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+          data: contentUri,
+          type: 'application/vnd.android.package-archive',
+          flags: 1
+        });
+      } catch (installError) {
+        // Android 8+ requires the user to allow this app to install unknown APKs.
+        try {
+          await IntentLauncher.startActivityAsync('android.settings.MANAGE_UNKNOWN_APP_SOURCES', {
+            data: 'package:' + Application.applicationId
+          });
+          Alert.alert(
+            'Allow installation',
+            'Please enable "Allow from this source" for AL Service Estimate Beta, then tap Download & Install again.'
+          );
+        } catch {
+          throw installError;
+        }
+      }
     } catch (e) {
       Alert.alert(
         'Update',
@@ -2607,9 +2622,11 @@ export default function App() {
       try {
         if (Platform.OS !== 'android') return;
         const currentBuild = Number(Application.nativeBuildVersion || 0);
-        const response = await fetch(
-          'https://service-decision-engine.vercel.app/mobile/latest.json?t=' + Date.now()
-        );
+        const updateManifestUrl =
+          Application.applicationId === 'com.rahulmundra.serviceestimate.beta'
+            ? 'https://service-decision-engine.vercel.app/mobile/beta/latest.json?t=' + Date.now()
+            : 'https://service-decision-engine.vercel.app/mobile/latest.json?t=' + Date.now();
+        const response = await fetch(updateManifestUrl);
         if (!response.ok) return;
         const release = await response.json();
         const latestBuild = Number(release?.build || 0);

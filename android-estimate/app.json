@@ -8,7 +8,7 @@
     "userInterfaceStyle": "light",
     "android": {
       "package": "com.rahulmundra.serviceestimate.beta",
-      "versionCode": 19,
+      "versionCode": 20,
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -22,7 +22,7 @@
     },
     "extra": {
       "eas": {
-        "projectId": "58461c48-f687-4a82-83fe-5f37dd46db6b"
+        "projectId": "6da46a08-1b23-4b64-82f4-c4ca30103f6b"
       }
     },
     "plugins": [

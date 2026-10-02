@@ -1,10 +1,10 @@
-name: Android Estimate APK
+name: Android Estimate Beta APK
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - android-estimate-beta
+      - android-estimate-commit
     paths:
       - "android-estimate/**"
       - "api/save-history.js"
@@ -66,39 +66,39 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AL-Service-Estimate-release-apk
+          name: AL-Service-Estimate-Beta-release-apk
           path: android-estimate/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
 
       - name: Publish public mobile update files
-        if: github.ref_name == 'android-estimate-beta'
+        if: github.ref_name == 'android-estimate-commit'
         run: |
           rm -rf ../stable-publish
           git fetch origin master
           git worktree add ../stable-publish origin/master
-          mkdir -p ../stable-publish/public/mobile
-          cp android/app/build/outputs/apk/release/app-release.apk ../stable-publish/public/mobile/AL-Service-Estimate-latest.apk
-          cat > ../stable-publish/public/mobile/latest.json <<EOF
+          mkdir -p ../stable-publish/public/mobile/beta
+          cp android/app/build/outputs/apk/release/app-release.apk ../stable-publish/public/mobile/beta/AL-Service-Estimate-Beta-latest.apk
+          cat > ../stable-publish/public/mobile/beta/beta/latest.json <<EOF
           {
             "version": "${{ steps.release_version.outputs.version }}",
             "build": ${{ steps.release_version.outputs.build }},
-            "downloadUrl": "https://service-decision-engine.vercel.app/mobile/AL-Service-Estimate-latest.apk"
+            "downloadUrl": "https://service-decision-engine.vercel.app/mobile/beta/AL-Service-Estimate-Beta-latest.apk"
           }
           EOF
           cd ../stable-publish
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f public/mobile/AL-Service-Estimate-latest.apk public/mobile/latest.json
+          git add -f public/mobile/beta/AL-Service-Estimate-Beta-latest.apk public/mobile/beta/beta/latest.json
           git commit -m "Publish Android build ${{ steps.release_version.outputs.build }}" || echo "No public mobile update changes"
           git push origin HEAD:master
       - name: Publish APK release
-        if: github.ref_name == 'android-estimate-beta'
+        if: github.ref_name == 'android-estimate-commit'
         working-directory: android-estimate
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="android-v${{ steps.release_version.outputs.version }}-build${{ steps.release_version.outputs.build }}"
+          TAG="android-beta-v${{ steps.release_version.outputs.version }}-build${{ steps.release_version.outputs.build }}"
           cat > latest.json <<EOF
           {
             "version": "${{ steps.release_version.outputs.version }}",

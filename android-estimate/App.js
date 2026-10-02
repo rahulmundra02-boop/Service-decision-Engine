@@ -553,11 +553,14 @@ function LoginScreen({ onLogin }) {
           {/* White Login Card */}
           <View style={styles.loginCard}>
             <View style={styles.loginWelcomeRow}>
-              <View style={styles.loginAccentBar} />
-              <Text style={styles.loginTitle}>Welcome Back 👋</Text>
+              <View style={styles.loginWelcomeAvatar}>
+                <Text style={styles.loginWelcomeAvatarText}>●</Text>
+              </View>
+              <View>
+                <Text style={styles.loginTitle}>Welcome Back 👋</Text>
+                <Text style={styles.loginWelcomeSub}>Sign in to continue</Text>
+              </View>
             </View>
-            <Text style={styles.loginSub}>Sign in to continue</Text>
-
             {/* Email / Mobile Field */}
             <View style={styles.inputGroup}>
               <View style={styles.inputLabelRow}>
@@ -756,11 +759,27 @@ function HomeScreen({
         contentContainerStyle={styles.homeScroll}
         showsVerticalScrollIndicator={false}
       >
-        {/* Top Header Bar without Profile / Bell icons per user instructions */}
+        {/* Premium Blue Header */}
         <View style={styles.homeTopBar}>
           <View style={styles.homeBrandBlock}>
-            <Text style={styles.homeBrandTitle}>AL SERVICE ESTIMATE</Text>
+            <Image
+              source={require('./assets/login_header.png')}
+              style={styles.homeLogo}
+              resizeMode="contain"
+            />
             <Text style={styles.homeBrandSub}>Ashok Leyland Estimate App</Text>
+          </View>
+          <View style={styles.homeHeaderActions}>
+            <TouchableOpacity style={styles.homeHeaderIcon} activeOpacity={0.8}>
+              <Text style={styles.homeHeaderIconText}>♧</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.homeHeaderIcon}
+              activeOpacity={0.8}
+              onPress={onOpenSettings}
+            >
+              <Text style={styles.homeHeaderIconText}>●</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -3081,40 +3100,62 @@ const styles = StyleSheet.create({
     backgroundColor: '#e6f0fa'
   },
   loginScroll: {
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 10 : 20,
-    paddingBottom: 30,
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 8 : 14,
+    paddingBottom: 24,
     alignItems: 'center'
   },
   loginHeaderWrap: {
     alignItems: 'center',
-    marginBottom: 16
+    marginBottom: 10,
+    width: '100%'
   },
   loginHeaderImage: {
-    width: 260,
-    height: 120
+    width: 300,
+    height: 150
   },
   loginTagline: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#083a6b',
-    letterSpacing: 1.2,
-    marginTop: -4
+    letterSpacing: 1.5,
+    marginTop: -10
   },
   loginCard: {
     width: '100%',
     backgroundColor: '#ffffff',
-    borderRadius: 22,
-    paddingHorizontal: 20,
-    paddingVertical: 22,
+    borderRadius: 24,
+    paddingHorizontal: 18,
+    paddingVertical: 20,
     shadowColor: '#03254c',
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 4
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 5
   },
   loginWelcomeRow: {
     flexDirection: 'row',
-    alignItems: 'center'
+    alignItems: 'center',
+    marginBottom: 2
+  },
+  loginWelcomeAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#e4f0fc',
+    borderWidth: 1,
+    borderColor: '#c7def5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10
+  },
+  loginWelcomeAvatarText: {
+    fontSize: 18,
+    color: '#0871c9'
+  },
+  loginWelcomeSub: {
+    fontSize: 11,
+    color: '#627d98',
+    marginTop: 1
   },
   loginAccentBar: {
     width: 4,
@@ -3125,7 +3166,7 @@ const styles = StyleSheet.create({
   },
   loginTitle: {
     fontSize: 20,
-    fontWeight: '800',
+    fontWeight: '900',
     color: '#0f2942'
   },
   loginSub: {
@@ -3156,10 +3197,10 @@ const styles = StyleSheet.create({
   modernInput: {
     backgroundColor: '#f8fafc',
     borderWidth: 1,
-    borderColor: '#d2dce6',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+    borderColor: '#cfdae6',
+    borderRadius: 12,
+    paddingHorizontal: 13,
+    paddingVertical: 10,
     fontSize: 14,
     color: '#102a43'
   },
@@ -3179,12 +3220,16 @@ const styles = StyleSheet.create({
     fontSize: 16
   },
   primaryLoginBtn: {
-    backgroundColor: '#053775',
-    borderRadius: 10,
-    paddingVertical: 13,
+    backgroundColor: '#0875cf',
+    borderRadius: 12,
+    paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 10
+    marginTop: 10,
+    elevation: 3,
+    shadowColor: '#0875cf',
+    shadowOpacity: 0.2,
+    shadowRadius: 5
   },
   primaryLoginBtnText: {
     color: '#ffffff',
@@ -3213,8 +3258,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#ffffff',
     borderWidth: 1.5,
-    borderColor: '#053775',
-    borderRadius: 10,
+    borderColor: '#3f82ba',
+    borderRadius: 12,
     paddingVertical: 11
   },
   fingerprintIcon: {
@@ -3238,15 +3283,16 @@ const styles = StyleSheet.create({
   loginTruckWrap: {
     width: '100%',
     alignItems: 'center',
-    marginTop: 12,
-    marginBottom: 4
+    marginTop: 8,
+    marginBottom: 0,
+    overflow: 'hidden'
   },
   loginTruckImage: {
     width: '100%',
-    height: 115
+    height: 128
   },
   loginFooterWrap: {
-    marginTop: 6,
+    marginTop: 2,
     alignItems: 'center'
   },
   loginFooterText: {
@@ -3265,15 +3311,44 @@ const styles = StyleSheet.create({
     paddingBottom: 70
   },
   homeTopBar: {
-    backgroundColor: '#053775',
+    backgroundColor: '#0755a3',
     paddingHorizontal: 16,
     paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 8 : 12,
-    paddingBottom: 16,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20
+    paddingBottom: 18,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
+  homeLogo: {
+    width: 190,
+    height: 78
+  },
+  homeHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8
+  },
+  homeHeaderIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)'
+  },
+  homeHeaderIconText: {
+    color: '#ffffff',
+    fontSize: 20,
+    fontWeight: '800'
   },
   homeBrandBlock: {
-    flexDirection: 'column'
+    flex: 1,
+    flexDirection: 'column',
+    alignItems: 'flex-start'
   },
   homeBrandTitle: {
     fontSize: 18,
@@ -3282,23 +3357,26 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5
   },
   homeBrandSub: {
-    fontSize: 11,
-    color: '#b0cbe8',
-    marginTop: 1
+    fontSize: 10,
+    color: '#d5e7fb',
+    marginTop: -2,
+    marginLeft: 3
   },
   greetingCard: {
     backgroundColor: '#ffffff',
     marginHorizontal: 14,
-    marginTop: -10,
-    borderRadius: 14,
-    padding: 12,
+    marginTop: -14,
+    borderRadius: 20,
+    padding: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 5
+    elevation: 4,
+    shadowColor: '#0b3868',
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    borderWidth: 1,
+    borderColor: '#edf2f7'
   },
   greetingLeft: {
     flexDirection: 'row',
@@ -3306,10 +3384,12 @@ const styles = StyleSheet.create({
     flex: 1
   },
   avatarCircle: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: '#e1ecf8',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#e1effc',
+    borderWidth: 1,
+    borderColor: '#cce2f7',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10
@@ -3359,14 +3439,17 @@ const styles = StyleSheet.create({
   },
 
   createEstimateBanner: {
-    backgroundColor: '#053775',
+    backgroundColor: '#075fbd',
     marginHorizontal: 14,
     marginTop: 14,
-    borderRadius: 14,
-    padding: 14,
+    borderRadius: 18,
+    padding: 15,
     flexDirection: 'row',
     alignItems: 'center',
-    elevation: 4
+    elevation: 4,
+    shadowColor: '#075fbd',
+    shadowOpacity: 0.18,
+    shadowRadius: 8
   },
   bannerIconSquare: {
     width: 44,
@@ -3411,12 +3494,12 @@ const styles = StyleSheet.create({
 
   quickMenuWrap: {
     marginHorizontal: 14,
-    marginTop: 18
+    marginTop: 20
   },
   sectionHeaderTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#102a43',
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#123b62',
     marginBottom: 10
   },
   quickMenuGrid: {
@@ -3427,35 +3510,40 @@ const styles = StyleSheet.create({
   quickMenuItem: {
     width: '48%',
     backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 12,
+    borderRadius: 14,
+    padding: 13,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    elevation: 2,
+    borderColor: '#e6edf5',
+    elevation: 3,
+    shadowColor: '#1f4f7a',
+    shadowOpacity: 0.07,
+    shadowRadius: 5,
     alignItems: 'flex-start'
   },
   menuIconContainer: {
-    width: 38,
-    height: 38,
-    borderRadius: 8,
-    backgroundColor: '#eef5fc',
+    width: 40,
+    height: 40,
+    borderRadius: 11,
+    backgroundColor: '#e8f3ff',
+    borderWidth: 1,
+    borderColor: '#d4e8fa',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8
+    marginBottom: 9
   },
   menuIconText: {
     fontSize: 18
   },
   menuItemTitle: {
     fontSize: 12,
-    fontWeight: '700',
-    color: '#102a43'
+    fontWeight: '800',
+    color: '#163a5d'
   },
 
   recentVehiclesSection: {
     marginHorizontal: 14,
-    marginTop: 12
+    marginTop: 14
   },
   sectionHeaderRow: {
     flexDirection: 'row',
@@ -3470,11 +3558,11 @@ const styles = StyleSheet.create({
   },
   recentVehicleCard: {
     backgroundColor: '#ffffff',
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 12,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#e3ebf4',
     flexDirection: 'row',
     alignItems: 'center',
     elevation: 2
@@ -3531,12 +3619,12 @@ const styles = StyleSheet.create({
   },
 
   homeFooterStrip: {
-    backgroundColor: '#0c243c',
+    backgroundColor: '#0755a3',
     marginHorizontal: 14,
-    marginTop: 12,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    marginTop: 14,
+    borderRadius: 12,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center'
@@ -3547,9 +3635,9 @@ const styles = StyleSheet.create({
     fontWeight: '700'
   },
   footerStripMotto: {
-    color: '#a0aec0',
+    color: '#d8e8f7',
     fontSize: 10,
-    fontWeight: '600'
+    fontWeight: '700'
   },
 
   // Bottom Navigation Bar
@@ -3558,14 +3646,17 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: 56,
+    height: 62,
     backgroundColor: '#ffffff',
     borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
+    borderTopColor: '#e1eaf3',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-    elevation: 8
+    elevation: 10,
+    shadowColor: '#173b5d',
+    shadowOpacity: 0.08,
+    shadowRadius: 6
   },
   navTabItem: {
     alignItems: 'center',

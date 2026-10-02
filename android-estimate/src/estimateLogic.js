@@ -139,6 +139,20 @@ export const ORIGINAL_AL_DESCRIPTIONS = {
   PD600968: 'APDA DESICCANT CARTRIDGE'
 };
 
+export const SERVICE_PART_CATALOG = Object.entries(
+  Object.values(REFERENCE_PARTS).flat().reduce((acc, code) => {
+    const clean = String(code || '').toUpperCase().replace(/\s+/g, '').trim();
+    if (clean) {
+      acc[clean] = {
+        partNo: clean,
+        description: ORIGINAL_AL_DESCRIPTIONS[clean] || PART_STANDARDIZATION[clean] || clean
+      };
+    }
+    return acc;
+  }, {})
+).map(([, item]) => item);
+
+
 const LABOUR = {
   airFilter: ['AIS110', 'R and R Air Filter And Replace Element'],
   defFilter: ['ATS455Z', 'R & R DEF tank suction filter'],
@@ -526,17 +540,23 @@ export function buildServiceItems(a = [], b = [], c = [], d = []) {
       }
     }
 
-    // Labour matching
-    const labourRows = vehicle.filter((r) => matchesLabour(r, key));
-    const fallbackLabour = labourRows.length
-      ? labourRows
-      : model.filter((r) => matchesLabour(r, key));
-    if (fallbackLabour.length) {
-      const ref = LABOUR[key];
-      const item = historicalItem('labour', key, vehicle, model, ref?.[0] || '', globalRates);
-      if (item) {
-        if (ref) item.description = ref[1];
-        output.push(item);
+    // Labour is automatic only when a real DB labour code exists.
+    // Never create a blank labour row for aggregates that do not have a mapped labour code.
+    const ref = LABOUR[key];
+    if (ref?.[0]) {
+      const labourCode = normalizeCode(ref[0]);
+      const exactVehicleLabour = vehicle.filter(
+        (r) => category(r) === 'labour' && normalizeCode(r?.part_code) === labourCode
+      );
+      const exactModelLabour = model.filter(
+        (r) => category(r) === 'labour' && normalizeCode(r?.part_code) === labourCode
+      );
+      if (exactVehicleLabour.length || exactModelLabour.length) {
+        const item = historicalItem('labour', key, vehicle, model, labourCode, globalRates);
+        if (item && item.description && Number(item.qty) > 0 && Number(item.rate) > 0) {
+          item.description = ref[1];
+          output.push(item);
+        }
       }
     }
   }

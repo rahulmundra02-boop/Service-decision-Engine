@@ -1,0 +1,103 @@
+name: Android Estimate Stable APK
+
+# Stable builds come from master only.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      - "android-estimate/**"
+      - "api/save-history.js"
+      - ".github/workflows/android-estimate-stable-apk.yml"
+
+concurrency:
+  group: android-estimate-stable-apk
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-android-apk:
+    name: Build Stable Android APK
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: android-estimate
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          ref: master
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20.19.4
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Read release version
+        id: release_version
+        run: |
+          VERSION=$(node -p "require('./app.json').expo.version")
+          BUILD=$(node -p "require('./app.json').expo.android.versionCode")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+      - name: Install dependencies
+        run: npm install
+      - name: Generate Android native project
+        run: npx expo prebuild --platform android --no-install
+      - name: Build release APK with embedded JavaScript
+        working-directory: android-estimate/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AL-Service-Estimate-Stable-release-apk
+          path: android-estimate/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish stable public update files
+        run: |
+          rm -rf ../stable-publish
+          git fetch origin master
+          git worktree add ../stable-publish origin/master
+          mkdir -p ../stable-publish/public/mobile
+          cp android/app/build/outputs/apk/release/app-release.apk ../stable-publish/public/mobile/AL-Service-Estimate-latest.apk
+          cat > ../stable-publish/public/mobile/latest.json <<EOF
+          {
+            "version": "${{ steps.release_version.outputs.version }}",
+            "build": ${{ steps.release_version.outputs.build }},
+            "downloadUrl": "https://service-decision-engine.vercel.app/mobile/AL-Service-Estimate-latest.apk"
+          }
+          EOF
+          cd ../stable-publish
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f public/mobile/AL-Service-Estimate-latest.apk public/mobile/latest.json
+          git commit -m "Publish Stable Android build ${{ steps.release_version.outputs.build }}" || echo "No public mobile update changes"
+          git push origin HEAD:master
+      - name: Publish Stable APK release
+        working-directory: android-estimate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="android-stable-v${{ steps.release_version.outputs.version }}-build${{ steps.release_version.outputs.build }}"
+          cat > latest.json <<EOF
+          {
+            "version": "${{ steps.release_version.outputs.version }}",
+            "build": ${{ steps.release_version.outputs.build }},
+            "downloadUrl": "https://service-decision-engine.vercel.app/mobile/AL-Service-Estimate-latest.apk"
+          }
+          EOF
+          if gh release view "$TAG" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "$TAG" android/app/build/outputs/apk/release/app-release.apk latest.json --repo "${GITHUB_REPOSITORY}" --clobber
+          else
+            gh release create "$TAG" android/app/build/outputs/apk/release/app-release.apk latest.json --repo "${GITHUB_REPOSITORY}" --target "$(git rev-parse HEAD)" --title "AL Service Estimate Stable v${{ steps.release_version.outputs.version }} (Build ${{ steps.release_version.outputs.build }})" --notes "Stable Android Service Estimate APK release. Build ${{ steps.release_version.outputs.build }}." --latest=false
+          fi

@@ -93,7 +93,7 @@ export default async function handler(req, res) {
     const mobileEstimateFlag = String(req.query?.mobileEstimate || "") === "1";
     const serviceParts = String(req.query?.serviceParts || "")
       .split(",")
-      .map((v) => v.trim().toUpperCase().replace(/\\s+/g, ""))
+      .map((v) => v.trim().toUpperCase().replace(/\s+/g, ""))
       .filter(Boolean)
       .slice(0, 100);
     const serviceLabourCodes = [

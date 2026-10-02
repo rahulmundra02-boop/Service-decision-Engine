@@ -1,0 +1,121 @@
+name: Android Estimate Beta - EAS
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - android-estimate-commit
+    paths:
+      - "android-estimate/**"
+      - "api/save-history.js"
+      - ".github/workflows/android-estimate-beta-eas.yml"
+
+concurrency:
+  group: android-estimate-beta-eas
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-beta:
+    name: Build Beta APK with EAS
+    runs-on: ubuntu-24.04
+
+    defaults:
+      run:
+        working-directory: android-estimate
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20.19.4
+          cache: npm
+          cache-dependency-path: android-estimate/package-lock.json
+
+      - name: Setup Expo and EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Read release version
+        id: release_version
+        run: |
+          VERSION=$(node -p "require('./app.json').expo.version")
+          BUILD=$(node -p "require('./app.json').expo.android.versionCode")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+
+      - name: Build APK on EAS
+        run: |
+          eas build --platform android --profile preview --non-interactive --wait --json > eas-build.json
+          cat eas-build.json
+
+      - name: Get EAS build ID
+        id: eas_build
+        run: |
+          BUILD_ID=$(node -e "const fs=require('fs'); const d=JSON.parse(fs.readFileSync('eas-build.json','utf8')); const b=Array.isArray(d)?d[0]:d; console.log(b.id || b.buildId || '');")
+          if [ -z "$BUILD_ID" ]; then
+            echo "Could not determine EAS build ID"
+            exit 1
+          fi
+          echo "build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Download EAS APK
+        run: |
+          rm -f ./*.apk
+          eas build:download --build-id "${{ steps.eas_build.outputs.build_id }}" --non-interactive
+          APK=$(find . -maxdepth 2 -type f -name "*.apk" -print -quit)
+          if [ -z "$APK" ]; then
+            echo "EAS APK was not downloaded"
+            exit 1
+          fi
+          cp "$APK" ./app-release.apk
+          echo "APK=$APK"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AL-Service-Estimate-Beta-release-apk
+          path: android-estimate/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish Beta APK files for in-app updater
+        run: |
+          rm -rf ../beta-publish
+          git fetch origin master
+          git worktree add ../beta-publish origin/master
+          mkdir -p ../beta-publish/public/mobile/beta
+          cp app-release.apk ../beta-publish/public/mobile/beta/AL-Service-Estimate-Beta-latest.apk
+          cat > ../beta-publish/public/mobile/beta/latest.json <<EOF
+          {
+            "version": "${{ steps.release_version.outputs.version }}",
+            "build": ${{ steps.release_version.outputs.build }},
+            "downloadUrl": "https://service-decision-engine.vercel.app/mobile/beta/AL-Service-Estimate-Beta-latest.apk"
+          }
+          EOF
+          cd ../beta-publish
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f public/mobile/beta/AL-Service-Estimate-Beta-latest.apk public/mobile/beta/latest.json
+          git commit -m "Publish Beta Android build ${{ steps.release_version.outputs.build }}" || echo "No beta public mobile update changes"
+          git push origin HEAD:master
+
+      - name: Publish Beta APK prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          TAG="android-beta-v${{ steps.release_version.outputs.version }}-build${{ steps.release_version.outputs.build }}-$SHORT_SHA"
+          gh release create "$TAG" app-release.apk             --repo "${{ github.repository }}"             --target "$(git rev-parse HEAD)"             --title "AL Service Estimate Beta v${{ steps.release_version.outputs.version }} (Build ${{ steps.release_version.outputs.build }})"             --notes "Beta Android Service Estimate APK built with EAS. Commit $SHORT_SHA."             --prerelease

@@ -29,7 +29,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
-          ref: \${{ github.ref_name }}
+          ref: ${{ github.ref_name }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -79,8 +79,8 @@ jobs:
           cp android/app/build/outputs/apk/release/app-release.apk ../stable-publish/public/mobile/beta/AL-Service-Estimate-Beta-latest.apk
           cat > ../stable-publish/public/mobile/beta/latest.json <<EOF
           {
-            "version": "\${{ steps.release_version.outputs.version }}",
-            "build": \${{ steps.release_version.outputs.build }},
+            "version": "${{ steps.release_version.outputs.version }}",
+            "build": ${{ steps.release_version.outputs.build }},
             "downloadUrl": "https://service-decision-engine.vercel.app/mobile/beta/AL-Service-Estimate-Beta-latest.apk"
           }
           EOF
@@ -88,20 +88,20 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -f public/mobile/beta/AL-Service-Estimate-Beta-latest.apk public/mobile/beta/latest.json
-          git commit -m "Publish Beta Android build \${{ steps.release_version.outputs.build }}" || echo "No Beta public mobile update changes"
+          git commit -m "Publish Beta Android build ${{ steps.release_version.outputs.build }}" || echo "No Beta public mobile update changes"
           git push origin HEAD:master
 
       - name: Publish Beta APK release
         working-directory: android-estimate
         env:
-          GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="android-beta-v\${{ steps.release_version.outputs.version }}-build\${{ steps.release_version.outputs.build }}"
+          TAG="android-beta-v${{ steps.release_version.outputs.version }}-build${{ steps.release_version.outputs.build }}"
           cat > latest-beta.json <<EOF
           {
-            "version": "\${{ steps.release_version.outputs.version }}",
-            "build": \${{ steps.release_version.outputs.build }},
+            "version": "${{ steps.release_version.outputs.version }}",
+            "build": ${{ steps.release_version.outputs.build }},
             "downloadUrl": "https://service-decision-engine.vercel.app/mobile/beta/AL-Service-Estimate-Beta-latest.apk"
           }
           EOF
-          gh release create "$TAG" android/app/build/outputs/apk/release/app-release.apk latest-beta.json             --repo "${GITHUB_REPOSITORY}"             --target "$(git rev-parse HEAD)"             --title "AL Service Estimate Beta v\${{ steps.release_version.outputs.version }} (Build \${{ steps.release_version.outputs.build }})"             --notes "Android Service Estimate Beta APK release. Build \${{ steps.release_version.outputs.build }}."             --latest=false
+          gh release create "$TAG" android/app/build/outputs/apk/release/app-release.apk latest-beta.json             --repo "${GITHUB_REPOSITORY}"             --target "$(git rev-parse HEAD)"             --title "AL Service Estimate Beta v${{ steps.release_version.outputs.version }} (Build ${{ steps.release_version.outputs.build }})"             --notes "Android Service Estimate Beta APK release. Build ${{ steps.release_version.outputs.build }}."             --latest=false

@@ -32,6 +32,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Image as ExpoImage } from 'expo-image';
 import * as XLSX from 'xlsx';
 import DocumentScanner from 'react-native-document-scanner-plugin';
+import Svg, { Path } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   restoreSession,
@@ -2190,30 +2191,16 @@ function SignatureScreen({ signature, letterhead, onSave, onLetterheadSave, onBa
     strokeWidthRef.current = strokeWidth;
   }, [strokeWidth]);
 
-  const lineFor = (a, b, index) => {
-    if (!a || !b) return null;
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const length = Math.sqrt(dx * dx + dy * dy);
-    if (length < 0.5) return null;
-    const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
-    return (
-      <View
-        key={index}
-        style={[
-          styles.signatureStroke,
-          {
-            left: a.x,
-            top: a.y - strokeWidth / 2,
-            width: length,
-            height: strokeWidth,
-            backgroundColor: '#1456c0',
-            borderRadius: strokeWidth / 2,
-            transform: [{ rotate: angle + 'deg' }]
-          }
-        ]}
-      />
-    );
+  const strokePath = (stroke) => {
+    if (!stroke || stroke.length < 2) return '';
+    const first = stroke[0];
+    return stroke
+      .map((point, index) => {
+        const x = Number(point.x || 0).toFixed(2);
+        const y = Number(point.y || 0).toFixed(2);
+        return index === 0 ? `M ${x} ${y}` : `L ${x} ${y}`;
+      })
+      .join(' ');
   };
 
   const drawBoard = (large = false) => (
@@ -2239,9 +2226,25 @@ function SignatureScreen({ signature, letterhead, onSave, onLetterheadSave, onBa
       style={[styles.signaturePad, large && styles.signaturePadFull]}
       {...panResponder.panHandlers}
     >
-      {strokes.map((stroke, si) =>
-        stroke.map((point, pi) => lineFor(point, stroke[pi + 1], `${si}-${pi}`))
-      )}
+      <Svg
+        pointerEvents="none"
+        width="100%"
+        height="100%"
+        style={StyleSheet.absoluteFill}
+        viewBox={`0 0 ${Math.max(1, padSize.width)} ${Math.max(1, padSize.height)}`}
+      >
+        {strokes.map((stroke, si) => (
+          <Path
+            key={`signature-${si}`}
+            d={strokePath(stroke)}
+            fill="none"
+            stroke="#1456c0"
+            strokeWidth={strokeWidth}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        ))}
+      </Svg>
       {!strokes.length && (
         <Text style={styles.signaturePadHint}>Sign here with your finger</Text>
       )}

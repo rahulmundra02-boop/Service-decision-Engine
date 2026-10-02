@@ -79,7 +79,7 @@ jobs:
           git worktree add ../stable-publish origin/master
           mkdir -p ../stable-publish/public/mobile/beta
           cp android/app/build/outputs/apk/release/app-release.apk ../stable-publish/public/mobile/beta/AL-Service-Estimate-Beta-latest.apk
-          cat > ../stable-publish/public/mobile/beta/beta/latest.json <<EOF
+          cat > ../stable-publish/public/mobile/beta/latest.json <<EOF
           {
             "version": "${{ steps.release_version.outputs.version }}",
             "build": ${{ steps.release_version.outputs.build }},
@@ -89,7 +89,7 @@ jobs:
           cd ../stable-publish
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f public/mobile/beta/AL-Service-Estimate-Beta-latest.apk public/mobile/beta/beta/latest.json
+          git add -f public/mobile/beta/AL-Service-Estimate-Beta-latest.apk public/mobile/beta/latest.json
           git commit -m "Publish Android build ${{ steps.release_version.outputs.build }}" || echo "No public mobile update changes"
           git push origin HEAD:master
       - name: Publish APK release
@@ -103,8 +103,8 @@ jobs:
           {
             "version": "${{ steps.release_version.outputs.version }}",
             "build": ${{ steps.release_version.outputs.build }},
-            "downloadUrl": "https://github.com/${{ github.repository }}/releases/latest/download/AL-Service-Estimate-release.apk"
+            "downloadUrl": "https://service-decision-engine.vercel.app/mobile/beta/AL-Service-Estimate-Beta-latest.apk"
           }
           EOF
-          gh release create "$TAG" android/app/build/outputs/apk/release/app-release.apk latest.json             --repo "${{ github.repository }}"             --target "$(git rev-parse HEAD)"             --title "AL Service Estimate v${{ steps.release_version.outputs.version }} (Build ${{ steps.release_version.outputs.build }})"             --notes "Android Service Estimate APK release. Build ${{ steps.release_version.outputs.build }}."             --latest
+          gh release create "$TAG" android/app/build/outputs/apk/release/app-release.apk latest.json             --repo "${{ github.repository }}"             --target "$(git rev-parse HEAD)"             --title "AL Service Estimate v${{ steps.release_version.outputs.version }} (Build ${{ steps.release_version.outputs.build }})"             --notes "Android Service Estimate APK release. Build ${{ steps.release_version.outputs.build }}."             --latest=false
 

@@ -5,8 +5,10 @@ on:
   push:
     branches:
       - android-estimate-beta
+      - android-estimate-commit
     paths:
-      - "android-estimate/app.json"
+      - "android-estimate/**"
+      - "api/save-history.js"
       - ".github/workflows/android-estimate-apk.yml"
 
 concurrency:
@@ -71,6 +73,7 @@ jobs:
           retention-days: 14
 
       - name: Publish public mobile update files
+        if: github.ref_name == 'android-estimate-beta'
         run: |
           rm -rf ../stable-publish
           git fetch origin master
@@ -91,6 +94,7 @@ jobs:
           git commit -m "Publish Android build ${{ steps.release_version.outputs.build }}" || echo "No public mobile update changes"
           git push origin HEAD:master
       - name: Publish APK release
+        if: github.ref_name == 'android-estimate-beta'
         working-directory: android-estimate
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -104,3 +108,19 @@ jobs:
           }
           EOF
           gh release create "$TAG" android/app/build/outputs/apk/release/app-release.apk latest.json             --repo "${{ github.repository }}"             --target "$(git rev-parse HEAD)"             --title "AL Service Estimate v${{ steps.release_version.outputs.version }} (Build ${{ steps.release_version.outputs.build }})"             --notes "Android Service Estimate APK release. Build ${{ steps.release_version.outputs.build }}."             --latest
+
+      - name: Publish beta APK prerelease
+        if: github.ref_name == 'android-estimate-commit'
+        working-directory: android-estimate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          TAG="android-beta-v${{ steps.release_version.outputs.version }}-build${{ steps.release_version.outputs.build }}-$SHORT_SHA"
+          gh release create "$TAG" android/app/build/outputs/apk/release/app-release.apk \
+            --repo "${{ github.repository }}" \
+            --target "$(git rev-parse HEAD)" \
+            --title "AL Service Estimate Beta v${{ steps.release_version.outputs.version }} (Build ${{ steps.release_version.outputs.build }})" \
+            --notes "Beta Android Service Estimate APK. Commit $SHORT_SHA." \
+            --prerelease
+

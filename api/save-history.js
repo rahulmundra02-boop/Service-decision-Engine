@@ -101,6 +101,45 @@ export default async function handler(req, res) {
       "GBX130","RAX145","STH110","AIR165Z","WHL165A"
     ];
 
+    // Compact mobile master lookup: return only the service-part descriptions requested by the app.
+    // The Android app keeps this catalog locally and only asks for codes it is still missing.
+    const serviceCatalogFlag = String(req.query?.serviceCatalog || "") === "1";
+    if (serviceCatalogFlag) {
+      const requestedCatalogParts = String(req.query?.parts || "")
+        .split(",")
+        .map((v) => v.trim().toUpperCase().replace(/\s+/g, ""))
+        .filter(Boolean)
+        .slice(0, 100);
+
+      if (!requestedCatalogParts.length) {
+        return res.status(200).json({ success: true, parts: [] });
+      }
+
+      const catalogResult = await client.query(
+        "WITH requested(code) AS (SELECT unnest($1::text[])), ranked AS (" +
+        "SELECT requested.code AS requested_code, sh.part_code, sh.part_description, " +
+        "ROW_NUMBER() OVER (PARTITION BY requested.code ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC) AS rn " +
+        "FROM requested " +
+        "LEFT JOIN service_history sh ON (" +
+        "UPPER(REPLACE(TRIM(COALESCE(sh.part_code,'')), ' ', ''))=requested.code " +
+        "OR UPPER(REPLACE(TRIM(COALESCE(sh.part_code,'')), ' ', '')) LIKE requested.code || '(%)') " +
+        "LEFT JOIN job_cards jc ON jc.id=sh.job_card_id " +
+        "WHERE sh.part_code IS NOT NULL AND sh.item_category LIKE 'P002%'" +
+        ") " +
+        "SELECT requested_code, part_code, part_description FROM ranked WHERE rn=1",
+        [requestedCatalogParts]
+      );
+
+      return res.status(200).json({
+        success: true,
+        parts: catalogResult.rows.map((row) => ({
+          partNo: row.requested_code,
+          part_code: row.part_code,
+          description: row.part_description || row.part_code || row.requested_code
+        }))
+      });
+    }
+
     const client = await pool.connect();
     try {
       if (mobileEstimateFlag && registration) {
@@ -127,39 +166,51 @@ export default async function handler(req, res) {
         const requestedCodes = [...new Set([...serviceParts, ...serviceLabourCodes])];
 
         const historyResult = await client.query(
+          "WITH filtered AS (" +
           "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
           "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
           "jc.driver_phone, jc.service_contact_person_phone, " +
           "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
-          "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
+          "sh.repair_line_item_type, sh.complaint_code, sh.repair_type, sh.id AS service_history_id, jc.id AS job_card_id, " +
+          "UPPER(REPLACE(TRIM(COALESCE(sh.part_code,'')), ' ', '')) AS normalized_code " +
           "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
           "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +
           "WHERE v.id=$1 AND EXISTS (" +
           "SELECT 1 FROM unnest($2::text[]) AS requested(code) " +
           "WHERE UPPER(REPLACE(TRIM(COALESCE(sh.part_code,'')), ' ', ''))=requested.code " +
           "OR UPPER(REPLACE(TRIM(COALESCE(sh.part_code,'')), ' ', '')) LIKE requested.code || '(%)'" +
-          ") " +
-          "ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id ASC",
-          [vehicle.id, requestedCodes]
-        );
+          ")), ranked AS (" +
+          "SELECT *, ROW_NUMBER() OVER (PARTITION BY normalized_code ORDER BY job_date DESC NULLS LAST, job_card_id DESC, service_history_id DESC) AS rn " +
+          "FROM filtered WHERE normalized_code <> ''" +
+          ") SELECT vin, registration, customer_name, engine, model, sale_date, job_card_no, job_date, " +
+          "cumulative_reading, cumulative_unit, driver_phone, service_contact_person_phone, item_category, part_code, " +
+          "part_description, standardized_part, quantity, rate, repair_line_item_type, complaint_code, repair_type " +
+          "FROM ranked WHERE rn<=10 ORDER BY job_date DESC NULLS LAST, job_card_id DESC, service_history_id DESC;
 
         const modelName = String(vehicle.model || "").trim();
         let modelRows = [];
         if (modelName && requestedCodes.length) {
           const modelResult = await client.query(
+            "WITH filtered AS (" +
             "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
             "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
             "jc.driver_phone, jc.service_contact_person_phone, " +
             "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
-            "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
+            "sh.repair_line_item_type, sh.complaint_code, sh.repair_type, sh.id AS service_history_id, jc.id AS job_card_id, " +
+            "UPPER(REPLACE(TRIM(COALESCE(sh.part_code,'')), ' ', '')) AS normalized_code " +
             "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
             "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +
             "WHERE UPPER(TRIM(v.model))=UPPER(TRIM($1)) AND v.vin<>$2 AND EXISTS (" +
             "SELECT 1 FROM unnest($3::text[]) AS requested(code) " +
             "WHERE UPPER(REPLACE(TRIM(COALESCE(sh.part_code,'')), ' ', ''))=requested.code " +
             "OR UPPER(REPLACE(TRIM(COALESCE(sh.part_code,'')), ' ', '')) LIKE requested.code || '(%)'" +
-            ") " +
-            "ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id ASC LIMIT 1200",
+            ")), ranked AS (" +
+            "SELECT *, ROW_NUMBER() OVER (PARTITION BY normalized_code ORDER BY job_date DESC NULLS LAST, job_card_id DESC, service_history_id DESC) AS rn " +
+            "FROM filtered WHERE normalized_code <> ''" +
+            ") SELECT vin, registration, customer_name, engine, model, sale_date, job_card_no, job_date, " +
+            "cumulative_reading, cumulative_unit, driver_phone, service_contact_person_phone, item_category, part_code, " +
+            "part_description, standardized_part, quantity, rate, repair_line_item_type, complaint_code, repair_type " +
+            "FROM ranked WHERE rn<=10 ORDER BY job_date DESC NULLS LAST, job_card_id DESC, service_history_id DESC;",
             [modelName, vehicle.vin, requestedCodes]
           );
           modelRows = modelResult.rows;

@@ -90,9 +90,121 @@ export default async function handler(req, res) {
     const partNo = String(req.query?.partNo || "").trim().toUpperCase().replace(/\s+/g, "");
     const modelsFlag = req.query?.models;
     const modelParam = String(req.query?.model || "").trim();
+    const mobileEstimateFlag = String(req.query?.mobileEstimate || "") === "1";
+    const serviceParts = String(req.query?.serviceParts || "")
+      .split(",")
+      .map((v) => v.trim().toUpperCase().replace(/\\s+/g, ""))
+      .filter(Boolean)
+      .slice(0, 100);
+    const serviceLabourCodes = [
+      "AIS110","ATS455Z","CLG125","CLH125","ELS105","FUL110",
+      "GBX130","RAX145","STH110","AIR165Z","WHL165A"
+    ];
 
     const client = await pool.connect();
     try {
+      if (mobileEstimateFlag && registration) {
+        const vehicleResult = await client.query(
+          "SELECT v.id, v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date " +
+          "FROM vehicles v " +
+          "WHERE UPPER(REPLACE(TRIM(v.registration), ' ', ''))=$1 " +
+          "ORDER BY v.last_refreshed_at DESC NULLS LAST, v.id DESC LIMIT 1",
+          [registration]
+        );
+        const vehicle = vehicleResult.rows[0] || null;
+        if (!vehicle) {
+          return res.status(200).json({
+            success: true,
+            registration,
+            vehicle: null,
+            rows: [],
+            model: null,
+            modelRows: [],
+            globalPartRates: []
+          });
+        }
+
+        const requestedCodes = [...new Set([...serviceParts, ...serviceLabourCodes])];
+
+        const historyResult = await client.query(
+          "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
+          "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
+          "jc.driver_phone, jc.service_contact_person_phone, " +
+          "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
+          "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
+          "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
+          "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +
+          "WHERE v.id=$1 AND EXISTS (" +
+          "SELECT 1 FROM unnest($2::text[]) AS requested(code) " +
+          "WHERE UPPER(REPLACE(TRIM(COALESCE(sh.part_code,'')), ' ', ''))=requested.code " +
+          "OR UPPER(REPLACE(TRIM(COALESCE(sh.part_code,'')), ' ', '')) LIKE requested.code || '(%)'" +
+          ") " +
+          "ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id ASC",
+          [vehicle.id, requestedCodes]
+        );
+
+        const modelName = String(vehicle.model || "").trim();
+        let modelRows = [];
+        if (modelName && requestedCodes.length) {
+          const modelResult = await client.query(
+            "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
+            "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
+            "jc.driver_phone, jc.service_contact_person_phone, " +
+            "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
+            "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
+            "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
+            "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +
+            "WHERE UPPER(TRIM(v.model))=UPPER(TRIM($1)) AND v.vin<>$2 AND EXISTS (" +
+            "SELECT 1 FROM unnest($3::text[]) AS requested(code) " +
+            "WHERE UPPER(REPLACE(TRIM(COALESCE(sh.part_code,'')), ' ', ''))=requested.code " +
+            "OR UPPER(REPLACE(TRIM(COALESCE(sh.part_code,'')), ' ', '')) LIKE requested.code || '(%)'" +
+            ") " +
+            "ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id ASC LIMIT 1200",
+            [modelName, vehicle.vin, requestedCodes]
+          );
+          modelRows = modelResult.rows;
+        }
+
+        const rateResult = await client.query(
+          "WITH paid_rates AS (" +
+          "SELECT UPPER(REPLACE(TRIM(sh.part_code), ' ', '')) AS normalized_code, " +
+          "sh.part_code, sh.part_description, sh.rate, jc.job_date, jc.id AS job_card_id, sh.id AS service_history_id " +
+          "FROM service_history sh JOIN job_cards jc ON jc.id=sh.job_card_id " +
+          "WHERE sh.item_category LIKE 'P002%' AND sh.part_code IS NOT NULL " +
+          "AND UPPER(REPLACE(COALESCE(sh.repair_line_item_type, ''), ' ', '')) LIKE '%POSTWARRANTY/PAIDORDER%' " +
+          "AND sh.rate IS NOT NULL AND sh.rate > 0 " +
+          "AND EXISTS (" +
+          "SELECT 1 FROM unnest($1::text[]) AS requested(code) " +
+          "WHERE UPPER(REPLACE(TRIM(sh.part_code), ' ', ''))=requested.code " +
+          "OR UPPER(REPLACE(TRIM(sh.part_code), ' ', '')) LIKE requested.code || '(%)'" +
+          ")" +
+          "), latest_ten AS (" +
+          "SELECT *, ROW_NUMBER() OVER (PARTITION BY normalized_code ORDER BY job_date DESC NULLS LAST, job_card_id DESC, service_history_id DESC) AS rn " +
+          "FROM paid_rates" +
+          "), frequency AS (" +
+          "SELECT normalized_code, MAX(part_code) AS part_code, MAX(part_description) AS part_description, rate, " +
+          "COUNT(*) AS frequency, MAX(job_date) AS latest_job_date, MAX(job_card_id) AS latest_job_card_id " +
+          "FROM latest_ten WHERE rn<=10 GROUP BY normalized_code, rate" +
+          "), ranked AS (" +
+          "SELECT *, ROW_NUMBER() OVER (PARTITION BY normalized_code ORDER BY frequency DESC, latest_job_date DESC NULLS LAST, latest_job_card_id DESC, rate DESC) AS pick " +
+          "FROM frequency" +
+          ") " +
+          "SELECT part_code, part_description, rate, latest_job_date AS job_date FROM ranked WHERE pick=1",
+          [serviceParts]
+        );
+
+        return res.status(200).json({
+          success: true,
+          registration,
+          vehicle,
+          rows: historyResult.rows,
+          model: modelName || null,
+          modelRows,
+          globalPartRates: rateResult.rows
+        });
+      }
+
+      
       if (modelsFlag) {
         const modelResult = await client.query(
           "SELECT DISTINCT TRIM(model) AS model FROM vehicles " +

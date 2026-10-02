@@ -2,13 +2,13 @@
   "expo": {
     "name": "AL Service Estimate Beta",
     "slug": "al-service-estimate-beta",
-    "version": "0.2.2",
+    "version": "0.2.3",
     "icon": "./assets/icon.png",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "android": {
       "package": "com.rahulmundra.serviceestimate.beta",
-      "versionCode": 20,
+      "versionCode": 106,
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",

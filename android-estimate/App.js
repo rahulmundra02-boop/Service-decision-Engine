@@ -32,6 +32,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Image as ExpoImage } from 'expo-image';
 import * as XLSX from 'xlsx';
 import DocumentScanner from 'react-native-document-scanner-plugin';
+import Svg, { Path } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   restoreSession,
@@ -42,10 +43,12 @@ import {
   getVehicleByRegistration,
   getPartRate,
   getModelList,
-  getServiceDataByModel
+  getServiceDataByModel,
+  syncServicePartCatalog
 } from './src/api';
 import {
   AGGREGATES,
+  SERVICE_PART_CATALOG,
   buildServiceItems,
   prebuildAllAggregates,
   makeManualItem,
@@ -318,32 +321,48 @@ function ItemCard({
           <View style={styles.descriptionCol}>
             <View style={styles.field}>
               <Text style={styles.label}>Description</Text>
-              <TextInput
-                ref={descriptionRef}
-                value={String(item.description ?? '')}
-                onChangeText={(v) => set('description', v)}
-                onFocus={() => ensureVisible(descriptionRef)}
-                onSubmitEditing={focusQty}
-                returnKeyType="next"
-                placeholder="Part Description"
-                style={styles.input}
-              />
+              {isAutomatic ? (
+                <View style={[styles.input, styles.descriptionReadOnly]}>
+                  <Text numberOfLines={1} ellipsizeMode="tail" style={styles.descriptionReadOnlyText}>
+                    {String(item.description ?? '') || 'Part Description'}
+                  </Text>
+                </View>
+              ) : (
+                <TextInput
+                  ref={descriptionRef}
+                  value={String(item.description ?? '')}
+                  onChangeText={(v) => set('description', v)}
+                  onFocus={() => ensureVisible(descriptionRef)}
+                  onSubmitEditing={focusQty}
+                  returnKeyType="next"
+                  placeholder="Part Description"
+                  style={[styles.input, { textAlign: 'left' }]}
+                />
+              )}
             </View>
           </View>
         </View>
       ) : (
         <View style={styles.field}>
           <Text style={styles.label}>Description</Text>
-          <TextInput
-            ref={descriptionRef}
-            value={String(item.description ?? '')}
-            onChangeText={(v) => set('description', v)}
-            onFocus={() => ensureVisible(descriptionRef)}
-            onSubmitEditing={focusQty}
-            returnKeyType="next"
-            placeholder="Labour Description"
-            style={styles.input}
-          />
+          {isAutomatic ? (
+            <View style={[styles.input, styles.descriptionReadOnly]}>
+              <Text numberOfLines={1} ellipsizeMode="tail" style={styles.descriptionReadOnlyText}>
+                {String(item.description ?? '') || 'Labour Description'}
+              </Text>
+            </View>
+          ) : (
+            <TextInput
+              ref={descriptionRef}
+              value={String(item.description ?? '')}
+              onChangeText={(v) => set('description', v)}
+              onFocus={() => ensureVisible(descriptionRef)}
+              onSubmitEditing={focusQty}
+              returnKeyType="next"
+              placeholder="Labour Description"
+              style={[styles.input, { textAlign: 'left' }]}
+            />
+          )}
         </View>
       )}
 
@@ -393,6 +412,7 @@ function LoginScreen({ onLogin }) {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [loginSlowNoticeShown, setLoginSlowNoticeShown] = useState(false);
   const [biometricReady, setBiometricReady] = useState(false);
   const [biometricLabel, setBiometricLabel] = useState('Use Fingerprint');
 
@@ -425,14 +445,30 @@ function LoginScreen({ onLogin }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!busy || loginSlowNoticeShown) return undefined;
+    const timer = setTimeout(() => {
+      setLoginSlowNoticeShown(true);
+      Alert.alert(
+        'Please Wait',
+        'If you are logging in for the first time, this may take a little longer. The app is downloading the required data in the background. Please be patient.'
+      );
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [busy, loginSlowNoticeShown]);
+
   const submit = async () => {
     if (!identifier.trim() || !password) {
       Alert.alert('Login', 'Enter email/mobile and password.');
       return;
     }
+    setLoginSlowNoticeShown(false);
     setBusy(true);
     try {
       const data = await login(identifier, password, true);
+      // One-time on first login: download/cache the complete service part master.
+      // Later launches only request part numbers that are still missing locally.
+      await syncServicePartCatalog(SERVICE_PART_CATALOG);
       onLogin(data.user);
     } catch (e) {
       Alert.alert('Login failed', e.message);
@@ -480,6 +516,7 @@ function LoginScreen({ onLogin }) {
       if (token) {
         const sessionUser = await restoreSession(token);
         if (sessionUser) {
+          syncServicePartCatalog(SERVICE_PART_CATALOG).catch(() => {});
           onLogin(sessionUser);
           return;
         }
@@ -489,6 +526,7 @@ function LoginScreen({ onLogin }) {
       if (savedCreds?.identifier && savedCreds?.password) {
         const loginData = await login(savedCreds.identifier, savedCreds.password, true);
         if (loginData?.user) {
+          await syncServicePartCatalog(SERVICE_PART_CATALOG);
           onLogin(loginData.user);
           return;
         }
@@ -529,11 +567,14 @@ function LoginScreen({ onLogin }) {
           {/* White Login Card */}
           <View style={styles.loginCard}>
             <View style={styles.loginWelcomeRow}>
-              <View style={styles.loginAccentBar} />
-              <Text style={styles.loginTitle}>Welcome Back 👋</Text>
+              <View style={styles.loginWelcomeAvatar}>
+                <Text style={styles.loginWelcomeAvatarText}>●</Text>
+              </View>
+              <View>
+                <Text style={styles.loginTitle}>Welcome Back 👋</Text>
+                <Text style={styles.loginWelcomeSub}>Sign in to continue</Text>
+              </View>
             </View>
-            <Text style={styles.loginSub}>Sign in to continue</Text>
-
             {/* Email / Mobile Field */}
             <View style={styles.inputGroup}>
               <View style={styles.inputLabelRow}>
@@ -653,11 +694,26 @@ function UpdateScreen({ update, onLater }) {
       await FileSystem.deleteAsync(fileUri, { idempotent: true });
       const result = await FileSystem.downloadAsync(update.downloadUrl, fileUri);
       const contentUri = await FileSystem.getContentUriAsync(result.uri);
-      await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
-        data: contentUri,
-        type: 'application/vnd.android.package-archive',
-        flags: 1
-      });
+      try {
+        await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+          data: contentUri,
+          type: 'application/vnd.android.package-archive',
+          flags: 1
+        });
+      } catch (installError) {
+        // Android 8+ requires the user to allow this app to install unknown APKs.
+        try {
+          await IntentLauncher.startActivityAsync('android.settings.MANAGE_UNKNOWN_APP_SOURCES', {
+            data: 'package:' + Application.applicationId
+          });
+          Alert.alert(
+            'Allow installation',
+            'Please enable "Allow from this source" for AL Service Estimate Beta, then tap Download & Install again.'
+          );
+        } catch {
+          throw installError;
+        }
+      }
     } catch (e) {
       Alert.alert(
         'Update',
@@ -717,11 +773,27 @@ function HomeScreen({
         contentContainerStyle={styles.homeScroll}
         showsVerticalScrollIndicator={false}
       >
-        {/* Top Header Bar without Profile / Bell icons per user instructions */}
+        {/* Premium Blue Header */}
         <View style={styles.homeTopBar}>
           <View style={styles.homeBrandBlock}>
-            <Text style={styles.homeBrandTitle}>AL SERVICE ESTIMATE</Text>
+            <Image
+              source={require('./assets/login_header.png')}
+              style={styles.homeLogo}
+              resizeMode="contain"
+            />
             <Text style={styles.homeBrandSub}>Ashok Leyland Estimate App</Text>
+          </View>
+          <View style={styles.homeHeaderActions}>
+            <TouchableOpacity style={styles.homeHeaderIcon} activeOpacity={0.8}>
+              <Text style={styles.homeHeaderIconText}>🔔</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.homeHeaderIcon}
+              activeOpacity={0.8}
+              onPress={onOpenSettings}
+            >
+              <Text style={styles.homeHeaderIconText}>👤</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -2060,10 +2132,30 @@ function SignatureScreen({ signature, letterhead, onSave, onLetterheadSave, onBa
     const p = getLocalPoint(e);
     setStrokes((prev) => {
       if (!prev.length) return prev;
-      const next = prev.map((stroke, index) =>
-        index === prev.length - 1 ? [...stroke, p] : stroke
-      );
-      currentStrokeRef.current = next[next.length - 1];
+      const lastIndex = prev.length - 1;
+      const stroke = prev[lastIndex] || [];
+      const last = stroke[stroke.length - 1];
+      if (!last) return prev;
+
+      const dx = p.x - last.x;
+      const dy = p.y - last.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      if (distance < 0.35) return prev;
+
+      // Interpolate touch gaps so Android move-event spacing cannot render a dotted signature.
+      const steps = Math.max(1, Math.ceil(distance / 1.5));
+      const added = [];
+      for (let i = 1; i <= steps; i += 1) {
+        added.push({
+          x: last.x + (dx * i) / steps,
+          y: last.y + (dy * i) / steps
+        });
+      }
+
+      const nextStroke = [...stroke, ...added];
+      const next = [...prev];
+      next[lastIndex] = nextStroke;
+      currentStrokeRef.current = nextStroke;
       return next;
     });
   };
@@ -2147,30 +2239,16 @@ function SignatureScreen({ signature, letterhead, onSave, onLetterheadSave, onBa
     strokeWidthRef.current = strokeWidth;
   }, [strokeWidth]);
 
-  const lineFor = (a, b, index) => {
-    if (!a || !b) return null;
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const length = Math.sqrt(dx * dx + dy * dy);
-    if (length < 0.5) return null;
-    const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
-    return (
-      <View
-        key={index}
-        style={[
-          styles.signatureStroke,
-          {
-            left: a.x,
-            top: a.y - strokeWidth / 2,
-            width: length,
-            height: strokeWidth,
-            backgroundColor: '#1456c0',
-            borderRadius: strokeWidth / 2,
-            transform: [{ rotate: angle + 'deg' }]
-          }
-        ]}
-      />
-    );
+  const strokePath = (stroke) => {
+    if (!stroke || stroke.length < 2) return '';
+    const first = stroke[0];
+    return stroke
+      .map((point, index) => {
+        const x = Number(point.x || 0).toFixed(2);
+        const y = Number(point.y || 0).toFixed(2);
+        return index === 0 ? `M ${x} ${y}` : `L ${x} ${y}`;
+      })
+      .join(' ');
   };
 
   const drawBoard = (large = false) => (
@@ -2196,9 +2274,25 @@ function SignatureScreen({ signature, letterhead, onSave, onLetterheadSave, onBa
       style={[styles.signaturePad, large && styles.signaturePadFull]}
       {...panResponder.panHandlers}
     >
-      {strokes.map((stroke, si) =>
-        stroke.map((point, pi) => lineFor(point, stroke[pi + 1], `${si}-${pi}`))
-      )}
+      <Svg
+        pointerEvents="none"
+        width="100%"
+        height="100%"
+        style={StyleSheet.absoluteFill}
+        viewBox={`0 0 ${Math.max(1, padSize.width)} ${Math.max(1, padSize.height)}`}
+      >
+        {strokes.map((stroke, si) => (
+          <Path
+            key={`signature-${si}`}
+            d={strokePath(stroke)}
+            fill="none"
+            stroke="#1456c0"
+            strokeWidth={strokeWidth}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        ))}
+      </Svg>
       {!strokes.length && (
         <Text style={styles.signaturePadHint}>Sign here with your finger</Text>
       )}
@@ -2557,28 +2651,52 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+
+    const checkForUpdate = async () => {
       try {
         if (Platform.OS !== 'android') return;
+
         const currentBuild = Number(Application.nativeBuildVersion || 0);
-        const response = await fetch(
-          'https://service-decision-engine.vercel.app/mobile/latest.json?t=' + Date.now()
-        );
+        const isBeta = Application.applicationId === 'com.rahulmundra.serviceestimate.beta';
+        const updateManifestUrl = isBeta
+          ? 'https://service-decision-engine.vercel.app/mobile/beta/latest.json?t=' + Date.now()
+          : 'https://service-decision-engine.vercel.app/mobile/latest.json?t=' + Date.now();
+
+        const response = await fetch(updateManifestUrl, {
+          headers: {
+            Accept: 'application/json',
+            'Cache-Control': 'no-cache'
+          }
+        });
+
         if (!response.ok) return;
+
         const release = await response.json();
         const latestBuild = Number(release?.build || 0);
+
         if (!cancelled && latestBuild > currentBuild && release?.downloadUrl) {
+          setUpdateDismissed(false);
           setUpdateInfo({
             version: String(release?.version || 'New'),
             build: latestBuild,
             downloadUrl: String(release.downloadUrl),
-            notes: 'A new Android update is available. Download and install the latest update.'
+            notes: isBeta
+              ? 'A new Beta Android update is available. Download and install the latest Beta update.'
+              : 'A new Android update is available. Download and install the latest update.'
           });
         }
       } catch {}
-    })();
+    };
+
+    checkForUpdate();
+
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') checkForUpdate();
+    });
+
     return () => {
       cancelled = true;
+      subscription.remove();
     };
   }, []);
 
@@ -2620,6 +2738,8 @@ export default function App() {
     if (user) {
       loadSavedEstimates();
       loadRecentVehicles();
+      // On every app open/session, compare the local master and download only missing service parts.
+      syncServicePartCatalog(SERVICE_PART_CATALOG).catch(() => {});
     }
   }, [user?.id, user?.email, user?.personName]);
 
@@ -2994,40 +3114,62 @@ const styles = StyleSheet.create({
     backgroundColor: '#e6f0fa'
   },
   loginScroll: {
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 10 : 20,
-    paddingBottom: 30,
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 8 : 14,
+    paddingBottom: 24,
     alignItems: 'center'
   },
   loginHeaderWrap: {
     alignItems: 'center',
-    marginBottom: 16
+    marginBottom: 10,
+    width: '100%'
   },
   loginHeaderImage: {
-    width: 260,
-    height: 120
+    width: 300,
+    height: 150
   },
   loginTagline: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#083a6b',
-    letterSpacing: 1.2,
-    marginTop: -4
+    letterSpacing: 1.5,
+    marginTop: -10
   },
   loginCard: {
     width: '100%',
     backgroundColor: '#ffffff',
-    borderRadius: 22,
-    paddingHorizontal: 20,
-    paddingVertical: 22,
+    borderRadius: 24,
+    paddingHorizontal: 18,
+    paddingVertical: 20,
     shadowColor: '#03254c',
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 4
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 5
   },
   loginWelcomeRow: {
     flexDirection: 'row',
-    alignItems: 'center'
+    alignItems: 'center',
+    marginBottom: 2
+  },
+  loginWelcomeAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#e4f0fc',
+    borderWidth: 1,
+    borderColor: '#c7def5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10
+  },
+  loginWelcomeAvatarText: {
+    fontSize: 18,
+    color: '#0871c9'
+  },
+  loginWelcomeSub: {
+    fontSize: 11,
+    color: '#627d98',
+    marginTop: 1
   },
   loginAccentBar: {
     width: 4,
@@ -3038,7 +3180,7 @@ const styles = StyleSheet.create({
   },
   loginTitle: {
     fontSize: 20,
-    fontWeight: '800',
+    fontWeight: '900',
     color: '#0f2942'
   },
   loginSub: {
@@ -3069,10 +3211,10 @@ const styles = StyleSheet.create({
   modernInput: {
     backgroundColor: '#f8fafc',
     borderWidth: 1,
-    borderColor: '#d2dce6',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+    borderColor: '#cfdae6',
+    borderRadius: 12,
+    paddingHorizontal: 13,
+    paddingVertical: 10,
     fontSize: 14,
     color: '#102a43'
   },
@@ -3092,12 +3234,16 @@ const styles = StyleSheet.create({
     fontSize: 16
   },
   primaryLoginBtn: {
-    backgroundColor: '#053775',
-    borderRadius: 10,
-    paddingVertical: 13,
+    backgroundColor: '#0875cf',
+    borderRadius: 12,
+    paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 10
+    marginTop: 10,
+    elevation: 3,
+    shadowColor: '#0875cf',
+    shadowOpacity: 0.2,
+    shadowRadius: 5
   },
   primaryLoginBtnText: {
     color: '#ffffff',
@@ -3126,8 +3272,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#ffffff',
     borderWidth: 1.5,
-    borderColor: '#053775',
-    borderRadius: 10,
+    borderColor: '#3f82ba',
+    borderRadius: 12,
     paddingVertical: 11
   },
   fingerprintIcon: {
@@ -3151,15 +3297,16 @@ const styles = StyleSheet.create({
   loginTruckWrap: {
     width: '100%',
     alignItems: 'center',
-    marginTop: 12,
-    marginBottom: 4
+    marginTop: 8,
+    marginBottom: 0,
+    overflow: 'hidden'
   },
   loginTruckImage: {
     width: '100%',
-    height: 115
+    height: 128
   },
   loginFooterWrap: {
-    marginTop: 6,
+    marginTop: 2,
     alignItems: 'center'
   },
   loginFooterText: {
@@ -3178,15 +3325,44 @@ const styles = StyleSheet.create({
     paddingBottom: 70
   },
   homeTopBar: {
-    backgroundColor: '#053775',
+    backgroundColor: '#0755a3',
     paddingHorizontal: 16,
     paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 8 : 12,
-    paddingBottom: 16,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20
+    paddingBottom: 18,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
+  homeLogo: {
+    width: 190,
+    height: 78
+  },
+  homeHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8
+  },
+  homeHeaderIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)'
+  },
+  homeHeaderIconText: {
+    color: '#ffffff',
+    fontSize: 20,
+    fontWeight: '800'
   },
   homeBrandBlock: {
-    flexDirection: 'column'
+    flex: 1,
+    flexDirection: 'column',
+    alignItems: 'flex-start'
   },
   homeBrandTitle: {
     fontSize: 18,
@@ -3195,23 +3371,26 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5
   },
   homeBrandSub: {
-    fontSize: 11,
-    color: '#b0cbe8',
-    marginTop: 1
+    fontSize: 10,
+    color: '#d5e7fb',
+    marginTop: -2,
+    marginLeft: 3
   },
   greetingCard: {
     backgroundColor: '#ffffff',
     marginHorizontal: 14,
-    marginTop: -10,
-    borderRadius: 14,
-    padding: 12,
+    marginTop: -14,
+    borderRadius: 20,
+    padding: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 5
+    elevation: 4,
+    shadowColor: '#0b3868',
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    borderWidth: 1,
+    borderColor: '#edf2f7'
   },
   greetingLeft: {
     flexDirection: 'row',
@@ -3219,10 +3398,12 @@ const styles = StyleSheet.create({
     flex: 1
   },
   avatarCircle: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: '#e1ecf8',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#e1effc',
+    borderWidth: 1,
+    borderColor: '#cce2f7',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10
@@ -3272,14 +3453,17 @@ const styles = StyleSheet.create({
   },
 
   createEstimateBanner: {
-    backgroundColor: '#053775',
+    backgroundColor: '#075fbd',
     marginHorizontal: 14,
     marginTop: 14,
-    borderRadius: 14,
-    padding: 14,
+    borderRadius: 18,
+    padding: 15,
     flexDirection: 'row',
     alignItems: 'center',
-    elevation: 4
+    elevation: 4,
+    shadowColor: '#075fbd',
+    shadowOpacity: 0.18,
+    shadowRadius: 8
   },
   bannerIconSquare: {
     width: 44,
@@ -3324,12 +3508,12 @@ const styles = StyleSheet.create({
 
   quickMenuWrap: {
     marginHorizontal: 14,
-    marginTop: 18
+    marginTop: 20
   },
   sectionHeaderTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#102a43',
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#123b62',
     marginBottom: 10
   },
   quickMenuGrid: {
@@ -3340,35 +3524,40 @@ const styles = StyleSheet.create({
   quickMenuItem: {
     width: '48%',
     backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 12,
+    borderRadius: 14,
+    padding: 13,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    elevation: 2,
+    borderColor: '#e6edf5',
+    elevation: 3,
+    shadowColor: '#1f4f7a',
+    shadowOpacity: 0.07,
+    shadowRadius: 5,
     alignItems: 'flex-start'
   },
   menuIconContainer: {
-    width: 38,
-    height: 38,
-    borderRadius: 8,
-    backgroundColor: '#eef5fc',
+    width: 40,
+    height: 40,
+    borderRadius: 11,
+    backgroundColor: '#e8f3ff',
+    borderWidth: 1,
+    borderColor: '#d4e8fa',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8
+    marginBottom: 9
   },
   menuIconText: {
     fontSize: 18
   },
   menuItemTitle: {
     fontSize: 12,
-    fontWeight: '700',
-    color: '#102a43'
+    fontWeight: '800',
+    color: '#163a5d'
   },
 
   recentVehiclesSection: {
     marginHorizontal: 14,
-    marginTop: 12
+    marginTop: 14
   },
   sectionHeaderRow: {
     flexDirection: 'row',
@@ -3383,11 +3572,11 @@ const styles = StyleSheet.create({
   },
   recentVehicleCard: {
     backgroundColor: '#ffffff',
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 12,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#e3ebf4',
     flexDirection: 'row',
     alignItems: 'center',
     elevation: 2
@@ -3444,12 +3633,12 @@ const styles = StyleSheet.create({
   },
 
   homeFooterStrip: {
-    backgroundColor: '#0c243c',
+    backgroundColor: '#0755a3',
     marginHorizontal: 14,
-    marginTop: 12,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    marginTop: 14,
+    borderRadius: 12,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center'
@@ -3460,9 +3649,9 @@ const styles = StyleSheet.create({
     fontWeight: '700'
   },
   footerStripMotto: {
-    color: '#a0aec0',
+    color: '#d8e8f7',
     fontSize: 10,
-    fontWeight: '600'
+    fontWeight: '700'
   },
 
   // Bottom Navigation Bar
@@ -3471,14 +3660,17 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: 56,
+    height: 62,
     backgroundColor: '#ffffff',
     borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
+    borderTopColor: '#e1eaf3',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-    elevation: 8
+    elevation: 10,
+    shadowColor: '#173b5d',
+    shadowOpacity: 0.08,
+    shadowRadius: 6
   },
   navTabItem: {
     alignItems: 'center',
@@ -4310,6 +4502,15 @@ const styles = StyleSheet.create({
   },
   strokeButtonTextSelected: {
     color: '#1456c0'
+  },
+  descriptionReadOnly: {
+    justifyContent: 'center',
+    overflow: 'hidden'
+  },
+  descriptionReadOnlyText: {
+    color: '#17212b',
+    fontSize: 14,
+    textAlign: 'left'
   },
   signatureStroke: {
     position: 'absolute'

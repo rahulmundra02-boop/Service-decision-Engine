@@ -771,14 +771,14 @@ function HomeScreen({
           </View>
           <View style={styles.homeHeaderActions}>
             <TouchableOpacity style={styles.homeHeaderIcon} activeOpacity={0.8}>
-              <Text style={styles.homeHeaderIconText}>♧</Text>
+              <Text style={styles.homeHeaderIconText}>🔔</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.homeHeaderIcon}
               activeOpacity={0.8}
               onPress={onOpenSettings}
             >
-              <Text style={styles.homeHeaderIconText}>●</Text>
+              <Text style={styles.homeHeaderIconText}>👤</Text>
             </TouchableOpacity>
           </View>
         </View>

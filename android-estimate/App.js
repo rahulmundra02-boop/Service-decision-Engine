@@ -2557,28 +2557,49 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+
+    const checkForUpdate = async () => {
       try {
         if (Platform.OS !== 'android') return;
+
         const currentBuild = Number(Application.nativeBuildVersion || 0);
         const response = await fetch(
-          'https://service-decision-engine.vercel.app/mobile/latest.json?t=' + Date.now()
+          'https://service-decision-engine.vercel.app/mobile/beta/latest.json?t=' + Date.now(),
+          {
+            headers: {
+              Accept: 'application/json',
+              'Cache-Control': 'no-cache'
+            }
+          }
         );
+
         if (!response.ok) return;
+
         const release = await response.json();
         const latestBuild = Number(release?.build || 0);
+
         if (!cancelled && latestBuild > currentBuild && release?.downloadUrl) {
+          setUpdateDismissed(false);
           setUpdateInfo({
             version: String(release?.version || 'New'),
             build: latestBuild,
             downloadUrl: String(release.downloadUrl),
-            notes: 'A new Android update is available. Download and install the latest update.'
+            notes: 'A new Beta Android update is available. Download and install the latest Beta update.'
           });
         }
       } catch {}
-    })();
+
+    };
+
+    checkForUpdate();
+
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') checkForUpdate();
+    });
+
     return () => {
       cancelled = true;
+      subscription.remove();
     };
   }, []);
 

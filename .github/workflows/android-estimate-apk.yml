@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - android-estimate-beta
-      - android-estimate-commit
     paths:
       - "android-estimate/**"
       - "api/save-history.js"
@@ -108,41 +107,4 @@ jobs:
           }
           EOF
           gh release create "$TAG" android/app/build/outputs/apk/release/app-release.apk latest.json             --repo "${{ github.repository }}"             --target "$(git rev-parse HEAD)"             --title "AL Service Estimate v${{ steps.release_version.outputs.version }} (Build ${{ steps.release_version.outputs.build }})"             --notes "Android Service Estimate APK release. Build ${{ steps.release_version.outputs.build }}."             --latest
-
-      - name: Publish beta APK files for in-app updater
-        if: github.ref_name == 'android-estimate-commit'
-        run: |
-          rm -rf ../beta-publish
-          git fetch origin master
-          git worktree add ../beta-publish origin/master
-          mkdir -p ../beta-publish/public/mobile/beta
-          cp android/app/build/outputs/apk/release/app-release.apk ../beta-publish/public/mobile/beta/AL-Service-Estimate-Beta-latest.apk
-          cat > ../beta-publish/public/mobile/beta/latest.json <<EOF
-          {
-            "version": "${{ steps.release_version.outputs.version }}",
-            "build": ${{ steps.release_version.outputs.build }},
-            "downloadUrl": "https://service-decision-engine.vercel.app/mobile/beta/AL-Service-Estimate-Beta-latest.apk"
-          }
-          EOF
-          cd ../beta-publish
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f public/mobile/beta/AL-Service-Estimate-Beta-latest.apk public/mobile/beta/latest.json
-          git commit -m "Publish Beta Android build ${{ steps.release_version.outputs.build }}" || echo "No beta public mobile update changes"
-          git push origin HEAD:master
-
-      - name: Publish beta APK prerelease
-        if: github.ref_name == 'android-estimate-commit'
-        working-directory: android-estimate
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          TAG="android-beta-v${{ steps.release_version.outputs.version }}-build${{ steps.release_version.outputs.build }}-$SHORT_SHA"
-          gh release create "$TAG" android/app/build/outputs/apk/release/app-release.apk \
-            --repo "${{ github.repository }}" \
-            --target "$(git rev-parse HEAD)" \
-            --title "AL Service Estimate Beta v${{ steps.release_version.outputs.version }} (Build ${{ steps.release_version.outputs.build }})" \
-            --notes "Beta Android Service Estimate APK. Commit $SHORT_SHA." \
-            --prerelease
 

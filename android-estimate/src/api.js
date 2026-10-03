@@ -8,6 +8,7 @@ const USER_KEY = 'service_estimate_user';
 const SECURE_TOKEN_KEY = 'service_estimate_secure_token';
 const BIOMETRIC_CREDS_KEY = 'service_estimate_biometric_credentials';
 const SERVICE_PART_CATALOG_KEY = '@service_estimate_part_catalog_v1';
+const PRICE_MASTER_KEY = '@service_estimate_price_master_v1';
 let servicePartCatalogMemory = null;
 
 async function readServicePartCatalog() {
@@ -80,6 +81,51 @@ export async function syncServicePartCatalog(masterCatalog = []) {
   servicePartCatalogMemory = next;
   await AsyncStorage.setItem(SERVICE_PART_CATALOG_KEY, JSON.stringify(next));
   return next;
+}
+
+
+export async function syncPriceMaster() {
+  let local = {};
+  try {
+    const raw = await AsyncStorage.getItem(PRICE_MASTER_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    local = parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {}
+
+  const currentVersion = Number(local.version || 0);
+  try {
+    const data = await request('/api/save-history?priceMaster=1&version=' + encodeURIComponent(currentVersion));
+    if (data?.unchanged) return local;
+    if (!data?.success) return local;
+    const parts = {};
+    (data.parts || []).forEach((item) => {
+      const code = normalizePartCode(item?.partNo);
+      if (!code) return;
+      parts[code] = {
+        partNo: code,
+        description: String(item?.description || ''),
+        mrp: Number(item?.mrp || 0)
+      };
+    });
+    const next = {
+      version: Number(data.version || 0),
+      parts
+    };
+    await AsyncStorage.setItem(PRICE_MASTER_KEY, JSON.stringify(next));
+    return next;
+  } catch {
+    return local;
+  }
+}
+
+export async function readPriceMaster() {
+  try {
+    const raw = await AsyncStorage.getItem(PRICE_MASTER_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 

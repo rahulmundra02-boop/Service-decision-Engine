@@ -406,7 +406,8 @@ function historicalItem(
   partNo,
   globalRates,
   fixedQty = null,
-  fixedDescription = ''
+  fixedDescription = '',
+  priceMaster = {}
 ) {
   const code = normalizeCode(partNo);
   if (!code && type === 'part') return null;
@@ -449,7 +450,7 @@ function historicalItem(
       ''
   ).trim();
 
-  return {
+  const item = {
     id: `${type}-${key}-${code}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     type,
     serviceKey: key,
@@ -464,30 +465,45 @@ function historicalItem(
         : 'Historical DB - Labour base rate'
       : 'Manual'
   };
+  if (type === 'part') {
+    const master = priceMaster?.[code];
+    if (master) {
+      if (master.description) item.description = master.description;
+      const mrp = Number(master.mrp || 0);
+      if (mrp > 0) {
+        item.baseRate = Number((mrp / 1.18).toFixed(2));
+        item.rate = Number(mrp.toFixed(2));
+        item.source = 'Price List Master (MRP)';
+      }
+    }
+  }
+  return item;
 }
 
-function bestAlternativePart(key, codes, vehicle, model, globalRates) {
+function bestAlternativePart(key, codes, vehicle, model, globalRates, priceMaster = {}) {
   const options = [];
   for (const code of codes) {
-    const item = historicalItem('part', key, vehicle, model, code, globalRates);
+    const item = historicalItem('part', key, vehicle, model, code, globalRates, null, '', priceMaster);
     if (item) options.push(item);
   }
   if (!options.length) return null;
   return options.sort((a, b) => Number(b.qty) - Number(a.qty))[0];
 }
 
-export function buildServiceItems(a = [], b = [], c = [], d = []) {
-  let rows, modelRows, globalRates, selectedKeys;
+export function buildServiceItems(a = [], b = [], c = [], d = [], e = {}) {
+  let rows, modelRows, globalRates, selectedKeys, priceMaster;
   if (Array.isArray(a) && a.length > 0 && typeof a[0] === 'string') {
     selectedKeys = a;
     rows = b;
     modelRows = c;
     globalRates = d;
+    priceMaster = e || {};
   } else if (Array.isArray(d) && d.length > 0 && typeof d[0] === 'string') {
     rows = a;
     modelRows = b;
     globalRates = c;
     selectedKeys = d;
+    priceMaster = e || {};
   } else {
     const args = [a, b, c, d];
     const keyArg = args.find((x) => Array.isArray(x) && x.every((i) => typeof i === 'string'));
@@ -495,6 +511,7 @@ export function buildServiceItems(a = [], b = [], c = [], d = []) {
     rows = Array.isArray(a) && a !== keyArg ? a : [];
     modelRows = Array.isArray(b) && b !== keyArg ? b : [];
     globalRates = Array.isArray(c) && c !== keyArg ? c : [];
+    priceMaster = e || {};
   }
 
   const vehicle = Array.isArray(rows) ? rows : [];
@@ -503,7 +520,7 @@ export function buildServiceItems(a = [], b = [], c = [], d = []) {
 
   for (const key of selectedKeys) {
     if (key === 'clutchOil' || key === 'airFilter') {
-      const selectedPart = bestAlternativePart(key, REFERENCE_PARTS[key], vehicle, model, globalRates);
+      const selectedPart = bestAlternativePart(key, REFERENCE_PARTS[key], vehicle, model, globalRates, priceMaster);
       if (selectedPart) output.push(selectedPart);
     } else if (key === 'hubGrease') {
       // 1. Grease part S9999997 (Range 3-7 applies!)
@@ -515,7 +532,8 @@ export function buildServiceItems(a = [], b = [], c = [], d = []) {
         'S9999997',
         globalRates,
         null,
-        'HUB GREASE (BLUE)'
+        'HUB GREASE (BLUE)',
+        priceMaster
       );
       if (greaseItem) output.push(greaseItem);
 
@@ -530,12 +548,12 @@ export function buildServiceItems(a = [], b = [], c = [], d = []) {
       ];
 
       for (const [code, desc] of nonGreaseParts) {
-        const item = historicalItem('part', key, vehicle, model, code, globalRates, null, desc);
+        const item = historicalItem('part', key, vehicle, model, code, globalRates, null, desc, priceMaster);
         if (item) output.push(item);
       }
     } else {
       for (const code of REFERENCE_PARTS[key] || []) {
-        const item = historicalItem('part', key, vehicle, model, code, globalRates);
+        const item = historicalItem('part', key, vehicle, model, code, globalRates, null, '', priceMaster);
         if (item) output.push(item);
       }
     }
@@ -552,7 +570,7 @@ export function buildServiceItems(a = [], b = [], c = [], d = []) {
         (r) => category(r) === 'labour' && normalizeCode(r?.part_code) === labourCode
       );
       if (exactVehicleLabour.length || exactModelLabour.length) {
-        const item = historicalItem('labour', key, vehicle, model, labourCode, globalRates);
+        const item = historicalItem('labour', key, vehicle, model, labourCode, globalRates, null, '', priceMaster);
         if (item && item.description && Number(item.qty) > 0 && Number(item.rate) > 0) {
           item.description = ref[1];
           output.push(item);
@@ -602,9 +620,20 @@ export function makeManualItem(type = 'part') {
   };
 }
 
-export function rateForManualPart(partNo, modelRows = [], globalRates = []) {
+export function rateForManualPart(partNo, modelRows = [], globalRates = [], priceMaster = {}) {
   const code = normalizeCode(partNo);
   if (!code) return null;
+  const master = priceMaster?.[code];
+  if (master?.mrp > 0 || master?.description) {
+    const mrp = Number(master.mrp || 0);
+    return {
+      partNo: code,
+      description: master.description || code,
+      rate: mrp > 0 ? Number(mrp.toFixed(2)) : 0,
+      baseRate: mrp > 0 ? Number((mrp / 1.18).toFixed(2)) : 0,
+      source: 'Price List Master (MRP)'
+    };
+  }
   const historyRate = bestRate(
     (modelRows || []).filter(
       (r) => category(r) === 'part' && normalizeCode(r?.part_code) === code

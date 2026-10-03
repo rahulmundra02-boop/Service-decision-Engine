@@ -269,6 +269,11 @@ export async function getVehicleByRegistration(registration) {
     '/api/save-history?registration=' + encodeURIComponent(value) + compactQuery
   );
   const data = hydrateServiceDescriptions(rawData, catalog);
+  try {
+    const master = await readPriceMaster();
+    data.priceMaster = master?.parts || {};
+    data.priceMasterVersion = Number(master?.version || 0);
+  } catch {}
 
   if (data?.vehicle) {
     vehicleMemoryCache.set(value, { data, ts: Date.now() });
@@ -373,6 +378,7 @@ export async function getServiceDataByModel(model, registration = '', customerNa
       success: true,
       rows: [],
       model: m,
+      priceMaster: (await readPriceMaster())?.parts || {},
       modelRows: mem.modelRows,
       globalPartRates: mem.globalPartRates,
       vehicle: {
@@ -395,6 +401,7 @@ export async function getServiceDataByModel(model, registration = '', customerNa
           success: true,
           rows: [],
           model: m,
+          priceMaster: (await readPriceMaster())?.parts || {},
           modelRows: Array.isArray(parsed.modelRows) ? parsed.modelRows : [],
           globalPartRates: Array.isArray(parsed.globalPartRates) ? parsed.globalPartRates : [],
           vehicle: {
@@ -423,6 +430,7 @@ export async function getServiceDataByModel(model, registration = '', customerNa
       success: true,
       rows: [],
       model: m,
+      priceMaster: (await readPriceMaster())?.parts || {},
       modelRows,
       globalPartRates,
       vehicle: {
@@ -442,6 +450,7 @@ export async function getServiceDataByModel(model, registration = '', customerNa
           success: true,
           rows: [],
           model: m,
+          priceMaster: (await readPriceMaster())?.parts || {},
           modelRows: Array.isArray(parsed.modelRows) ? parsed.modelRows : [],
           globalPartRates: Array.isArray(parsed.globalPartRates) ? parsed.globalPartRates : [],
           vehicle: {
@@ -458,6 +467,7 @@ export async function getServiceDataByModel(model, registration = '', customerNa
       success: true,
       rows: [],
       model: m,
+      priceMaster: (await readPriceMaster())?.parts || {},
       modelRows: [],
       globalPartRates: [],
       vehicle: {

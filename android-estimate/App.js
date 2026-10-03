@@ -44,7 +44,8 @@ import {
   getPartRate,
   getModelList,
   getServiceDataByModel,
-  syncServicePartCatalog
+  syncServicePartCatalog,
+  syncPriceMaster
 } from './src/api';
 import {
   AGGREGATES,
@@ -455,6 +456,7 @@ function LoginScreen({ onLogin }) {
       // One-time on first login: download/cache the complete service part master.
       // Later launches only request part numbers that are still missing locally.
       await syncServicePartCatalog(SERVICE_PART_CATALOG);
+      await syncPriceMaster();
       onLogin(data.user);
     } catch (e) {
       Alert.alert('Login failed', e.message);
@@ -503,6 +505,8 @@ function LoginScreen({ onLogin }) {
         const sessionUser = await restoreSession(token);
         if (sessionUser) {
           syncServicePartCatalog(SERVICE_PART_CATALOG).catch(() => {});
+      syncPriceMaster().catch(() => {});
+          syncPriceMaster().catch(() => {});
           onLogin(sessionUser);
           return;
         }
@@ -513,6 +517,7 @@ function LoginScreen({ onLogin }) {
         const loginData = await login(savedCreds.identifier, savedCreds.password, true);
         if (loginData?.user) {
           await syncServicePartCatalog(SERVICE_PART_CATALOG);
+          await syncPriceMaster();
           onLogin(loginData.user);
           return;
         }
@@ -1382,7 +1387,8 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
     return prebuildAllAggregates(
       data.rows || [],
       data.modelRows || [],
-      data.globalPartRates || []
+      data.globalPartRates || [],
+      data.priceMaster || {}
     );
   }, [data]);
 
@@ -1397,7 +1403,7 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
     for (const k of nextSelected) {
       const items =
         prebuiltAggregates[k] ||
-        buildServiceItems([k], data.rows || [], data.modelRows || [], data.globalPartRates || []);
+        buildServiceItems([k], data.rows || [], data.modelRows || [], data.globalPartRates || [], data.priceMaster || {});
       if (items?.parts) builtParts.push(...items.parts);
       if (items?.labour) builtLabour.push(...items.labour);
     }
@@ -1434,6 +1440,25 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
     if (!itemId || !partNo) return;
     setRateLoadingId(itemId);
     try {
+      const master = data?.priceMaster?.[partNo];
+      if (master?.mrp > 0 || master?.description) {
+        setParts((prev) =>
+          prev.map((x) => {
+            if (x.id !== itemId) return x;
+            const currentQty = Number(x.qty);
+            return {
+              ...x,
+              partNo,
+              description: master.description || partNo,
+              rate: Number(master.mrp || 0),
+              qty: !currentQty || currentQty <= 0 ? 1 : currentQty,
+              serviceKey: null,
+              source: 'Price List Master (MRP)'
+            };
+          })
+        );
+        return;
+      }
       const live = await getPartRate(partNo);
       if (live?.part) {
         const rateVal = Number(
@@ -1463,7 +1488,7 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
         );
         return;
       }
-      const local = rateForManualPart(partNo, data.modelRows || [], data.globalPartRates || []);
+      const local = rateForManualPart(partNo, data.modelRows || [], data.globalPartRates || [], data.priceMaster || {});
       if (local) {
         setParts((prev) =>
           prev.map((x) => {

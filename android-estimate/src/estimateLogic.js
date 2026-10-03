@@ -596,13 +596,13 @@ export function buildServiceItems(a = [], b = [], c = [], d = [], e = {}) {
   return result;
 }
 
-export function prebuildAllAggregates(rows = [], modelRows = [], globalRates = []) {
+export function prebuildAllAggregates(rows = [], modelRows = [], globalRates = [], priceMaster = {}) {
   makeGlobalRateMap(globalRates);
   const cache = {};
   for (const item of AGGREGATES) {
     const key = Array.isArray(item) ? item[1] : item?.key;
     if (key) {
-      cache[key] = buildServiceItems([key], rows, modelRows, globalRates);
+      cache[key] = buildServiceItems([key], rows, modelRows, globalRates, priceMaster);
     }
   }
   return cache;

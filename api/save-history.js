@@ -369,6 +369,7 @@ export default async function handler(req, res) {
         });
       }
       if (partNo) {
+        // Price Master must win over historical DB for every direct part lookup.
         try {
           const sourceResponse = await fetch(
             BETA_PRICE_MASTER_API + "?priceMasterPart=1&partNo=" + encodeURIComponent(partNo)

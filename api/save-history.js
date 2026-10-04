@@ -127,20 +127,44 @@ export default async function handler(req, res) {
     const modelsFlag = req.query?.models;
     const priceMasterFlag = String(req.query?.priceMaster || "") === "1";
     const priceMasterPartFlag = String(req.query?.priceMasterPart || "") === "1";
+    const priceMasterChunkFlag = String(req.query?.priceMasterChunk || "") === "1";
+    const priceMasterOffset = Math.max(0, Number(req.query?.offset || 0));
+    const priceMasterLimit = Math.min(10000, Math.max(1000, Number(req.query?.limit || 10000)));
     const priceMasterVersion = Number(req.query?.version || 0);
     const BETA_PRICE_MASTER_API = "https://service-decision-engine-git-v12-ui-testing-service-decision.vercel.app/api/save-history";
 
     // Price Master is maintained from the Beta admin upload. First try the
     // same Neon DB used by Stable, then fall back to the Beta source if the
     // environments use different databases.
-    if (priceMasterFlag || (priceMasterPartFlag && partNo)) {
+    if (priceMasterFlag || priceMasterChunkFlag || (priceMasterPartFlag && partNo)) {
       const priceClient = await pool.connect();
       try {
         await ensurePriceMasterSchema(priceClient);
         const metaResult = await priceClient.query("SELECT version,row_count,updated_at,file_name FROM part_price_master_meta WHERE id=1");
         const meta = metaResult.rows[0] || {version:0,row_count:0,updated_at:null,file_name:null};
 
-        if (priceMasterPartFlag && partNo) {
+        if (priceMasterChunkFlag) {
+          const chunkResult = await priceClient.query(
+            "SELECT part_no,description,mrp FROM part_price_master ORDER BY part_no ASC LIMIT $1 OFFSET $2",
+            [priceMasterLimit, priceMasterOffset]
+          );
+          const localRowCount = Number(meta.row_count || 0);
+          if (chunkResult.rows.length || localRowCount > 0) {
+            return res.status(200).json({
+              success:true,
+              version:Number(meta.version||0),
+              rowCount:localRowCount,
+              offset:priceMasterOffset,
+              limit:priceMasterLimit,
+              hasMore:priceMasterOffset + chunkResult.rows.length < localRowCount,
+              parts:chunkResult.rows.map(row=>({
+                partNo:row.part_no,
+                description:row.description||"",
+                mrp:row.mrp===null?null:Number(row.mrp)
+              }))
+            });
+          }
+        } else if (priceMasterPartFlag && partNo) {
           const partResult = await priceClient.query(
             "SELECT part_no,description,mrp FROM part_price_master WHERE part_no=$1 LIMIT 1",
             [normalizePricePart(partNo)]
@@ -181,7 +205,9 @@ export default async function handler(req, res) {
         const sourceUrl = BETA_PRICE_MASTER_API + (
           priceMasterPartFlag && partNo
             ? "?priceMasterPart=1&partNo=" + encodeURIComponent(partNo)
-            : "?priceMaster=1" + (priceMasterVersion > 0 ? "&version=" + encodeURIComponent(priceMasterVersion) : "")
+            : priceMasterChunkFlag
+              ? "?priceMasterChunk=1&offset=" + encodeURIComponent(priceMasterOffset) + "&limit=" + encodeURIComponent(priceMasterLimit)
+              : "?priceMaster=1" + (priceMasterVersion > 0 ? "&version=" + encodeURIComponent(priceMasterVersion) : "")
         );
         const sourceResponse = await fetch(sourceUrl);
         const sourceData = await sourceResponse.json().catch(() => ({}));

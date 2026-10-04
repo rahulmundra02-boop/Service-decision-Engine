@@ -1400,7 +1400,7 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
     );
   }, [data]);
 
-  const toggleAggregate = (key) => {
+  const toggleAggregate = async (key) => {
     const nextSelected = selected.includes(key)
       ? selected.filter((x) => x !== key)
       : [...selected, key];
@@ -1415,10 +1415,50 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
       if (items?.parts) builtParts.push(...items.parts);
       if (items?.labour) builtLabour.push(...items.labour);
     }
+
     const manualParts = parts.filter((x) => !x.serviceKey);
     const manualLabour = labour.filter((x) => !x.serviceKey);
     setParts([...manualParts, ...builtParts]);
     setLabour([...manualLabour, ...builtLabour]);
+
+    // Stable app uses the shared Beta Price Master as the final MRP source.
+    // Keep DB history as fallback when a part is not present in the master.
+    if (builtParts.length) {
+      const pricedParts = await Promise.all(
+        builtParts.map(async (item) => {
+          const code = String(item?.partNo || "").replace(/\s+/g, "").toUpperCase();
+          if (!code) return item;
+          try {
+            const live = await getPartRate(code);
+            if (live?.part) {
+              const mrp = Number(
+                live.part.mrp ??
+                live.part.rateInclGst ??
+                live.part.rate_with_gst ??
+                (live.part.rate ? Number((live.part.rate * 1.18).toFixed(2)) : 0)
+              );
+              if (mrp > 0) {
+                return {
+                  ...item,
+                  partNo: live.part.partNo || code,
+                  description: live.part.description || item.description || code,
+                  rate: Number(mrp.toFixed(2)),
+                  baseRate: Number((mrp / 1.18).toFixed(2)),
+                  source: "Price List Master (MRP)"
+                };
+              }
+            }
+          } catch {}
+          return item;
+        })
+      );
+
+      setParts(prev => {
+        const selectedBuiltIds = new Set(builtParts.map(item => item.id));
+        const stillPresent = prev.filter(item => !selectedBuiltIds.has(item.id));
+        return [...stillPresent, ...pricedParts];
+      });
+    }
   };
 
   const addPart = () => {

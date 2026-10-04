@@ -2575,7 +2575,7 @@ function SettingsScreen({ user, onLogout, onBack }) {
         </View>
 
         <Button
-          title="Clear Vehicle Search Cache"
+          title="Clear Recent Vehicle History"
           secondary
           onPress={async () => {
             await AsyncStorage.removeItem(RECENT_VEHICLES_KEY);

@@ -5548,21 +5548,33 @@ function ServiceDecisionApp({ user }) {
     const uniqueCodes = [...new Set(parts.map(item => normalizePartCode(item.partNo)))];
     if (!uniqueCodes.length) return items;
 
-    const lookupResults = await Promise.all(
-      uniqueCodes.map(async code => {
+    const lookupOne = async code => {
+      const urls = [
+        "/api/save-history?priceMasterPart=1&partNo=" + encodeURIComponent(code) + "&_ts=" + Date.now(),
+        "https://service-decision-engine-git-v12-ui-testing-service-decision.vercel.app/api/save-history?priceMasterPart=1&partNo=" + encodeURIComponent(code) + "&_ts=" + Date.now()
+      ];
+
+      for (const url of urls) {
         try {
-          const response = await fetch(
-            "https://service-decision-engine-git-v12-ui-testing-service-decision.vercel.app/api/save-history?priceMasterPart=1&partNo=" + encodeURIComponent(code)
-          );
+          const response = await fetch(url, { cache: "no-store" });
           const data = await response.json().catch(() => ({}));
           const master = data?.part;
           const mrp = Number(master?.mrp ?? master?.rateInclGst ?? 0);
           if (master && mrp > 0) {
-            return [code, {partNo:master.partNo || code,description:master.description || "",mrp}];
+            return {
+              partNo: master.partNo || code,
+              description: master.description || "",
+              mrp
+            };
           }
         } catch {}
-        return [code, null];
-      })
+      }
+
+      return null;
+    };
+
+    const lookupResults = await Promise.all(
+      uniqueCodes.map(async code => [code, await lookupOne(code)])
     );
 
     const masterMap = new Map(lookupResults);
@@ -5570,6 +5582,7 @@ function ServiceDecisionApp({ user }) {
       if (item?.type !== "part") return item;
       const master = masterMap.get(normalizePartCode(item.partNo));
       if (!master) return item;
+
       return {
         ...item,
         partNo: master.partNo || item.partNo,

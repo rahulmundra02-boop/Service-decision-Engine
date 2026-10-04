@@ -2,6 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 
 export const API_BASE_URL = 'https://service-decision-engine.vercel.app';
+// Beta Price Master is the single source of truth for Android estimate MRP.
+export const PRICE_MASTER_API_URL = 'https://service-decision-engine-nn4u69gqz-service-decision.vercel.app';
 
 const TOKEN_KEY = 'service_estimate_auth_token';
 const USER_KEY = 'service_estimate_user';
@@ -167,6 +169,34 @@ export async function getPartRate(partNo) {
   if (cached && Date.now() - cached.ts < 2 * 60 * 60 * 1000) {
     return cached.data;
   }
+
+  // Always check the live Beta Price Master first. Historical DB is only
+  // a fallback when the part is not present in the centralized Price Master.
+  try {
+    const masterResponse = await fetch(
+      PRICE_MASTER_API_URL +
+        '/api/save-history?priceMasterPart=1&partNo=' +
+        encodeURIComponent(value) +
+        '&_ts=' + Date.now()
+    );
+    const masterData = await masterResponse.json().catch(() => ({}));
+    const masterPart = masterData?.part;
+    const mrp = Number(masterPart?.mrp ?? masterPart?.rateInclGst ?? 0);
+    if (masterPart && mrp > 0) {
+      const result = {
+        success: true,
+        part: {
+          partNo: masterPart.partNo || value,
+          description: masterPart.description || '',
+          mrp,
+          rate: Number((mrp / 1.18).toFixed(2)),
+          rateInclGst: Number(mrp.toFixed(2))
+        }
+      };
+      partRateMemoryCache.set(value, { data: result, ts: Date.now() });
+      return result;
+    }
+  } catch {}
 
   const res = await request('/api/save-history?partNo=' + encodeURIComponent(value));
   if (res?.success && res.part) {

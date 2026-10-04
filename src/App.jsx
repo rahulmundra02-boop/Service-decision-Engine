@@ -3352,7 +3352,7 @@ function estimateRowsForCompleteService(rows = [], serviceKey = "") {
   );
 }
 
-function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows = [], globalPartRates = [], priceMaster = {}) {
+function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows = [], globalPartRates = []) {
   const vehicle = Array.isArray(vehicleRows) ? vehicleRows : [];
   const modelHistory = Array.isArray(modelRows) ? modelRows : [];
   const allModelRates = Array.isArray(globalPartRates) ? globalPartRates : [];
@@ -3374,20 +3374,6 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
     item.baseRate = globalRate;
     item.rate = Number((globalRate * 1.18).toFixed(2));
     item.source = "Historical DB (Qty from same-model history; Rate from matching part history, 18% GST added)";
-    return item;
-  }
-
-  function applyPriceMaster(item) {
-    if (!item || item.type !== "part") return item;
-    const master = priceMaster?.[normalizePartCode(item.partNo)];
-    if (!master) return item;
-    if (master.description) item.description = master.description;
-    const mrp = Number(master.mrp || 0);
-    if (mrp > 0) {
-      item.baseRate = Number((mrp / 1.18).toFixed(2));
-      item.rate = Number(mrp.toFixed(2));
-      item.source = "Price List Master (MRP)";
-    }
     return item;
   }
 
@@ -3491,7 +3477,7 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
           // carrying the exact same part number.
           item.partNo = referenceCode;
           if (!item.description) item.description = standard;
-          result.push(applyPriceMaster(applyGlobalPartRate(item)));
+          result.push(applyGlobalPartRate(item));
         }
       }
 
@@ -3523,7 +3509,7 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
         standardRows,
         estimatePreferredReferenceCode(serviceKey, standard, standardRows) || winner?.part_code || ""
       );
-      if (item) result.push(applyPriceMaster(applyGlobalPartRate(item)));
+      if (item) result.push(applyGlobalPartRate(item));
     }
     return result;
   }
@@ -4372,110 +4358,6 @@ function ServiceDecisionApp({ user }) {
   const [historyViewMode, setHistoryViewMode] = useState("schedule");
   const [screenshotBusy, setScreenshotBusy] = useState(false);
   const [screenshotStatus, setScreenshotStatus] = useState("");
-  const [priceMaster, setPriceMaster] = useState({version:0,parts:{}});
-
-  const openPriceMasterCache = () => new Promise((resolve, reject) => {
-    if (!window.indexedDB) {
-      resolve(null);
-      return;
-    }
-    const request = indexedDB.open("serviceDecisionPriceMaster", 1);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains("master")) db.createObjectStore("master");
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-
-  const readPriceMasterCache = async () => {
-    try {
-      const db = await openPriceMasterCache();
-      if (!db) return null;
-      return await new Promise((resolve, reject) => {
-        const tx = db.transaction("master", "readonly");
-        const request = tx.objectStore("master").get("current");
-        request.onsuccess = () => resolve(request.result || null);
-        request.onerror = () => reject(request.error);
-      });
-    } catch {
-      return null;
-    }
-  };
-
-  const writePriceMasterCache = async (value) => {
-    try {
-      const db = await openPriceMasterCache();
-      if (!db) return;
-      await new Promise((resolve, reject) => {
-        const tx = db.transaction("master", "readwrite");
-        tx.objectStore("master").put(value, "current");
-        tx.oncomplete = resolve;
-        tx.onerror = () => reject(tx.error);
-      });
-    } catch {}
-  };
-
-  useEffect(() => {
-    let cancelled=false;
-    const loadPriceMaster=async()=>{
-      try{
-        const cached=await readPriceMasterCache();
-        if(cancelled) return;
-
-        const metaResponse=await fetch("/api/save-history?priceMasterMeta=1");
-        const metaData=await metaResponse.json().catch(()=>({}));
-        if(cancelled || !metaData?.success) return;
-
-        if(cached?.version && cached.version===Number(metaData.version||0) && cached?.parts){
-          setPriceMaster(cached);
-          return;
-        }
-
-        const parts={};
-        const chunkSize=10000;
-        let offset=0;
-        let version=Number(metaData.version||0);
-        let rowCount=Number(metaData.rowCount||0);
-
-        if(rowCount<=0){
-          const empty={version,parts};
-          await writePriceMasterCache(empty);
-          if(!cancelled) setPriceMaster(empty);
-          return;
-        }
-
-        while(offset<rowCount){
-          if(cancelled) return;
-          const response=await fetch(
-            "/api/save-history?priceMasterChunk=1&offset="+encodeURIComponent(offset)+"&limit="+encodeURIComponent(chunkSize)
-          );
-          const data=await response.json().catch(()=>({}));
-          if(!data?.success) return;
-
-          version=Number(data?.version||version);
-          rowCount=Number(data?.rowCount||rowCount);
-          (data.parts||[]).forEach(item=>{
-            const code=normalizePartCode(item?.partNo);
-            if(code) parts[code]={
-              description:String(item?.description||""),
-              mrp:Number(item?.mrp||0)
-            };
-          });
-
-          offset += Array.isArray(data.parts) ? data.parts.length : 0;
-          if(!data.hasMore || !Array.isArray(data.parts) || !data.parts.length) break;
-        }
-
-        const next={version,parts};
-        await writePriceMasterCache(next);
-        if(!cancelled) setPriceMaster(next);
-      }catch{}
-    };
-    loadPriceMaster();
-    return()=>{cancelled=true;};
-  },[]);
-
   const defaultSingleColumns = ["date","jobCard","reading","plant","parts"];
   const defaultBulkColumns = ["customerName","vin","reg","saleDate","model","currentReading","services"];
   const defaultSingleLabels = { date:"Date", jobCard:"Job Card", reading:"Reading", plant:"Plant", parts:"Part No. / Service / Qty" };
@@ -5661,13 +5543,47 @@ function ServiceDecisionApp({ user }) {
     }
   }
 
-  function prepareEstimate() {
+  async function hydrateEstimatePriceMaster(items = []) {
+    const parts = items.filter(item => item?.type === "part" && normalizePartCode(item?.partNo));
+    const uniqueCodes = [...new Set(parts.map(item => normalizePartCode(item.partNo)))];
+    if (!uniqueCodes.length) return items;
+
+    const lookupResults = await Promise.all(
+      uniqueCodes.map(async code => {
+        try {
+          const response = await fetch("/api/save-history?partNo=" + encodeURIComponent(code));
+          const data = await response.json().catch(() => ({}));
+          const master = data?.part;
+          const mrp = Number(master?.mrp ?? master?.rateInclGst ?? 0);
+          if (master && mrp > 0) {
+            return [code, {partNo:master.partNo || code,description:master.description || "",mrp}];
+          }
+        } catch {}
+        return [code, null];
+      })
+    );
+
+    const masterMap = new Map(lookupResults);
+    return items.map(item => {
+      if (item?.type !== "part") return item;
+      const master = masterMap.get(normalizePartCode(item.partNo));
+      if (!master) return item;
+      return {
+        ...item,
+        partNo: master.partNo || item.partNo,
+        description: master.description || item.description,
+        baseRate: Number((master.mrp / 1.18).toFixed(2)),
+        rate: Number(master.mrp.toFixed(2)),
+        source: "Price List Master (MRP)"
+      };
+    });
+  }
+
+  async function prepareEstimate() {
     const history = Array.isArray(estimateHistory)
       ? { vehicleRows: estimateHistory, modelRows: [] }
       : (estimateHistory || { vehicleRows: [], modelRows: [] });
 
-    // A saved estimate already contains its edited parts/labour. Changing
-    // aggregate-service selection must not rebuild and erase those saved edits.
     if (estimateSavedId && !(history.vehicleRows?.length || history.modelRows?.length)) {
       setEstimateNotice("Aggregate service selection updated. Your existing saved estimate lines are retained.");
       setEstimateStage("estimate");
@@ -5678,8 +5594,7 @@ function ServiceDecisionApp({ user }) {
       history.vehicleRows || [],
       estimateSelectedServices,
       history.modelRows || [],
-      history.globalPartRates || [],
-      priceMaster.parts || {}
+      history.globalPartRates || []
     );
     setEstimateParts(items.filter(item => item.type === "part"));
     setEstimateLabour(items.filter(item => item.type === "labour"));
@@ -5689,6 +5604,10 @@ function ServiceDecisionApp({ user }) {
         : "No historical estimate items found. Please add the required items manually."
     );
     setEstimateStage("estimate");
+
+    const pricedItems = await hydrateEstimatePriceMaster(items);
+    setEstimateParts(pricedItems.filter(item => item.type === "part"));
+    setEstimateLabour(pricedItems.filter(item => item.type === "labour"));
   }
   function reviseEstimateServices() { setEstimateStage("select"); }
   function updateEstimateItem(type, id, field, value) {

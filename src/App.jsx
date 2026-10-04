@@ -4423,26 +4423,51 @@ function ServiceDecisionApp({ user }) {
         const cached=await readPriceMasterCache();
         if(cancelled) return;
 
-        const url=cached?.version
-          ? "/api/save-history?priceMaster=1&version="+encodeURIComponent(cached.version)
-          : "/api/save-history?priceMaster=1";
+        const metaResponse=await fetch("/api/save-history?priceMasterMeta=1");
+        const metaData=await metaResponse.json().catch(()=>({}));
+        if(cancelled || !metaData?.success) return;
 
-        const response=await fetch(url);
-        const data=await response.json().catch(()=>({}));
-        if(cancelled || !data?.success) return;
-
-        if(data.unchanged && cached?.version && cached?.parts){
+        if(cached?.version && cached.version===Number(metaData.version||0) && cached?.parts){
           setPriceMaster(cached);
           return;
         }
 
         const parts={};
-        (data.parts||[]).forEach(item=>{
-          const code=normalizePartCode(item?.partNo);
-          if(code) parts[code]={description:String(item?.description||""),mrp:Number(item?.mrp||0)};
-        });
+        const chunkSize=10000;
+        let offset=0;
+        let version=Number(metaData.version||0);
+        let rowCount=Number(metaData.rowCount||0);
 
-        const next={version:Number(data?.version||0),parts};
+        if(rowCount<=0){
+          const empty={version,parts};
+          await writePriceMasterCache(empty);
+          if(!cancelled) setPriceMaster(empty);
+          return;
+        }
+
+        while(offset<rowCount){
+          if(cancelled) return;
+          const response=await fetch(
+            "/api/save-history?priceMasterChunk=1&offset="+encodeURIComponent(offset)+"&limit="+encodeURIComponent(chunkSize)
+          );
+          const data=await response.json().catch(()=>({}));
+          if(!data?.success) return;
+
+          version=Number(data?.version||version);
+          rowCount=Number(data?.rowCount||rowCount);
+          (data.parts||[]).forEach(item=>{
+            const code=normalizePartCode(item?.partNo);
+            if(code) parts[code]={
+              description:String(item?.description||""),
+              mrp:Number(item?.mrp||0)
+            };
+          });
+
+          offset += Array.isArray(data.parts) ? data.parts.length : 0;
+          if(!data.hasMore || !Array.isArray(data.parts) || !data.parts.length) break;
+        }
+
+        const next={version,parts};
         await writePriceMasterCache(next);
         if(!cancelled) setPriceMaster(next);
       }catch{}

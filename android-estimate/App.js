@@ -44,13 +44,11 @@ import {
   getPartRate,
   getModelList,
   getServiceDataByModel,
-  syncServicePartCatalog,
-  syncPriceMaster,
+  syncPartsMaster,
   readPriceMaster
 } from './src/api';
 import {
   AGGREGATES,
-  SERVICE_PART_CATALOG,
   buildServiceItems,
   prebuildAllAggregates,
   makeManualItem,
@@ -454,10 +452,9 @@ function LoginScreen({ onLogin }) {
     setBusy(true);
     try {
       const data = await login(identifier, password, true);
-      // One-time on first login: download/cache the complete service part master.
-      // Later launches only request part numbers that are still missing locally.
-      await syncServicePartCatalog(SERVICE_PART_CATALOG);
-      await syncPriceMaster();
+      // Login sync: compare local Parts Master version with server version.
+      // If the local version is older, the complete latest Parts Master is downloaded once.
+      await syncPartsMaster();
       onLogin(data.user);
     } catch (e) {
       Alert.alert('Login failed', e.message);
@@ -505,9 +502,7 @@ function LoginScreen({ onLogin }) {
       if (token) {
         const sessionUser = await restoreSession(token);
         if (sessionUser) {
-          syncServicePartCatalog(SERVICE_PART_CATALOG).catch(() => {});
-      syncPriceMaster().catch(() => {});
-          syncPriceMaster().catch(() => {});
+          syncPartsMaster().catch(() => {});
           onLogin(sessionUser);
           return;
         }
@@ -517,8 +512,7 @@ function LoginScreen({ onLogin }) {
       if (savedCreds?.identifier && savedCreds?.password) {
         const loginData = await login(savedCreds.identifier, savedCreds.password, true);
         if (loginData?.user) {
-          await syncServicePartCatalog(SERVICE_PART_CATALOG);
-          await syncPriceMaster();
+          await syncPartsMaster();
           onLogin(loginData.user);
           return;
         }
@@ -2803,8 +2797,8 @@ export default function App() {
     if (user) {
       loadSavedEstimates();
       loadRecentVehicles();
-      // On every app open/session, compare the local master and download only missing service parts.
-      syncServicePartCatalog(SERVICE_PART_CATALOG).catch(() => {});
+      // Parts Master is synchronized during login/biometric login.
+      // No per-part catalog download is performed here.
     }
   }, [user?.id, user?.email, user?.personName]);
 

@@ -63,26 +63,6 @@ jobs:
           path: android-estimate/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
-      - name: Publish stable public update files
-        run: |
-          rm -rf ../stable-publish
-          git fetch origin master
-          git worktree add ../stable-publish origin/master
-          mkdir -p ../stable-publish/public/mobile
-          cp android/app/build/outputs/apk/release/app-release.apk ../stable-publish/public/mobile/AL-Service-Estimate-latest.apk
-          cat > ../stable-publish/public/mobile/latest.json <<EOF
-          {
-            "version": "${{ steps.release_version.outputs.version }}",
-            "build": ${{ steps.release_version.outputs.build }},
-            "downloadUrl": "https://service-decision-engine.vercel.app/mobile/AL-Service-Estimate-latest.apk"
-          }
-          EOF
-          cd ../stable-publish
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f public/mobile/AL-Service-Estimate-latest.apk public/mobile/latest.json
-          git commit -m "Publish Stable Android build ${{ steps.release_version.outputs.build }}" || echo "No public mobile update changes"
-          git push origin HEAD:master
       - name: Publish Stable APK release
         working-directory: android-estimate
         env:
@@ -93,11 +73,27 @@ jobs:
           {
             "version": "${{ steps.release_version.outputs.version }}",
             "build": ${{ steps.release_version.outputs.build }},
-            "downloadUrl": "https://service-decision-engine.vercel.app/mobile/AL-Service-Estimate-latest.apk"
+            "downloadUrl": "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/app-release.apk"
           }
           EOF
           if gh release view "$TAG" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
             gh release upload "$TAG" android/app/build/outputs/apk/release/app-release.apk latest.json --repo "${GITHUB_REPOSITORY}" --clobber
           else
-            gh release create "$TAG" android/app/build/outputs/apk/release/app-release.apk latest.json --repo "${GITHUB_REPOSITORY}" --target "$(git rev-parse HEAD)" --title "AL Service Estimate Stable v${{ steps.release_version.outputs.version }} (Build ${{ steps.release_version.outputs.build }})" --notes "Stable Android Service Estimate APK release. Build ${{ steps.release_version.outputs.build }}." --latest=false
+            gh release create "$TAG" android/app/build/outputs/apk/release/app-release.apk latest.json --repo "${GITHUB_REPOSITORY}" --target "${GITHUB_SHA}" --title "AL Service Estimate Stable v${{ steps.release_version.outputs.version }} (Build ${{ steps.release_version.outputs.build }})" --notes "Stable Android Service Estimate APK release. Build ${{ steps.release_version.outputs.build }}." --latest=false
           fi
+      - name: Publish stable update manifest only
+        run: |
+          git fetch origin master
+          git checkout -B publish-master origin/master
+          cat > public/mobile/latest.json <<EOF
+          {
+            "version": "${{ steps.release_version.outputs.version }}",
+            "build": ${{ steps.release_version.outputs.build }},
+            "downloadUrl": "https://github.com/${GITHUB_REPOSITORY}/releases/download/android-stable-v${{ steps.release_version.outputs.version }}-build${{ steps.release_version.outputs.build }}/app-release.apk"
+          }
+          EOF
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/mobile/latest.json
+          git commit -m "Publish Stable Android update manifest ${{ steps.release_version.outputs.build }}" || echo "Manifest already current"
+          git push origin HEAD:master

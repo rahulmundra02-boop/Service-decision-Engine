@@ -3427,6 +3427,40 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
         ]
       : baseReferences;
 
+    // Clutch Oil has multiple interchangeable historical part numbers.
+    // They represent the same service item, not three separate estimate
+    // lines. Prefer the exact vehicle's latest clutch-oil part; only if the
+    // VIN has no clutch-oil history, use the latest matching same-model part.
+    // This keeps the estimate to ONE Clutch Oil part line.
+    if (serviceKey === "clutchOil") {
+      const clutchCodes = new Set(CLUTCH_OIL_PART_CODES.map(normalizePartCode));
+      const pickLatest = rows => rows
+        .filter(row =>
+          estimateCategory(row) === "part" &&
+          clutchCodes.has(normalizePartCode(row?.part_code)) &&
+          Number(row?.quantity || 0) > 0
+        )
+        .sort((a,b) =>
+          (Number(b?.date || b?.job_date || 0) - Number(a?.date || a?.job_date || 0)) ||
+          (Number(b?.jobCardId || b?.job_card_id || 0) - Number(a?.jobCardId || a?.job_card_id || 0))
+        )[0];
+
+      const selected = pickLatest(vehicle) || pickLatest(modelHistory);
+      if (!selected) return [];
+
+      const item = estimateBuildHistoricalItem(
+        "part",
+        serviceKey,
+        [selected],
+        normalizePartCode(selected.part_code)
+      );
+      if (!item) return [];
+
+      item.partNo = normalizePartCode(selected.part_code);
+      if (!item.description) item.description = estimateStandardPartName(selected) || "Clutch Oil";
+      return [applyGlobalPartRate(item)];
+    }
+
     // For services with explicit reference part numbers, process every
     // reference independently. Missing VIN lines fall back independently to
     // same-model history.

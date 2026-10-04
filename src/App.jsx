@@ -5731,46 +5731,54 @@ function ServiceDecisionApp({ user }) {
   }
 
   async function hydrateEstimatePriceMaster(items = []) {
-    const parts=items.filter(item=>item?.type==="part" && normalizePartCode(item?.partNo));
-    const uniqueCodes=[...new Set(parts.map(item=>normalizePartCode(item.partNo)))];
-    if(!uniqueCodes.length) return items;
+    const parts = items.filter(item => item?.type === "part" && normalizePartCode(item?.partNo));
+    if (!parts.length) return items;
 
-    const lookupOne=async code=>{
-      // Price List Master is the source of truth. Always check the live Beta
-      // Price Master first so an older browser cache can never override a
-      // newly uploaded Excel MRP.
-      const urls=[
-        PRICE_MASTER_SOURCE+"?priceMasterPart=1&partNo="+encodeURIComponent(code)+"&_ts="+Date.now(),
-        "/api/save-history?priceMasterPart=1&partNo="+encodeURIComponent(code)+"&_ts="+Date.now()
-      ];
-      for(const url of urls){
-        try{
-          const response=await fetch(url,{cache:"no-store"});
-          const data=await response.json().catch(()=>({}));
-          const master=data?.part;
-          const mrp=Number(master?.mrp??master?.rateInclGst??0);
-          if(master && mrp>0) return {partNo:master.partNo||code,description:master.description||"",mrp};
-        }catch{}
+    const masterMap = new Map();
+    const missingCodes = [];
+
+    for (const item of parts) {
+      const code = normalizePartCode(item.partNo);
+      const master = priceMaster.parts?.[code];
+      if (master?.mrp > 0 || master?.description) {
+        masterMap.set(code, master);
+      } else {
+        missingCodes.push(code);
       }
+    }
 
-      // Live source was unavailable. Cache is only a fallback.
-      const cached=priceMaster?.parts?.[code];
-      if(cached && Number(cached.mrp||0)>0){
-        return {partNo:code,description:String(cached.description||""),mrp:Number(cached.mrp)};
-      }
-      return null;
-    };
+    // Normal path: everything comes from the local IndexedDB Price Master.
+    if (missingCodes.length) {
+      const lookupResults = await Promise.all(
+        [...new Set(missingCodes)].map(async code => {
+          try {
+            const response = await fetch("/api/save-history?priceMasterPart=1&partNo=" + encodeURIComponent(code), {cache:"no-store"});
+            const data = await response.json().catch(() => ({}));
+            const master = data?.part;
+            const mrp = Number(master?.mrp || 0);
+            return mrp > 0 ? [code, {partNo:master.partNo||code,description:master.description||"",mrp}] : [code, null];
+          } catch {
+            return [code, null];
+          }
+        })
+      );
+      lookupResults.forEach(([code, master]) => { if (master) masterMap.set(code, master); });
+    }
 
-    const lookupResults=await Promise.all(uniqueCodes.map(async code=>[code,await lookupOne(code)]));
-    const masterMap=new Map(lookupResults);
-    return items.map(item=>{
-      if(item?.type!=="part") return item;
-      const master=masterMap.get(normalizePartCode(item.partNo));
-      if(!master) return item;
-      return {...item,partNo:master.partNo||item.partNo,description:master.description||item.description,baseRate:Number((master.mrp/1.18).toFixed(2)),rate:Number(master.mrp.toFixed(2)),source:"Price List Master (MRP)"};
+    return items.map(item => {
+      if (item?.type !== "part") return item;
+      const master = masterMap.get(normalizePartCode(item.partNo));
+      if (!master) return item;
+      return {
+        ...item,
+        partNo: master.partNo || item.partNo,
+        description: master.description || item.description,
+        baseRate: Number((Number(master.mrp) / 1.18).toFixed(2)),
+        rate: Number(Number(master.mrp).toFixed(2)),
+        source: "Price List Master (MRP)"
+      };
     });
   }
-
   async function prepareEstimate() {
     const history = Array.isArray(estimateHistory)
       ? { vehicleRows: estimateHistory, modelRows: [] }
@@ -5814,19 +5822,42 @@ function ServiceDecisionApp({ user }) {
   async function lookupManualEstimatePart(id, partNo) {
     const code = String(partNo || "").replace(/\s+/g,"").trim().toUpperCase();
     if (!code) return;
+
+    // Complete Price Master is cached locally in IndexedDB. Use it first so
+    // normal manual part entry is instant and does not show a network spinner.
+    const master = priceMaster.parts?.[normalizePartCode(code)];
+    if (master?.mrp > 0 || master?.description) {
+      setEstimateParts(prev => prev.map(item => item.id === id ? {
+        ...item,
+        partNo: code,
+        description: master.description || item.description,
+        rate: Number(master.mrp || 0),
+        baseRate: Number((Number(master.mrp || 0) / 1.18).toFixed(2)),
+        source: "Price List Master (MRP)"
+      } : item));
+      return;
+    }
+
+    // Only an unknown/missing Price Master part needs a server fallback.
     setManualPartLookupBusy(prev => ({...prev,[id]:true}));
     try {
-      const priced = await hydrateEstimatePriceMaster([{id,type:"part",partNo:code,description:"",qty:1,rate:0,baseRate:0}]);
-      const master = priced?.[0];
-      if (master?.source === "Price List Master (MRP)") {
-        setEstimateParts(prev => prev.map(item => item.id === id ? {...item,...master,source:"Price List Master (MRP)"} : item));
-        return;
-      }
       const response = await fetch("/api/save-history?partNo=" + encodeURIComponent(code), {cache:"no-store"});
       const data = await response.json().catch(() => ({}));
-      if (data.part) setEstimateParts(prev => prev.map(item => item.id === id ? {...item,partNo:data.part.partNo||code,description:data.part.description||item.description,rate:Number(data.part.rateInclGst||0),baseRate:Number(data.part.rate||0),source:"Historical DB - exact Part No."} : item));
-    } catch (err) { console.warn("Manual estimate part lookup:",err); }
-    finally { setManualPartLookupBusy(prev => ({...prev,[id]:false})); }
+      if (data.part) {
+        setEstimateParts(prev => prev.map(item => item.id === id ? {
+          ...item,
+          partNo:data.part.partNo||code,
+          description:data.part.description||item.description,
+          rate:Number(data.part.rateInclGst||0),
+          baseRate:Number(data.part.rate||0),
+          source:"Historical DB - exact Part No."
+        } : item));
+      }
+    } catch (err) {
+      console.warn("Manual estimate part lookup:",err);
+    } finally {
+      setManualPartLookupBusy(prev => ({...prev,[id]:false}));
+    }
   }
   function addEstimateItem(type) { (type === "labour" ? setEstimateLabour : setEstimateParts)(prev => [...prev, emptyEstimateItem(type)]); }
   function removeEstimateItem(type, id) {

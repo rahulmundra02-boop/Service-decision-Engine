@@ -82,6 +82,7 @@ jobs:
             gh release create "$TAG" android/app/build/outputs/apk/release/app-release.apk latest.json --repo "${GITHUB_REPOSITORY}" --target "${GITHUB_SHA}" --title "AL Service Estimate Stable v${{ steps.release_version.outputs.version }} (Build ${{ steps.release_version.outputs.build }})" --notes "Stable Android Service Estimate APK release. Build ${{ steps.release_version.outputs.build }}." --latest=false
           fi
       - name: Publish stable update manifest only
+        working-directory: ${{ github.workspace }}
         run: |
           git fetch origin master
           git checkout -B publish-master origin/master

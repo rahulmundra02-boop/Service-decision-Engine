@@ -303,7 +303,38 @@ export async function getPartRate(partNo) {
     return cached.data;
   }
 
-  const res = await request('/api/save-history?partNo=' + encodeURIComponent(value));
+  // For estimates, Price List Master is the authoritative MRP source.
+  // Read it directly from the Beta Price Master API so historical DB rates
+  // cannot override the uploaded Excel MRP.
+  let res = null;
+  try {
+    const masterResponse = await fetch(
+      'https://service-decision-engine-nn4u69gqz-service-decision.vercel.app/api/save-history?priceMasterPart=1&partNo=' +
+        encodeURIComponent(value)
+    );
+    const masterText = await masterResponse.text();
+    const masterData = masterText ? JSON.parse(masterText) : {};
+    if (masterResponse.ok && masterData?.part) {
+      const mrp = Number(masterData.part.mrp || 0);
+      if (mrp > 0) {
+        res = {
+          success: true,
+          part: {
+            partNo: masterData.part.partNo || value,
+            description: masterData.part.description || '',
+            mrp,
+            rateInclGst: mrp,
+            rate: Number((mrp / 1.18).toFixed(2))
+          }
+        };
+      }
+    }
+  } catch {}
+
+  // Historical DB remains only a fallback if Price Master has no MRP.
+  if (!res) {
+    res = await request('/api/save-history?partNo=' + encodeURIComponent(value));
+  }
   if (res?.success && res.part) {
     partRateMemoryCache.set(value, { data: res, ts: Date.now() });
   }

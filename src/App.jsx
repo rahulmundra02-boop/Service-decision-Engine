@@ -5551,7 +5551,9 @@ function ServiceDecisionApp({ user }) {
     const lookupResults = await Promise.all(
       uniqueCodes.map(async code => {
         try {
-          const response = await fetch("/api/save-history?partNo=" + encodeURIComponent(code));
+          const response = await fetch(
+            "https://service-decision-engine-git-v12-ui-testing-service-decision.vercel.app/api/save-history?priceMasterPart=1&partNo=" + encodeURIComponent(code)
+          );
           const data = await response.json().catch(() => ({}));
           const master = data?.part;
           const mrp = Number(master?.mrp ?? master?.rateInclGst ?? 0);

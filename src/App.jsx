@@ -5702,14 +5702,12 @@ function ServiceDecisionApp({ user }) {
     if(!uniqueCodes.length) return items;
 
     const lookupOne=async code=>{
-      const cached=priceMaster?.parts?.[code];
-      if(cached && Number(cached.mrp||0)>0){
-        return {partNo:code,description:String(cached.description||""),mrp:Number(cached.mrp)};
-      }
-
+      // Price List Master is the source of truth. Always check the live Beta
+      // Price Master first so an older browser cache can never override a
+      // newly uploaded Excel MRP.
       const urls=[
-        "/api/save-history?priceMasterPart=1&partNo="+encodeURIComponent(code)+"&_ts="+Date.now(),
-        PRICE_MASTER_SOURCE+"?priceMasterPart=1&partNo="+encodeURIComponent(code)+"&_ts="+Date.now()
+        PRICE_MASTER_SOURCE+"?priceMasterPart=1&partNo="+encodeURIComponent(code)+"&_ts="+Date.now(),
+        "/api/save-history?priceMasterPart=1&partNo="+encodeURIComponent(code)+"&_ts="+Date.now()
       ];
       for(const url of urls){
         try{
@@ -5719,6 +5717,12 @@ function ServiceDecisionApp({ user }) {
           const mrp=Number(master?.mrp??master?.rateInclGst??0);
           if(master && mrp>0) return {partNo:master.partNo||code,description:master.description||"",mrp};
         }catch{}
+      }
+
+      // Live source was unavailable. Cache is only a fallback.
+      const cached=priceMaster?.parts?.[code];
+      if(cached && Number(cached.mrp||0)>0){
+        return {partNo:code,description:String(cached.description||""),mrp:Number(cached.mrp)};
       }
       return null;
     };

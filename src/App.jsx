@@ -4367,7 +4367,7 @@ function ServiceDecisionApp({ user }) {
   const PRICE_MASTER_CACHE_STORE = "parts";
   const PRICE_MASTER_META_STORE = "meta";
   const PRICE_MASTER_META_KEY = "current";
-  const PRICE_MASTER_SOURCE = "https://service-decision-engine-git-v12-ui-testing-service-decision.vercel.app/api/save-history";
+  const PRICE_MASTER_SOURCE = "https://service-decision-engine-nn4u69gqz-service-decision.vercel.app/api/save-history";
   const PRICE_MASTER_CHUNK_SIZE = 10000;
 
   const openPriceMasterCache = () => new Promise((resolve, reject) => {

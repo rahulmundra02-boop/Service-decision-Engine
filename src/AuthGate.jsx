@@ -35,6 +35,7 @@ async function api(action, payload = {}, token = "") {
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data.success === false) {
     const error = new Error(data.error || "Request failed.");
+    error.status = response.status;
     if (data.sessionConflict) {
       error.sessionConflict = true;
       error.previousSession = data.previousSession || null;
@@ -46,7 +47,7 @@ async function api(action, payload = {}, token = "") {
 
 export default function AuthGate({ children }) {
   const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(null);\n  const sessionValidationRef = useRef(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [showAccountHelp, setShowAccountHelp] = useState(false);
@@ -134,50 +135,41 @@ export default function AuthGate({ children }) {
   };
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) return undefined;
 
-    const token = localStorage.getItem(TOKEN_KEY);
-    if (!token) return;
-
-    if (!localStorage.getItem(ACTIVITY_KEY)) {
-      const serverActivity = user?.lastActivityAt ? new Date(user.lastActivityAt).getTime() : Date.now();
-      localStorage.setItem(ACTIVITY_KEY, String(serverActivity || Date.now()));
-    }
-
-    let lastPing = 0;
-    const touch = () => {
-      const now = Date.now();
-      const last = Number(localStorage.getItem(ACTIVITY_KEY) || 0);
-      if (last && now - last >= INACTIVITY_MS) return;
-      localStorage.setItem(ACTIVITY_KEY, String(now));
-
-      if (now - lastPing >= 60 * 1000) {
-        lastPing = now;
-        api("me", {}, token).catch(() => {
+    const validateSession = async () => {
+      const currentToken = localStorage.getItem(TOKEN_KEY);
+      if (!currentToken || sessionValidationRef.current) return;
+      sessionValidationRef.current = true;
+      try {
+        await api("me", {}, currentToken);
+      } catch (e) {
+        // Only a real 401 means another login terminated this session.
+        // Temporary network/server errors do not kick the user out.
+        if (e?.status === 401) {
           localStorage.removeItem(TOKEN_KEY);
           localStorage.removeItem(ACTIVITY_KEY);
-          setUser(null);
           setAdminOpen(false);
-        });
+          setUser(null);
+          setMessage("Your session was terminated because this account was logged in elsewhere.");
+        }
+      } finally {
+        sessionValidationRef.current = false;
       }
     };
 
-    const events = ["click","keydown","mousemove","scroll","touchstart"];
-    events.forEach(name => window.addEventListener(name, touch, { passive:true }));
+    const handleClick = () => {
+      void validateSession();
+    };
+
+    document.addEventListener("click", handleClick, true);
 
     const timer = window.setInterval(() => {
-      const last = Number(localStorage.getItem(ACTIVITY_KEY) || 0);
-      if (!last || Date.now() - last < INACTIVITY_MS) return;
-
-      localStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(ACTIVITY_KEY);
-      setAdminOpen(false);
-      setUser(null);
-      setMessage("Session expired after 12 hours of inactivity. Please login again.");
-    }, 60 * 1000);
+      void validateSession();
+    }, 10 * 1000);
 
     return () => {
-      events.forEach(name => window.removeEventListener(name, touch));
+      document.removeEventListener("click", handleClick, true);
       window.clearInterval(timer);
     };
   }, [user?.id]);

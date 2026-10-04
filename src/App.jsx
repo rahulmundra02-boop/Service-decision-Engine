@@ -1870,7 +1870,8 @@ function isCE282039RmcKmModel(model){
   return /CE2820\s*\/\s*39\s+R\s+RMC/.test(t);
 }
 function isTipperModel(model){
-  if(is4825Model(model) || isCE282039RmcKmModel(model)) return false;
+  // UE2820/57 H CC is a service-hours based model even without TIP/RMC wording.
+  if(is4825Model(model) || isCE282039RmcKmModel(model) || /UE2820\s*\/\s*57\s+H\s+CC/.test(String(model||'').toUpperCase().replace(/\s+/g,' ').trim())) return false;
   const t=String(model||'').toUpperCase();
   return t.includes('TIP') || t.includes('RMC');
 }

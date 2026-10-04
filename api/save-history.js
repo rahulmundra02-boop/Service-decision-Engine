@@ -98,9 +98,38 @@ export default async function handler(req, res) {
     const priceMasterVersion = Number(req.query?.version || 0);
     const BETA_PRICE_MASTER_API = "https://service-decision-engine-nn4u69gqz-service-decision.vercel.app/api/save-history";
 
-    // Price Master is maintained from the Beta admin upload. Stable reads only
-    // the Price Master source, never Beta vehicle/job-card history.
+    // Price Master is maintained from the Beta admin upload. Stable must use
+    // the same live Price Master values for estimates. Prefer the local
+    // Price Master table when it is available (some deployments share the
+    // same Neon database), then fall back to the Beta source.
     if (priceMasterFlag || priceMasterMetaFlag || priceMasterChunkFlag || (priceMasterPartFlag && partNo)) {
+      if (priceMasterPartFlag && partNo) {
+        let localClient = null;
+        try {
+          localClient = await pool.connect();
+          const localResult = await localClient.query(
+            "SELECT part_no,description,mrp FROM part_price_master WHERE part_no=$1 LIMIT 1",
+            [partNo]
+          );
+          const localRow = localResult.rows[0] || null;
+          if (localRow && localRow.mrp !== null && Number(localRow.mrp) > 0) {
+            return res.status(200).json({
+              success: true,
+              source: "Stable Price Master",
+              part: {
+                partNo: localRow.part_no,
+                description: localRow.description || "",
+                mrp: Number(localRow.mrp)
+              }
+            });
+          }
+        } catch (error) {
+          console.warn("Stable local Price Master lookup unavailable:", error?.message || error);
+        } finally {
+          if (localClient) localClient.release();
+        }
+      }
+
       try {
         const sourceUrl = BETA_PRICE_MASTER_API + (
           priceMasterPartFlag && partNo

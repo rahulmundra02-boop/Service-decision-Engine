@@ -89,6 +89,28 @@ export default async function handler(req, res) {
     const registration = String(req.query?.registration || "").replace(/\s+/g, "").trim().toUpperCase();
     const partNo = String(req.query?.partNo || "").trim().toUpperCase().replace(/\s+/g, "");
     const modelsFlag = req.query?.models;
+    const priceMasterFlag = String(req.query?.priceMaster || "") === "1";
+    const priceMasterPartFlag = String(req.query?.priceMasterPart || "") === "1";
+    const priceMasterVersion = Number(req.query?.version || 0);
+    const BETA_PRICE_MASTER_API = "https://service-decision-engine-git-v12-ui-testing-service-decision.vercel.app/api/save-history";
+
+    // Price Master is maintained from the Beta admin upload. Stable reads only
+    // the Price Master source, never Beta vehicle/job-card history.
+    if (priceMasterFlag || (priceMasterPartFlag && partNo)) {
+      try {
+        const sourceUrl = BETA_PRICE_MASTER_API + (
+          priceMasterPartFlag && partNo
+            ? "?priceMasterPart=1&partNo=" + encodeURIComponent(partNo)
+            : "?priceMaster=1" + (priceMasterVersion > 0 ? "&version=" + encodeURIComponent(priceMasterVersion) : "")
+        );
+        const sourceResponse = await fetch(sourceUrl);
+        const sourceData = await sourceResponse.json().catch(() => ({}));
+        return res.status(sourceResponse.ok ? 200 : sourceResponse.status).json(sourceData);
+      } catch (error) {
+        console.error("Price Master source proxy failed:", error);
+        return res.status(502).json({success:false,error:"Price Master source unavailable."});
+      }
+    }
     const modelParam = String(req.query?.model || "").trim();
     const mobileEstimateFlag = String(req.query?.mobileEstimate || "") === "1";
     const serviceParts = String(req.query?.serviceParts || "")
@@ -310,6 +332,31 @@ export default async function handler(req, res) {
         });
       }
       if (partNo) {
+        try {
+          const sourceResponse = await fetch(
+            BETA_PRICE_MASTER_API + "?priceMasterPart=1&partNo=" + encodeURIComponent(partNo)
+          );
+          if (sourceResponse.ok) {
+            const sourceData = await sourceResponse.json().catch(() => ({}));
+            const masterPart = sourceData?.part;
+            if (masterPart && Number(masterPart.mrp || 0) > 0) {
+              const mrp = Number(masterPart.mrp);
+              return res.status(200).json({
+                success:true,
+                part:{
+                  partNo:masterPart.partNo || partNo,
+                  description:masterPart.description || "",
+                  rate:Number((mrp / 1.18).toFixed(2)),
+                  rateInclGst:Number(mrp.toFixed(2)),
+                  mrp
+                }
+              });
+            }
+          }
+        } catch (error) {
+          console.warn("Price Master part lookup failed, using historical DB:", error?.message || error);
+        }
+
         const result = await client.query(
           "WITH paid_rates AS ( " +
           "SELECT sh.part_code, sh.part_description, sh.rate, jc.job_date, jc.id AS job_card_id, sh.id AS service_history_id, " +

@@ -83,42 +83,6 @@ function serviceLineIdentityFromDb(row = {}) {
   ].join("|");
 }
 
-async function ensurePriceMasterSchema(client) {
-  await client.query(`
-    CREATE TABLE IF NOT EXISTS part_price_master (
-      part_no TEXT PRIMARY KEY,
-      description TEXT,
-      mrp NUMERIC,
-      version INTEGER NOT NULL DEFAULT 0,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  await client.query(`
-    CREATE TABLE IF NOT EXISTS part_price_master_meta (
-      id INTEGER PRIMARY KEY CHECK (id=1),
-      version INTEGER NOT NULL DEFAULT 0,
-      row_count INTEGER NOT NULL DEFAULT 0,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      file_name TEXT
-    )
-  `);
-  await client.query(`
-    CREATE TABLE IF NOT EXISTS part_price_master_staging (
-      upload_id TEXT NOT NULL,
-      part_no TEXT NOT NULL,
-      description TEXT,
-      mrp NUMERIC,
-      PRIMARY KEY (upload_id, part_no)
-    )
-  `);
-  await client.query("CREATE INDEX IF NOT EXISTS idx_price_master_staging_upload ON part_price_master_staging(upload_id)");
-  await client.query("INSERT INTO part_price_master_meta (id,version,row_count,updated_at) VALUES (1,0,0,NOW()) ON CONFLICT (id) DO NOTHING");
-}
-
-function normalizePricePart(value) {
-  return String(value ?? "").trim().toUpperCase().replace(/\\s+/g, "");
-}
-
 export default async function handler(req, res) {
   if (req.method === "GET") {
     const vin = String(req.query?.vin || "").trim().toUpperCase();
@@ -134,9 +98,8 @@ export default async function handler(req, res) {
     const priceMasterVersion = Number(req.query?.version || 0);
     const BETA_PRICE_MASTER_API = "https://service-decision-engine-git-v12-ui-testing-service-decision.vercel.app/api/save-history";
 
-    // Price Master is maintained ONLY by the Beta admin upload.
-    // Stable must always read that same source. Do not prefer the Stable
-    // database here because it can contain an older Price Master snapshot.
+    // Price Master is maintained from the Beta admin upload. Stable reads only
+    // the Price Master source, never Beta vehicle/job-card history.
     if (priceMasterFlag || priceMasterMetaFlag || priceMasterChunkFlag || (priceMasterPartFlag && partNo)) {
       try {
         const sourceUrl = BETA_PRICE_MASTER_API + (
@@ -152,7 +115,7 @@ export default async function handler(req, res) {
         const sourceData = await sourceResponse.json().catch(() => ({}));
         return res.status(sourceResponse.ok ? 200 : sourceResponse.status).json(sourceData);
       } catch (error) {
-        console.error("Stable Price Master source proxy failed:", error);
+        console.error("Price Master source proxy failed:", error);
         return res.status(502).json({success:false,error:"Price Master source unavailable."});
       }
     }
@@ -378,30 +341,30 @@ export default async function handler(req, res) {
       }
       if (partNo) {
         try {
-          const masterResult = await client.query(
-            "SELECT part_no,description,mrp FROM part_price_master WHERE part_no=$1 LIMIT 1",
-            [normalizePricePart(partNo)]
+          const sourceResponse = await fetch(
+            BETA_PRICE_MASTER_API + "?priceMasterPart=1&partNo=" + encodeURIComponent(partNo)
           );
-          const masterPart = masterResult.rows[0] || null;
-          if (masterPart && Number(masterPart.mrp || 0) > 0) {
-            const mrp = Number(masterPart.mrp);
-            return res.status(200).json({
-              success:true,
-              part:{
-                partNo:masterPart.part_no || partNo,
-                description:masterPart.description || "",
-                rate:Number((mrp / 1.18).toFixed(2)),
-                rateInclGst:Number(mrp.toFixed(2)),
-                mrp
-              }
-            });
+          if (sourceResponse.ok) {
+            const sourceData = await sourceResponse.json().catch(() => ({}));
+            const masterPart = sourceData?.part;
+            if (masterPart && Number(masterPart.mrp || 0) > 0) {
+              const mrp = Number(masterPart.mrp);
+              return res.status(200).json({
+                success:true,
+                part:{
+                  partNo:masterPart.partNo || partNo,
+                  description:masterPart.description || "",
+                  rate:Number((mrp / 1.18).toFixed(2)),
+                  rateInclGst:Number(mrp.toFixed(2)),
+                  mrp
+                }
+              });
+            }
           }
         } catch (error) {
-          console.warn("Local Price Master part lookup failed:", error?.message || error);
+          console.warn("Price Master part lookup failed, using historical DB:", error?.message || error);
         }
 
-        try {
-          const sourceResponse = await fetch(
         const result = await client.query(
           "WITH paid_rates AS ( " +
           "SELECT sh.part_code, sh.part_description, sh.rate, jc.job_date, jc.id AS job_card_id, sh.id AS service_history_id, " +

@@ -297,19 +297,35 @@ export async function getPartRate(partNo) {
   const value = normalizePartCode(partNo);
   if (!value) return { success: true, part: null };
 
-  // Price List Master is authoritative. Never reuse an old historical/DB rate
-  // for a part when the live Price Master has a current MRP.
-  let res = null;
+  // Price Master is the primary rate source. Read the complete local cache
+  // first so normal part lookups never wait for the network.
+  try {
+    const local = await readPriceMaster();
+    const master = local?.parts?.[value];
+    const mrp = Number(master?.mrp || 0);
+    if (master && mrp > 0) {
+      return {
+        success: true,
+        part: {
+          partNo: master.partNo || value,
+          description: master.description || '',
+          mrp,
+          rateInclGst: mrp,
+          rate: Number((mrp / 1.18).toFixed(2))
+        }
+      };
+    }
+  } catch {}
 
-  // 1) Ask the Stable production API first. It now proxies the live Beta
-  // Price Master before consulting the older Stable DB.
+  // Only when the part is not present in the local master, use the live
+  // Price Master as a fallback. This is not the normal path.
   try {
     const liveMaster = await request(
       '/api/save-history?priceMasterPart=1&partNo=' + encodeURIComponent(value)
     );
     const mrp = Number(liveMaster?.part?.mrp || 0);
     if (liveMaster?.success && liveMaster?.part && mrp > 0) {
-      res = {
+      return {
         success: true,
         part: {
           partNo: liveMaster.part.partNo || value,
@@ -322,65 +338,13 @@ export async function getPartRate(partNo) {
     }
   } catch {}
 
-  // 2) Direct Beta Price Master fallback.
-  if (!res) {
-    try {
-      const masterResponse = await fetch(
-        'https://service-decision-engine-nn4u69gqz-service-decision.vercel.app/api/save-history?priceMasterPart=1&partNo=' +
-          encodeURIComponent(value)
-      );
-      const masterText = await masterResponse.text();
-      const masterData = masterText ? JSON.parse(masterText) : {};
-      const mrp = Number(masterData?.part?.mrp || 0);
-      if (masterResponse.ok && masterData?.part && mrp > 0) {
-        res = {
-          success: true,
-          part: {
-            partNo: masterData.part.partNo || value,
-            description: masterData.part.description || '',
-            mrp,
-            rateInclGst: mrp,
-            rate: Number((mrp / 1.18).toFixed(2))
-          }
-        };
-      }
-    } catch {}
+  // Historical DB is the final fallback only when Price Master has no entry.
+  try {
+    return await request('/api/save-history?partNo=' + encodeURIComponent(value));
+  } catch {
+    return { success: false, part: null };
   }
-
-  // 3) Local full Price Master cache as another safe Price Master source.
-  if (!res) {
-    try {
-      const local = await readPriceMaster();
-      const master = local?.parts?.[value];
-      const mrp = Number(master?.mrp || 0);
-      if (master && mrp > 0) {
-        res = {
-          success: true,
-          part: {
-            partNo: master.partNo || value,
-            description: master.description || '',
-            mrp,
-            rateInclGst: mrp,
-            rate: Number((mrp / 1.18).toFixed(2))
-          }
-        };
-      }
-    } catch {}
-  }
-
-  // 4) Historical DB is the last fallback only when Price Master has no MRP.
-  if (!res) {
-    res = await request('/api/save-history?partNo=' + encodeURIComponent(value));
-  }
-
-  if (res?.success && res.part) {
-    // Cache the resolved Price Master value for speed, but only after the
-    // authoritative lookup above has had a chance to run.
-    partRateMemoryCache.set(value, { data: res, ts: Date.now() });
-  }
-  return res;
 }
-
 export async function saveEstimate(payload) {
   return request('/api/estimates', {
     method: 'POST',

@@ -1347,6 +1347,42 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
     const manualLabour = labour.filter((x) => !x.serviceKey);
     setParts([...manualParts, ...builtParts]);
     setLabour([...manualLabour, ...builtLabour]);
+
+    // Refresh every generated part from the centralized Beta Price Master.
+    // DB history remains fallback only when Price Master has no MRP.
+    if (builtParts.length) {
+      const pricedParts = await Promise.all(
+        builtParts.map(async (item) => {
+          const code = String(item?.partNo || '').replace(/\\s+/g, '').toUpperCase();
+          if (!code) return item;
+          try {
+            const live = await getPartRate(code);
+            const mrp = Number(
+              live?.part?.mrp ??
+              live?.part?.rateInclGst ??
+              live?.part?.rate_with_gst ??
+              0
+            );
+            if (mrp > 0) {
+              return {
+                ...item,
+                partNo: live.part.partNo || code,
+                description: live.part.description || item.description || code,
+                rate: Number(mrp.toFixed(2)),
+                baseRate: Number((mrp / 1.18).toFixed(2)),
+                source: 'Price List Master (MRP)'
+              };
+            }
+          } catch {}
+          return item;
+        })
+      );
+      setParts(prev => {
+        const selectedBuiltIds = new Set(builtParts.map(item => item.id));
+        const stillPresent = prev.filter(item => !selectedBuiltIds.has(item.id));
+        return [...stillPresent, ...pricedParts];
+      });
+    }
   };
 
   const addPart = () => {

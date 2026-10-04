@@ -126,6 +126,7 @@ export default async function handler(req, res) {
     const partNo = String(req.query?.partNo || "").trim().toUpperCase().replace(/\s+/g, "");
     const modelsFlag = req.query?.models;
     const priceMasterFlag = String(req.query?.priceMaster || "") === "1";
+    const priceMasterMetaFlag = String(req.query?.priceMasterMeta || "") === "1";
     const priceMasterPartFlag = String(req.query?.priceMasterPart || "") === "1";
     const priceMasterChunkFlag = String(req.query?.priceMasterChunk || "") === "1";
     const priceMasterOffset = Math.max(0, Number(req.query?.offset || 0));
@@ -136,14 +137,22 @@ export default async function handler(req, res) {
     // Price Master is maintained from the Beta admin upload. First try the
     // same Neon DB used by Stable, then fall back to the Beta source if the
     // environments use different databases.
-    if (priceMasterFlag || priceMasterChunkFlag || (priceMasterPartFlag && partNo)) {
+    if (priceMasterFlag || priceMasterMetaFlag || priceMasterChunkFlag || (priceMasterPartFlag && partNo)) {
       const priceClient = await pool.connect();
       try {
         await ensurePriceMasterSchema(priceClient);
         const metaResult = await priceClient.query("SELECT version,row_count,updated_at,file_name FROM part_price_master_meta WHERE id=1");
         const meta = metaResult.rows[0] || {version:0,row_count:0,updated_at:null,file_name:null};
 
-        if (priceMasterChunkFlag) {
+        if (priceMasterMetaFlag) {
+          return res.status(200).json({
+            success:true,
+            version:Number(meta.version||0),
+            rowCount:Number(meta.row_count||0),
+            updatedAt:meta.updated_at,
+            fileName:meta.file_name || ""
+          });
+        } else if (priceMasterChunkFlag) {
           const chunkResult = await priceClient.query(
             "SELECT part_no,description,mrp FROM part_price_master ORDER BY part_no ASC LIMIT $1 OFFSET $2",
             [priceMasterLimit, priceMasterOffset]
@@ -205,7 +214,9 @@ export default async function handler(req, res) {
         const sourceUrl = BETA_PRICE_MASTER_API + (
           priceMasterPartFlag && partNo
             ? "?priceMasterPart=1&partNo=" + encodeURIComponent(partNo)
-            : priceMasterChunkFlag
+            : priceMasterMetaFlag
+              ? "?priceMasterMeta=1"
+              : priceMasterChunkFlag
               ? "?priceMasterChunk=1&offset=" + encodeURIComponent(priceMasterOffset) + "&limit=" + encodeURIComponent(priceMasterLimit)
               : "?priceMaster=1" + (priceMasterVersion > 0 ? "&version=" + encodeURIComponent(priceMasterVersion) : "")
         );

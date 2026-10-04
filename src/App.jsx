@@ -4358,6 +4358,151 @@ function ServiceDecisionApp({ user }) {
   const [historyViewMode, setHistoryViewMode] = useState("schedule");
   const [screenshotBusy, setScreenshotBusy] = useState(false);
   const [screenshotStatus, setScreenshotStatus] = useState("");
+  const [priceMaster, setPriceMaster] = useState({version:0,rowCount:0,parts:{},loading:false,syncing:false});
+
+  // Versioned browser cache for the complete Price Master.
+  // This cache is separate from Job Card cache and vehicle/job-card DB data.
+  const PRICE_MASTER_CACHE_DB = "serviceDecisionPriceMasterV2";
+  const PRICE_MASTER_CACHE_VERSION = 1;
+  const PRICE_MASTER_CACHE_STORE = "parts";
+  const PRICE_MASTER_META_STORE = "meta";
+  const PRICE_MASTER_META_KEY = "current";
+  const PRICE_MASTER_SOURCE = "https://service-decision-engine-git-v12-ui-testing-service-decision.vercel.app/api/save-history";
+  const PRICE_MASTER_CHUNK_SIZE = 10000;
+
+  const openPriceMasterCache = () => new Promise((resolve, reject) => {
+    if (!window.indexedDB) return resolve(null);
+    const request = indexedDB.open(PRICE_MASTER_CACHE_DB, PRICE_MASTER_CACHE_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(PRICE_MASTER_CACHE_STORE)) db.createObjectStore(PRICE_MASTER_CACHE_STORE, {keyPath:"partNo"});
+      if (!db.objectStoreNames.contains(PRICE_MASTER_META_STORE)) db.createObjectStore(PRICE_MASTER_META_STORE, {keyPath:"key"});
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+
+  const readPriceMasterCache = async () => {
+    try {
+      const db = await openPriceMasterCache();
+      if (!db) return null;
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction([PRICE_MASTER_CACHE_STORE,PRICE_MASTER_META_STORE],"readonly");
+        const metaRequest = tx.objectStore(PRICE_MASTER_META_STORE).get(PRICE_MASTER_META_KEY);
+        const partsRequest = tx.objectStore(PRICE_MASTER_CACHE_STORE).getAll();
+        tx.oncomplete = () => {
+          const meta = metaRequest.result;
+          const parts = {};
+          (partsRequest.result || []).forEach(item => {
+            const code = normalizePartCode(item?.partNo);
+            if (code) parts[code] = {description:String(item?.description || ""),mrp:Number(item?.mrp || 0)};
+          });
+          resolve(meta?.version ? {version:Number(meta.version||0),rowCount:Number(meta.rowCount||Object.keys(parts).length),updatedAt:meta.updatedAt||null,parts} : null);
+        };
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch { return null; }
+  };
+
+  const clearPriceMasterCache = async () => {
+    try {
+      const db = await openPriceMasterCache();
+      if (!db) return;
+      await new Promise((resolve,reject) => {
+        const tx = db.transaction([PRICE_MASTER_CACHE_STORE,PRICE_MASTER_META_STORE],"readwrite");
+        tx.objectStore(PRICE_MASTER_CACHE_STORE).clear();
+        tx.objectStore(PRICE_MASTER_META_STORE).clear();
+        tx.oncomplete=resolve;
+        tx.onerror=()=>reject(tx.error);
+      });
+    } catch {}
+  };
+
+  const writePriceMasterChunk = async rows => {
+    const db = await openPriceMasterCache();
+    if (!db) return;
+    await new Promise((resolve,reject) => {
+      const tx=db.transaction(PRICE_MASTER_CACHE_STORE,"readwrite");
+      const store=tx.objectStore(PRICE_MASTER_CACHE_STORE);
+      (rows||[]).forEach(item=>{
+        const code=normalizePartCode(item?.partNo);
+        if(code) store.put({partNo:code,description:String(item?.description||""),mrp:Number(item?.mrp||0)});
+      });
+      tx.oncomplete=resolve;
+      tx.onerror=()=>reject(tx.error);
+    });
+  };
+
+  const writePriceMasterMeta = async meta => {
+    const db=await openPriceMasterCache();
+    if(!db) return;
+    await new Promise((resolve,reject)=>{
+      const tx=db.transaction(PRICE_MASTER_META_STORE,"readwrite");
+      tx.objectStore(PRICE_MASTER_META_STORE).put({key:PRICE_MASTER_META_KEY,version:Number(meta.version||0),rowCount:Number(meta.rowCount||0),updatedAt:meta.updatedAt||null});
+      tx.oncomplete=resolve;
+      tx.onerror=()=>reject(tx.error);
+    });
+  };
+
+  const syncPriceMasterCache = async cached => {
+    try {
+      setPriceMaster(prev=>({...prev,syncing:true}));
+      const metaResponse=await fetch(PRICE_MASTER_SOURCE+"?priceMasterMeta=1&_ts="+Date.now(),{cache:"no-store"});
+      const meta=await metaResponse.json().catch(()=>({}));
+      if(!metaResponse.ok || !meta?.success) throw new Error("Price Master metadata unavailable.");
+
+      const serverVersion=Number(meta.version||0);
+      const cachedVersion=Number(cached?.version||0);
+      const cachedCount=Object.keys(cached?.parts||{}).length;
+      const serverCount=Number(meta.rowCount||0);
+
+      if(serverVersion>0 && cachedVersion===serverVersion && cachedCount>=serverCount){
+        setPriceMaster({...cached,rowCount:serverCount,updatedAt:meta.updatedAt||cached.updatedAt||null,syncing:false});
+        return;
+      }
+
+      await clearPriceMasterCache();
+      const parts={};
+      let offset=0;
+      while(offset<serverCount){
+        const response=await fetch(PRICE_MASTER_SOURCE+"?priceMasterChunk=1&offset="+encodeURIComponent(offset)+"&limit="+PRICE_MASTER_CHUNK_SIZE+"&_ts="+Date.now(),{cache:"no-store"});
+        const data=await response.json().catch(()=>({}));
+        if(!response.ok || !data?.success) throw new Error("Price Master chunk download failed.");
+        const rows=Array.isArray(data.parts)?data.parts:[];
+        if(!rows.length) break;
+        await writePriceMasterChunk(rows);
+        rows.forEach(item=>{
+          const code=normalizePartCode(item?.partNo);
+          if(code) parts[code]={description:String(item?.description||""),mrp:Number(item?.mrp||0)};
+        });
+        offset+=rows.length;
+        if(!data.hasMore) break;
+      }
+
+      const next={version:serverVersion,rowCount:serverCount,updatedAt:meta.updatedAt||null,parts};
+      await writePriceMasterMeta(next);
+      setPriceMaster({...next,syncing:false});
+    } catch(error) {
+      console.warn("Price Master cache sync:",error);
+      setPriceMaster(prev=>({...prev,syncing:false}));
+    }
+  };
+
+  useEffect(()=>{
+    let cancelled=false;
+    const start=async()=>{
+      const cached=await readPriceMasterCache();
+      if(cancelled) return;
+      if(cached?.version && Object.keys(cached.parts||{}).length){
+        setPriceMaster({...cached,loading:false});
+      } else {
+        setPriceMaster(prev=>({...prev,loading:false}));
+      }
+      if(!cancelled) await syncPriceMasterCache(cached);
+    };
+    void start();
+    return()=>{cancelled=true;};
+  },[]);
   const defaultSingleColumns = ["date","jobCard","reading","plant","parts"];
   const defaultBulkColumns = ["customerName","vin","reg","saleDate","model","currentReading","services"];
   const defaultSingleLabels = { date:"Date", jobCard:"Job Card", reading:"Reading", plant:"Plant", parts:"Part No. / Service / Qty" };
@@ -5544,53 +5689,39 @@ function ServiceDecisionApp({ user }) {
   }
 
   async function hydrateEstimatePriceMaster(items = []) {
-    const parts = items.filter(item => item?.type === "part" && normalizePartCode(item?.partNo));
-    const uniqueCodes = [...new Set(parts.map(item => normalizePartCode(item.partNo)))];
-    if (!uniqueCodes.length) return items;
+    const parts=items.filter(item=>item?.type==="part" && normalizePartCode(item?.partNo));
+    const uniqueCodes=[...new Set(parts.map(item=>normalizePartCode(item.partNo)))];
+    if(!uniqueCodes.length) return items;
 
-    const lookupOne = async code => {
-      const urls = [
-        "/api/save-history?priceMasterPart=1&partNo=" + encodeURIComponent(code) + "&_ts=" + Date.now(),
-        "https://service-decision-engine-git-v12-ui-testing-service-decision.vercel.app/api/save-history?priceMasterPart=1&partNo=" + encodeURIComponent(code) + "&_ts=" + Date.now()
-      ];
-
-      for (const url of urls) {
-        try {
-          const response = await fetch(url, { cache: "no-store" });
-          const data = await response.json().catch(() => ({}));
-          const master = data?.part;
-          const mrp = Number(master?.mrp ?? master?.rateInclGst ?? 0);
-          if (master && mrp > 0) {
-            return {
-              partNo: master.partNo || code,
-              description: master.description || "",
-              mrp
-            };
-          }
-        } catch {}
+    const lookupOne=async code=>{
+      const cached=priceMaster?.parts?.[code];
+      if(cached && Number(cached.mrp||0)>0){
+        return {partNo:code,description:String(cached.description||""),mrp:Number(cached.mrp)};
       }
 
+      const urls=[
+        "/api/save-history?priceMasterPart=1&partNo="+encodeURIComponent(code)+"&_ts="+Date.now(),
+        PRICE_MASTER_SOURCE+"?priceMasterPart=1&partNo="+encodeURIComponent(code)+"&_ts="+Date.now()
+      ];
+      for(const url of urls){
+        try{
+          const response=await fetch(url,{cache:"no-store"});
+          const data=await response.json().catch(()=>({}));
+          const master=data?.part;
+          const mrp=Number(master?.mrp??master?.rateInclGst??0);
+          if(master && mrp>0) return {partNo:master.partNo||code,description:master.description||"",mrp};
+        }catch{}
+      }
       return null;
     };
 
-    const lookupResults = await Promise.all(
-      uniqueCodes.map(async code => [code, await lookupOne(code)])
-    );
-
-    const masterMap = new Map(lookupResults);
-    return items.map(item => {
-      if (item?.type !== "part") return item;
-      const master = masterMap.get(normalizePartCode(item.partNo));
-      if (!master) return item;
-
-      return {
-        ...item,
-        partNo: master.partNo || item.partNo,
-        description: master.description || item.description,
-        baseRate: Number((master.mrp / 1.18).toFixed(2)),
-        rate: Number(master.mrp.toFixed(2)),
-        source: "Price List Master (MRP)"
-      };
+    const lookupResults=await Promise.all(uniqueCodes.map(async code=>[code,await lookupOne(code)]));
+    const masterMap=new Map(lookupResults);
+    return items.map(item=>{
+      if(item?.type!=="part") return item;
+      const master=masterMap.get(normalizePartCode(item.partNo));
+      if(!master) return item;
+      return {...item,partNo:master.partNo||item.partNo,description:master.description||item.description,baseRate:Number((master.mrp/1.18).toFixed(2)),rate:Number(master.mrp.toFixed(2)),source:"Price List Master (MRP)"};
     });
   }
 

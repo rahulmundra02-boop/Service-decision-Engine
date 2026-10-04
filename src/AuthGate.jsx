@@ -47,7 +47,8 @@ async function api(action, payload = {}, token = "") {
 
 export default function AuthGate({ children }) {
   const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState(null);\n  const sessionValidationRef = useRef(false);
+  const [user, setUser] = useState(null);
+  const sessionValidationRef = useRef(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [showAccountHelp, setShowAccountHelp] = useState(false);

@@ -5611,18 +5611,18 @@ function ServiceDecisionApp({ user }) {
       history.modelRows || [],
       history.globalPartRates || []
     );
-    setEstimateParts(items.filter(item => item.type === "part"));
-    setEstimateLabour(items.filter(item => item.type === "labour"));
+    const pricedItems = await hydrateEstimatePriceMaster(items);
+
+    // Do not leave the old DB rate on screen after Price Master lookup.
+    // Price List MRP is the final source for every matched part number.
+    setEstimateParts(pricedItems.filter(item => item.type === "part"));
+    setEstimateLabour(pricedItems.filter(item => item.type === "labour"));
     setEstimateNotice(
       (history.vehicleRows?.length || history.modelRows?.length)
-        ? "Estimate prepared from vehicle history and same-model DB fallback. You can edit every line or add missing items manually."
+        ? "Estimate prepared from vehicle history and same-model DB fallback. Price List Master MRP applied where the exact part number is available."
         : "No historical estimate items found. Please add the required items manually."
     );
     setEstimateStage("estimate");
-
-    const pricedItems = await hydrateEstimatePriceMaster(items);
-    setEstimateParts(pricedItems.filter(item => item.type === "part"));
-    setEstimateLabour(pricedItems.filter(item => item.type === "labour"));
   }
   function reviseEstimateServices() { setEstimateStage("select"); }
   function updateEstimateItem(type, id, field, value) {

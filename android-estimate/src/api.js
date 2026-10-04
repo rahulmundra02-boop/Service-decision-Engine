@@ -294,29 +294,45 @@ export async function getVehicleByRegistration(registration) {
 }
 
 export async function getPartRate(partNo) {
-  const value = String(partNo || '').replace(/\s+/g, '').toUpperCase();
+  const value = normalizePartCode(partNo);
   if (!value) return { success: true, part: null };
 
-  // Check in-memory cache for part rate (0 ms)
-  const cached = partRateMemoryCache.get(value);
-  if (cached && Date.now() - cached.ts < 2 * 60 * 60 * 1000) {
-    return cached.data;
-  }
-
-  // For estimates, Price List Master is the authoritative MRP source.
-  // Read it directly from the Beta Price Master API so historical DB rates
-  // cannot override the uploaded Excel MRP.
+  // Price List Master is authoritative. Never reuse an old historical/DB rate
+  // for a part when the live Price Master has a current MRP.
   let res = null;
+
+  // 1) Ask the Stable production API first. It now proxies the live Beta
+  // Price Master before consulting the older Stable DB.
   try {
-    const masterResponse = await fetch(
-      'https://service-decision-engine-nn4u69gqz-service-decision.vercel.app/api/save-history?priceMasterPart=1&partNo=' +
-        encodeURIComponent(value)
+    const liveMaster = await request(
+      '/api/save-history?priceMasterPart=1&partNo=' + encodeURIComponent(value)
     );
-    const masterText = await masterResponse.text();
-    const masterData = masterText ? JSON.parse(masterText) : {};
-    if (masterResponse.ok && masterData?.part) {
-      const mrp = Number(masterData.part.mrp || 0);
-      if (mrp > 0) {
+    const mrp = Number(liveMaster?.part?.mrp || 0);
+    if (liveMaster?.success && liveMaster?.part && mrp > 0) {
+      res = {
+        success: true,
+        part: {
+          partNo: liveMaster.part.partNo || value,
+          description: liveMaster.part.description || '',
+          mrp,
+          rateInclGst: mrp,
+          rate: Number((mrp / 1.18).toFixed(2))
+        }
+      };
+    }
+  } catch {}
+
+  // 2) Direct Beta Price Master fallback.
+  if (!res) {
+    try {
+      const masterResponse = await fetch(
+        'https://service-decision-engine-nn4u69gqz-service-decision.vercel.app/api/save-history?priceMasterPart=1&partNo=' +
+          encodeURIComponent(value)
+      );
+      const masterText = await masterResponse.text();
+      const masterData = masterText ? JSON.parse(masterText) : {};
+      const mrp = Number(masterData?.part?.mrp || 0);
+      if (masterResponse.ok && masterData?.part && mrp > 0) {
         res = {
           success: true,
           part: {
@@ -328,14 +344,38 @@ export async function getPartRate(partNo) {
           }
         };
       }
-    }
-  } catch {}
+    } catch {}
+  }
 
-  // Historical DB remains only a fallback if Price Master has no MRP.
+  // 3) Local full Price Master cache as another safe Price Master source.
+  if (!res) {
+    try {
+      const local = await readPriceMaster();
+      const master = local?.parts?.[value];
+      const mrp = Number(master?.mrp || 0);
+      if (master && mrp > 0) {
+        res = {
+          success: true,
+          part: {
+            partNo: master.partNo || value,
+            description: master.description || '',
+            mrp,
+            rateInclGst: mrp,
+            rate: Number((mrp / 1.18).toFixed(2))
+          }
+        };
+      }
+    } catch {}
+  }
+
+  // 4) Historical DB is the last fallback only when Price Master has no MRP.
   if (!res) {
     res = await request('/api/save-history?partNo=' + encodeURIComponent(value));
   }
+
   if (res?.success && res.part) {
+    // Cache the resolved Price Master value for speed, but only after the
+    // authoritative lookup above has had a chance to run.
     partRateMemoryCache.set(value, { data: res, ts: Date.now() });
   }
   return res;

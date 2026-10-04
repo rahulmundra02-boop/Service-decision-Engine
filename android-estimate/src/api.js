@@ -9,6 +9,14 @@ const SECURE_TOKEN_KEY = 'service_estimate_secure_token';
 const BIOMETRIC_CREDS_KEY = 'service_estimate_biometric_credentials';
 const PRICE_MASTER_KEY = '@service_estimate_price_master_v1';
 
+function normalizePartCode(value) {
+  return String(value || '')
+    .toUpperCase()
+    .replace(/\s+/g, '')
+    .replace(/\([A-Z0-9]+\)$/i, '')
+    .trim();
+}
+
 export async function syncPartsMaster() {
   let local = {};
   try {

@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 
 export const API_BASE_URL = 'https://service-decision-engine.vercel.app';
+export const PRICE_MASTER_API_URL = 'https://service-decision-engine-git-v12-ui-testing-service-decision.vercel.app';
 
 const TOKEN_KEY = 'service_estimate_auth_token';
 const USER_KEY = 'service_estimate_user';
@@ -251,6 +252,28 @@ export async function getPartRate(partNo) {
   if (cached && Date.now() - cached.ts < 2 * 60 * 60 * 1000) {
     return cached.data;
   }
+
+  try {
+    const masterResponse = await fetch(
+      PRICE_MASTER_API_URL + '/api/save-history?priceMasterPart=1&partNo=' + encodeURIComponent(value)
+    );
+    const masterData = await masterResponse.json().catch(() => ({}));
+    if (masterData?.success && masterData?.part && Number(masterData.part.mrp || 0) > 0) {
+      const mrp = Number(masterData.part.mrp);
+      const masterResult = {
+        success: true,
+        part: {
+          partNo: masterData.part.partNo || value,
+          description: masterData.part.description || '',
+          mrp,
+          rate: Number((mrp / 1.18).toFixed(2)),
+          rateInclGst: Number(mrp.toFixed(2))
+        }
+      };
+      partRateMemoryCache.set(value, { data: masterResult, ts: Date.now() });
+      return masterResult;
+    }
+  } catch {}
 
   const res = await request('/api/save-history?partNo=' + encodeURIComponent(value));
   if (res?.success && res.part) {

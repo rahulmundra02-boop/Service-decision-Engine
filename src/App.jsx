@@ -2467,7 +2467,9 @@ function buildCustomerGroups(results, dealerName = "") {
     if (!map.has(key)) map.set(key, { id:key, name, customerKeys:[key], vehicles:[], dealerName:cleanDealerName });
     map.get(key).vehicles.push(item);
   }
-  return Array.from(map.values());
+  return Array.from(map.values()).sort((a, b) =>
+    String(a?.name || "").trim().localeCompare(String(b?.name || "").trim(), undefined, { sensitivity: "base" })
+  );
 }
 
 function mergeCustomerGroups(groups, selectedIds, mergedName) {

@@ -1328,7 +1328,7 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
     );
   }, [data]);
 
-  const toggleAggregate = (key) => {
+  const toggleAggregate = async (key) => {
     const nextSelected = selected.includes(key)
       ? selected.filter((x) => x !== key)
       : [...selected, key];

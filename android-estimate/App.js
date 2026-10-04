@@ -45,7 +45,8 @@ import {
   getModelList,
   getServiceDataByModel,
   syncServicePartCatalog,
-  syncPriceMaster
+  syncPriceMaster,
+  readPriceMaster
 } from './src/api';
 import {
   AGGREGATES,
@@ -1392,27 +1393,41 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
     );
   }, [data]);
 
-  const toggleAggregate = (key) => {
+  const toggleAggregate = async (key) => {
     const nextSelected = selected.includes(key)
       ? selected.filter((x) => x !== key)
       : [...selected, key];
     setSelected(nextSelected);
 
+    // Always read the already-downloaded local Price Master before building
+    // automatic parts. This avoids using an older data.priceMaster snapshot.
+    let localMaster = data?.priceMaster || {};
+    try {
+      const cached = await readPriceMaster();
+      if (cached?.parts && Object.keys(cached.parts).length) {
+        localMaster = cached.parts;
+      }
+    } catch {}
+
     const builtParts = [];
     const builtLabour = [];
     for (const k of nextSelected) {
-      const items =
-        prebuiltAggregates[k] ||
-        buildServiceItems([k], data.rows || [], data.modelRows || [], data.globalPartRates || [], data.priceMaster || {});
+      const items = buildServiceItems(
+        [k],
+        data.rows || [],
+        data.modelRows || [],
+        data.globalPartRates || [],
+        localMaster
+      );
       if (items?.parts) builtParts.push(...items.parts);
       if (items?.labour) builtLabour.push(...items.labour);
     }
 
-    // Price Master is already cached locally in data.priceMaster.
-    // Apply it synchronously before rendering. No per-part API calls.
+    // Price Master is the final rate source. Automatic parts are rendered
+    // directly with the cached MRP, never with the historical DB rate first.
     const pricedParts = builtParts.map((item) => {
       const code = String(item?.partNo || '').replace(/\s+/g, '').toUpperCase();
-      const master = data?.priceMaster?.[code];
+      const master = localMaster?.[code];
       const mrp = Number(master?.mrp || 0);
       if (!master || mrp <= 0) return item;
       return {
@@ -1456,10 +1471,9 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
     const rawPart = directPartNo || (typeof target === 'object' ? target?.partNo : '') || '';
     const partNo = String(rawPart).replace(/\s+/g, '').toUpperCase();
     if (!itemId || !partNo) return;
-    setRateLoadingId(itemId);
-    try {
-      const master = data?.priceMaster?.[partNo];
-      if (master?.mrp > 0 || master?.description) {
+    // Cache hit must be completely silent: no loading indicator.
+    const master = data?.priceMaster?.[partNo];
+    if (master?.mrp > 0 || master?.description) {
         setParts((prev) =>
           prev.map((x) => {
             if (x.id !== itemId) return x;
@@ -1476,7 +1490,12 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
           })
         );
         return;
-      }
+    }
+
+    // Only a Price Master cache miss needs a network lookup, so the spinner
+    // appears only for the exceptional fallback path.
+    setRateLoadingId(itemId);
+    try {
       const live = await getPartRate(partNo);
       if (live?.part) {
         const rateVal = Number(

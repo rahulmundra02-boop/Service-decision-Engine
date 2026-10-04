@@ -1,5 +1,7 @@
 name: Android Estimate Beta APK
 
+# Beta Android builds come from android-estimate-beta.
+
 on:
   workflow_dispatch:
   push:
@@ -7,7 +9,6 @@ on:
       - android-estimate-beta
     paths:
       - "android-estimate/**"
-      - ".github/workflows/android-estimate-apk.yml"
 
 concurrency:
   group: android-estimate-beta-apk
@@ -18,30 +19,25 @@ permissions:
 
 jobs:
   build-android-apk:
-    name: Build Android Beta APK
+    name: Build Beta Android APK
     runs-on: ubuntu-24.04
-
     defaults:
       run:
         working-directory: android-estimate
-
     steps:
-      - name: Checkout repository
+      - name: Checkout beta branch
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.ref_name }}
-
+          ref: android-estimate-beta
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: 20.19.4
-
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
-
       - name: Read release version
         id: release_version
         run: |
@@ -49,59 +45,63 @@ jobs:
           BUILD=$(node -p "require('./app.json').expo.android.versionCode")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "build=$BUILD" >> "$GITHUB_OUTPUT"
-
       - name: Install dependencies
         run: npm install
-
       - name: Generate Android native project
         run: npx expo prebuild --platform android --no-install
-
       - name: Build release APK with embedded JavaScript
         working-directory: android-estimate/android
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
-
-      - name: Upload Beta APK artifact
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: AL-Service-Estimate-Beta-release-apk
           path: android-estimate/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
-
-      - name: Publish Beta public update files
-        run: |
-          rm -rf ../stable-publish
-          git fetch origin master
-          git worktree add ../stable-publish origin/master
-          mkdir -p ../stable-publish/public/mobile/beta
-          cp android/app/build/outputs/apk/release/app-release.apk ../stable-publish/public/mobile/beta/AL-Service-Estimate-Beta-latest.apk
-          cat > ../stable-publish/public/mobile/beta/latest.json <<EOF
-          {
-            "version": "${{ steps.release_version.outputs.version }}",
-            "build": ${{ steps.release_version.outputs.build }},
-            "downloadUrl": "https://service-decision-engine.vercel.app/mobile/beta/AL-Service-Estimate-Beta-latest.apk"
-          }
-          EOF
-          cd ../stable-publish
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f public/mobile/beta/AL-Service-Estimate-Beta-latest.apk public/mobile/beta/latest.json
-          git commit -m "Publish Beta Android build ${{ steps.release_version.outputs.build }}" || echo "No Beta public mobile update changes"
-          git push origin HEAD:master
-
       - name: Publish Beta APK release
         working-directory: android-estimate
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="android-beta-v${{ steps.release_version.outputs.version }}-build${{ steps.release_version.outputs.build }}"
-          cat > latest-beta.json <<EOF
+          cat > latest.json <<EOF
           {
             "version": "${{ steps.release_version.outputs.version }}",
             "build": ${{ steps.release_version.outputs.build }},
-            "downloadUrl": "https://service-decision-engine.vercel.app/mobile/beta/AL-Service-Estimate-Beta-latest.apk"
+            "downloadUrl": "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/app-release.apk"
           }
           EOF
-          gh release create "$TAG" android/app/build/outputs/apk/release/app-release.apk latest-beta.json             --repo "${GITHUB_REPOSITORY}"             --target "$(git rev-parse HEAD)"             --title "AL Service Estimate Beta v${{ steps.release_version.outputs.version }} (Build ${{ steps.release_version.outputs.build }})"             --notes "Android Service Estimate Beta APK release. Build ${{ steps.release_version.outputs.build }}."             --latest=false
+          if gh release view "$TAG" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "$TAG" android/app/build/outputs/apk/release/app-release.apk latest.json --repo "${GITHUB_REPOSITORY}" --clobber
+          else
+            gh release create "$TAG" android/app/build/outputs/apk/release/app-release.apk latest.json --repo "${GITHUB_REPOSITORY}" --target "${GITHUB_SHA}" --title "AL Service Estimate Beta v${{ steps.release_version.outputs.version }} (Build ${{ steps.release_version.outputs.build }})" --notes "Beta Android Service Estimate APK release. Build ${{ steps.release_version.outputs.build }}." --latest=false
+          fi
+      - name: Publish beta update manifest only to master
+        run: |
+          rm -rf ../master-publish
+          git fetch origin master
+          git worktree add ../master-publish origin/master
+          mkdir -p ../master-publish/public/mobile/beta
+          cat > ../master-publish/public/mobile/beta/latest.json <<EOF
+          {
+            "version": "${{ steps.release_version.outputs.version }}",
+            "build": ${{ steps.release_version.outputs.build }},
+            "downloadUrl": "https://github.com/${GITHUB_REPOSITORY}/releases/download/android-beta-v${{ steps.release_version.outputs.version }}-build${{ steps.release_version.outputs.build }}/app-release.apk"
+          }
+          EOF
+          cat > ../master-publish/public/mobile/latest-beta.json <<EOF
+          {
+            "version": "${{ steps.release_version.outputs.version }}",
+            "build": ${{ steps.release_version.outputs.build }},
+            "downloadUrl": "https://github.com/${GITHUB_REPOSITORY}/releases/download/android-beta-v${{ steps.release_version.outputs.version }}-build${{ steps.release_version.outputs.build }}/app-release.apk"
+          }
+          EOF
+          cd ../master-publish
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/mobile/beta/latest.json public/mobile/latest-beta.json
+          git commit -m "Publish Beta Android update manifest ${{ steps.release_version.outputs.build }}" || echo "Manifest already current"
+          git push origin HEAD:master

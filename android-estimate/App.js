@@ -667,7 +667,12 @@ function LoginScreen({ onLogin }) {
   );
 }
 
-function UpdateScreen({ update, onLater }) {
+function UpdateScreen({ update }) {
+  useEffect(() => {
+    const blockBack = () => true;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', blockBack);
+    return () => subscription.remove();
+  }, []);
   const [busy, setBusy] = useState(false);
 
   const downloadAndInstall = async () => {
@@ -715,8 +720,8 @@ function UpdateScreen({ update, onLater }) {
       <View style={styles.updateWrap}>
         <View style={styles.updateCard}>
           <Text style={styles.updateIcon}>↑</Text>
-          <Text style={styles.updateTitle}>New Update Available</Text>
-          <Text style={styles.updateText}>A newer version of Service Estimate is available.</Text>
+          <Text style={styles.updateTitle}>Update Required</Text>
+          <Text style={styles.updateText}>A new version of Service Estimate is available. Please update the app to continue.</Text>
           <View style={styles.updateVersionBox}>
             <Text style={styles.updateVersionLabel}>Latest version</Text>
             <Text style={styles.updateVersion}>
@@ -725,11 +730,10 @@ function UpdateScreen({ update, onLater }) {
           </View>
           {update.notes ? <Text style={styles.updateNotes}>{update.notes}</Text> : null}
           <Button
-            title={busy ? 'Downloading...' : 'Download & Install'}
+            title={busy ? 'Downloading...' : 'Update Now'}
             onPress={downloadAndInstall}
             disabled={busy}
           />
-          <Button title="Later" secondary onPress={onLater} disabled={busy} />
           <Text style={styles.updateHint}>
             The APK will download automatically. Android may ask you to confirm the installation.
           </Text>
@@ -2914,13 +2918,8 @@ export default function App() {
     );
   }
 
-  if (updateInfo && !updateDismissed) {
-    return (
-      <UpdateScreen
-        update={updateInfo}
-        onLater={() => setUpdateDismissed(true)}
-      />
-    );
+  if (updateInfo) {
+    return <UpdateScreen update={updateInfo} />;
   }
 
   if (!user) {

@@ -7,84 +7,9 @@ const TOKEN_KEY = 'service_estimate_auth_token';
 const USER_KEY = 'service_estimate_user';
 const SECURE_TOKEN_KEY = 'service_estimate_secure_token';
 const BIOMETRIC_CREDS_KEY = 'service_estimate_biometric_credentials';
-const SERVICE_PART_CATALOG_KEY = '@service_estimate_part_catalog_v1';
 const PRICE_MASTER_KEY = '@service_estimate_price_master_v1';
-let servicePartCatalogMemory = null;
 
-async function readServicePartCatalog() {
-  if (servicePartCatalogMemory) return servicePartCatalogMemory;
-  try {
-    const raw = await AsyncStorage.getItem(SERVICE_PART_CATALOG_KEY);
-    const parsed = raw ? JSON.parse(raw) : {};
-    servicePartCatalogMemory = parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    servicePartCatalogMemory = {};
-  }
-  return servicePartCatalogMemory;
-}
-
-function normalizePartCode(value) {
-  return String(value || '').toUpperCase().replace(/\s+/g, '').replace(/\([A-Z0-9]+\)$/i, '').trim();
-}
-
-function hydrateServiceDescriptions(data, catalog) {
-  if (!data || !catalog) return data;
-  const hydrate = (row) => {
-    const code = normalizePartCode(row?.part_code);
-    const cached = code ? catalog[code] : null;
-    if (!cached) return row;
-    return {
-      ...row,
-      part_description: row?.part_description || cached.description || '',
-      standardized_part: row?.standardized_part || cached.description || ''
-    };
-  };
-  return {
-    ...data,
-    rows: Array.isArray(data.rows) ? data.rows.map(hydrate) : [],
-    modelRows: Array.isArray(data.modelRows) ? data.modelRows.map(hydrate) : []
-  };
-}
-
-export async function syncServicePartCatalog(masterCatalog = []) {
-  const local = await readServicePartCatalog();
-  const wanted = (masterCatalog || [])
-    .map((item) => ({
-      partNo: normalizePartCode(item?.partNo),
-      description: String(item?.description || '').trim()
-    }))
-    .filter((item) => item.partNo);
-
-  const missing = wanted.filter((item) => !local[item.partNo]);
-  if (!missing.length) return local;
-
-  let downloaded = [];
-  try {
-    const codes = missing.map((item) => item.partNo).join(',');
-    const data = await request('/api/save-history?serviceCatalog=1&parts=' + encodeURIComponent(codes));
-    downloaded = Array.isArray(data?.parts) ? data.parts : [];
-  } catch {}
-
-  const next = { ...local };
-  for (const item of missing) {
-    next[item.partNo] = { partNo: item.partNo, description: item.description || item.partNo };
-  }
-  for (const item of downloaded) {
-    const code = normalizePartCode(item?.partNo || item?.part_code);
-    if (!code) continue;
-    next[code] = {
-      partNo: code,
-      description: String(item?.description || item?.part_description || next[code]?.description || code)
-    };
-  }
-
-  servicePartCatalogMemory = next;
-  await AsyncStorage.setItem(SERVICE_PART_CATALOG_KEY, JSON.stringify(next));
-  return next;
-}
-
-
-export async function syncPriceMaster() {
+export async function syncPartsMaster() {
   let local = {};
   try {
     const raw = await AsyncStorage.getItem(PRICE_MASTER_KEY);
@@ -118,7 +43,7 @@ export async function syncPriceMaster() {
   }
 }
 
-export async function readPriceMaster() {
+export async function readPartsMaster() {
   try {
     const raw = await AsyncStorage.getItem(PRICE_MASTER_KEY);
     const parsed = raw ? JSON.parse(raw) : {};
@@ -260,20 +185,40 @@ export async function getVehicleByRegistration(registration) {
     return mem.data;
   }
 
-  const catalog = await readServicePartCatalog();
-  const serviceCodes = Object.keys(catalog || {});
+  // The unified Parts Master cache is the only local part catalog.
+  // It contains Part No + Description + MRP and is version controlled.
+  const master = await readPartsMaster();
+  const masterParts = master?.parts || {};
+  const serviceCodes = Object.keys(masterParts);
   const compactQuery = serviceCodes.length
     ? '&mobileEstimate=1&serviceParts=' + encodeURIComponent(serviceCodes.join(','))
     : '';
   const rawData = await request(
     '/api/save-history?registration=' + encodeURIComponent(value) + compactQuery
   );
-  const data = hydrateServiceDescriptions(rawData, catalog);
-  try {
-    const master = await readPriceMaster();
-    data.priceMaster = master?.parts || {};
-    data.priceMasterVersion = Number(master?.version || 0);
-  } catch {}
+  const data = rawData && typeof rawData === 'object' ? { ...rawData } : {};
+  data.rows = Array.isArray(data.rows) ? data.rows.map((row) => {
+    const code = normalizePartCode(row?.part_code);
+    const cached = code ? masterParts[code] : null;
+    if (!cached) return row;
+    return {
+      ...row,
+      part_description: row?.part_description || cached.description || '',
+      standardized_part: row?.standardized_part || cached.description || ''
+    };
+  }) : [];
+  data.modelRows = Array.isArray(data.modelRows) ? data.modelRows.map((row) => {
+    const code = normalizePartCode(row?.part_code);
+    const cached = code ? masterParts[code] : null;
+    if (!cached) return row;
+    return {
+      ...row,
+      part_description: row?.part_description || cached.description || '',
+      standardized_part: row?.standardized_part || cached.description || ''
+    };
+  }) : [];
+  data.priceMaster = masterParts;
+  data.priceMasterVersion = Number(master?.version || 0);
 
   if (data?.vehicle) {
     vehicleMemoryCache.set(value, { data, ts: Date.now() });
@@ -300,7 +245,7 @@ export async function getPartRate(partNo) {
   // Price Master is the primary rate source. Read the complete local cache
   // first so normal part lookups never wait for the network.
   try {
-    const local = await readPriceMaster();
+    const local = await readPartsMaster();
     const master = local?.parts?.[value];
     const mrp = Number(master?.mrp || 0);
     if (master && mrp > 0) {
@@ -514,3 +459,8 @@ export async function getServiceDataByModel(model, registration = '', customerNa
     };
   }
 }
+
+
+// Compatibility aliases. The app now uses one unified, versioned Parts Master cache.
+export const syncPriceMaster = syncPartsMaster;
+export const readPriceMaster = readPartsMaster;

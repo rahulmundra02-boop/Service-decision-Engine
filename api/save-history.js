@@ -96,7 +96,7 @@ export default async function handler(req, res) {
     const priceMasterOffset = Math.max(0, Number(req.query?.offset || 0));
     const priceMasterLimit = Math.min(10000, Math.max(1000, Number(req.query?.limit || 10000)));
     const priceMasterVersion = Number(req.query?.version || 0);
-    const BETA_PRICE_MASTER_API = "https://service-decision-engine-git-v12-ui-testing-service-decision.vercel.app/api/save-history";
+    const BETA_PRICE_MASTER_API = "https://service-decision-engine-nn4u69gqz-service-decision.vercel.app/api/save-history";
 
     // Price Master is maintained from the Beta admin upload. Stable reads only
     // the Price Master source, never Beta vehicle/job-card history.

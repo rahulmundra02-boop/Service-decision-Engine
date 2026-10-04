@@ -98,12 +98,23 @@ export default async function handler(req, res) {
     const priceMasterVersion = Number(req.query?.version || 0);
     const BETA_PRICE_MASTER_API = "https://service-decision-engine-nn4u69gqz-service-decision.vercel.app/api/save-history";
 
-    // Price Master is maintained from the Beta admin upload. Stable must use
-    // the same live Price Master values for estimates. Prefer the local
-    // Price Master table when it is available (some deployments share the
-    // same Neon database), then fall back to the Beta source.
+    // Price Master is maintained from the Beta admin upload.
+    // For direct part lookups, the Beta Price Master is the source of truth.
+    // Do NOT let an older Stable Neon row override the current uploaded MRP.
     if (priceMasterFlag || priceMasterMetaFlag || priceMasterChunkFlag || (priceMasterPartFlag && partNo)) {
       if (priceMasterPartFlag && partNo) {
+        try {
+          const sourceUrl = BETA_PRICE_MASTER_API + "?priceMasterPart=1&partNo=" + encodeURIComponent(partNo);
+          const sourceResponse = await fetch(sourceUrl);
+          const sourceData = await sourceResponse.json().catch(() => ({}));
+          if (sourceResponse.ok && sourceData?.part?.mrp && Number(sourceData.part.mrp) > 0) {
+            return res.status(200).json(sourceData);
+          }
+        } catch (error) {
+          console.warn("Beta Price Master direct lookup unavailable:", error?.message || error);
+        }
+
+        // Only if the live Beta master is unavailable, use the local DB as fallback.
         let localClient = null;
         try {
           localClient = await pool.connect();
@@ -115,7 +126,7 @@ export default async function handler(req, res) {
           if (localRow && localRow.mrp !== null && Number(localRow.mrp) > 0) {
             return res.status(200).json({
               success: true,
-              source: "Stable Price Master",
+              source: "Stable Price Master Fallback",
               part: {
                 partNo: localRow.part_no,
                 description: localRow.description || "",
@@ -128,17 +139,16 @@ export default async function handler(req, res) {
         } finally {
           if (localClient) localClient.release();
         }
+        return res.status(404).json({success:false,error:"Part not found in Price Master."});
       }
 
       try {
         const sourceUrl = BETA_PRICE_MASTER_API + (
-          priceMasterPartFlag && partNo
-            ? "?priceMasterPart=1&partNo=" + encodeURIComponent(partNo)
-            : priceMasterMetaFlag
-              ? "?priceMasterMeta=1"
-              : priceMasterChunkFlag
-                ? "?priceMasterChunk=1&offset=" + encodeURIComponent(priceMasterOffset) + "&limit=" + encodeURIComponent(priceMasterLimit)
-                : "?priceMaster=1" + (priceMasterVersion > 0 ? "&version=" + encodeURIComponent(priceMasterVersion) : "")
+          priceMasterMetaFlag
+            ? "?priceMasterMeta=1"
+            : priceMasterChunkFlag
+              ? "?priceMasterChunk=1&offset=" + encodeURIComponent(priceMasterOffset) + "&limit=" + encodeURIComponent(priceMasterLimit)
+              : "?priceMaster=1" + (priceMasterVersion > 0 ? "&version=" + encodeURIComponent(priceMasterVersion) : "")
         );
         const sourceResponse = await fetch(sourceUrl);
         const sourceData = await sourceResponse.json().catch(() => ({}));

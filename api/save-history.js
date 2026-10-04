@@ -134,82 +134,10 @@ export default async function handler(req, res) {
     const priceMasterVersion = Number(req.query?.version || 0);
     const BETA_PRICE_MASTER_API = "https://service-decision-engine-git-v12-ui-testing-service-decision.vercel.app/api/save-history";
 
-    // Price Master is maintained from the Beta admin upload. First try the
-    // same Neon DB used by Stable, then fall back to the Beta source if the
-    // environments use different databases.
+    // Price Master is maintained ONLY by the Beta admin upload.
+    // Stable must always read that same source. Do not prefer the Stable
+    // database here because it can contain an older Price Master snapshot.
     if (priceMasterFlag || priceMasterMetaFlag || priceMasterChunkFlag || (priceMasterPartFlag && partNo)) {
-      const priceClient = await pool.connect();
-      try {
-        await ensurePriceMasterSchema(priceClient);
-        const metaResult = await priceClient.query("SELECT version,row_count,updated_at,file_name FROM part_price_master_meta WHERE id=1");
-        const meta = metaResult.rows[0] || {version:0,row_count:0,updated_at:null,file_name:null};
-
-        if (priceMasterMetaFlag) {
-          return res.status(200).json({
-            success:true,
-            version:Number(meta.version||0),
-            rowCount:Number(meta.row_count||0),
-            updatedAt:meta.updated_at,
-            fileName:meta.file_name || ""
-          });
-        } else if (priceMasterChunkFlag) {
-          const chunkResult = await priceClient.query(
-            "SELECT part_no,description,mrp FROM part_price_master ORDER BY part_no ASC LIMIT $1 OFFSET $2",
-            [priceMasterLimit, priceMasterOffset]
-          );
-          const localRowCount = Number(meta.row_count || 0);
-          if (chunkResult.rows.length || localRowCount > 0) {
-            return res.status(200).json({
-              success:true,
-              version:Number(meta.version||0),
-              rowCount:localRowCount,
-              offset:priceMasterOffset,
-              limit:priceMasterLimit,
-              hasMore:priceMasterOffset + chunkResult.rows.length < localRowCount,
-              parts:chunkResult.rows.map(row=>({
-                partNo:row.part_no,
-                description:row.description||"",
-                mrp:row.mrp===null?null:Number(row.mrp)
-              }))
-            });
-          }
-        } else if (priceMasterPartFlag && partNo) {
-          const partResult = await priceClient.query(
-            "SELECT part_no,description,mrp FROM part_price_master WHERE part_no=$1 LIMIT 1",
-            [normalizePricePart(partNo)]
-          );
-          const row = partResult.rows[0] || null;
-          if (row && Number(row.mrp || 0) > 0) {
-            const mrp = Number(row.mrp);
-            return res.status(200).json({
-              success:true,
-              version:Number(meta.version||0),
-              part:{partNo:row.part_no,description:row.description||"",mrp}
-            });
-          }
-        } else {
-          if (priceMasterVersion > 0 && priceMasterVersion === Number(meta.version || 0)) {
-            return res.status(200).json({success:true,version:Number(meta.version||0),rowCount:Number(meta.row_count||0),unchanged:true});
-          }
-          const rows = await priceClient.query("SELECT part_no,description,mrp FROM part_price_master ORDER BY part_no ASC");
-          if (rows.rows.length) {
-            return res.status(200).json({
-              success:true,
-              version:Number(meta.version||0),
-              rowCount:Number(meta.row_count||0),
-              updatedAt:meta.updated_at,
-              fileName:meta.file_name || "",
-              unchanged:false,
-              parts:rows.rows.map(row=>({partNo:row.part_no,description:row.description||"",mrp:row.mrp===null?null:Number(row.mrp)}))
-            });
-          }
-        }
-      } catch (error) {
-        console.warn("Stable local Price Master unavailable, using Beta source:", error?.message || error);
-      } finally {
-        priceClient.release();
-      }
-
       try {
         const sourceUrl = BETA_PRICE_MASTER_API + (
           priceMasterPartFlag && partNo
@@ -217,14 +145,14 @@ export default async function handler(req, res) {
             : priceMasterMetaFlag
               ? "?priceMasterMeta=1"
               : priceMasterChunkFlag
-              ? "?priceMasterChunk=1&offset=" + encodeURIComponent(priceMasterOffset) + "&limit=" + encodeURIComponent(priceMasterLimit)
-              : "?priceMaster=1" + (priceMasterVersion > 0 ? "&version=" + encodeURIComponent(priceMasterVersion) : "")
+                ? "?priceMasterChunk=1&offset=" + encodeURIComponent(priceMasterOffset) + "&limit=" + encodeURIComponent(priceMasterLimit)
+                : "?priceMaster=1" + (priceMasterVersion > 0 ? "&version=" + encodeURIComponent(priceMasterVersion) : "")
         );
         const sourceResponse = await fetch(sourceUrl);
         const sourceData = await sourceResponse.json().catch(() => ({}));
         return res.status(sourceResponse.ok ? 200 : sourceResponse.status).json(sourceData);
       } catch (error) {
-        console.error("Price Master source proxy failed:", error);
+        console.error("Stable Price Master source proxy failed:", error);
         return res.status(502).json({success:false,error:"Price Master source unavailable."});
       }
     }

@@ -5632,10 +5632,13 @@ function ServiceDecisionApp({ user }) {
         sale:vehicle.sale ? new Date(vehicle.sale) : null,
       });
       setEstimateSelectedServices(Array.isArray(saved.selected_services) ? saved.selected_services : []);
-      setEstimateParts(Array.isArray(saved.parts) ? saved.parts : []);
-      setEstimateLabour(Array.isArray(saved.labour) ? saved.labour : []);
+      const savedParts = Array.isArray(saved.parts) ? saved.parts : [];
+      const savedLabour = Array.isArray(saved.labour) ? saved.labour : [];
+      const refreshedSavedParts = await hydrateEstimatePriceMaster(savedParts);
+      setEstimateParts(refreshedSavedParts);
+      setEstimateLabour(savedLabour);
       setEstimateHistory({vehicleRows:[],modelRows:[],globalPartRates:[]});
-      setEstimateNotice("Saved estimate loaded. You can edit it and save again; the estimate number will remain unchanged.");
+      setEstimateNotice("Saved estimate loaded. Current Price List Master MRP has been applied where the exact part number is available.");
       setEstimateStage("estimate");
     } catch (error) {
       setEstimateOpen(false);setMode("home");
@@ -5770,7 +5773,13 @@ function ServiceDecisionApp({ user }) {
     if (!code) return;
     setManualPartLookupBusy(prev => ({...prev,[id]:true}));
     try {
-      const response = await fetch("/api/save-history?partNo=" + encodeURIComponent(code));
+      const priced = await hydrateEstimatePriceMaster([{id,type:"part",partNo:code,description:"",qty:1,rate:0,baseRate:0}]);
+      const master = priced?.[0];
+      if (master?.source === "Price List Master (MRP)") {
+        setEstimateParts(prev => prev.map(item => item.id === id ? {...item,...master,source:"Price List Master (MRP)"} : item));
+        return;
+      }
+      const response = await fetch("/api/save-history?partNo=" + encodeURIComponent(code), {cache:"no-store"});
       const data = await response.json().catch(() => ({}));
       if (data.part) setEstimateParts(prev => prev.map(item => item.id === id ? {...item,partNo:data.part.partNo||code,description:data.part.description||item.description,rate:Number(data.part.rateInclGst||0),baseRate:Number(data.part.rate||0),source:"Historical DB - exact Part No."} : item));
     } catch (err) { console.warn("Manual estimate part lookup:",err); }

@@ -2705,11 +2705,11 @@ export default function App() {
 
         const currentBuild = Number(Application.nativeBuildVersion || 0);
         const isBeta = Application.applicationId === 'com.rahulmundra.serviceestimate.beta';
-        const updateManifestUrl = isBeta
-          ? 'https://service-decision-engine.vercel.app/mobile/beta/latest.json?t=' + Date.now()
+        const updateSourceUrl = isBeta
+          ? 'https://api.github.com/repos/rahulmundra02-boop/Service-decision-Engine/releases/latest?t=' + Date.now()
           : 'https://service-decision-engine.vercel.app/mobile/latest.json?t=' + Date.now();
 
-        const response = await fetch(updateManifestUrl, {
+        const response = await fetch(updateSourceUrl, {
           headers: {
             Accept: 'application/json',
             'Cache-Control': 'no-cache'
@@ -2719,14 +2719,31 @@ export default function App() {
         if (!response.ok) return;
 
         const release = await response.json();
-        const latestBuild = Number(release?.build || 0);
 
-        if (!cancelled && latestBuild > currentBuild && release?.downloadUrl) {
+        // Beta APKs are published as GitHub Releases. Do not depend on the
+        // Vercel manifest or a Vercel-hosted APK for Beta auto-updates.
+        const betaBuildMatch = String(release?.tag_name || '').match(/build(\\d+)/i);
+        const latestBuild = isBeta
+          ? Number(betaBuildMatch?.[1] || 0)
+          : Number(release?.build || 0);
+        const betaApk = isBeta
+          ? (Array.isArray(release?.assets)
+              ? release.assets.find((asset) => String(asset?.name || '') === 'app-release.apk')
+              : null)
+          : null;
+        const downloadUrl = isBeta
+          ? String(betaApk?.browser_download_url || '')
+          : String(release?.downloadUrl || '');
+        const latestVersion = isBeta
+          ? String(String(release?.tag_name || '').match(/v([0-9.]+)/i)?.[1] || Application.nativeApplicationVersion || 'New')
+          : String(release?.version || 'New');
+
+        if (!cancelled && latestBuild > currentBuild && downloadUrl) {
           setUpdateDismissed(false);
           setUpdateInfo({
-            version: String(release?.version || 'New'),
+            version: latestVersion,
             build: latestBuild,
-            downloadUrl: String(release.downloadUrl),
+            downloadUrl,
             notes: isBeta
               ? 'A new Beta Android update is available. Download and install the latest Beta update.'
               : 'A new Android update is available. Download and install the latest update.'

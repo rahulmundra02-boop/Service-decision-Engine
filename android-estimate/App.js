@@ -1033,9 +1033,6 @@ function VehicleScreen({
                 : 'Search vehicle registration or choose from recent searches'}
             </Text>
           </View>
-          <Pressable onPress={onBack}>
-            <Text style={styles.back}>Home</Text>
-          </Pressable>
         </View>
 
         <View style={styles.vehicleSearchCard}>
@@ -2062,7 +2059,7 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
   );
 }
 
-function SavedEstimatesScreen({ records, onOpen, onNew, onBack }) {
+function SavedEstimatesScreen({ records, onOpen, onNew, onBack, activeTab, onHome, onEstimates, onVehicles, onMore }) {
   const [query, setQuery] = useState('');
   const filtered = useMemo(() => {
     const q = String(query || '').trim().toLowerCase();
@@ -2079,16 +2076,14 @@ function SavedEstimatesScreen({ records, onOpen, onNew, onBack }) {
   }, [records, query]);
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <View style={{ flex: 1 }}>
+      <SafeAreaView style={[styles.safe, { flex: 1 }]}>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.container}>
         <View style={styles.rowBetween}>
           <View>
             <Text style={styles.heading}>Saved Estimates</Text>
             <Text style={styles.muted}>Stored securely on this mobile device</Text>
           </View>
-          <Pressable onPress={onBack}>
-            <Text style={styles.back}>Home</Text>
-          </Pressable>
         </View>
         <TextInput
           value={query}
@@ -2123,6 +2118,14 @@ function SavedEstimatesScreen({ records, onOpen, onNew, onBack }) {
         </View>
       </ScrollView>
     </SafeAreaView>
+      <BottomNavigation
+        activeTab={activeTab}
+        onHome={onHome}
+        onEstimates={onEstimates}
+        onVehicles={onVehicles}
+        onMore={onMore}
+      />
+    </View>
   );
 }
 
@@ -2540,18 +2543,16 @@ function SignatureScreen({ signature, letterhead, onSave, onLetterheadSave, onBa
   );
 }
 
-function SettingsScreen({ user, onLogout, onBack }) {
+function SettingsScreen({ user, onLogout, onBack, activeTab, onHome, onEstimates, onVehicles, onMore }) {
   return (
-    <SafeAreaView style={styles.safe}>
+    <View style={{ flex: 1 }}>
+      <SafeAreaView style={[styles.safe, { flex: 1 }]}>
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.rowBetween}>
           <View>
             <Text style={styles.heading}>App Settings</Text>
             <Text style={styles.muted}>Service Estimate Configuration</Text>
           </View>
-          <Pressable onPress={onBack}>
-            <Text style={styles.back}>Home</Text>
-          </Pressable>
         </View>
 
         <View style={styles.card}>
@@ -2585,6 +2586,37 @@ function SettingsScreen({ user, onLogout, onBack }) {
         <Button title="Logout" secondary onPress={onLogout} style={{ marginTop: 8 }} />
       </ScrollView>
     </SafeAreaView>
+      <BottomNavigation
+        activeTab={activeTab}
+        onHome={onHome}
+        onEstimates={onEstimates}
+        onVehicles={onVehicles}
+        onMore={onMore}
+      />
+    </View>
+  );
+}
+
+function BottomNavigation({ activeTab, onHome, onEstimates, onVehicles, onMore }) {
+  return (
+    <View style={styles.bottomNavWrap}>
+      <TouchableOpacity style={styles.navTabItem} onPress={onHome}>
+        <Text style={[styles.navTabIcon, activeTab === 'home' && styles.navTabIconActive]}>🏠</Text>
+        <Text style={[styles.navTabLabel, activeTab === 'home' && styles.navTabLabelActive]}>Home</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.navTabItem} onPress={onEstimates}>
+        <Text style={[styles.navTabIcon, activeTab === 'estimates' && styles.navTabIconActive]}>📄</Text>
+        <Text style={[styles.navTabLabel, activeTab === 'estimates' && styles.navTabLabelActive]}>Estimates</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.navTabItem} onPress={onVehicles}>
+        <Text style={[styles.navTabIcon, activeTab === 'vehicles' && styles.navTabIconActive]}>🚛</Text>
+        <Text style={[styles.navTabLabel, activeTab === 'vehicles' && styles.navTabLabelActive]}>Vehicles</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.navTabItem} onPress={onMore}>
+        <Text style={[styles.navTabIcon, activeTab === 'more' && styles.navTabIconActive]}>•••</Text>
+        <Text style={[styles.navTabLabel, activeTab === 'more' && styles.navTabLabelActive]}>More</Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -2917,6 +2949,11 @@ export default function App() {
           setSettingsScreen(false);
         }}
         onBack={() => setSettingsScreen(false)}
+        activeTab={activeTab}
+        onHome={() => { setSettingsScreen(false); setActiveTab('home'); setMode(null); }}
+        onEstimates={() => { setSettingsScreen(false); loadSavedEstimates(); setActiveTab('estimates'); setSavedScreen(true); }}
+        onVehicles={() => { setSettingsScreen(false); setActiveTab('vehicles'); setMode('service'); }}
+        onMore={() => setActiveTab('more')}
       />
     );
   }
@@ -2934,6 +2971,11 @@ export default function App() {
           setSavedScreen(false);
         }}
         onBack={() => setSavedScreen(false)}
+        activeTab={activeTab}
+        onHome={() => { setSavedScreen(false); setActiveTab('home'); setMode(null); }}
+        onEstimates={() => { loadSavedEstimates(); setActiveTab('estimates'); }}
+        onVehicles={() => { setSavedScreen(false); setActiveTab('vehicles'); setMode('service'); }}
+        onMore={() => { setSavedScreen(false); setActiveTab('more'); setSettingsScreen(true); }}
       />
     );
   }
@@ -3025,7 +3067,7 @@ export default function App() {
 
           <TouchableOpacity
             style={styles.navTabItem}
-            onPress={() => setSettingsScreen(true)}
+            onPress={() => { setActiveTab('more'); setSettingsScreen(true); }}
           >
             <Text style={[styles.navTabIcon, activeTab === 'more' && styles.navTabIconActive]}>
               •••

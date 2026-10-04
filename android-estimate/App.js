@@ -2749,7 +2749,7 @@ export default function App() {
 
         // Beta APKs are published as GitHub Releases. Do not depend on the
         // Vercel manifest or a Vercel-hosted APK for Beta auto-updates.
-        const betaBuildMatch = String(release?.tag_name || '').match(/build(\\d+)/i);
+        const betaBuildMatch = String(release?.tag_name || '').match(/build(\d+)/i);
         const latestBuild = isBeta
           ? Number(betaBuildMatch?.[1] || 0)
           : Number(release?.build || 0);

@@ -2899,7 +2899,7 @@ const ESTIMATE_REFERENCE_PARTS = {
   gearOil: ["G9999994"],
   axleOil: ["GB699991"],
   steeringOil: ["PSB99994", "PD600391"],
-  clutchOil: ["CFD99991"],
+  clutchOil: ["CFD99991", "CLA99994", "U9999995", "U9999999", "U9999996"],
   defInline: ["XFM00800"],
   coolant: ["C9999993"],
   hubGrease: ["S9999997", "FJ607400", "F1721500", "H5001220"],

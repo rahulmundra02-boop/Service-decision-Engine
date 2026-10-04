@@ -1895,6 +1895,38 @@ function matchesServicePart(value, serviceName) {
   if (serviceName === 'STEERING OIL') return text.includes(serviceName) && !text.includes('FILTER');
   return text === serviceName || text.includes(serviceName);
 }
+const CLUTCH_OIL_PART_CODES = ["CFD99991","CLA99994","U9999995","U9999999","U9999996"];
+
+function clutchOilServiceBase(records, vehicle = null) {
+  const normal = serviceBase(records, ["CLUTCH OIL"], 0.5, false, vehicle);
+  if (normal) return normal;
+
+  const sorted = [...records].sort((a,b) => (b.date || 0) - (a.date || 0));
+  for (const r of sorted) {
+    const code = normalizePartCode(r?.partCode);
+    if (!CLUTCH_OIL_PART_CODES.includes(code) || Number(r?.qty || 0) <= 0) continue;
+
+    const jobCard = String(r?.jobCard || "").trim();
+    const same = jobCard
+      ? records.filter(x => String(x?.jobCard || "").trim() === jobCard)
+      : records.filter(x => formatDate(x?.date) === formatDate(r?.date));
+
+    const qty = same
+      .filter(x => CLUTCH_OIL_PART_CODES.includes(normalizePartCode(x?.partCode)))
+      .reduce((sum,x) => sum + Number(x?.qty || 0), 0);
+
+    if (qty >= 0.5) {
+      return {
+        ...r,
+        standardizedPart: "Clutch Oil",
+        serviceQty: qty,
+        relevantReading: vehicle ? getRelevantReading(r, vehicle) : (r.reading || 0)
+      };
+    }
+  }
+  return null;
+}
+
 function serviceBase(records, names, minQty = 0, requireOilFilter = false, vehicle = null, requiredFilterName = 'OIL FILTER', filterMustMatchJobCard = false) {
   const sorted = [...records].sort((a, b) => (b.date || 0) - (a.date || 0));
   for (const r of sorted) {
@@ -2134,6 +2166,30 @@ function decideAggregate(records, vehicle, running, key, analysisDate, decisionB
     // be paired together.
     const base=serviceBase(records,['STEERING OIL'],1,true,vehicle,'STEERING OIL FILTER',true);
     return useHours ? dueByHours(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),4000,24,analysisDate,sale) : dueNormalWithSale(running.current,base,160000,24,analysisDate,sale,running.mode,vehicle);
+  }
+  if (key === 'clutchOil') {
+    const base = clutchOilServiceBase(records, vehicle);
+    if (useHours) {
+      return dueByHours(
+        running.current,
+        normalizeDecisionBase(base, decisionBasis, vehicle),
+        2000,
+        12,
+        analysisDate,
+        sale,
+        vehicle
+      );
+    }
+    return dueNormalWithSale(
+      running.current,
+      base,
+      80000,
+      18,
+      analysisDate,
+      sale,
+      running.mode,
+      vehicle
+    );
   }
   const cfg=DECISION_RULES[key]; if(!cfg) return false;
   let base=null;

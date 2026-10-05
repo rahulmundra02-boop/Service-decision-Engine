@@ -232,7 +232,7 @@ export default async function handler(req, res) {
           });
         }
 
-        const requestedCodes = [...new Set([...serviceParts, ...serviceLabourCodes])];
+        const requestedCodes = [...new Set(serviceLabourCodes)];
 
         const historyResult = await client.query(
           "WITH filtered AS (" +
@@ -244,11 +244,13 @@ export default async function handler(req, res) {
           "UPPER(REPLACE(TRIM(COALESCE(sh.part_code,'')), ' ', '')) AS normalized_code " +
           "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
           "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +
-          "WHERE v.id=$1 AND EXISTS (" +
+          "WHERE v.id=$1 AND (" +
+          "sh.item_category LIKE 'P002%' OR EXISTS (" +
           "SELECT 1 FROM unnest($2::text[]) AS requested(code) " +
           "WHERE UPPER(REPLACE(TRIM(COALESCE(sh.part_code,'')), ' ', ''))=requested.code " +
           "OR UPPER(REPLACE(TRIM(COALESCE(sh.part_code,'')), ' ', '')) LIKE requested.code || '(%)'" +
-          ")), ranked AS (" +
+          "))" +
+          "), ranked AS (" +
           "SELECT *, ROW_NUMBER() OVER (PARTITION BY normalized_code ORDER BY job_date DESC NULLS LAST, job_card_id DESC, service_history_id DESC) AS rn " +
           "FROM filtered WHERE normalized_code <> ''" +
           ") SELECT vin, registration, customer_name, engine, model, sale_date, job_card_no, job_date, " +
@@ -271,11 +273,13 @@ export default async function handler(req, res) {
             "UPPER(REPLACE(TRIM(COALESCE(sh.part_code,'')), ' ', '')) AS normalized_code " +
             "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
             "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +
-            "WHERE UPPER(TRIM(v.model))=UPPER(TRIM($1)) AND v.vin<>$2 AND EXISTS (" +
+            "WHERE UPPER(TRIM(v.model))=UPPER(TRIM($1)) AND v.vin<>$2 AND (" +
+            "sh.item_category LIKE 'P002%' OR EXISTS (" +
             "SELECT 1 FROM unnest($3::text[]) AS requested(code) " +
             "WHERE UPPER(REPLACE(TRIM(COALESCE(sh.part_code,'')), ' ', ''))=requested.code " +
             "OR UPPER(REPLACE(TRIM(COALESCE(sh.part_code,'')), ' ', '')) LIKE requested.code || '(%)'" +
-            ")), ranked AS (" +
+            "))" +
+            "), ranked AS (" +
             "SELECT *, ROW_NUMBER() OVER (PARTITION BY normalized_code ORDER BY job_date DESC NULLS LAST, job_card_id DESC, service_history_id DESC) AS rn " +
             "FROM filtered WHERE normalized_code <> ''" +
             ") SELECT vin, registration, customer_name, engine, model, sale_date, job_card_no, job_date, " +

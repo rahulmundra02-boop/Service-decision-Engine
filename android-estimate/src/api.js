@@ -7,7 +7,11 @@ const TOKEN_KEY = 'service_estimate_auth_token';
 const USER_KEY = 'service_estimate_user';
 const SECURE_TOKEN_KEY = 'service_estimate_secure_token';
 const BIOMETRIC_CREDS_KEY = 'service_estimate_biometric_credentials';
-const PRICE_MASTER_KEY = '@service_estimate_price_master_v1';
+const PRICE_MASTER_KEY = '@service_estimate_price_master_v2';
+const VEHICLE_CACHE_PREFIX = '@service_estimate_vehicle_cache_v1_';
+const VEHICLE_CACHE_TTL = 30 * 60 * 1000;
+let priceMasterMemoryCache = null;
+let priceMasterSyncPromise = null;
 
 function normalizePartCode(value) {
   return String(value || '')
@@ -18,6 +22,9 @@ function normalizePartCode(value) {
 }
 
 export async function syncPartsMaster() {
+  if (priceMasterSyncPromise) return priceMasterSyncPromise;
+
+  priceMasterSyncPromise = (async () => {
   let local = {};
   try {
     const raw = await AsyncStorage.getItem(PRICE_MASTER_KEY);
@@ -28,8 +35,14 @@ export async function syncPartsMaster() {
   const currentVersion = Number(local.version || 0);
   try {
     const data = await request('/api/save-history?priceMaster=1&version=' + encodeURIComponent(currentVersion));
-    if (data?.unchanged) return local;
-    if (!data?.success) return local;
+    if (data?.unchanged) {
+      priceMasterMemoryCache = local?.parts || {};
+      return local;
+    }
+    if (!data?.success) {
+      priceMasterMemoryCache = local?.parts || {};
+      return local;
+    }
     const parts = {};
     (data.parts || []).forEach((item) => {
       const code = normalizePartCode(item?.partNo);
@@ -45,20 +58,41 @@ export async function syncPartsMaster() {
       parts
     };
     await AsyncStorage.setItem(PRICE_MASTER_KEY, JSON.stringify(next));
+    priceMasterMemoryCache = parts;
     return next;
   } catch {
+    priceMasterMemoryCache = local?.parts || {};
     return local;
+  } finally {
+    priceMasterSyncPromise = null;
   }
+  })();
+
+  return priceMasterSyncPromise;
 }
 
 export async function readPartsMaster() {
+  if (priceMasterMemoryCache) {
+    return { version: 0, parts: priceMasterMemoryCache };
+  }
   try {
     const raw = await AsyncStorage.getItem(PRICE_MASTER_KEY);
     const parsed = raw ? JSON.parse(raw) : {};
-    return parsed && typeof parsed === 'object' ? parsed : {};
+    const result = parsed && typeof parsed === 'object' ? parsed : {};
+    priceMasterMemoryCache = result?.parts || {};
+    return result;
   } catch {
     return {};
   }
+}
+
+export function getCachedPriceMaster() {
+  return priceMasterMemoryCache || {};
+}
+
+export function getCachedPriceMasterPart(partNo) {
+  const code = normalizePartCode(partNo);
+  return code ? priceMasterMemoryCache?.[code] || null : null;
 }
 
 
@@ -187,11 +221,38 @@ export async function getVehicleByRegistration(registration) {
   const value = String(registration || '').replace(/\s+/g, '').toUpperCase();
   if (!value) throw new Error('Vehicle number is required.');
 
-  // Check memory cache first (0 ms)
+  // Check memory cache first (0 ms).
   const mem = vehicleMemoryCache.get(value);
-  if (mem && Date.now() - mem.ts < 10 * 60 * 1000) {
+  if (mem && Date.now() - mem.ts < VEHICLE_CACHE_TTL) {
     return mem.data;
   }
+
+  // Then check the persistent recent-vehicle cache. This is the important
+  // fast path for tapping the last searched vehicle after an app restart.
+  try {
+    const cachedRaw = await AsyncStorage.getItem(VEHICLE_CACHE_PREFIX + value);
+    if (cachedRaw) {
+      const cached = JSON.parse(cachedRaw);
+      if (cached?.data?.vehicle && Date.now() - Number(cached.ts || 0) < VEHICLE_CACHE_TTL) {
+        const currentMaster = await readPartsMaster();
+        const cachedData = {
+          ...cached.data,
+          priceMaster: currentMaster?.parts || cached.data.priceMaster || {},
+          priceMasterVersion: Number(currentMaster?.version || cached.data.priceMasterVersion || 0)
+        };
+        vehicleMemoryCache.set(value, { data: cachedData, ts: Date.now() });
+        if (cachedData.model) {
+          const modelClean = String(cachedData.model).trim().toUpperCase();
+          modelMemoryCache.set(modelClean, {
+            modelRows: Array.isArray(cachedData.modelRows) ? cachedData.modelRows : [],
+            globalPartRates: Array.isArray(cachedData.globalPartRates) ? cachedData.globalPartRates : [],
+            ts: Date.now()
+          });
+        }
+        return cachedData;
+      }
+    }
+  } catch {}
 
   // The unified Parts Master cache is the only local part catalog.
   // It contains Part No + Description + MRP and is version controlled.
@@ -230,6 +291,12 @@ export async function getVehicleByRegistration(registration) {
 
   if (data?.vehicle) {
     vehicleMemoryCache.set(value, { data, ts: Date.now() });
+    // Persist the compact mobile vehicle response so recent-vehicle selection
+    // can render immediately without waiting for the network.
+    AsyncStorage.setItem(
+      VEHICLE_CACHE_PREFIX + value,
+      JSON.stringify({ data, ts: Date.now() })
+    ).catch(() => {});
 
     // Pre-cache only the compact model quantity/rate history for instant aggregate selection.
     if (data.model) {

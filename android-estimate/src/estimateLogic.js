@@ -43,14 +43,14 @@ export const REFERENCE_PARTS = {
   gearOil: ['G9999994'],
   axleOil: ['GB699991'],
   steeringOil: ['PSB99994', 'PD600391'],
-  clutchOil: ['CFD99991', 'U9999995'],
+  clutchOil: ['CFD99991', 'CLA99994', 'U9999995', 'U9999999', 'U9999996'],
   defInline: ['XFM00800'],
   coolant: ['C9999993'],
   hubGrease: ['S9999997', 'F1721500', 'FJ607400', 'H5001220', 'F1771900', 'CLOTH'],
   fuelFilter: ['P5105609'],
   airFilter: ['P5105688', 'P5105689'],
-  defFilter: ['XFM00500', 'PET00001'],
-  apdaFilter: ['PD600968']
+  defFilter: ['MB404069', 'XFM00200', 'XFM00300', 'XFM00500', 'PET00001'],
+  apdaFilter: ['P1800240', 'PD600968', 'PD601037', 'PD601147']
 };
 
 /**
@@ -483,6 +483,62 @@ function historicalItem(
   };
 }
 
+function matchesAggregatePart(key, row) {
+  if (category(row) !== 'part') return false;
+  const name = standardName(row);
+  if (!name) return false;
+
+  switch (key) {
+    case 'engineOil':
+      return name.includes('ENGINE OIL') || name.includes('ENGINE OIL FILTER') ||
+        name.includes('FUEL FILTER & ENGINE OIL FILTER KIT');
+    case 'coolant':
+      return name.includes('COOLANT');
+    case 'gearOil':
+      return name.includes('GEAR OIL');
+    case 'hubGrease':
+      return name.includes('HUB GREASE');
+    case 'axleOil':
+      return name.includes('AXLE OIL');
+    case 'fuelFilter':
+      return name.includes('FUEL FILTER');
+    case 'steeringOil':
+      return name.includes('STEERING OIL');
+    case 'airFilter':
+      return name.includes('AIR FILTER');
+    case 'clutchOil':
+      return name.includes('CLUTCH OIL');
+    case 'defFilter':
+      return name.includes('DEF FILTER') && !name.includes('INLINE') && !name.includes('SUCTION');
+    case 'defInline':
+      return name.includes('DEF INLINE FILTER');
+    case 'apdaFilter':
+      return name.includes('APDA FILTER');
+    default:
+      return false;
+  }
+}
+
+function aggregatePartCodes(key, vehicle, model) {
+  const vehicleMatches = (vehicle || []).filter((row) => matchesAggregatePart(key, row));
+  const modelMatches = (model || []).filter((row) => matchesAggregatePart(key, row));
+  const source = vehicleMatches.length ? vehicleMatches : modelMatches;
+  const codes = [];
+  const seen = new Set();
+
+  for (const row of source) {
+    const code = normalizeCode(row?.part_code);
+    if (code && !seen.has(code)) {
+      seen.add(code);
+      codes.push(code);
+    }
+  }
+
+  // Safety fallback keeps the previous reference list available if DB history
+  // has no standardized row for the selected aggregate.
+  return codes.length ? codes : (REFERENCE_PARTS[key] || []).map(normalizeCode);
+}
+
 function bestAlternativePart(key, codes, vehicle, model, globalRates, priceMaster = {}) {
   const options = [];
   for (const code of codes) {
@@ -522,40 +578,15 @@ export function buildServiceItems(a = [], b = [], c = [], d = [], e = {}) {
   const output = [];
 
   for (const key of selectedKeys) {
+    // Part number selection is DB-driven. The old quantity/rule logic remains
+    // in determineQuantity(), which continues to read vehicle/model DB rows.
+    const dbCodes = aggregatePartCodes(key, vehicle, model);
+
     if (key === 'clutchOil' || key === 'airFilter') {
-      const selectedPart = bestAlternativePart(key, REFERENCE_PARTS[key], vehicle, model, globalRates, priceMaster);
+      const selectedPart = bestAlternativePart(key, dbCodes, vehicle, model, globalRates, priceMaster);
       if (selectedPart) output.push(selectedPart);
-    } else if (key === 'hubGrease') {
-      // 1. Grease part S9999997 (Range 3-7 applies!)
-      const greaseItem = historicalItem(
-        'part',
-        key,
-        vehicle,
-        model,
-        'S9999997',
-        globalRates,
-        null,
-        'HUB GREASE (BLUE)',
-        priceMaster
-      );
-      if (greaseItem) output.push(greaseItem);
-
-      // 2. Gaskets & Non-grease parts (FJ607400, F1721500, F1771900, H5001220, CLOTH)
-      // Range 3-7 DOES NOT apply to these gaskets/hardware per user specification!
-      const nonGreaseParts = [
-        ['F1721500', 'GASKET HUB CAP FRONT FA90'],
-        ['FJ607400', 'GASKET-10TG HUB-12 HOLES'],
-        ['H5001220', 'SPLIT PIN'],
-        ['F1771900', 'WHEEL BEARING GREASE / SEAL'],
-        ['CLOTH', 'CLEANING CLOTH / COTTON WASTE']
-      ];
-
-      for (const [code, desc] of nonGreaseParts) {
-        const item = historicalItem('part', key, vehicle, model, code, globalRates, null, desc, priceMaster);
-        if (item) output.push(item);
-      }
     } else {
-      for (const code of REFERENCE_PARTS[key] || []) {
+      for (const code of dbCodes) {
         const item = historicalItem('part', key, vehicle, model, code, globalRates, null, '', priceMaster);
         if (item) output.push(item);
       }

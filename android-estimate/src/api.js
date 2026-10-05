@@ -364,12 +364,9 @@ export async function getPartRate(partNo) {
     }
   } catch {}
 
-  // Historical DB is the final fallback only when Price Master has no entry.
-  try {
-    return await request('/api/save-history?partNo=' + encodeURIComponent(value));
-  } catch {
-    return { success: false, part: null };
-  }
+  // No historical DB fallback for MRP/part description.
+  // If the part is not in the local/live Price Master, keep it unresolved.
+  return { success: true, part: null };
 }
 export async function saveEstimate(payload) {
   return request('/api/estimates', {

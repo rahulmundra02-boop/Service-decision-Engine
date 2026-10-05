@@ -435,53 +435,50 @@ function historicalItem(
 
   if (!(qty > 0)) return null;
 
-  // Rate lookup: best historical rate from top 10 post-warranty / paid rows
-  const historyRate = bestRate(safeRows, type === 'part');
-  const dbRate = globalRate(code, globalRates);
-  const finalRate = Math.max(historyRate, dbRate);
+  // Part MRP and description are Price Master only.
+  // Historical DB/global rates are intentionally NOT used for part pricing.
+  if (type === 'part') {
+    const master = priceMaster?.[code];
+    const mrp = Number(master?.mrp || 0);
+    if (!master || mrp <= 0) return null;
 
-  // Description lookup: prioritize actual DB part_description, then standardized_part, then ORIGINAL_AL_DESCRIPTIONS
+    return {
+      id: `${type}-${key}-${code}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      type,
+      serviceKey: key,
+      partNo: master.partNo || code,
+      description: String(master.description || '').trim(),
+      qty,
+      rate: Number(mrp.toFixed(2)),
+      baseRate: Number((mrp / 1.18).toFixed(2)),
+      source: 'Price List Master (MRP)'
+    };
+  }
+
+  // Labour continues to use historical DB labour rates.
+  const historyRate = bestRate(safeRows, false);
+  if (!(historyRate > 0)) return null;
   const orderedRows = safeRows.slice().sort((a, b) => rank(b) - rank(a));
   const selectedRow = orderedRows[0] || {};
-
   const description = String(
     selectedRow.part_description ||
       selectedRow.standardized_part ||
       fixedDescription ||
-      ORIGINAL_AL_DESCRIPTIONS[code] ||
-      PART_STANDARDIZATION[code] ||
       code ||
       ''
   ).trim();
 
-  const item = {
+  return {
     id: `${type}-${key}-${code}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     type,
     serviceKey: key,
     partNo: code,
     description,
     qty,
-    rate: Number((type === 'part' ? finalRate * 1.18 : finalRate).toFixed(2)),
-    baseRate: finalRate,
-    source: finalRate
-      ? type === 'part'
-        ? 'Historical DB (18% GST added)'
-        : 'Historical DB - Labour base rate'
-      : 'Manual'
+    rate: Number(historyRate.toFixed(2)),
+    baseRate: historyRate,
+    source: 'Historical DB - Labour base rate'
   };
-  if (type === 'part') {
-    const master = priceMaster?.[code];
-    if (master) {
-      if (master.description) item.description = master.description;
-      const mrp = Number(master.mrp || 0);
-      if (mrp > 0) {
-        item.baseRate = Number((mrp / 1.18).toFixed(2));
-        item.rate = Number(mrp.toFixed(2));
-        item.source = 'Price List Master (MRP)';
-      }
-    }
-  }
-  return item;
 }
 
 function bestAlternativePart(key, codes, vehicle, model, globalRates, priceMaster = {}) {
@@ -638,25 +635,9 @@ export function rateForManualPart(partNo, modelRows = [], globalRates = [], pric
       source: 'Price List Master (MRP)'
     };
   }
-  const historyRate = bestRate(
-    (modelRows || []).filter(
-      (r) => category(r) === 'part' && normalizeCode(r?.part_code) === code
-    ),
-    true
-  );
-  const dbRate = globalRate(code, globalRates);
-  const finalRate = Math.max(historyRate, dbRate);
-  if (!finalRate) return null;
-
-  const descRow = (modelRows || []).find(
-    (r) => normalizeCode(r?.part_code) === code && (r?.part_description || r?.standardized_part)
-  );
-  return {
-    partNo: code,
-    description: descRow?.part_description || descRow?.standardized_part || ORIGINAL_AL_DESCRIPTIONS[code] || code,
-    rate: Number((finalRate * 1.18).toFixed(2)),
-    source: 'Historical Database'
-  };
+  // Manual part pricing is also Price Master only.
+  // Do not fall back to vehicle/model DB rates or DB descriptions.
+  return null;
 }
 
 export function totals(parts = [], labour = []) {

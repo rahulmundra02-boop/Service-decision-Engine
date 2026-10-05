@@ -54,7 +54,6 @@ import {
   buildServiceItems,
   prebuildAllAggregates,
   makeManualItem,
-  rateForManualPart,
   totals
 } from './src/estimateLogic';
 
@@ -669,6 +668,19 @@ function LoginScreen({ onLogin }) {
   );
 }
 
+function LoadingOverlay({ visible, text = 'Processing...' }) {
+  if (!visible) return null;
+  return (
+    <View style={styles.loadingOverlay} pointerEvents="auto">
+      <View style={styles.loadingCard}>
+        <ActivityIndicator size="large" color="#053775" />
+        <Text style={styles.loadingOverlayTitle}>{text}</Text>
+        <Text style={styles.loadingOverlayHint}>Please wait, do not press again.</Text>
+      </View>
+    </View>
+  );
+}
+
 function UpdateScreen({ update }) {
   useEffect(() => {
     const blockBack = () => true;
@@ -754,12 +766,14 @@ function HomeScreen({
   onOpenVehiclesList,
   onLogout,
   onOpenSettings,
-  recentVehicles = []
+  recentVehicles = [],
+  loading = false
 }) {
   const latestVehicle = recentVehicles?.[0] || null;
 
   return (
     <SafeAreaView style={styles.homeSafe}>
+      <LoadingOverlay visible={loading} text="Loading vehicle..." />
       <StatusBar barStyle="light-content" backgroundColor="#053775" />
       <ScrollView
         contentContainerStyle={styles.homeScroll}
@@ -1027,6 +1041,7 @@ function VehicleScreen({
 
   return (
     <SafeAreaView style={styles.safe}>
+      <LoadingOverlay visible={busy} text="Loading vehicle data..." />
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.container}>
         <View style={styles.rowBetween}>
           <View>
@@ -1579,23 +1594,9 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
         );
         return;
       }
-      const local = rateForManualPart(partNo, data.modelRows || [], data.globalPartRates || [], data.priceMaster || {});
-      if (local) {
-        setParts((prev) =>
-          prev.map((x) => {
-            if (x.id !== itemId) return x;
-            const currentQty = Number(x.qty);
-            return {
-              ...x,
-              partNo: local.partNo,
-              description: local.description || local.partNo,
-              rate: Number(local.rate || 0),
-              qty: !currentQty || currentQty <= 0 ? 1 : currentQty,
-              serviceKey: null,
-              source: local.source
-            };
-          })
-        );
+      // No DB fallback. MRP and description come only from Price Master.
+      if (!live?.part) {
+        Alert.alert('Part not found', 'This part is not available in the Price List Master.');
       }
     } catch (err) {
       console.warn('lookupRate error:', err);
@@ -2685,6 +2686,7 @@ function BottomNavigation({ activeTab, onHome, onEstimates, onVehicles, onMore }
 
 export default function App() {
   const [loading, setLoading] = useState(true);
+  const [recentVehicleLoading, setRecentVehicleLoading] = useState(false);
   const [user, setUser] = useState(null);
   const [mode, setMode] = useState(null);
   const [vehicleData, setVehicleData] = useState(null);
@@ -2956,24 +2958,22 @@ export default function App() {
     return () => subscription.remove();
   }, [mode, vehicleData, missingVehicleReg, signatureScreen, savedScreen, settingsScreen]);
 
-  const handleSelectRecentVehicle = (regNum) => {
+  const handleSelectRecentVehicle = async (regNum) => {
     setMode('service');
-
-    // getVehicleByRegistration now uses the 30-minute persistent vehicle cache
-    // before the network. Therefore tapping a recent vehicle is an instant
-    // local load instead of re-querying the server every time.
-    getVehicleByRegistration(regNum)
-      .then((data) => {
-        if (data?.vehicle) {
-          saveRecentVehicle(data.vehicle);
-          setVehicleData(data);
-        } else {
-          setMissingVehicleReg(regNum);
-        }
-      })
-      .catch(() => {
+    setRecentVehicleLoading(true);
+    try {
+      const data = await getVehicleByRegistration(regNum);
+      if (data?.vehicle) {
+        saveRecentVehicle(data.vehicle);
+        setVehicleData(data);
+      } else {
         setMissingVehicleReg(regNum);
-      });
+      }
+    } catch {
+      setMissingVehicleReg(regNum);
+    } finally {
+      setRecentVehicleLoading(false);
+    }
   };
 
   const clearRecentVehicles = async () => {
@@ -3214,6 +3214,7 @@ export default function App() {
         }}
         onOpenSettings={() => setSettingsScreen(true)}
         recentVehicles={recentVehicles}
+        loading={recentVehicleLoading}
       />
 
       {/* Bottom Navigation Tabs */}

@@ -4957,6 +4957,17 @@ function ServiceDecisionApp({ user }) {
       window.setTimeout(cleanup, 500);
     };
     try {
+      // Open the new tab immediately inside the user's click event.
+      // Some browsers block a later window.open even when pop-ups are allowed,
+      // especially when the click handler has other work around it.
+      // Opening a blank tab first avoids that false "popup blocked" error.
+      opened = window.open("about:blank", "_blank");
+      if (!opened) {
+        cleanup();
+        window.alert("Browser ne new tab open karna block kar diya. Please allow pop-ups for this site.");
+        return;
+      }
+
       if ("BroadcastChannel" in window) {
         channel = new BroadcastChannel(channelName);
         channel.onmessage = (event) => {
@@ -4965,12 +4976,20 @@ function ServiceDecisionApp({ user }) {
           window.setTimeout(cleanup, 500);
         };
       }
+
       window.addEventListener("message", handleReady);
+
       const url = window.location.origin + window.location.pathname + "?bulkVehicleDetail=" + encodeURIComponent(token);
-      opened = window.open(url, "_blank");
-      if (!opened) { cleanup(); window.alert("Browser ne new tab open karna block kar diya. Please allow pop-ups for this site."); return; }
+      opened.location.href = url;
+
+      // Fallback for browsers where BroadcastChannel is unavailable.
       if (!channel) window.setTimeout(() => sendPayload(opened), 100);
-    } catch (error) { cleanup(); console.error("Bulk vehicle detail open failed:", error); window.alert("Vehicle detail open nahi ho payi."); }
+    } catch (error) {
+      cleanup();
+      try { if (opened && !opened.closed) opened.close(); } catch {}
+      console.error("Bulk vehicle detail open failed:", error);
+      window.alert("Vehicle detail open nahi ho payi.");
+    }
   };
   useEffect(() => {
     const token = new URLSearchParams(window.location.search).get("bulkVehicleDetail");

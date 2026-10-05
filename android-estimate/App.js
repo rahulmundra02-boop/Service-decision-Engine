@@ -45,7 +45,9 @@ import {
   getModelList,
   getServiceDataByModel,
   syncPartsMaster,
-  readPriceMaster
+  readPriceMaster,
+  getCachedPriceMaster,
+  getCachedPriceMasterPart
 } from './src/api';
 import {
   AGGREGATES,
@@ -1380,11 +1382,18 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
 
   // Pre-calculate all aggregate items once when entering the screen (Instant 0ms selection)
   const prebuiltAggregates = useMemo(() => {
+    // Always prefer the latest in-memory Price Master snapshot over the
+    // vehicle response snapshot. Aggregate automatic parts must use Price List
+    // MRP, not historical DB rate, whenever the master contains the part.
+    const currentMaster = getCachedPriceMaster();
+    const effectiveMaster = Object.keys(currentMaster).length
+      ? currentMaster
+      : (data.priceMaster || {});
     return prebuildAllAggregates(
       data.rows || [],
       data.modelRows || [],
       data.globalPartRates || [],
-      data.priceMaster || {}
+      effectiveMaster
     );
   }, [data]);
 
@@ -1396,13 +1405,16 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
 
     // Always read the already-downloaded local Price Master before building
     // automatic parts. This avoids using an older data.priceMaster snapshot.
-    let localMaster = data?.priceMaster || {};
-    try {
-      const cached = await readPriceMaster();
-      if (cached?.parts && Object.keys(cached.parts).length) {
-        localMaster = cached.parts;
-      }
-    } catch {}
+    let localMaster = getCachedPriceMaster();
+    if (!Object.keys(localMaster).length) {
+      localMaster = data?.priceMaster || {};
+      try {
+        const cached = await readPriceMaster();
+        if (cached?.parts && Object.keys(cached.parts).length) {
+          localMaster = cached.parts;
+        }
+      } catch {}
+    }
 
     const builtParts = [];
     const builtLabour = [];
@@ -1467,7 +1479,9 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
     const partNo = String(rawPart).replace(/\s+/g, '').toUpperCase();
     if (!itemId || !partNo) return;
     // Cache hit must be completely silent: no loading indicator.
-    const master = data?.priceMaster?.[partNo];
+    // Use the in-memory Price Master first. This avoids even an AsyncStorage
+    // read for a normal manual part lookup.
+    const master = data?.priceMaster?.[partNo] || getCachedPriceMasterPart(partNo);
     if (master?.mrp > 0 || master?.description) {
         setParts((prev) =>
           prev.map((x) => {
@@ -2833,8 +2847,10 @@ export default function App() {
     if (user) {
       loadSavedEstimates();
       loadRecentVehicles();
-      // Parts Master is synchronized during login/biometric login.
-      // No per-part catalog download is performed here.
+      // Revalidate the versioned Price Master in the background for persisted
+      // sessions too. If unchanged, the server returns immediately; if changed,
+      // the local master is refreshed without blocking the UI.
+      syncPartsMaster().catch(() => {});
     }
   }, [user?.id, user?.email, user?.personName]);
 
@@ -2873,6 +2889,10 @@ export default function App() {
 
   const handleSelectRecentVehicle = (regNum) => {
     setMode('service');
+
+    // getVehicleByRegistration now uses the 30-minute persistent vehicle cache
+    // before the network. Therefore tapping a recent vehicle is an instant
+    // local load instead of re-querying the server every time.
     getVehicleByRegistration(regNum)
       .then((data) => {
         if (data?.vehicle) {

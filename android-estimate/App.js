@@ -1424,7 +1424,7 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
     if (!Object.keys(master).length) return;
     setParts((prev) => prev.map((item) => {
       if (!item?.serviceKey) return item;
-      const code = String(item.partNo || '').replace(/\\s+/g, '').toUpperCase();
+      const code = String(item.partNo || '').replace(/\s+/g, '').toUpperCase();
       const pm = master[code];
       const mrp = Number(pm?.mrp || 0);
       if (!pm || mrp <= 0) return item;
@@ -1461,7 +1461,10 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
     const builtParts = [];
     const builtLabour = [];
     for (const k of nextSelected) {
-      const items = buildServiceItems(
+      // Aggregate data is already prebuilt when this screen opens.
+      // Reuse it directly so selecting an aggregate does not recalculate
+      // vehicle/model history again.
+      const items = prebuiltAggregates?.[k] || buildServiceItems(
         [k],
         data.rows || [],
         data.modelRows || [],
@@ -1523,7 +1526,7 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
     // Cache hit must be completely silent: no loading indicator.
     // Use the in-memory Price Master first. This avoids even an AsyncStorage
     // read for a normal manual part lookup.
-    const master = data?.priceMaster?.[partNo] || getCachedPriceMasterPart(partNo);
+    const master = getCachedPriceMasterPart(partNo) || data?.priceMaster?.[partNo];
     if (master?.mrp > 0 || master?.description) {
         setParts((prev) =>
           prev.map((x) => {

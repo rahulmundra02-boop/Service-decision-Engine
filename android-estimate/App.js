@@ -1379,6 +1379,7 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
   );
   const [saving, setSaving] = useState(false);
   const [rateLoadingId, setRateLoadingId] = useState(null);
+  const [processing, setProcessing] = useState(false);
   const [focusPartId, setFocusPartId] = useState(null);
   const [focusLabourId, setFocusLabourId] = useState(null);
   const [priceMasterReady, setPriceMasterReady] = useState(
@@ -1455,7 +1456,9 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
   }, [priceMasterReady]);
 
   const toggleAggregate = async (key) => {
-    const nextSelected = selected.includes(key)
+    setProcessing(true);
+    try {
+      const nextSelected = selected.includes(key)
       ? selected.filter((x) => x !== key)
       : [...selected, key];
     setSelected(nextSelected);
@@ -1510,7 +1513,10 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
     const manualParts = parts.filter((x) => !x.serviceKey);
     const manualLabour = labour.filter((x) => !x.serviceKey);
     setParts([...manualParts, ...pricedParts]);
-    setLabour([...manualLabour, ...builtLabour]);
+      setLabour([...manualLabour, ...builtLabour]);
+    } finally {
+      setProcessing(false);
+    }
   };
 
   const addPart = () => {
@@ -2536,6 +2542,7 @@ function SignatureScreen({ signature, letterhead, onSave, onLetterheadSave, onBa
 
   return (
     <SafeAreaView style={styles.safe}>
+      <LoadingOverlay visible={processing || saving} text={saving ? 'Saving estimate...' : 'Processing...'} />
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.rowBetween}>
           <View>

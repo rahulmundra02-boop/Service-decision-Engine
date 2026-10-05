@@ -455,9 +455,11 @@ function historicalItem(
     };
   }
 
-  // Labour continues to use historical DB labour rates.
+  // Labour keeps its existing historical DB/global rate behavior.
   const historyRate = bestRate(safeRows, false);
-  if (!(historyRate > 0)) return null;
+  const dbRate = globalRate(code, globalRates);
+  const finalRate = Math.max(historyRate, dbRate);
+  if (!(finalRate > 0)) return null;
   const orderedRows = safeRows.slice().sort((a, b) => rank(b) - rank(a));
   const selectedRow = orderedRows[0] || {};
   const description = String(
@@ -475,8 +477,8 @@ function historicalItem(
     partNo: code,
     description,
     qty,
-    rate: Number(historyRate.toFixed(2)),
-    baseRate: historyRate,
+    rate: Number(finalRate.toFixed(2)),
+    baseRate: finalRate,
     source: 'Historical DB - Labour base rate'
   };
 }

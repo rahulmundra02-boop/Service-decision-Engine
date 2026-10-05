@@ -2820,10 +2820,10 @@ export default function App() {
                     const tag = String(item?.tag_name || '');
                     return !item?.draft &&
                       !item?.prerelease &&
-                      /^android-beta-v[0-9.]+-build\\d+$/i.test(tag);
+                      /^android-beta-v[0-9.]+-build\d+$/i.test(tag);
                   })
                   .map((item) => {
-                    const match = String(item?.tag_name || '').match(/build(\\d+)/i);
+                    const match = String(item?.tag_name || '').match(/build(\d+)/i);
                     return {
                       ...item,
                       betaBuild: Number(match?.[1] || 0)
@@ -2836,7 +2836,7 @@ export default function App() {
 
         if (!release) return;
 
-        const betaBuildMatch = String(release?.tag_name || '').match(/build(\\d+)/i);
+        const betaBuildMatch = String(release?.tag_name || '').match(/build(\d+)/i);
         const latestBuild = isBeta
           ? Number(release?.betaBuild || betaBuildMatch?.[1] || 0)
           : Number(release?.build || 0);

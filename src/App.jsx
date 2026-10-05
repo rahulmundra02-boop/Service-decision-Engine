@@ -4957,17 +4957,9 @@ function ServiceDecisionApp({ user }) {
       window.setTimeout(cleanup, 500);
     };
     try {
-      // Open the new tab immediately inside the user's click event.
-      // Some browsers block a later window.open even when pop-ups are allowed,
-      // especially when the click handler has other work around it.
-      // Opening a blank tab first avoids that false "popup blocked" error.
-      opened = window.open("about:blank", "_blank");
-      if (!opened) {
-        cleanup();
-        window.alert("Browser ne new tab open karna block kar diya. Please allow pop-ups for this site.");
-        return;
-      }
-
+      // Use a real same-origin link for the new tab instead of window.open().
+      // Browsers treat a normal link navigation as user-initiated navigation,
+      // so it does not trigger the false popup-blocked error seen with window.open().
       if ("BroadcastChannel" in window) {
         channel = new BroadcastChannel(channelName);
         channel.onmessage = (event) => {
@@ -4980,10 +4972,22 @@ function ServiceDecisionApp({ user }) {
       window.addEventListener("message", handleReady);
 
       const url = window.location.origin + window.location.pathname + "?bulkVehicleDetail=" + encodeURIComponent(token);
-      opened.location.href = url;
+      const link = document.createElement("a");
+      link.href = url;
+      link.target = "_blank";
+      link.rel = "opener";
+      link.style.display = "none";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
 
       // Fallback for browsers where BroadcastChannel is unavailable.
-      if (!channel) window.setTimeout(() => sendPayload(opened), 100);
+      // The new tab keeps the opener reference because rel="opener" is explicit.
+      if (!channel) {
+        window.setTimeout(() => {
+          if (!closed) console.warn("Bulk vehicle detail opened without BroadcastChannel; waiting for opener handshake.");
+        }, 500);
+      }
     } catch (error) {
       cleanup();
       try { if (opened && !opened.closed) opened.close(); } catch {}

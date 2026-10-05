@@ -11,6 +11,7 @@ const PRICE_MASTER_KEY = '@service_estimate_price_master_v2';
 const VEHICLE_CACHE_PREFIX = '@service_estimate_vehicle_cache_v1_';
 const VEHICLE_CACHE_TTL = 30 * 60 * 1000;
 let priceMasterMemoryCache = null;
+let priceMasterVersionMemory = 0;
 let priceMasterSyncPromise = null;
 
 function normalizePartCode(value) {
@@ -37,10 +38,12 @@ export async function syncPartsMaster() {
     const data = await request('/api/save-history?priceMaster=1&version=' + encodeURIComponent(currentVersion));
     if (data?.unchanged) {
       priceMasterMemoryCache = local?.parts || {};
+      priceMasterVersionMemory = currentVersion;
       return local;
     }
     if (!data?.success) {
       priceMasterMemoryCache = local?.parts || {};
+      priceMasterVersionMemory = currentVersion;
       return local;
     }
     const parts = {};
@@ -59,9 +62,11 @@ export async function syncPartsMaster() {
     };
     await AsyncStorage.setItem(PRICE_MASTER_KEY, JSON.stringify(next));
     priceMasterMemoryCache = parts;
+    priceMasterVersionMemory = Number(next.version || 0);
     return next;
   } catch {
     priceMasterMemoryCache = local?.parts || {};
+    priceMasterVersionMemory = currentVersion;
     return local;
   } finally {
     priceMasterSyncPromise = null;
@@ -73,13 +78,14 @@ export async function syncPartsMaster() {
 
 export async function readPartsMaster() {
   if (priceMasterMemoryCache) {
-    return { version: 0, parts: priceMasterMemoryCache };
+    return { version: priceMasterVersionMemory, parts: priceMasterMemoryCache };
   }
   try {
     const raw = await AsyncStorage.getItem(PRICE_MASTER_KEY);
     const parsed = raw ? JSON.parse(raw) : {};
     const result = parsed && typeof parsed === 'object' ? parsed : {};
     priceMasterMemoryCache = result?.parts || {};
+    priceMasterVersionMemory = Number(result?.version || 0);
     return result;
   } catch {
     return {};

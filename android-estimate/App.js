@@ -1476,6 +1476,19 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
       } catch {}
     }
 
+    // Do not build an aggregate until Price Master is actually available.
+    // Background sync can still be running when the user taps the first aggregate.
+    // In that race, building immediately would produce zero automatic parts.
+    if (!Object.keys(localMaster).length) {
+      try {
+        const synced = await syncPartsMaster();
+        if (synced?.parts && Object.keys(synced.parts).length) {
+          localMaster = synced.parts;
+          setPriceMasterReady(true);
+        }
+      } catch {}
+    }
+
     const builtParts = [];
     const builtLabour = [];
     for (const k of nextSelected) {

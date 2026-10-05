@@ -1366,6 +1366,25 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
   const [rateLoadingId, setRateLoadingId] = useState(null);
   const [focusPartId, setFocusPartId] = useState(null);
   const [focusLabourId, setFocusLabourId] = useState(null);
+  const [priceMasterReady, setPriceMasterReady] = useState(
+    Object.keys(getCachedPriceMaster()).length > 0
+  );
+
+  // Price Master refresh is background-only. Cached data can render immediately,
+  // then the fresh master replaces DB pricing without blocking the estimate screen.
+  useEffect(() => {
+    let active = true;
+    syncPartsMaster()
+      .then(() => {
+        if (active) setPriceMasterReady(true);
+      })
+      .catch(() => {
+        if (active) setPriceMasterReady(Object.keys(getCachedPriceMaster()).length > 0);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     const showSub = Keyboard.addListener('keyboardDidShow', (e) => {
@@ -1395,7 +1414,30 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
       data.globalPartRates || [],
       effectiveMaster
     );
-  }, [data]);
+  }, [data, priceMasterReady]);
+
+  // If an aggregate was selected before the background Price Master refresh
+  // completed, re-price its automatic part lines immediately after refresh.
+  useEffect(() => {
+    if (!priceMasterReady) return;
+    const master = getCachedPriceMaster();
+    if (!Object.keys(master).length) return;
+    setParts((prev) => prev.map((item) => {
+      if (!item?.serviceKey) return item;
+      const code = String(item.partNo || '').replace(/\\s+/g, '').toUpperCase();
+      const pm = master[code];
+      const mrp = Number(pm?.mrp || 0);
+      if (!pm || mrp <= 0) return item;
+      return {
+        ...item,
+        partNo: pm.partNo || code,
+        description: pm.description || item.description || code,
+        rate: Number(mrp.toFixed(2)),
+        baseRate: Number((mrp / 1.18).toFixed(2)),
+        source: 'Price List Master (MRP)'
+      };
+    }));
+  }, [priceMasterReady]);
 
   const toggleAggregate = async (key) => {
     const nextSelected = selected.includes(key)

@@ -615,6 +615,23 @@ function standardizePart(code, description) {
   return String(description ?? "").trim();
 }
 
+// IMPORTANT SERVICE-HISTORY BOUNDARY:
+// PART_STANDARDIZATION is the single source of truth for both:
+// 1) what appears in Vehicle Service History
+// 2) which historical rows are allowed to participate in Service Decision logic
+// This deliberately prevents labour / R&R descriptions such as
+// "MIS_BEND2-FUEL FILTER REPLCED-1" from being treated as service parts.
+// Future additions to PART_STANDARDIZATION automatically become eligible.
+function isMappedServiceLine(record) {
+  const code = normalizePartCode(record?.partCode);
+  return !!code && Object.prototype.hasOwnProperty.call(PART_STANDARDIZATION, code);
+}
+
+function getServiceDecisionRecords(records) {
+  if (!Array.isArray(records) || !records.length) return [];
+  return records.filter(isMappedServiceLine);
+}
+
 
 // ============================================================
 // EXCEL FILE UPLOAD + MULTI-FILE MERGE
@@ -1561,11 +1578,12 @@ function deriveRunningReading(records, vehicle) {
 }
 
 function aggregateHistory(records) {
-  // SERVICE SUMMARY: keep the complete imported history, including unrelated
-  // DMS lines that are not present in the service-decision master list.
+  // Vehicle Service History is intentionally limited to PART_STANDARDIZATION.
+  // Do not display arbitrary DMS/labour/R&R description lines.
+  const historyRecords = Array.isArray(records) ? records.filter(isMappedServiceLine) : [];
   const groups = new Map();
 
-  for (const r of records) {
+  for (const r of historyRecords) {
     const dateKey = r.date ? formatDate(r.date) : '';
     const jc = String(r.jobCard ?? '').trim();
     const key = jc ? `JC:${jc}|DATE:${dateKey}` : `DATE:${dateKey}`;
@@ -1588,46 +1606,10 @@ function isScheduledHistoryVisit(visit, vehicle, decision) {
   return getVisitParts(visit, vehicle, decision).some((part) => part.historyEligible);
 }
 
-function isMappedServiceLine(record) {
-  const code = normalizePartCode(record?.partCode);
-  return !!code && Object.prototype.hasOwnProperty.call(PART_STANDARDIZATION, code);
-}
-
 function isScheduleHistoryLine(record) {
-  const code = normalizePartCode(record?.partCode);
-  const text = String(
-    record?.standardizedPart || record?.partDescription || record?.part || ""
-  ).toUpperCase();
-
-  // Schedule Service History must not apply Service Decision quantity
-  // thresholds. Any recognized service part/history item is displayable,
-  // including low-quantity top-ups.
-  if (code && Object.prototype.hasOwnProperty.call(PART_STANDARDIZATION, code)) {
-    return true;
-  }
-
-  return [
-    "ENGINE OIL",
-    "ENGINE OIL FILTER",
-    "GEAR OIL",
-    "AXLE OIL",
-    "HUB GREASE",
-    "CLUTCH OIL",
-    "STEERING OIL",
-    "STEERING OIL FILTER",
-    "COOLANT",
-    "AIR FILTER",
-    "FUEL FILTER",
-    "DEF FILTER",
-    "APDA FILTER",
-    "DEF INLINE FILTER",
-    "CNG FILTER",
-    "SPARK PLUG",
-    "FREE SERVICE",
-    "WHEEL ALIGNMENT",
-    "BODY BUILDING CHECK",
-    "PDI SERVICE"
-  ].some(name => text.includes(name));
+  // Exact same boundary as Vehicle Service History:
+  // only part codes explicitly present in PART_STANDARDIZATION qualify.
+  return isMappedServiceLine(record);
 }
 
 function getVisitDate(visit) {
@@ -1787,6 +1769,9 @@ function getVisitParts(visit, vehicle, decision) {
   const grouped = new Map();
 
   for (const record of visit) {
+    // Vehicle history must never fall back to free-text descriptions.
+    if (!isMappedServiceLine(record)) continue;
+
     const code = normalizePartCode(record?.partCode);
     const mappedName = code ? PART_STANDARDIZATION[code] : "";
     const name = mappedName || String(record?.standardizedPart || record?.partDescription || record?.part || "").trim();
@@ -2438,15 +2423,21 @@ function additionalServiceEligibility(records, vehicle, running, analysisDate, d
 
 function calculateDecisions(records,vehicle,running,decisionBasis = "AUTO"){
   const analysisDate=new Date(); analysisDate.setHours(0,0,0,0);
+
+  // Service Decision must use the exact same whitelist as Vehicle Service
+  // History. This is both safer and faster than allowing every DMS row into
+  // each individual aggregate rule.
+  const serviceRecords = getServiceDecisionRecords(records);
+
   const effectiveBasis = decisionBasis === "AUTO"
     ? (isTipperModel(vehicle?.model) ? "HRS" : "KM")
     : getEffectiveDecisionBasis(vehicle, decisionBasis);
   const keys=['engineOil','coolant','gearOil','hubGrease','axleOil','fuelFilter','cngFilter','steeringOil','airFilter','clutchOil','defFilter','apdaFilter','sparkPlug'];
   const result={};
-  for(const k of keys) result[k]=decideAggregate(records,vehicle,running,k,analysisDate,effectiveBasis);
-  result.defInline=defInlineDecision(records,vehicle,running,analysisDate,effectiveBasis);
-  const free=freeService(records,vehicle,running,analysisDate,effectiveBasis);
-  const additional=additionalServiceEligibility(records,vehicle,running,analysisDate,effectiveBasis);
+  for(const k of keys) result[k]=decideAggregate(serviceRecords,vehicle,running,k,analysisDate,effectiveBasis);
+  result.defInline=defInlineDecision(serviceRecords,vehicle,running,analysisDate,effectiveBasis);
+  const free=freeService(serviceRecords,vehicle,running,analysisDate,effectiveBasis);
+  const additional=additionalServiceEligibility(serviceRecords,vehicle,running,analysisDate,effectiveBasis);
   return {result, freeService:free, additionalServices:additional};
 }
 

@@ -1495,7 +1495,9 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
       // Aggregate data is already prebuilt when this screen opens.
       // Reuse it directly so selecting an aggregate does not recalculate
       // vehicle/model history again.
-      const items = prebuiltAggregates?.[k] || buildServiceItems(
+      // Rebuild from the now-confirmed local Price Master.
+      // Do not reuse an empty prebuild created before Price Master sync finished.
+      const items = buildServiceItems(
         [k],
         data.rows || [],
         data.modelRows || [],

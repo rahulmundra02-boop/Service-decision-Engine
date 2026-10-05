@@ -209,7 +209,9 @@ function isPostWarrantyRepair(row) {
   const value = String(row?.repair_line_item_type || row?.repair_type || '')
     .toUpperCase()
     .replace(/\s+/g, '');
-  return value.includes('POSTWARRANTY') || value.includes('PAID') || value.includes('WARRANTY');
+  // Paid-rate history is strictly Post Warranty / Paid Order.
+  // Generic Warranty rows must never be treated as paid history.
+  return value.includes('POSTWARRANTY') || value.includes('PAIDORDER') || value === 'PAID';
 }
 
 function rank(row) {
@@ -218,9 +220,11 @@ function rank(row) {
 }
 
 function bestRate(rows, paidOnly = false) {
-  const paidRows = rows.filter((r) => isPostWarrantyRepair(r) && Number(r?.rate) > 0);
-  const pool = paidOnly && paidRows.length > 0 ? paidRows : rows.filter((r) => Number(r?.rate) > 0);
-  const sorted = pool.sort((a, b) => rank(b) - rank(a)).slice(0, 10);
+  const validRows = rows.filter((r) => Number(r?.rate) > 0);
+  const paidRows = validRows.filter(isPostWarrantyRepair);
+  // When paidOnly is requested, warranty/AMC/non-paid history is excluded.
+  const pool = paidOnly ? paidRows : validRows;
+  const sorted = pool.slice().sort((a, b) => rank(b) - rank(a)).slice(0, 10);
   return sorted.length ? Math.max(...sorted.map((r) => Number(r.rate))) : 0;
 }
 

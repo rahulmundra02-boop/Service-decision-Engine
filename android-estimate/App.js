@@ -2796,7 +2796,7 @@ export default function App() {
         const currentBuild = Number(Application.nativeBuildVersion || 0);
         const isBeta = Application.applicationId === 'com.rahulmundra.serviceestimate.beta';
         const updateSourceUrl = isBeta
-          ? 'https://api.github.com/repos/rahulmundra02-boop/Service-decision-Engine/releases/latest?t=' + Date.now()
+          ? 'https://api.github.com/repos/rahulmundra02-boop/Service-decision-Engine/releases?per_page=100&t=' + Date.now()
           : 'https://service-decision-engine.vercel.app/mobile/latest.json?t=' + Date.now();
 
         const response = await fetch(updateSourceUrl, {
@@ -2808,13 +2808,37 @@ export default function App() {
 
         if (!response.ok) return;
 
-        const release = await response.json();
+        const payload = await response.json();
 
-        // Beta APKs are published as GitHub Releases. Do not depend on the
-        // Vercel manifest or a Vercel-hosted APK for Beta auto-updates.
-        const betaBuildMatch = String(release?.tag_name || '').match(/build(\d+)/i);
+        // Beta APKs are published as GitHub Releases. Do not depend on
+        // GitHub's /releases/latest selection because the repository also
+        // contains multiple historical Beta releases.
+        const release = isBeta
+          ? (Array.isArray(payload)
+              ? payload
+                  .filter((item) => {
+                    const tag = String(item?.tag_name || '');
+                    return !item?.draft &&
+                      !item?.prerelease &&
+                      /^android-beta-v[0-9.]+-build\\d+$/i.test(tag);
+                  })
+                  .map((item) => {
+                    const match = String(item?.tag_name || '').match(/build(\\d+)/i);
+                    return {
+                      ...item,
+                      betaBuild: Number(match?.[1] || 0)
+                    };
+                  })
+                  .filter((item) => item.betaBuild > 0)
+                  .sort((a, b) => b.betaBuild - a.betaBuild)[0] || null
+              : null)
+          : payload;
+
+        if (!release) return;
+
+        const betaBuildMatch = String(release?.tag_name || '').match(/build(\\d+)/i);
         const latestBuild = isBeta
-          ? Number(betaBuildMatch?.[1] || 0)
+          ? Number(release?.betaBuild || betaBuildMatch?.[1] || 0)
           : Number(release?.build || 0);
         const betaApk = isBeta
           ? (Array.isArray(release?.assets)

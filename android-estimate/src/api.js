@@ -8,7 +8,7 @@ const USER_KEY = 'service_estimate_user';
 const SECURE_TOKEN_KEY = 'service_estimate_secure_token';
 const BIOMETRIC_CREDS_KEY = 'service_estimate_biometric_credentials';
 const PRICE_MASTER_KEY = '@service_estimate_price_master_v2';
-const VEHICLE_CACHE_PREFIX = '@service_estimate_vehicle_cache_v1_';
+const VEHICLE_CACHE_PREFIX = '@service_estimate_vehicle_cache_v2_';
 const VEHICLE_CACHE_TTL = 30 * 60 * 1000;
 let priceMasterMemoryCache = null;
 let priceMasterVersionMemory = 0;
@@ -103,7 +103,7 @@ export function getCachedPriceMasterPart(partNo) {
 
 
 // --- IN-MEMORY SPEED CACHES ---
-const MODEL_CACHE_PREFIX = '@cache_model_';
+const MODEL_CACHE_PREFIX = '@cache_model_v2_';
 const MODEL_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 const modelMemoryCache = new Map();
 const vehicleMemoryCache = new Map();
@@ -260,16 +260,13 @@ export async function getVehicleByRegistration(registration) {
     }
   } catch {}
 
-  // The unified Parts Master cache is the only local part catalog.
-  // It contains Part No + Description + MRP and is version controlled.
+  // DB remains the source for actual vehicle part numbers and quantities.
+  // Price Master is used only later for part description + MRP.
+  // Do not make DB part retrieval depend on the local Price Master cache.
   const master = await readPartsMaster();
   const masterParts = master?.parts || {};
-  const serviceCodes = Object.keys(masterParts);
-  const compactQuery = serviceCodes.length
-    ? '&mobileEstimate=1&serviceParts=' + encodeURIComponent(serviceCodes.join(','))
-    : '';
   const rawData = await request(
-    '/api/save-history?registration=' + encodeURIComponent(value) + compactQuery
+    '/api/save-history?registration=' + encodeURIComponent(value) + '&mobileEstimate=1'
   );
   const data = rawData && typeof rawData === 'object' ? { ...rawData } : {};
   data.rows = Array.isArray(data.rows) ? data.rows.map((row) => {

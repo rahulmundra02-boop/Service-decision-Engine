@@ -5786,38 +5786,43 @@ function ServiceDecisionApp({ user }) {
     const code = String(partNo || "").replace(/\s+/g,"").trim().toUpperCase();
     if (!code) return;
 
-    // Complete Price Master is cached locally in IndexedDB. Use it first so
-    // normal manual part entry is instant and does not show a network spinner.
-    const master = priceMaster.parts?.[normalizePartCode(code)];
-    if (master?.mrp > 0 || master?.description) {
-      setEstimateParts(prev => prev.map(item => item.id === id ? {
-        ...item,
-        partNo: code,
-        description: master.description || item.description,
-        rate: Number(master.mrp || 0),
-        baseRate: Number((Number(master.mrp || 0) / 1.18).toFixed(2)),
-        source: "Price List Master (MRP)"
-      } : item));
-      return;
-    }
-
-    // Only an unknown/missing Price Master part needs a server fallback.
+    // Direct manual part entry must use the current server Price Master first.
+    // Do not let an older browser cache silently override the current MRP.
     setManualPartLookupBusy(prev => ({...prev,[id]:true}));
     try {
-      const response = await fetch("/api/save-history?partNo=" + encodeURIComponent(code), {cache:"no-store"});
+      const response = await fetch("/api/save-history?partNo=" + encodeURIComponent(code) + "&_ts=" + Date.now(), {cache:"no-store"});
       const data = await response.json().catch(() => ({}));
-      if (data.part) {
+
+      if (data?.part?.mrp > 0 || data?.part?.rateInclGst > 0) {
+        const mrp = Number(data.part.mrp || data.part.rateInclGst || 0);
         setEstimateParts(prev => prev.map(item => item.id === id ? {
           ...item,
-          partNo:data.part.partNo||code,
-          description:data.part.description||item.description,
-          rate:Number(data.part.rateInclGst||0),
-          baseRate:Number(data.part.rate||0),
-          source:"Historical DB - exact Part No."
+          partNo:data.part.partNo || code,
+          description:data.part.description || item.description,
+          rate:mrp,
+          baseRate:Number((mrp / 1.18).toFixed(2)),
+          source:"Price List Master (MRP)"
         } : item));
+        return;
       }
+
+      // Part is not present in the current Price Master. Do not substitute
+      // a historical DB rate for a direct Part No. entry.
+      setEstimateParts(prev => prev.map(item => item.id === id ? {
+        ...item,
+        partNo:code,
+        description:item.description || "",
+        rate:0,
+        baseRate:0,
+        source:"Not found in current Price List Master"
+      } : item));
     } catch (err) {
-      console.warn("Manual estimate part lookup:",err);
+      console.warn("Current Price Master lookup:", err);
+      setEstimateParts(prev => prev.map(item => item.id === id ? {
+        ...item,
+        partNo:code,
+        source:"Price List Master unavailable"
+      } : item));
     } finally {
       setManualPartLookupBusy(prev => ({...prev,[id]:false}));
     }

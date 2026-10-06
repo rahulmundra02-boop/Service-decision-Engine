@@ -1219,7 +1219,7 @@ function SignaturePad({ initialValue, onUse, onClose }) {
   const move=e=>{if(!drawingRef.current)return;e.preventDefault();const p=point(e),ctx=canvasRef.current.getContext("2d");ctx.lineWidth=3.2;ctx.lineCap="round";ctx.lineJoin="round";ctx.strokeStyle="#111";ctx.lineTo(p.x,p.y);ctx.stroke();setHasInk(true);};
   const end=()=>{drawingRef.current=false;};
   const clear=()=>{const c=canvasRef.current;c.getContext("2d").clearRect(0,0,c.width,c.height);setHasInk(false);};
-  const save=()=>{if(!hasInk){window.alert("Signature draw kijiye.");return;}onUse({image:canvasRef.current.toDataURL("image/png")});};
+  const save=()=>{if(!hasInk){window.alert("Please draw your signature.");return;}onUse({image:canvasRef.current.toDataURL("image/png")});};
   return <div className="auth-modal-backdrop" style={{zIndex:10020}}>
     <div className="auth-modal" style={{maxWidth:900,width:"min(900px,calc(100vw - 24px))",boxSizing:"border-box"}}>
       <h2>Authorized Signature</h2>

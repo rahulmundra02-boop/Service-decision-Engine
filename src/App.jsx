@@ -6574,7 +6574,8 @@ function ServiceDecisionApp({ user }) {
 
     autoTable(pdf,{
       startY:y,
-      margin:pageMargins,
+      margin:{...pageMargins,left:pageWidth-margin-80,right:margin},
+      tableWidth:80,
       pageBreak:"avoid",
       theme:"grid",
       styles:{

@@ -1108,6 +1108,8 @@ function SignaturePad({ initialValue, onUse, onClose }) {
 }
 
 function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
+  const singleCols=[["date","Date"],["jobCard","Job Card"],["reading","Reading"],["plant","Plant"],["parts","Part No. / Service / Qty"]];
+  const bulkCols=[["customerName","Customer Name"],["vin","VIN"],["reg","Reg. No."],["saleDate","Sale Date"],["model","Model"],["currentReading","Current Reading"],["services","Service To Be Completed"]];
   const [scannerOpen,setScannerOpen]=useState(false);
   const [signatureOpen,setSignatureOpen]=useState(false);
   const [placement,setPlacement]=useState(form.signaturePlacement || {x:70,y:91,width:20});
@@ -1119,7 +1121,7 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
     </div>
   );
   const savePlacement=()=>setForm({...form,signaturePlacement:placement});
-  return <div className="auth-modal-backdrop"><div className="auth-modal" style={{maxWidth:820,width:"min(820px,calc(100vw - 32px))",maxHeight:"90vh",overflow:"auto",boxSizing:"border-box"}}>
+  return <><div className="auth-modal-backdrop"><div className="auth-modal" style={{maxWidth:820,width:"min(820px,calc(100vw - 32px))",maxHeight:"90vh",overflow:"auto",boxSizing:"border-box"}}>
     <h2>Profile & Dashboard Settings</h2>
     <p className="auth-hint">Ye settings sirf aapki user ID ke liye save hongi. Table width header divider ko mouse se drag karke set hogi.</p>
     <label>Person Name</label><input value={form.personName} onChange={e=>setForm({...form,personName:e.target.value})}/>
@@ -1166,10 +1168,10 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
     <div className="auth-hint">Checkbox = show/hide · Text box = custom heading · width by mouse drag.</div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:"6px 12px",margin:"8px 0",minWidth:0}}>{bulkCols.map(([k,l])=>editor("bulkColumns",k,l))}<div style={{display:"grid",gridTemplateColumns:"28px 1fr",gap:7,alignItems:"center"}}><span></span><input value={(form.bulkColumnLabels||{}).serial||"S.No. / Due"} onChange={e=>setLabel("bulkColumnLabels","serial",e.target.value)} placeholder="S.No. / Due"/></div></div>
     <div className="auth-modal-actions"><button className="auth-secondary" onClick={onClose}>Cancel</button><button className="auth-primary" onClick={onSave} disabled={loading}>Save Profile & Settings</button></div>
-  </div>
+  </div></div>
   {scannerOpen && <LetterheadScanner initialValue={form.letterhead} onUse={v=>{setForm({...form,letterhead:v});setScannerOpen(false);}} onClose={()=>setScannerOpen(false)}/>}
   {signatureOpen && <SignaturePad initialValue={form.signature} onUse={v=>{setForm({...form,signature:v});setSignatureOpen(false);}} onClose={()=>setSignatureOpen(false)}/>}
-  </div>;
+  </>;
 }
 function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel, priceMasterMeta, priceMasterUploadBusy, priceMasterUploadMessage, priceMasterUploadError, onUploadPriceMasterExcel }) {
   const analyticsDetailRef = useRef(null);

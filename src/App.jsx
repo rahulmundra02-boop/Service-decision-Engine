@@ -6372,7 +6372,7 @@ function ServiceDecisionApp({ user }) {
     XLSX.writeFile(wb,fileName,{bookType:"xlsx",cellStyles:true,compression:true});
   }
 
-  function buildEstimatePdf(autoPrint = false) {
+  async function buildEstimatePdf(autoPrint = false, sharePdf = false) {
     const pdf = new jsPDF({ unit:"mm", format:"a4", orientation:"portrait", compress:true });
     const pageWidth = 210;
     const pageHeight = 297;
@@ -6638,7 +6638,35 @@ function ServiceDecisionApp({ user }) {
       creator:"Service Decision Engine"
     });
 
-    if(autoPrint){
+    if(sharePdf){
+      if(!navigator.share || !navigator.canShare) {
+        window.alert("Direct PDF sharing is not supported by this browser. Please use Download PDF.");
+        return;
+      }
+
+      try {
+        const pdfBlob = pdf.output("blob");
+        const pdfFile = new File([pdfBlob], fileNameBase + ".pdf", {
+          type:"application/pdf"
+        });
+
+        if(!navigator.canShare({files:[pdfFile]})) {
+          window.alert("PDF sharing is not supported on this device/browser. Please use Download PDF.");
+          return;
+        }
+
+        await navigator.share({
+          title:fileNameBase,
+          text:"Service Estimate - " + String(vehicle.reg || vehicle.vin || ""),
+          files:[pdfFile]
+        });
+      } catch(error) {
+        if(error?.name !== "AbortError") {
+          console.error("Estimate PDF sharing failed:", error);
+          window.alert("Unable to share the PDF. Please try again or use Download PDF.");
+        }
+      }
+    } else if(autoPrint){
       pdf.autoPrint();
       window.open(pdf.output("bloburl"),"_blank");
     } else {
@@ -8270,7 +8298,7 @@ function ServiceDecisionApp({ user }) {
                   <table className="history-table estimate-labour-table"><thead><tr><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th><th></th></tr></thead><tbody>{estimateLabour.map(item=><tr key={item.id}><td data-label="Description"><input ref={el=>{if(el) estimateFieldRefs.current.labourDescription[item.id]=el; else delete estimateFieldRefs.current.labourDescription[item.id];}} value={item.description} onChange={e=>updateEstimateItem("labour",item.id,"description",e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();focusEstimateField("labour",item.id,"labourRate");}}} enterKeyHint="next"/></td><td data-label="Qty"><input type="number" min="0" step="0.01" value={item.qty ?? 1} onChange={e=>updateEstimateItem("labour",item.id,"qty",e.target.value)} onBlur={normalizeEstimateQuantities} style={{width:80}}/></td><td data-label="Rate"><input ref={el=>{if(el) estimateFieldRefs.current.labourRate[item.id]=el; else delete estimateFieldRefs.current.labourRate[item.id];}} type="number" min="0" step="0.01" value={item.rate} onChange={e=>updateEstimateItem("labour",item.id,"rate",e.target.value)} enterKeyHint="done" style={{width:110}}/></td><td data-label="Amount">{formatNumber(item.qty*item.rate)}</td><td data-label="Action"><button className="excel-button no-print" onClick={()=>removeEstimateItem("labour",item.id)}>Delete</button></td></tr>)}{!estimateLabour.length&&<tr><td colSpan="5">No historical labour found. Add manually.</td></tr>}</tbody></table>
                   <div style={{margin:"8px 0"}}><button className="excel-button no-print" onClick={()=>addEstimateItem("labour")}>+ Add Labour</button></div>
                   <div style={{marginTop:16,marginLeft:"auto",maxWidth:380,borderTop:"2px solid #222",paddingTop:10}}><div style={{display:"flex",justifyContent:"space-between"}}><span>Parts Total</span><b>₹ {formatNumber(estimatePartsTotal)}</b></div><div style={{display:"flex",justifyContent:"space-between"}}><span>Labour Subtotal</span><b>₹ {formatNumber(estimateLabourBase)}</b></div><div style={{display:"flex",justifyContent:"space-between"}}><span>GST on Labour (18%)</span><b>₹ {formatNumber(estimateLabourGst)}</b></div><div style={{display:"flex",justifyContent:"space-between",fontSize:18,marginTop:6}}><span>Grand Total</span><b>₹ {formatNumber(estimateGrandTotal)}</b></div></div>
-                  <div className="no-print" style={{display:"flex",flexWrap:"wrap",justifyContent:"flex-end",gap:8,marginTop:18,paddingTop:12,borderTop:"1px solid #ddd"}}><button className="excel-button" onClick={reviseEstimateServices}>Revise Aggregate Service</button><button className="excel-button green" disabled={estimateSaveBusy} onClick={saveEstimateToCache}>{estimateSaveBusy ? "Saving..." : "Save Estimate"}</button><button className="excel-button" onClick={()=>buildEstimatePdf(true)}>Print A4</button><button className="excel-button green" onClick={()=>buildEstimatePdf(false)}>Download PDF</button><button className="excel-button green" onClick={exportEstimateExcel}>Export Excel</button></div>
+                  <div className="no-print" style={{display:"flex",flexWrap:"wrap",justifyContent:"flex-end",gap:8,marginTop:18,paddingTop:12,borderTop:"1px solid #ddd"}}><button className="excel-button" onClick={reviseEstimateServices}>Revise Aggregate Service</button><button className="excel-button green" disabled={estimateSaveBusy} onClick={saveEstimateToCache}>{estimateSaveBusy ? "Saving..." : "Save Estimate"}</button><button className="excel-button" onClick={()=>buildEstimatePdf(true)}>Print A4</button><button className="excel-button green" onClick={()=>buildEstimatePdf(false)}>Download PDF</button><button className="excel-button green" onClick={()=>buildEstimatePdf(false,true)}>Share PDF</button><button className="excel-button green" onClick={exportEstimateExcel}>Export Excel</button></div>
                   <div style={{marginTop:8,fontSize:12,color:"#666"}}>Estimate only. Historical DB rates are without GST; 18% GST is added to historical part rates shown above. Missing items/rates can be entered manually using GST-inclusive rates.</div>
                 </>
               )}

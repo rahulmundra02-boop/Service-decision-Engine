@@ -6088,10 +6088,7 @@ function ServiceDecisionApp({ user }) {
     const signatureY = Math.max(y, Math.min(282, 297 * Number(signaturePlacement.y || 91) / 100));
     if(signatureImage){
       try {
-        const sigImg = new Image();
-        sigImg.src = signatureImage;
-        const sigRatio = sigImg.width && sigImg.height ? sigImg.height / sigImg.width : 0.35;
-        const signatureH = Math.min(24, Math.max(8, signatureW * sigRatio));
+        const signatureH = Math.min(24, Math.max(10, signatureW * 0.28));
         pdf.addImage(signatureImage, "PNG", signatureX, signatureY, signatureW, signatureH, undefined, "FAST");
         pdf.setFont("helvetica","normal");
         pdf.setFontSize(8);

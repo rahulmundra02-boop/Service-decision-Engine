@@ -3001,6 +3001,26 @@ const ESTIMATE_LABOUR_REFERENCE = {
   ],
 };
 
+const ESTIMATE_LABOUR_FIXED_RATES = {
+  AIS110: 150,
+  ATS455Z: 650,
+  CLG125: 350,
+  CLH125: 350,
+  ELS105: 450,
+  FUL110: 450,
+  GBX130: 450,
+  RAX145: 450,
+  STH110: 350,
+  AIR165Z: 650,
+  XFM00800: 250,
+  WHL165A: 1100,
+  WHL165C: 2200,
+  WHL170A: 1100,
+  WHL170C: 2200,
+  WHL175A: 1100,
+  WHL180A: 1100,
+};
+
 const ESTIMATE_LABOUR_RULES = [
   { key:"engineOil", test:t => t.includes("ENGINE OIL") && (t.includes("FILTER") || t.includes("REFILL") || t.includes("DRAIN") || t.includes("DRAI")) },
   { key:"gearOil", test:t => (t.includes("GEARBOX") || t.includes("GEAR BOX") || t.includes("GEAR OIL")) },
@@ -3583,6 +3603,12 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
         if (labourItem) {
           labourItem.description = reference.description;
           labourItem.partNo = reference.code;
+          const fixedRate = ESTIMATE_LABOUR_FIXED_RATES[normalizePartCode(reference.code)];
+          if (fixedRate !== undefined) {
+            labourItem.rate = fixedRate;
+            labourItem.baseRate = fixedRate;
+            labourItem.source = "Fixed Labour Rate";
+          }
           items.push(labourItem);
         }
       }
@@ -3596,7 +3622,15 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
 
       if (labourItem) {
         const reference = ESTIMATE_LABOUR_REFERENCE[serviceKey]?.[0];
-        if (reference) labourItem.description = reference.description;
+        if (reference) {
+          labourItem.description = reference.description;
+          const fixedRate = ESTIMATE_LABOUR_FIXED_RATES[normalizePartCode(reference.code)];
+          if (fixedRate !== undefined) {
+            labourItem.rate = fixedRate;
+            labourItem.baseRate = fixedRate;
+            labourItem.source = "Fixed Labour Rate";
+          }
+        }
         items.push(labourItem);
       }
     }

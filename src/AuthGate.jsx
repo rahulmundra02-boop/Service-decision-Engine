@@ -996,168 +996,241 @@ function detectLetterheadCrop(dataUrl) {
     img.src=dataUrl;
   });
 }
-function renderLetterheadCrop(dataUrl, crop, filterName) {
+function normalizeLetterheadCorners(value) {
+  if (value?.tl && value?.tr && value?.br && value?.bl) return value;
+  const left=Number(value?.left ?? 3), top=Number(value?.top ?? 3);
+  const right=Number(value?.right ?? 97), bottom=Number(value?.bottom ?? 97);
+  return {
+    tl:{x:left,y:top}, tr:{x:right,y:top},
+    br:{x:right,y:bottom}, bl:{x:left,y:bottom}
+  };
+}
+
+function renderLetterheadCrop(dataUrl, corners, filterName) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
-      const sx=Math.max(0,Math.round(img.width*(crop.left/100)));
-      const sy=Math.max(0,Math.round(img.height*(crop.top/100)));
-      const ex=Math.min(img.width,Math.round(img.width*(crop.right/100)));
-      const ey=Math.min(img.height,Math.round(img.height*(crop.bottom/100)));
-      const sw=Math.max(1,ex-sx), sh=Math.max(1,ey-sy);
-      const scale=Math.min(1,1600/sw,2260/sh);
+      const p=normalizeLetterheadCorners(corners);
+      const src=[
+        [img.width*p.tl.x/100,img.height*p.tl.y/100],
+        [img.width*p.tr.x/100,img.height*p.tr.y/100],
+        [img.width*p.br.x/100,img.height*p.br.y/100],
+        [img.width*p.bl.x/100,img.height*p.bl.y/100]
+      ];
+      const topW=Math.hypot(src[1][0]-src[0][0],src[1][1]-src[0][1]);
+      const bottomW=Math.hypot(src[2][0]-src[3][0],src[2][1]-src[3][1]);
+      const leftH=Math.hypot(src[3][0]-src[0][0],src[3][1]-src[0][1]);
+      const rightH=Math.hypot(src[2][0]-src[1][0],src[2][1]-src[1][1]);
+      const outW=Math.max(500,Math.min(1600,Math.round(Math.max(topW,bottomW))));
+      const outH=Math.max(700,Math.min(2260,Math.round(Math.max(leftH,rightH)*outW/Math.max(1,(topW+bottomW)/2))));
       const canvas=document.createElement("canvas");
-      canvas.width=Math.max(1,Math.round(sw*scale));
-      canvas.height=Math.max(1,Math.round(sh*scale));
-      const ctx=canvas.getContext("2d");
-      ctx.drawImage(img,sx,sy,sw,sh,0,0,canvas.width,canvas.height);
-      const pixels=ctx.getImageData(0,0,canvas.width,canvas.height);
-      if(filterName!=="original"){
-        const d=pixels.data;
-        for(let i=0;i<d.length;i+=4){
-          const lum=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
-          if(filterName==="bright"){
-            d[i]=Math.min(255,d[i]*1.08+8); d[i+1]=Math.min(255,d[i+1]*1.08+8); d[i+2]=Math.min(255,d[i+2]*1.08+8);
-          } else if(filterName==="contrast"){
-            d[i]=Math.max(0,Math.min(255,(d[i]-128)*1.25+128)); d[i+1]=Math.max(0,Math.min(255,(d[i+1]-128)*1.25+128)); d[i+2]=Math.max(0,Math.min(255,(d[i+2]-128)*1.25+128));
-          } else if(filterName==="gray"){
-            d[i]=d[i+1]=d[i+2]=lum;
-          } else if(filterName==="scan"){
-            const v=lum>205?255:lum<115?0:Math.round((lum-115)*255/90);
-            d[i]=d[i+1]=d[i+2]=v;
-          }
+      canvas.width=outW; canvas.height=outH;
+      const ctx=canvas.getContext("2d",{willReadFrequently:true});
+
+      // Projective transform: destination rectangle -> the four selected source corners.
+      const x0=src[0][0],y0=src[0][1], x1=src[1][0],y1=src[1][1];
+      const x2=src[2][0],y2=src[2][1], x3=src[3][0],y3=src[3][1];
+      const dw=outW-1, dh=outH-1;
+      const dx1=x1-x2, dx2=x3-x2, dx3=x0-x1+x2-x3;
+      const dy1=y1-y2, dy2=y3-y2, dy3=y0-y1+y2-y3;
+      const den=dx1*dy2-dx2*dy1;
+      const g=Math.abs(den)>0.000001 ? (dx3*dy2-dx2*dy3)/den : 0;
+      const h=Math.abs(den)>0.000001 ? (dx1*dy3-dx3*dy1)/den : 0;
+      const a=x1-x0+g*x1, b=x3-x0+h*x3, c0=x0;
+      const d=y1-y0+g*y1, e=y3-y0+h*y3, f=y0;
+
+      const srcCanvas=document.createElement("canvas");
+      srcCanvas.width=img.width; srcCanvas.height=img.height;
+      const sctx=srcCanvas.getContext("2d",{willReadFrequently:true});
+      sctx.drawImage(img,0,0);
+      const sd=sctx.getImageData(0,0,img.width,img.height).data;
+      const od=ctx.createImageData(outW,outH);
+      const applyPixelFilter=(r,g,b)=>{
+        const lum=0.299*r+0.587*g+0.114*b;
+        if(filterName==="bright") return [Math.min(255,r*1.08+8),Math.min(255,g*1.08+8),Math.min(255,b*1.08+8)];
+        if(filterName==="contrast") return [Math.max(0,Math.min(255,(r-128)*1.25+128)),Math.max(0,Math.min(255,(g-128)*1.25+128)),Math.max(0,Math.min(255,(b-128)*1.25+128))];
+        if(filterName==="gray") return [lum,lum,lum];
+        if(filterName==="scan"){const v=lum>205?255:lum<115?0:Math.round((lum-115)*255/90);return [v,v,v];}
+        return [r,g,b];
+      };
+      const sw=img.width, sh=img.height;
+      for(let y=0;y<outH;y++){
+        const v=y/dh;
+        for(let x=0;x<outW;x++){
+          const u=x/dw;
+          const q=1+g*u+h*v;
+          const sx=(a*u+b*v+c0)/q;
+          const sy=(d*u+e*v+f)/q;
+          const ix=Math.max(0,Math.min(sw-1,Math.round(sx)));
+          const iy=Math.max(0,Math.min(sh-1,Math.round(sy)));
+          const si=(iy*sw+ix)*4, oi=(y*outW+x)*4;
+          const fp=applyPixelFilter(sd[si],sd[si+1],sd[si+2]);
+          od.data[oi]=fp[0]; od.data[oi+1]=fp[1]; od.data[oi+2]=fp[2]; od.data[oi+3]=255;
         }
-        ctx.putImageData(pixels,0,0);
       }
-      resolve(canvas.toDataURL("image/jpeg",0.82));
+      ctx.putImageData(od,0,0);
+      resolve(canvas.toDataURL("image/jpeg",0.88));
     };
     img.onerror=reject;
     img.src=dataUrl;
   });
 }
-
 function LetterheadScanner({ initialValue, onUse, onClose }) {
-  const [source, setSource] = useState(initialValue?.image || "");
-  const [crop, setCrop] = useState(initialValue?.crop || {left:2,top:2,right:98,bottom:98});
-  const [filterName, setFilterName] = useState(initialValue?.filter || "scan");
-  const [cameraOpen, setCameraOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [source,setSource]=useState(initialValue?.image || "");
+  const [corners,setCorners]=useState(normalizeLetterheadCorners(initialValue?.corners || initialValue?.crop));
+  const [filterName,setFilterName]=useState(initialValue?.filter || "scan");
+  const [cameraOpen,setCameraOpen]=useState(false);
+  const [busy,setBusy]=useState(false);
+  const [dragCorner,setDragCorner]=useState(null);
   const videoRef=useRef(null);
   const streamRef=useRef(null);
   const fileRef=useRef(null);
+  const previewRef=useRef(null);
 
-  useEffect(()=>()=>{ if(streamRef.current) streamRef.current.getTracks().forEach(t=>t.stop()); },[]);
+  useEffect(()=>()=>{if(streamRef.current)streamRef.current.getTracks().forEach(t=>t.stop());},[]);
 
   const openCamera=async()=>{
     try{
       const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1920},height:{ideal:1080}},audio:false});
-      streamRef.current=stream;
-      setCameraOpen(true);
-      setTimeout(()=>{ if(videoRef.current){ videoRef.current.srcObject=stream; void videoRef.current.play(); } },80);
-    }catch(e){ window.alert("Camera permission nahi mili. Browser camera permission allow karke dobara try karein."); }
+      streamRef.current=stream; setCameraOpen(true);
+      setTimeout(()=>{if(videoRef.current){videoRef.current.srcObject=stream;void videoRef.current.play();}},80);
+    }catch(e){window.alert("Camera permission nahi mili. Browser camera permission allow karke dobara try karein.");}
   };
-  const closeCamera=()=>{ if(streamRef.current) streamRef.current.getTracks().forEach(t=>t.stop()); streamRef.current=null; setCameraOpen(false); };
+  const closeCamera=()=>{if(streamRef.current)streamRef.current.getTracks().forEach(t=>t.stop());streamRef.current=null;setCameraOpen(false);};
+
+  const loadImage=async(data)=>{
+    setSource(data); setBusy(true);
+    try{
+      const detected=await detectLetterheadCrop(data);
+      setCorners(normalizeLetterheadCorners(detected));
+    }finally{setBusy(false);}
+  };
   const capture=async()=>{
-    if(!videoRef.current) return;
-    const video=videoRef.current;
-    const canvas=document.createElement("canvas");
+    if(!videoRef.current)return;
+    const video=videoRef.current, canvas=document.createElement("canvas");
     canvas.width=video.videoWidth||1280; canvas.height=video.videoHeight||720;
     canvas.getContext("2d").drawImage(video,0,0,canvas.width,canvas.height);
-    const data=canvas.toDataURL("image/jpeg",0.92);
-    closeCamera();
-    setSource(data);
-    setBusy(true);
-    setCrop(await detectLetterheadCrop(data));
-    setBusy(false);
+    const data=canvas.toDataURL("image/jpeg",0.92); closeCamera(); await loadImage(data);
   };
   const chooseFile=async(e)=>{
-    const file=e.target.files?.[0];
-    if(!file) return;
-    const data=await fileToDataUrl(file);
-    setSource(data);
-    setBusy(true);
-    setCrop(await detectLetterheadCrop(data));
-    setBusy(false);
-    e.target.value="";
+    const file=e.target.files?.[0]; if(!file)return;
+    await loadImage(await fileToDataUrl(file)); e.target.value="";
   };
-  const autoCrop=async()=>{ if(!source)return; setBusy(true); setCrop(await detectLetterheadCrop(source)); setBusy(false); };
+  const autoCrop=async()=>{
+    if(!source)return; setBusy(true);
+    try{setCorners(normalizeLetterheadCorners(await detectLetterheadCrop(source)));}finally{setBusy(false);}
+  };
+
+  const setCorner=(key,e)=>{
+    if(!previewRef.current)return;
+    const r=previewRef.current.getBoundingClientRect();
+    const x=Math.max(0,Math.min(100,((e.clientX-r.left)/r.width)*100));
+    const y=Math.max(0,Math.min(100,((e.clientY-r.top)/r.height)*100));
+    setCorners(prev=>({...prev,[key]:{x,y}}));
+  };
+  const beginDrag=(key,e)=>{
+    e.preventDefault(); e.stopPropagation(); setDragCorner(key);
+    const move=ev=>setCorner(key,ev);
+    const up=()=>{window.removeEventListener("pointermove",move);window.removeEventListener("pointerup",up);setDragCorner(null);};
+    window.addEventListener("pointermove",move);window.addEventListener("pointerup",up);
+  };
+
+  const filterCss={
+    original:"none",
+    bright:"brightness(1.12) contrast(1.05)",
+    contrast:"contrast(1.35)",
+    gray:"grayscale(1) contrast(1.1)",
+    scan:"grayscale(1) brightness(1.08) contrast(1.4)"
+  };
+  const filterLabels={original:"Original",bright:"Bright + Clear",contrast:"High Contrast",gray:"Grayscale",scan:"Document Scan"};
   const useImage=async()=>{
     if(!source)return;
     setBusy(true);
     try{
-      const image=await renderLetterheadCrop(source,crop,filterName);
-      onUse({image,crop,filter:filterName});
+      const image=await renderLetterheadCrop(source,corners,filterName);
+      onUse({image,corners,filter:filterName});
     }finally{setBusy(false);}
   };
-  const adjust=(key,value)=>setCrop(prev=>({...prev,[key]:Math.max(0,Math.min(100,Number(value)||0))}));
+
   return <div className="auth-modal-backdrop" style={{zIndex:10010}}>
-    <div className="auth-modal" style={{maxWidth:760,width:"min(760px,calc(100vw - 24px))",maxHeight:"92vh",overflow:"auto",boxSizing:"border-box"}}>
+    <div className="auth-modal" style={{maxWidth:760,width:"min(760px,calc(100vw - 24px))",maxHeight:"94vh",overflow:"auto",boxSizing:"border-box"}}>
       <h2>Company Letterhead Scanner</h2>
-      <p className="auth-hint">Scan ya image select karein. Auto crop ke baad aap crop controls aur filter manually adjust kar sakte hain.</p>
+      <p className="auth-hint">Photo me document ke 4 corners ko drag karke exact paper select karein. Filter button dabate hi preview badlega.</p>
+
       {cameraOpen ? <div style={{display:"grid",gap:10}}>
-        <video ref={videoRef} playsInline muted style={{width:"100%",maxHeight:"55vh",background:"#111",borderRadius:8,objectFit:"contain"}} />
-        <div className="auth-modal-actions"><button className="auth-secondary" onClick={closeCamera}>Cancel</button><button className="auth-primary" onClick={capture}>Capture & Auto Crop</button></div>
+        <video ref={videoRef} playsInline muted style={{width:"100%",maxHeight:"55vh",background:"#111",borderRadius:8,objectFit:"contain"}}/>
+        <div className="auth-modal-actions"><button className="auth-secondary" onClick={closeCamera}>Cancel</button><button className="auth-primary" onClick={capture}>Capture Photo</button></div>
       </div> : <>
-        <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:10}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
           <button className="auth-primary" onClick={openCamera}>📷 Scan Letterhead</button>
           <button className="auth-secondary" onClick={()=>fileRef.current?.click()}>Upload Image</button>
-          <input ref={fileRef} type="file" accept="image/*" onChange={chooseFile} style={{display:"none"}} />
-          {source && <button className="auth-secondary" onClick={autoCrop} disabled={busy}>Auto Detect Crop</button>}
+          <input ref={fileRef} type="file" accept="image/*" onChange={chooseFile} style={{display:"none"}}/>
         </div>
+
         {source && <div style={{display:"grid",gap:10}}>
-          <div style={{background:"#eef0f3",padding:8,borderRadius:8,textAlign:"center"}}>
-            <img src={source} alt="Letterhead preview" style={{maxWidth:"100%",maxHeight:320,objectFit:"contain",background:"#fff"}} />
+          <div ref={previewRef} style={{position:"relative",width:"100%",maxHeight:"48vh",overflow:"hidden",background:"#111",borderRadius:10,touchAction:"none",userSelect:"none"}}>
+            <img src={source} alt="Letterhead" draggable="false" style={{display:"block",width:"100%",height:"auto",maxHeight:"48vh",objectFit:"contain",filter:filterCss[filterName]}}/>
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{position:"absolute",inset:0,width:"100%",height:"100%",pointerEvents:"none"}}>
+              <polygon points={[corners.tl,corners.tr,corners.br,corners.bl].map(p=>p.x+","+p.y).join(" ")} fill="rgba(30,130,70,.10)" stroke="#00b86b" strokeWidth="0.7"/>
+            </svg>
+            {Object.entries(corners).map(([key,p])=><div key={key} onPointerDown={e=>beginDrag(key,e)} title="Drag corner" style={{position:"absolute",left:p.x+"%",top:p.y+"%",transform:"translate(-50%,-50%)",width:24,height:24,borderRadius:"50%",background:"#00b86b",border:"3px solid #fff",boxShadow:"0 2px 8px #0008",touchAction:"none",cursor:dragCorner===key?"grabbing":"grab"}}/> )}
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:8}}>
-            {[["left","Left"],["top","Top"],["right","Right"],["bottom","Bottom"]].map(([k,l])=><label key={k} style={{fontSize:12,fontWeight:700}}>{l} <input type="range" min="0" max="100" step="0.5" value={crop[k]} onChange={e=>adjust(k,e.target.value)} style={{width:"100%"}}/><span>{Number(crop[k]).toFixed(1)}%</span></label>)}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <button className="auth-secondary" onClick={autoCrop} disabled={busy}>✨ Auto Detect Corners</button>
+            <span className="auth-hint">Green corners = final paper area</span>
           </div>
-          <div style={{display:"flex",flexWrap:"wrap",gap:7}}>
-            {["original","bright","contrast","gray","scan"].map(f=><button key={f} className={filterName===f?"auth-primary":"auth-secondary"} onClick={()=>setFilterName(f)}>{f==="scan"?"Scan Clean":f[0].toUpperCase()+f.slice(1)}</button>)}
+
+          <div style={{background:"#eef4f0",borderRadius:9,padding:10}}>
+            <div style={{fontWeight:800,marginBottom:7}}>Document Filter</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:7}}>
+              {Object.keys(filterLabels).map(f=><button key={f} type="button" className={filterName===f?"auth-primary":"auth-secondary"} onClick={()=>setFilterName(f)}>{filterLabels[f]}</button>)}
+            </div>
+            <div className="auth-hint" style={{marginTop:7}}>Button dabate hi upar photo ka live preview change hoga. Final saved image bhi isi filter me hogi.</div>
+          </div>
+
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,fontSize:12}}>
+            <div><b>Top-left</b> {Math.round(corners.tl.x)}%, {Math.round(corners.tl.y)}%</div>
+            <div><b>Top-right</b> {Math.round(corners.tr.x)}%, {Math.round(corners.tr.y)}%</div>
+            <div><b>Bottom-right</b> {Math.round(corners.br.x)}%, {Math.round(corners.br.y)}%</div>
+            <div><b>Bottom-left</b> {Math.round(corners.bl.x)}%, {Math.round(corners.bl.y)}%</div>
           </div>
         </div>}
-        {busy && <div className="auth-hint">Processing image...</div>}
-        <div className="auth-modal-actions"><button className="auth-secondary" onClick={onClose}>Cancel</button>{source && <button className="auth-primary" onClick={useImage} disabled={busy}>Use This Letterhead</button>}</div>
+
+        {busy && <div className="auth-hint" style={{textAlign:"center",padding:8}}>Processing... please wait</div>}
+        <div className="auth-modal-actions">
+          <button className="auth-secondary" onClick={onClose}>Cancel</button>
+          {source && <button className="auth-primary" onClick={useImage} disabled={busy}>✓ Save This Letterhead</button>}
+        </div>
       </>}
     </div>
   </div>;
 }
-
 function SignaturePad({ initialValue, onUse, onClose }) {
   const canvasRef=useRef(null);
   const drawingRef=useRef(false);
   const [hasInk,setHasInk]=useState(false);
   useEffect(()=>{
-    const canvas=canvasRef.current;
-    if(!canvas)return;
-    const ctx=canvas.getContext("2d");
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    if(initialValue?.image){
-      const img=new Image();
-      img.onload=()=>ctx.drawImage(img,0,0,canvas.width,canvas.height);
-      img.src=initialValue.image;
-      setHasInk(true);
-    }
+    const canvas=canvasRef.current;if(!canvas)return;
+    const ctx=canvas.getContext("2d");ctx.clearRect(0,0,canvas.width,canvas.height);
+    if(initialValue?.image){const img=new Image();img.onload=()=>ctx.drawImage(img,0,0,canvas.width,canvas.height);img.src=initialValue.image;setHasInk(true);}
   },[initialValue?.image]);
-  const point=e=>{
-    const rect=canvasRef.current.getBoundingClientRect();
-    const t=e.touches?.[0] || e;
-    return {x:(t.clientX-rect.left)*(canvasRef.current.width/rect.width),y:(t.clientY-rect.top)*(canvasRef.current.height/rect.height)};
-  };
-  const start=e=>{e.preventDefault();drawingRef.current=true;const p=point(e);const ctx=canvasRef.current.getContext("2d");ctx.beginPath();ctx.moveTo(p.x,p.y);};
-  const move=e=>{if(!drawingRef.current)return;e.preventDefault();const p=point(e);const ctx=canvasRef.current.getContext("2d");ctx.lineWidth=3.2;ctx.lineCap="round";ctx.lineJoin="round";ctx.strokeStyle="#111";ctx.lineTo(p.x,p.y);ctx.stroke();setHasInk(true);};
+  const point=e=>{const rect=canvasRef.current.getBoundingClientRect(),t=e.touches?.[0]||e;return{x:(t.clientX-rect.left)*(canvasRef.current.width/rect.width),y:(t.clientY-rect.top)*(canvasRef.current.height/rect.height)};};
+  const start=e=>{e.preventDefault();drawingRef.current=true;const p=point(e),ctx=canvasRef.current.getContext("2d");ctx.beginPath();ctx.moveTo(p.x,p.y);};
+  const move=e=>{if(!drawingRef.current)return;e.preventDefault();const p=point(e),ctx=canvasRef.current.getContext("2d");ctx.lineWidth=3.2;ctx.lineCap="round";ctx.lineJoin="round";ctx.strokeStyle="#111";ctx.lineTo(p.x,p.y);ctx.stroke();setHasInk(true);};
   const end=()=>{drawingRef.current=false;};
-  const clear=()=>{const c=canvasRef.current,ctx=c.getContext("2d");ctx.clearRect(0,0,c.width,c.height);setHasInk(false);};
-  const save=()=>{if(!hasInk){window.alert("Signature draw kijiye.");return;} onUse({image:canvasRef.current.toDataURL("image/png")});};
+  const clear=()=>{const c=canvasRef.current;c.getContext("2d").clearRect(0,0,c.width,c.height);setHasInk(false);};
+  const save=()=>{if(!hasInk){window.alert("Signature draw kijiye.");return;}onUse({image:canvasRef.current.toDataURL("image/png")});};
   return <div className="auth-modal-backdrop" style={{zIndex:10020}}>
     <div className="auth-modal" style={{maxWidth:900,width:"min(900px,calc(100vw - 24px))",boxSizing:"border-box"}}>
       <h2>Authorized Signature</h2>
-      <p className="auth-hint">Mobile par landscape view me signature karna best rahega.</p>
-      <canvas ref={canvasRef} width={1200} height={420} style={{width:"100%",height:"auto",background:"#fff",border:"1px solid #bbb",borderRadius:8,touchAction:"none"}} onPointerDown={start} onPointerMove={move} onPointerUp={end} onPointerCancel={end} />
+      <p className="auth-hint">White board par signature karein. Save ke baad neeche A4 preview me signature ko drag karke position aur size set kar sakte hain.</p>
+      <div style={{background:"#fff",border:"1px solid #bbb",borderRadius:8,padding:8}}>
+        <canvas ref={canvasRef} width={1200} height={420} style={{display:"block",width:"100%",height:"auto",background:"#fff",touchAction:"none"}} onPointerDown={start} onPointerMove={move} onPointerUp={end} onPointerCancel={end}/>
+      </div>
       <div className="auth-modal-actions"><button className="auth-secondary" onClick={clear}>Clear</button><button className="auth-secondary" onClick={onClose}>Cancel</button><button className="auth-primary" onClick={save}>Save Signature</button></div>
     </div>
   </div>;
 }
-
 function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
   const singleCols=[["date","Date"],["jobCard","Job Card"],["reading","Reading"],["plant","Plant"],["parts","Part No. / Service / Qty"]];
   const bulkCols=[["customerName","Customer Name"],["vin","VIN"],["reg","Reg. No."],["saleDate","Sale Date"],["model","Model"],["currentReading","Current Reading"],["services","Service To Be Completed"]];
@@ -1201,14 +1274,34 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
         </div>
         {form.signature?.image && <div style={{border:"1px solid #ddd",borderRadius:8,padding:8,background:"#f7f7f7"}}><img src={form.signature.image} alt="Saved signature" style={{width:"260px",maxWidth:"100%",height:90,objectFit:"contain",background:"#fff"}} /></div>}
         {form.signature && <div style={{borderTop:"1px solid #eee",paddingTop:10}}>
-          <div style={{fontWeight:700,marginBottom:6}}>Signature position / size in A4</div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:8}}>
-            <label style={{fontSize:12}}>Left %<input type="number" min="0" max="90" value={placement.x} onChange={e=>setPlacement({...placement,x:Number(e.target.value)})}/></label>
-            <label style={{fontSize:12}}>Top %<input type="number" min="70" max="98" value={placement.y} onChange={e=>setPlacement({...placement,y:Number(e.target.value)})}/></label>
-            <label style={{fontSize:12}}>Width %<input type="number" min="5" max="45" value={placement.width} onChange={e=>setPlacement({...placement,width:Number(e.target.value)})}/></label>
+          <div style={{fontWeight:700,marginBottom:6}}>Signature Position & Size</div>
+          <div className="auth-hint">Neeche A4 preview me green signature box ko drag karein. Bottom-right handle ko drag karke size badlein/ghatayein.</div>
+          <div style={{display:"flex",justifyContent:"center",padding:"10px 0"}}>
+            <div id="signature-placement-preview" style={{position:"relative",width:"min(330px,100%)",aspectRatio:"210 / 297",background:"#fff",border:"1px solid #bbb",boxShadow:"0 2px 8px #0002",overflow:"hidden",touchAction:"none"}}
+              onPointerMove={e=>{
+                if(!window.__sigDrag)return;
+                const box=e.currentTarget.getBoundingClientRect();
+                const dx=((e.clientX-window.__sigDrag.startX)/box.width)*100;
+                const dy=((e.clientY-window.__sigDrag.startY)/box.height)*100;
+                if(window.__sigDrag.mode==="move") setPlacement(p=>({...p,x:Math.max(2,Math.min(78,p.x+dx)),y:Math.max(60,Math.min(91,p.y+dy))}));
+                if(window.__sigDrag.mode==="resize") setPlacement(p=>({...p,width:Math.max(8,Math.min(45,p.width+dx))}));
+              }}
+              onPointerUp={()=>{window.__sigDrag=null;}}
+              onPointerLeave={()=>{window.__sigDrag=null;}}
+            >
+              <div style={{position:"absolute",left:"8%",right:"8%",top:"8%",height:"1px",background:"#ddd"}}/>
+              <div style={{position:"absolute",left:"8%",right:"8%",bottom:"13%",height:"1px",background:"#ddd"}}/>
+              <div style={{position:"absolute",left:(placement.x||70)+"%",top:(placement.y||91)+"%",width:(placement.width||20)+"%",height:"10%",border:"2px solid #00a86b",background:"#00a86b18",transform:"translate(-0%,-0%)",touchAction:"none"}}
+                onPointerDown={e=>{e.stopPropagation();const r=e.currentTarget.parentElement.getBoundingClientRect();window.__sigDrag={mode:"move",startX:e.clientX,startY:e.clientY};}}
+              >
+                {form.signature?.image && <img src={form.signature.image} alt="" style={{width:"100%",height:"100%",objectFit:"contain",pointerEvents:"none"}}/>}
+                <div title="Resize" onPointerDown={e=>{e.stopPropagation();window.__sigDrag={mode:"resize",startX:e.clientX,startY:e.clientY};}} style={{position:"absolute",right:-6,bottom:-6,width:16,height:16,borderRadius:"50%",background:"#00a86b",border:"2px solid #fff",cursor:"nwse-resize"}}/>
+              </div>
+              <div style={{position:"absolute",left:"8%",right:"8%",bottom:"8%",textAlign:"right",fontSize:9,color:"#555"}}>Authorized Signatory</div>
+            </div>
           </div>
-          <button className="auth-secondary" type="button" style={{marginTop:7}} onClick={savePlacement}>Apply Signature Position</button>
-        </div>}
+          <button className="auth-secondary" type="button" onClick={savePlacement}>✓ Save Signature Position</button>
+        </div>
       </div>
     </div>
 

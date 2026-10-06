@@ -4408,6 +4408,8 @@ function ServiceDecisionApp({ user }) {
   const [estimateHistory, setEstimateHistory] = useState([]);
   const [estimateVehicle, setEstimateVehicle] = useState({ customerName:"", reg:"", vin:"", engine:"", model:"", sale:null });
   const [estimateVehicleNo, setEstimateVehicleNo] = useState("");
+  const [estimateVehicleFromDb, setEstimateVehicleFromDb] = useState(false);
+  const [estimatePrintModel, setEstimatePrintModel] = useState("");
   const [estimateVehicleLookupBusy, setEstimateVehicleLookupBusy] = useState(false);
   const [estimateVehicleLookupMessage, setEstimateVehicleLookupMessage] = useState("");
   const [estimateModelList, setEstimateModelList] = useState([]);
@@ -5780,12 +5782,16 @@ function ServiceDecisionApp({ user }) {
     if (!analysis?.vehicle?.vin) return;
     const dueKeys = BULK_SERVICE_LABELS.filter(([, key]) => analysis?.decision?.result?.[key]).map(([, key]) => key);
     setEstimateVehicle({ customerName:analysis?.vehicle?.customerName||"", reg:analysis?.vehicle?.reg||"", vin:analysis?.vehicle?.vin||"", engine:analysis?.vehicle?.engine||"", model:analysis?.vehicle?.model||"", sale:analysis?.vehicle?.sale||null });
+    setEstimateVehicleFromDb(true);
+    setEstimatePrintModel(analysis?.vehicle?.model||"");
     setEstimateVehicleNo(analysis?.vehicle?.reg||"");
     setEstimateSelectedServices(dueKeys);
     setEstimateSavedId(null);
     setEstimateNumber("EST-" + new Date().getFullYear() + String(new Date().getMonth()+1).padStart(2,"0") + String(new Date().getDate()).padStart(2,"0") + "-" + String(Date.now()).slice(-5));
     setEstimateParts([]); setEstimateLabour([]); setEstimateNotice(""); setEstimateVehicleLookupMessage("");
     setEstimateSourceModel("");
+    setEstimateVehicleFromDb(true);
+    setEstimatePrintModel(analysis?.vehicle?.model||"");
     setEstimateStage("select"); setEstimateOpen(true); setEstimateLoading(true);
     try {
       const history=await loadEstimateHistoryByVin(analysis.vehicle.vin);
@@ -5800,6 +5806,8 @@ function ServiceDecisionApp({ user }) {
 
   function openStandaloneEstimate() {
     setEstimateVehicle({customerName:"",reg:"",vin:"",engine:"",model:"",sale:null});
+    setEstimateVehicleFromDb(false);
+    setEstimatePrintModel("");
     setEstimateVehicleNo("");
     setEstimateHistory({vehicleRows:[],modelRows:[],globalPartRates:[]});
     setEstimateSelectedServices([]); setEstimateParts([]); setEstimateLabour([]);
@@ -5846,6 +5854,8 @@ function ServiceDecisionApp({ user }) {
         vehicle_no: vehicleNo,
         vehicle_data: {
           ...estimateVehicle,
+          fromDb: estimateVehicleFromDb,
+          printModel: estimatePrintModel || estimateVehicle?.model || "",
           sale: estimateVehicle?.sale instanceof Date
             ? estimateVehicle.sale.toISOString()
             : estimateVehicle?.sale || null,
@@ -5886,6 +5896,12 @@ function ServiceDecisionApp({ user }) {
         model:vehicle.model || "",
         sale:vehicle.sale ? new Date(vehicle.sale) : null,
       });
+      setEstimateVehicleFromDb(
+        typeof vehicle.fromDb === "boolean"
+          ? vehicle.fromDb
+          : Boolean(vehicle.vin && vehicle.engine)
+      );
+      setEstimatePrintModel(String(vehicle.printModel || vehicle.model || "").trim());
       setEstimateSelectedServices(Array.isArray(saved.selected_services) ? saved.selected_services : []);
       const savedParts = Array.isArray(saved.parts) ? saved.parts : [];
       const savedLabour = Array.isArray(saved.labour) ? saved.labour : [];
@@ -5935,6 +5951,11 @@ function ServiceDecisionApp({ user }) {
     const selectedModel = String(model || "").trim();
     if (!selectedModel) return;
 
+    if (estimateModelSelectionMode === "required" && !String(estimateVehicle?.customerName || "").trim()) {
+      setEstimateVehicleLookupMessage("Customer Name required hai. Pehle customer name enter karein.");
+      return;
+    }
+
     setEstimateModelLoading(true);
     setEstimateVehicleLookupMessage("");
     try {
@@ -5955,6 +5976,7 @@ function ServiceDecisionApp({ user }) {
       // If the vehicle was not found in DB, this selected model becomes the
       // working model because there is no actual DB vehicle model available.
       if (estimateModelSelectionMode === "required") {
+        setEstimatePrintModel(selectedModel);
         setEstimateVehicle(prev => ({...prev, model:selectedModel}));
       }
 
@@ -5989,12 +6011,15 @@ function ServiceDecisionApp({ user }) {
       const rows=Array.isArray(data?.rows)?data.rows:[];
       const dbVehicle=data?.vehicle || rows[0] || null;
       if(dbVehicle){
+        const dbModel = String(dbVehicle?.model || "").trim();
+        setEstimateVehicleFromDb(true);
+        setEstimatePrintModel(dbModel);
         setEstimateVehicle({
           customerName:dbVehicle?.customer_name||"",
           reg:String(dbVehicle?.registration||registration).replace(/\s+/g,"").toUpperCase(),
           vin:String(dbVehicle?.vin||"").trim().toUpperCase(),
           engine:dbVehicle?.engine||"",
-          model:dbVehicle?.model||"",
+          model:dbModel,
           sale:dbVehicle?.sale_date?new Date(dbVehicle.sale_date):null
         });
         setEstimateHistory({vehicleRows:rows,modelRows:Array.isArray(data?.modelRows)?data.modelRows:[],globalPartRates:Array.isArray(data?.globalPartRates)?data.globalPartRates:[]});
@@ -6003,6 +6028,8 @@ function ServiceDecisionApp({ user }) {
           : "Vehicle found in DB. No service history is available; enter estimate lines manually.");
 
       } else {
+        setEstimateVehicleFromDb(false);
+        setEstimatePrintModel("");
         setEstimateVehicle(prev=>({...prev,reg:registration,vin:""}));
         setEstimateHistory({vehicleRows:[],modelRows:[],globalPartRates:[]});
         setEstimateVehicleLookupMessage("Vehicle not found in DB. Select a model from the DB list to prepare the service estimate.");
@@ -6010,6 +6037,8 @@ function ServiceDecisionApp({ user }) {
         return;
       }
     } catch {
+      setEstimateVehicleFromDb(false);
+      setEstimatePrintModel("");
       setEstimateVehicle(prev=>({...prev,reg:registration,vin:""}));
       setEstimateHistory({vehicleRows:[],modelRows:[],globalPartRates:[]});
       setEstimateVehicleLookupMessage("DB lookup failed. You can continue with manual vehicle details.");
@@ -6195,6 +6224,138 @@ function ServiceDecisionApp({ user }) {
   const estimateLabourGst = estimateLabourBase*0.18;
   const estimateLabourTotal = estimateLabourBase+estimateLabourGst;
   const estimateGrandTotal = estimatePartsTotal+estimateLabourTotal;
+  function exportEstimateExcel() {
+    const vehicle = estimateVehicle || {};
+    const printModel = String(estimatePrintModel || vehicle.model || "").trim();
+    const wb = XLSX.utils.book_new();
+    const rows = [
+      ["SERVICE ESTIMATE"],
+      ["Estimate No.", estimateNumber || "-", "", "", "Prepared", formatDate(new Date()), "", ""],
+      [],
+    ];
+
+    if (estimateVehicleFromDb) {
+      rows.push(
+        ["Customer Name", vehicle.customerName || "-", "", "Reg. No.", vehicle.reg || "-", "", "Model", printModel || "-"],
+        ["VIN", vehicle.vin || "-", "", "Engine No.", vehicle.engine || "-", "", "Sale Date", formatDate(vehicle.sale)]
+      );
+    } else {
+      rows.push(
+        ["Customer Name", vehicle.customerName || "-", "", "Reg. No.", vehicle.reg || "-", "", "Model", printModel || "-"]
+      );
+    }
+
+    rows.push([]);
+    rows.push(["SELECTED AGGREGATE SERVICES"]);
+    rows.push([
+      estimateSelectedServices.length
+        ? BULK_SERVICE_LABELS.filter(([,key])=>estimateSelectedServices.includes(key)).map(([label])=>label).join(", ")
+        : "No aggregate service selected"
+    ]);
+    rows.push([]);
+    rows.push(["PARTS"]);
+    rows.push(["S.No.", "Part No.", "Description", "Qty", "Rate (Incl. GST)", "Amount", "", ""]);
+
+    estimateParts.forEach((item,index) => {
+      rows.push([
+        index + 1,
+        item.partNo || "",
+        item.description || "",
+        Number(item.qty || 0),
+        Number(item.rate || 0),
+        Number(item.qty || 0) * Number(item.rate || 0),
+        "",
+        ""
+      ]);
+    });
+    if (!estimateParts.length) rows.push(["", "", "No parts added", "", "", 0, "", ""]);
+
+    rows.push([]);
+    rows.push(["LABOUR"]);
+    rows.push(["S.No.", "Labour", "Qty", "Rate", "Amount", "", "", ""]);
+    estimateLabour.forEach((item,index) => {
+      rows.push([
+        index + 1,
+        item.description || "",
+        Number(item.qty || 1),
+        Number(item.rate || 0),
+        Number(item.qty || 1) * Number(item.rate || 0),
+        "",
+        "",
+        ""
+      ]);
+    });
+    if (!estimateLabour.length) rows.push(["", "No labour added", "", "", 0, "", "", ""]);
+
+    rows.push([]);
+    rows.push(["TOTALS", "", "", "", "", "", "", ""]);
+    rows.push(["Parts Total (GST Incl.)", "", "", "", estimatePartsTotal, "", "", ""]);
+    rows.push(["Labour Subtotal", "", "", "", estimateLabourBase, "", "", ""]);
+    rows.push(["GST on Labour (18%)", "", "", "", estimateLabourGst, "", "", ""]);
+    rows.push(["Grand Total", "", "", "", estimateGrandTotal, "", "", ""]);
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws["!cols"] = [
+      {wch:7}, {wch:24}, {wch:34}, {wch:11},
+      {wch:17}, {wch:17}, {wch:14}, {wch:14}
+    ];
+    ws["!rows"] = rows.map((row,index) => ({hpt:
+      index === 0 ? 24 :
+      ([5,9,15].includes(index) ? 20 : 18)
+    }));
+
+    // Pre-merge the print layout so the exported sheet is ready for A4 printing.
+    ws["!merges"] = [
+      {s:{r:0,c:0},e:{r:0,c:7}},
+      {s:{r:1,c:1},e:{r:1,c:3}},
+      {s:{r:1,c:5},e:{r:1,c:7}}
+    ];
+    // Merge vehicle value blocks and section headings.
+    const merge = (r,c1,c2) => ws["!merges"].push({s:{r,c:c1},e:{r,c:c2}});
+    merge(3,1,2); merge(3,4,5);
+    merge(4,1,2); merge(4,4,5);
+    const sectionRows = rows.map((row,index)=>row[0] === "SELECTED AGGREGATE SERVICES" || row[0] === "PARTS" || row[0] === "LABOUR" || row[0] === "TOTALS" ? index : -1).filter(index=>index>=0);
+    sectionRows.forEach(r=>merge(r,0,7));
+    const serviceRow = rows.findIndex(row=>row[0] === "SELECTED AGGREGATE SERVICES") + 1;
+    if(serviceRow>0) merge(serviceRow,0,7);
+
+    // Freeze the title/vehicle section and set A4 portrait, fit-to-width print settings.
+    ws["!freeze"] = {xSplit:0,ySplit:5};
+    ws["!margins"] = {left:0.25,right:0.25,top:0.35,bottom:0.35,header:0.15,footer:0.15};
+    ws["!pageSetup"] = {paperSize:9,orientation:"portrait",fitToWidth:1,fitToHeight:0};
+    ws["!printOptions"] = {horizontalCentered:true,verticalCentered:false};
+    ws["!printArea"] = "A1:H" + rows.length;
+
+    // Best-effort cell styles. The data/layout itself remains compatible with standard XLSX.
+    const border = {style:"thin",color:{rgb:"808080"}};
+    const fillHeader = {fgColor:{rgb:"1F4E78"}};
+    const fillSection = {fgColor:{rgb:"D9EAF7"}};
+    const styleRange = (range, style) => {
+      const decoded = XLSX.utils.decode_range(range);
+      for(let rr=decoded.s.r;rr<=decoded.e.r;rr++){
+        for(let cc=decoded.s.c;cc<=decoded.e.c;cc++){
+          const addr=XLSX.utils.encode_cell({r:rr,c:cc});
+          if(!ws[addr]) ws[addr]={t:"s",v:""};
+          ws[addr].s = {...style,border:{top:border,bottom:border,left:border,right:border}};
+        }
+      }
+    };
+    styleRange("A1:H1",{font:{bold:true,sz:16,color:{rgb:"FFFFFF"}},fill:fillHeader,alignment:{horizontal:"center",vertical:"center"}});
+    sectionRows.forEach(r=>styleRange("A"+(r+1)+":H"+(r+1),{font:{bold:true,sz:11},fill:fillSection}));
+    styleRange("A"+(rows.findIndex(row=>row[0]==="PARTS")+1)+":F"+(rows.findIndex(row=>row[0]==="PARTS")+2),{font:{bold:true}});
+    styleRange("A"+(rows.findIndex(row=>row[0]==="LABOUR")+1)+":E"+(rows.findIndex(row=>row[0]==="LABOUR")+2),{font:{bold:true}});
+    styleRange("A"+(rows.length-4)+":E"+rows.length,{font:{bold:true}});
+    for(const addr of Object.keys(ws)){
+      if(/^E\d+$/.test(addr) || /^F\d+$/.test(addr)) {
+        if(ws[addr] && typeof ws[addr].v === "number") ws[addr].z = '#,##0.00';
+      }
+    }
+
+    wb.Props = {Title:"Service Estimate",Subject:"A4 Ready Service Estimate"};
+    const fileName = ("Service_Estimate_" + (vehicle.reg || vehicle.vin || "Vehicle")).replace(/[^a-z0-9_.-]+/gi,"_") + ".xlsx";
+    XLSX.writeFile(wb,fileName,{bookType:"xlsx",cellStyles:true,compression:true});
+  }
+
   function buildEstimatePdf(autoPrint = false) {
     const pdf = new jsPDF({ unit:"mm", format:"a4", orientation:"portrait", compress:true });
     const pageWidth = 210;
@@ -6248,10 +6409,15 @@ function ServiceDecisionApp({ user }) {
       const colWidth = width / 3;
       const rowHeight = 12;
       const vehicleTop = contentTop + 21;
-      const vehicleRows = [
-        [["Customer", vehicle.customerName || "-"], ["Reg. No.", vehicle.reg || "-"], ["VIN", vehicle.vin || "-"]],
-        [["Model", vehicle.model || "-"], ["Current Reading", analysis?.running?.current ? formatNumber(analysis.running.current) + " " + (analysis.running.unit || getTargetUnit(vehicle)) : "-"], ["Date", formatDate(new Date())]]
-      ];
+      const printModel = String(estimatePrintModel || vehicle.model || "").trim();
+      const vehicleRows = estimateVehicleFromDb
+        ? [
+            [["Customer", vehicle.customerName || "-"], ["Reg. No.", vehicle.reg || "-"], ["VIN", vehicle.vin || "-"]],
+            [["Model", printModel || "-"], ["Engine No.", vehicle.engine || "-"], ["Sale Date", formatDate(vehicle.sale)]]
+          ]
+        : [
+            [["Customer", vehicle.customerName || "-"], ["Reg. No.", vehicle.reg || "-"], ["Model", printModel || "-"]]
+          ];
 
       pdf.setFontSize(7.2);
       vehicleRows.forEach((row, rowIndex) => {
@@ -7973,6 +8139,19 @@ function ServiceDecisionApp({ user }) {
                         ? "Vehicle DB me nahi mila. Service estimate ke liye model select karein."
                         : "Alternate Model Select"}
                     </div>
+                    {estimateModelSelectionMode === "required" && (
+                      <div style={{marginBottom:10}}>
+                        <label style={{fontWeight:700,display:"block",marginBottom:5}}>Customer Name</label>
+                        <input
+                          className="excel-input"
+                          value={estimateVehicle?.customerName || ""}
+                          onChange={e=>{setEstimateVehicle(prev=>({...prev,customerName:e.target.value}));setEstimateVehicleLookupMessage("");}}
+                          placeholder="Enter Customer / Transporter Name"
+                          autoFocus
+                        />
+                        <div className="small-note" style={{marginTop:5}}>Vehicle DB me nahi mila. Customer Name aur selected Model estimate/PDF ke liye final rahenge.</div>
+                      </div>
+                    )}
                     <div className="small-note" style={{marginBottom:10}}>
                       Model list DB se aa rahi hai. Search karke koi bhi similar model select kar sakte hain.
                     </div>
@@ -8069,7 +8248,7 @@ function ServiceDecisionApp({ user }) {
                   <table className="history-table estimate-labour-table"><thead><tr><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th><th></th></tr></thead><tbody>{estimateLabour.map(item=><tr key={item.id}><td data-label="Description"><input ref={el=>{if(el) estimateFieldRefs.current.labourDescription[item.id]=el; else delete estimateFieldRefs.current.labourDescription[item.id];}} value={item.description} onChange={e=>updateEstimateItem("labour",item.id,"description",e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();focusEstimateField("labour",item.id,"labourRate");}}} enterKeyHint="next"/></td><td data-label="Qty"><input type="number" min="0" step="0.01" value={item.qty ?? 1} onChange={e=>updateEstimateItem("labour",item.id,"qty",e.target.value)} onBlur={normalizeEstimateQuantities} style={{width:80}}/></td><td data-label="Rate"><input ref={el=>{if(el) estimateFieldRefs.current.labourRate[item.id]=el; else delete estimateFieldRefs.current.labourRate[item.id];}} type="number" min="0" step="0.01" value={item.rate} onChange={e=>updateEstimateItem("labour",item.id,"rate",e.target.value)} enterKeyHint="done" style={{width:110}}/></td><td data-label="Amount">{formatNumber(item.qty*item.rate)}</td><td data-label="Action"><button className="excel-button no-print" onClick={()=>removeEstimateItem("labour",item.id)}>Delete</button></td></tr>)}{!estimateLabour.length&&<tr><td colSpan="5">No historical labour found. Add manually.</td></tr>}</tbody></table>
                   <div style={{margin:"8px 0"}}><button className="excel-button no-print" onClick={()=>addEstimateItem("labour")}>+ Add Labour</button></div>
                   <div style={{marginTop:16,marginLeft:"auto",maxWidth:380,borderTop:"2px solid #222",paddingTop:10}}><div style={{display:"flex",justifyContent:"space-between"}}><span>Parts Total</span><b>₹ {formatNumber(estimatePartsTotal)}</b></div><div style={{display:"flex",justifyContent:"space-between"}}><span>Labour Subtotal</span><b>₹ {formatNumber(estimateLabourBase)}</b></div><div style={{display:"flex",justifyContent:"space-between"}}><span>GST on Labour (18%)</span><b>₹ {formatNumber(estimateLabourGst)}</b></div><div style={{display:"flex",justifyContent:"space-between",fontSize:18,marginTop:6}}><span>Grand Total</span><b>₹ {formatNumber(estimateGrandTotal)}</b></div></div>
-                  <div className="no-print" style={{display:"flex",flexWrap:"wrap",justifyContent:"flex-end",gap:8,marginTop:18,paddingTop:12,borderTop:"1px solid #ddd"}}><button className="excel-button" onClick={reviseEstimateServices}>Revise Aggregate Service</button><button className="excel-button green" disabled={estimateSaveBusy} onClick={saveEstimateToCache}>{estimateSaveBusy ? "Saving..." : "Save Estimate"}</button><button className="excel-button" onClick={()=>buildEstimatePdf(true)}>Print A4</button><button className="excel-button green" onClick={()=>buildEstimatePdf(false)}>Download PDF</button></div>
+                  <div className="no-print" style={{display:"flex",flexWrap:"wrap",justifyContent:"flex-end",gap:8,marginTop:18,paddingTop:12,borderTop:"1px solid #ddd"}}><button className="excel-button" onClick={reviseEstimateServices}>Revise Aggregate Service</button><button className="excel-button green" disabled={estimateSaveBusy} onClick={saveEstimateToCache}>{estimateSaveBusy ? "Saving..." : "Save Estimate"}</button><button className="excel-button" onClick={()=>buildEstimatePdf(true)}>Print A4</button><button className="excel-button green" onClick={()=>buildEstimatePdf(false)}>Download PDF</button><button className="excel-button green" onClick={exportEstimateExcel}>Export Excel</button></div>
                   <div style={{marginTop:8,fontSize:12,color:"#666"}}>Estimate only. Historical DB rates are without GST; 18% GST is added to historical part rates shown above. Missing items/rates can be entered manually using GST-inclusive rates.</div>
                 </>
               )}

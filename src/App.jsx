@@ -3158,84 +3158,28 @@ function estimateRowRank(row = {}, index = 0) {
   return Number.isFinite(time) ? time : -index;
 }
 
-function estimateChooseBestQuantity(rows = []) {
-  const candidates = rows
-    .map((row, index) => ({
-      row,
-      index,
-      qty: Number(row?.quantity),
-      rank: estimateRowRank(row, index),
-    }))
-    .filter(item => Number.isFinite(item.qty) && item.qty > 0);
-
-  if (!candidates.length) return null;
-
-  candidates.sort((a, b) => b.rank - a.rank);
-  return {
-    qty: candidates[0].qty,
-    count: 1,
-    latestRank: candidates[0].rank,
-    latestRow: candidates[0].row,
-  };
+const ESTIMATE_MODEL_QTY_RULES={engineOil:{min:12,max:22},gearOil:{min:6,max:9},steeringOil:{fixed:3},axleOil:{min:12,max:33},clutchOil:{fixed:0.5},coolant:{min:15,max:30}};
+const ESTIMATE_MODEL_STANDARD_NAMES={engineOil:"ENGINE OIL",gearOil:"GEAR OIL",steeringOil:"STEERING OIL",axleOil:"AXLE OIL",clutchOil:"CLUTCH OIL",coolant:"COOLANT"};
+function estimateChooseBestQuantity(rows=[]){
+  const a=rows.map((row,index)=>({row,qty:Number(row?.quantity),rank:estimateRowRank(row,index)})).filter(x=>Number.isFinite(x.qty)&&x.qty>0);
+  if(!a.length)return null;
+  const m=new Map();
+  for(const x of a){const k=String(x.qty),v=m.get(k);if(!v)m.set(k,{qty:x.qty,count:1,latestRank:x.rank,latestRow:x.row});else{v.count++;if(x.rank>v.latestRank){v.latestRank=x.rank;v.latestRow=x.row;}}}
+  return [...m.values()].sort((a,b)=>b.count-a.count||b.latestRank-a.latestRank||b.qty-a.qty)[0]||null;
 }
-
-function estimateChooseBestRate(rows = []) {
-  const valid = rows
-    .map((row, index) => ({
-      row,
-      rate: Number(row?.rate),
-      rank: estimateRowRank(row, index),
-    }))
-    .filter(item => Number.isFinite(item.rate) && item.rate > 0);
-
-  if (!valid.length) return 0;
-  valid.sort((a, b) => b.rank - a.rank);
-  return valid[0].rate;
+function estimateChooseBestRate(rows=[]){
+  const a=rows.map((row,index)=>({row,rate:Number(row?.rate),rank:estimateRowRank(row,index)})).filter(x=>Number.isFinite(x.rate)&&x.rate>0);
+  if(!a.length)return 0;a.sort((x,y)=>y.rank-x.rank);return a[0].rate;
 }
-
-function estimateBuildHistoricalItem(type, serviceKey, rows, code = "") {
-  if (!rows.length) return null;
-
-  const qtyChoice = estimateChooseBestQuantity(rows);
-  // Labour operations are normally one job operation. Some DMS exports do not
-  // carry a usable quantity on P001 rows, so do not hide a valid historical
-  // labour operation just because quantity is blank/zero.
-  const effectiveQtyChoice = qtyChoice || {
-    qty: type === "labour" ? 1 : 0,
-    count: 1,
-    latestRank: -1,
-    latestRow: rows[0],
-  };
-  if (effectiveQtyChoice.qty <= 0) return null;
-
-  const rate = estimateChooseBestRate(rows);
-  const sourceRow = rows
-    .slice()
-    .sort((a, b) => estimateRowRank(b, 0) - estimateRowRank(a, 0))[0];
-
-  const partNo = String(code || sourceRow.part_code || "").trim();
-  const description = String(
-    sourceRow.part_description || sourceRow.standardized_part || ""
-  ).trim();
-
-  const customerRate = Number.isFinite(rate) && rate > 0
-    ? Number((rate * 1.18).toFixed(2))
-    : 0;
-
-  return {
-    id: type + "-" + serviceKey + "-" + partNo + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7),
-    type,
-    serviceKey,
-    partNo,
-    description,
-    qty: effectiveQtyChoice.qty,
-    rate: customerRate,
-    baseRate: rate,
-    source: "Historical DB (18% GST added)",
-    latestRow: sourceRow,
-  };
+function estimateRowCategoryCode(value=""){const t=String(value||"").trim().toUpperCase();return t.startsWith("P001")?"P001":t.startsWith("P002")?"P002":"";}
+function estimateBuildHistoricalItem(type,serviceKey,rows,code="",forcedQty=null,rateOverride=null){
+  if(!rows.length)return null;
+  const q=forcedQty!==null?{qty:Number(forcedQty),latestRow:rows.slice().sort((a,b)=>estimateRowRank(b,0)-estimateRowRank(a,0))[0]}:estimateChooseBestQuantity(rows);
+  const e=q||{qty:type==="labour"?1:0,latestRow:rows[0]}; if(e.qty<=0)return null;
+  const sourceRow=e.latestRow||rows[0],rate=rateOverride!==null?Number(rateOverride||0):estimateChooseBestRate(rows);
+  const partNo=String(code||sourceRow?.part_code||"").trim(),description=String(sourceRow?.part_description||sourceRow?.standardized_part||"").trim();
+  return {id:type+"-"+serviceKey+"-"+partNo+"-"+Date.now()+"-"+Math.random().toString(36).slice(2,7),type,serviceKey,partNo,description,qty:e.qty,rate:type==="part"&&rate>0?Number((rate*1.18).toFixed(2)):Number(rate||0),baseRate:rate,source:type==="part"?"Historical DB (18% GST added)":"Historical DB (Paid Order rate)",latestRow:sourceRow};
 }
-
 function estimateJobCardKey(row = {}) {
   const jc = String(row?.job_card || row?.job_card_no || "").trim();
   return jc ? "JC|" + jc.toUpperCase() : "DATE|" + String(row?.job_date || "").slice(0, 10);

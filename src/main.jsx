@@ -10,6 +10,12 @@ function PwaInstallControl() {
   const [installed, setInstalled] = useState(false)
 
   useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch((error) => {
+        console.error('PWA service worker registration failed:', error)
+      })
+    }
+
     const handleBeforeInstall = (event) => {
       event.preventDefault()
       setInstallPrompt(event)
@@ -40,15 +46,8 @@ function PwaInstallControl() {
   const install = async () => {
     const name = String(appName || '').trim().replace(/[<>\\/\x00-\x1F]/g, '').slice(0, 40) || 'Service Estimate'
     localStorage.setItem('serviceEstimateInstallName', name)
-
-    const manifestLink = document.querySelector('link[rel="manifest"]')
-    if (manifestLink) {
-      manifestLink.href = '/api/manifest?name=' + encodeURIComponent(name) + '&v=' + Date.now()
-    }
     document.title = name
     setDialogOpen(false)
-
-    await new Promise((resolve) => setTimeout(resolve, 350))
 
     try {
       const result = await installPrompt.prompt()
@@ -85,7 +84,7 @@ function PwaInstallControl() {
           }}>
             <div style={{fontSize:20,fontWeight:900,marginBottom:7}}>Install App</div>
             <div style={{fontSize:13,color:'#68737d',marginBottom:16}}>
-              Choose the name you want to see under the app icon.
+              Choose the name you want to use for this browser session.
             </div>
             <input
               autoFocus

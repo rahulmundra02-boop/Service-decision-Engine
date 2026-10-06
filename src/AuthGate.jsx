@@ -1079,7 +1079,7 @@ function SignaturePad({ initialValue, onUse, onClose }) {
     const canvas=canvasRef.current;
     if(!canvas)return;
     const ctx=canvas.getContext("2d");
-    ctx.fillStyle="#fff"; ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.clearRect(0,0,canvas.width,canvas.height);
     if(initialValue?.image){
       const img=new Image();
       img.onload=()=>ctx.drawImage(img,0,0,canvas.width,canvas.height);
@@ -1095,7 +1095,7 @@ function SignaturePad({ initialValue, onUse, onClose }) {
   const start=e=>{e.preventDefault();drawingRef.current=true;const p=point(e);const ctx=canvasRef.current.getContext("2d");ctx.beginPath();ctx.moveTo(p.x,p.y);};
   const move=e=>{if(!drawingRef.current)return;e.preventDefault();const p=point(e);const ctx=canvasRef.current.getContext("2d");ctx.lineWidth=3.2;ctx.lineCap="round";ctx.lineJoin="round";ctx.strokeStyle="#111";ctx.lineTo(p.x,p.y);ctx.stroke();setHasInk(true);};
   const end=()=>{drawingRef.current=false;};
-  const clear=()=>{const c=canvasRef.current,ctx=c.getContext("2d");ctx.fillStyle="#fff";ctx.fillRect(0,0,c.width,c.height);setHasInk(false);};
+  const clear=()=>{const c=canvasRef.current,ctx=c.getContext("2d");ctx.clearRect(0,0,c.width,c.height);setHasInk(false);};
   const save=()=>{if(!hasInk){window.alert("Signature draw kijiye.");return;} onUse({image:canvasRef.current.toDataURL("image/png")});};
   return <div className="auth-modal-backdrop" style={{zIndex:10020}}>
     <div className="auth-modal" style={{maxWidth:900,width:"min(900px,calc(100vw - 24px))",boxSizing:"border-box"}}>

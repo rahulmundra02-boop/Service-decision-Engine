@@ -6312,8 +6312,11 @@ function ServiceDecisionApp({ user }) {
     ];
     // Merge vehicle value blocks and section headings.
     const merge = (r,c1,c2) => ws["!merges"].push({s:{r,c:c1},e:{r,c:c2}});
-    merge(3,1,2); merge(3,4,5);
-    merge(4,1,2); merge(4,4,5);
+    const vehicleRowsForExcel = estimateVehicleFromDb ? [3,4] : [3];
+    vehicleRowsForExcel.forEach(r => {
+      merge(r,1,2);
+      merge(r,4,5);
+    });
     const sectionRows = rows.map((row,index)=>row[0] === "SELECTED AGGREGATE SERVICES" || row[0] === "PARTS" || row[0] === "LABOUR" || row[0] === "TOTALS" ? index : -1).filter(index=>index>=0);
     sectionRows.forEach(r=>merge(r,0,7));
     const serviceRow = rows.findIndex(row=>row[0] === "SELECTED AGGREGATE SERVICES") + 1;
@@ -6342,9 +6345,12 @@ function ServiceDecisionApp({ user }) {
     };
     styleRange("A1:H1",{font:{bold:true,sz:16,color:{rgb:"FFFFFF"}},fill:fillHeader,alignment:{horizontal:"center",vertical:"center"}});
     sectionRows.forEach(r=>styleRange("A"+(r+1)+":H"+(r+1),{font:{bold:true,sz:11},fill:fillSection}));
-    styleRange("A"+(rows.findIndex(row=>row[0]==="PARTS")+1)+":F"+(rows.findIndex(row=>row[0]==="PARTS")+2),{font:{bold:true}});
-    styleRange("A"+(rows.findIndex(row=>row[0]==="LABOUR")+1)+":E"+(rows.findIndex(row=>row[0]==="LABOUR")+2),{font:{bold:true}});
-    styleRange("A"+(rows.length-4)+":E"+rows.length,{font:{bold:true}});
+    const partsSectionRow = rows.findIndex(row=>row[0]==="PARTS");
+    const labourSectionRow = rows.findIndex(row=>row[0]==="LABOUR");
+    const totalsRow = rows.findIndex(row=>row[0]==="TOTALS");
+    if(partsSectionRow>=0) styleRange("A"+(partsSectionRow+2)+":F"+(labourSectionRow-1),{font:{bold:true}});
+    if(labourSectionRow>=0) styleRange("A"+(labourSectionRow+2)+":E"+(totalsRow-1),{font:{bold:true}});
+    if(totalsRow>=0) styleRange("A"+(totalsRow+1)+":E"+rows.length,{font:{bold:true}});
     for(const addr of Object.keys(ws)){
       if(/^E\d+$/.test(addr) || /^F\d+$/.test(addr)) {
         if(ws[addr] && typeof ws[addr].v === "number") ws[addr].z = '#,##0.00';
@@ -6432,7 +6438,7 @@ function ServiceDecisionApp({ user }) {
         });
       });
 
-      return vehicleTop + rowHeight * 2;
+      return vehicleTop + rowHeight * vehicleRows.length;
     };
 
     const pageMargins = {

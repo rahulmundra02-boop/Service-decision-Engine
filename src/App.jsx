@@ -3423,38 +3423,57 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
 
         let candidates = vinExact.length ? vinExact : modelExact;
 
-        // Explicit reference part numbers must exist as the exact part
-        // code in the vehicle history or the same-model history. Never
-        // fabricate/display a reference part number by borrowing quantity/rate
-        // from another part in the same service family.
+        // If the reference code is not present, use the actual historical
+        // part from the same service family. This keeps estimate generation
+        // useful across model/variant-specific part numbers.
+        if (!candidates.length) {
+          const vehicleFamily = rowsByReferenceOrService(vehicle, serviceKey);
+          const modelFamily = rowsByReferenceOrService(modelHistory, serviceKey);
+          candidates = vehicleFamily.length ? vehicleFamily : modelFamily;
+        }
         if (!candidates.length) continue;
 
-        // Engine Oil / Axle Oil: prefer a full replacement quantity when
-        // available, but never combine quantities from different job cards.
-        if (serviceKey === "engineOil" && referenceCode === "EN699991") {
-          const full = candidates.filter(row =>
-            !estimateStandardPartName(row).includes("FILTER") &&
-            Number(row?.quantity || 0) >= 12
-          );
-          if (full.length) candidates = full;
+        // Apply model-wise replacement quantity rules. For ranged oils/coolant,
+        // choose the maximum qualifying quantity. For fixed quantities, use
+        // the prescribed quantity rather than an old historical quantity.
+        const qtyRule = ESTIMATE_MODEL_QTY_RULES[serviceKey];
+        let forcedQty = null;
+        if (qtyRule?.fixed !== undefined) {
+          forcedQty = Number(qtyRule.fixed);
+        } else if (qtyRule?.min !== undefined) {
+          const qualifying = candidates.filter(row => {
+            const qty = Number(row?.quantity || 0);
+            return qty >= Number(qtyRule.min) && qty <= Number(qtyRule.max);
+          });
+          if (qualifying.length) {
+            const maxQty = Math.max(...qualifying.map(row => Number(row.quantity || 0)));
+            candidates = qualifying
+              .filter(row => Number(row.quantity || 0) === maxQty)
+              .sort((a,b) => estimateRowRank(b,0) - estimateRowRank(a,0));
+            forcedQty = maxQty;
+          }
         }
-        if (serviceKey === "axleOil") {
-          const full = candidates.filter(row => Number(row?.quantity || 0) >= 12);
-          if (full.length) candidates = full;
+
+        // Engine Oil reference EN699991 must represent oil, not an engine-oil
+        // filter line. Prefer a qualifying oil row when available.
+        if (serviceKey === "engineOil" && referenceCode === "EN699991") {
+          const oilRows = candidates.filter(row => !estimateStandardPartName(row).includes("FILTER"));
+          if (oilRows.length) candidates = oilRows;
         }
 
         const standard = estimateStandardPartName(candidates[0]);
+        const actualPartCode = normalizePartCode(candidates[0]?.part_code) || referenceCode;
         const item = estimateBuildHistoricalItem(
           "part",
           serviceKey,
           candidates,
-          referenceCode
+          actualPartCode,
+          forcedQty
         );
         if (item) {
-          // Part number is authoritative. Quantity comes from same-model
-          // history, while rate is allowed to come from any vehicle/model
-          // carrying the exact same part number.
-          item.partNo = referenceCode;
+          // Keep the actual historical part number when a family fallback was
+          // required. Exact reference matches remain unchanged.
+          item.partNo = actualPartCode;
           if (!item.description) item.description = standard;
           result.push(applyGlobalPartRate(item));
         }

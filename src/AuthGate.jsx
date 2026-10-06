@@ -1302,7 +1302,7 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
             </div>
           </div>
           <div className="auth-hint" style={{marginTop:7}}>Position aur size automatically update ho rahe hain. Final changes ke liye neeche <b>Save Profile & Settings</b> dabayein.</div>
-        </div>
+        </div>}
       </div>
     </div>
 

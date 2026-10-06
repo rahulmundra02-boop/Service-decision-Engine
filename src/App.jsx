@@ -6378,7 +6378,7 @@ function ServiceDecisionApp({ user }) {
     const pageHeight = 297;
     const margin = 10;
     const width = 190;
-    const bottomMargin = 19;
+    const bottomMargin = 28;
     const bottomSafeY = pageHeight - bottomMargin;
     const vehicle = estimateVehicle || analysis?.vehicle || {};
     const workshop = String(user?.dealerName || "Workshop").trim();
@@ -6476,21 +6476,6 @@ function ServiceDecisionApp({ user }) {
     drawPageHeader();
 
     let y = tableTop + 2;
-    pdf.setFont("helvetica","bold");
-    pdf.setFontSize(10);
-    pdf.text("Selected Aggregate Services",margin,y);
-    y += 4;
-
-    const selectedNames = BULK_SERVICE_LABELS
-      .filter(([,key]) => estimateSelectedServices.includes(key))
-      .map(([name]) => name);
-
-    pdf.setFont("helvetica","normal");
-    pdf.setFontSize(8.5);
-    const selectedText = selectedNames.length ? selectedNames.join(", ") : "No aggregate service selected";
-    const selectedLines = pdf.splitTextToSize(selectedText, width);
-    pdf.text(selectedLines, margin, y + 3);
-    y += Math.max(7, selectedLines.length * 4.5 + 3);
 
     autoTable(pdf,{
       startY:y,
@@ -6643,13 +6628,21 @@ function ServiceDecisionApp({ user }) {
       pdf.text("Authorized Signatory",165,signatureY + 5,{align:"center"});
     }
 
+    const fileNameBase = ((vehicle.reg || vehicle.vin || "Vehicle") + " - Estimate")
+      .replace(/[^a-z0-9_. -]+/gi,"_")
+      .replace(/\s+/g," ")
+      .trim();
+    pdf.setProperties({
+      title:fileNameBase,
+      subject:"Service Estimate",
+      creator:"Service Decision Engine"
+    });
+
     if(autoPrint){
       pdf.autoPrint();
       window.open(pdf.output("bloburl"),"_blank");
     } else {
-      const fileName=("Service_Estimate_"+(vehicle.reg||vehicle.vin||"Vehicle")+".pdf")
-        .replace(/[^a-z0-9_.-]+/gi,"_");
-      pdf.save(fileName);
+      pdf.save(fileNameBase + ".pdf");
     }
   }
   const visibleSingleVisits = analysis?.visits?.filter((visit) =>

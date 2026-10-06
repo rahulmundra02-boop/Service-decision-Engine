@@ -6026,13 +6026,23 @@ function ServiceDecisionApp({ user }) {
         setEstimateVehicleLookupMessage(rows.length
           ? "Vehicle found in DB. Details loaded automatically."
           : "Vehicle found in DB. No service history is available; enter estimate lines manually.");
+        setEstimateStage("select");
 
       } else {
         setEstimateVehicleFromDb(false);
         setEstimatePrintModel("");
-        setEstimateVehicle(prev=>({...prev,reg:registration,vin:""}));
+        // A registration not found in DB must start with a clean manual identity.
+        // Do not carry customer/engine/model/sale values from any previous screen or analysis.
+        setEstimateVehicle({
+          customerName:"",
+          reg:registration,
+          vin:"",
+          engine:"",
+          model:"",
+          sale:null
+        });
         setEstimateHistory({vehicleRows:[],modelRows:[],globalPartRates:[]});
-        setEstimateVehicleLookupMessage("Vehicle not found in DB. Select a model from the DB list to prepare the service estimate.");
+        setEstimateVehicleLookupMessage("Vehicle not found in DB. Select Customer Name and Model.");
         await openEstimateModelSelector("required");
         return;
       }

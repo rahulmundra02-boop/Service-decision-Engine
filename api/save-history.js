@@ -147,13 +147,73 @@ export default async function handler(req, res) {
     const priceMasterOffset = Math.max(0, Number(req.query?.offset || 0));
     const priceMasterLimit = Math.min(10000, Math.max(1000, Number(req.query?.limit || 10000)));
     const priceMasterVersion = Number(req.query?.version || 0);
-    const BETA_PRICE_MASTER_API = "https://service-decision-engine-nn4u69gqz-service-decision.vercel.app/api/save-history";
+    const BETA_PRICE_MASTER_API = "https://service-decision-engine-git-v12-ui-testing-service-decision.vercel.app/api/save-history";
 
-    // Price Master is maintained from the Beta admin upload.
-    // For direct part lookups, the Beta Price Master is the source of truth.
-    // Do NOT let an older Stable Neon row override the current uploaded MRP.
+    // Beta Website is the authoritative Price Master source.
+    // Beta reads its own local Price Master DB. Stable proxies all Price Master
+    // reads to the canonical Beta branch alias, so both websites always show
+    // the same uploaded master regardless of their separate DB environments.
+    const requestHost = String(req.headers?.host || "").toLowerCase();
+    const isBetaPriceMasterSource = requestHost.includes("git-v12-ui-testing");
     if (priceMasterFlag || priceMasterMetaFlag || priceMasterChunkFlag || (priceMasterPartFlag && partNo)) {
-      if (priceMasterPartFlag && partNo) {
+        if (isBetaPriceMasterSource) {
+        let sourceClient = null;
+        try {
+          sourceClient = await pool.connect();
+          await ensurePriceMasterSchema(sourceClient);
+          if (priceMasterPartFlag && partNo) {
+            const result = await sourceClient.query(
+              "SELECT part_no,description,mrp FROM part_price_master WHERE part_no=$1 LIMIT 1",
+              [partNo]
+            );
+            const row = result.rows[0] || null;
+            if (!row || row.mrp === null) {
+              return res.status(404).json({success:false,error:"Part not found in Price Master."});
+            }
+            const mrp = Number(row.mrp);
+            return res.status(200).json({
+              success:true,
+              source:"Price List Master (Beta)",
+              part:{partNo:row.part_no,description:row.description || "",mrp}
+            });
+          }
+
+          const metaResult = await sourceClient.query(
+            "SELECT version,row_count,updated_at,file_name FROM part_price_master_meta WHERE id=1 LIMIT 1"
+          );
+          const meta = metaResult.rows[0] || {};
+          if (priceMasterMetaFlag) {
+            return res.status(200).json({
+              success:true,
+              version:Number(meta.version || 0),
+              rowCount:Number(meta.row_count || 0),
+              updatedAt:meta.updated_at || null,
+              fileName:meta.file_name || ""
+            });
+          }
+
+          const requestedVersion = priceMasterVersion > 0 ? priceMasterVersion : Number(meta.version || 0);
+          const result = await sourceClient.query(
+            "SELECT part_no,description,mrp FROM part_price_master WHERE version=$1 ORDER BY part_no ASC OFFSET $2 LIMIT $3",
+            [requestedVersion, priceMasterOffset, priceMasterLimit]
+          );
+          return res.status(200).json({
+            success:true,
+            version:Number(meta.version || requestedVersion || 0),
+            rowCount:Number(meta.row_count || 0),
+            updatedAt:meta.updated_at || null,
+            fileName:meta.file_name || "",
+            parts:result.rows.map(row=>({partNo:row.part_no,description:row.description || "",mrp:Number(row.mrp || 0)}))
+          });
+        } catch (error) {
+          console.error("Beta Price Master read failed:", error);
+          return res.status(500).json({success:false,error:"Price Master source unavailable."});
+        } finally {
+          if (sourceClient) sourceClient.release();
+        }
+      }
+
+    if (priceMasterPartFlag && partNo) {
         try {
           const sourceUrl = BETA_PRICE_MASTER_API + "?priceMasterPart=1&partNo=" + encodeURIComponent(partNo);
           const sourceResponse = await fetch(sourceUrl);

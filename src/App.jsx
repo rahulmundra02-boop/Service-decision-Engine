@@ -959,7 +959,7 @@ function deduplicateAcrossFiles(fileRecordSets) {
 
 async function parseExcelFiles(files) {
   if (!files?.length) {
-    throw new Error("Kam se kam 1 Excel file select karein.");
+    throw new Error("Please select at least one Excel file.");
   }
 
   const fileRecordSets = [];
@@ -1018,14 +1018,14 @@ async function parseExcelFiles(files) {
           // worksheet, so keep the existing ignore behavior for that case.
           if (rowCount > 1) {
             fileFailed = true;
-            fileError = err?.message || "Required headers nahi mile.";
+            fileError = err?.message || "Required headers were not found.";
             break;
           }
         }
       }
     } catch (err) {
       fileFailed = true;
-      fileError = err?.message || "Excel file read nahi ho payi.";
+      fileError = err?.message || "The Excel file could not be read.";
     }
 
     // If any real data sheet in this file has invalid/missing required
@@ -1072,7 +1072,7 @@ function parseExcelPaste(text) {
     .filter((line) => line.trim() !== "");
 
   if (lines.length < 2) {
-    throw new Error("Excel data me header aur kam se kam 1 data row hona chahiye.");
+    throw new Error("The Excel data must contain headers and at least one data row.");
   }
 
   // Excel copy/paste normally uses TAB. CSV and pipe-delimited/markdown
@@ -1378,7 +1378,7 @@ function parseExcelPaste(text) {
   });
 
   const valid = records.filter((r) => r.date || r.part || r.jobCard);
-  if (!valid.length) throw new Error("Valid service records nahi mile.");
+  if (!valid.length) throw new Error("No valid service records were found.");
 
   return { headers, records: valid, headerMap: col };
 }
@@ -2489,7 +2489,7 @@ function buildBulkAnalysis(records) {
   }
 
   if (!groups.size) {
-    throw new Error("Bulk analysis ke liye VIN number required hai. Kisi bhi valid row me VIN nahi mila.");
+    throw new Error("A VIN number is required for bulk analysis. No valid VIN was found.");
   }
 
   const results = [];
@@ -2586,7 +2586,7 @@ async function copyCustomerSummary(group, dealerName = "", preferences = {}) {
   try {
     const effectiveGroup = group?.dealerName ? group : { ...group, dealerName: String(dealerName || "").trim() };
     const text = buildCustomerWhatsAppText(effectiveGroup, preferences);
-    if (!text.trim()) throw new Error('Copy karne ke liye summary available nahi hai.');
+    if (!text.trim()) throw new Error('No summary is available to copy.');
 
     if (navigator.clipboard && window.isSecureContext) {
       await navigator.clipboard.writeText(text);
@@ -2613,7 +2613,7 @@ async function copyCustomerSummary(group, dealerName = "", preferences = {}) {
 
 async function printCustomerReport(group, detailed=false) {
   if (!group || !group.vehicles?.length) {
-    window.alert('Customer group me koi vehicle available nahi hai.');
+    window.alert('No vehicle is available in the selected customer group.');
     return;
   }
 
@@ -2734,7 +2734,7 @@ async function printCustomerReport(group, detailed=false) {
     pdf.save(`${filenameBase}_Detailed_Service_History.pdf`);
   } catch (err) {
     console.error('PDF generation error:', err);
-    window.alert(`PDF download me error aa raha hai:\n\n${err?.message || err}`);
+    window.alert(`An error occurred while downloading the PDF:\n\n${err?.message || err}`);
   }
 }
 
@@ -4088,8 +4088,8 @@ function WarrantyTagPanel({user,onBack}){
 
   const generateTags=()=>{
     setError("");setMessage("");
-    if(!claimDataset){setError("Pehle Billed JC Claim Statement Excel upload karein.");return;}
-    if(!summaryDataset){setError("Pehle Jobcard Summary Excel upload karein.");return;}
+    if(!claimDataset){setError("Please upload the Billed JC Claim Statement Excel first.");return;}
+    if(!summaryDataset){setError("Please upload the Jobcard Summary Excel first.");return;}
 
     const claimRows=parseWarrantyClaimRows(claimDataset);
     const summaryRows=parseWarrantySummaryRows(summaryDataset);
@@ -4183,7 +4183,7 @@ function WarrantyTagPanel({user,onBack}){
       await html2pdf().set(opt).from(element).save();
       setMessage(visibleTags.length.toLocaleString("en-IN")+" tags PDF ready.");
     }catch(e){
-      setError(e?.message||"PDF generate nahi ho saka.");
+      setError(e?.message||"The PDF could not be generated.");
     }finally{setPdfBusy(false);}
   };
 
@@ -5106,7 +5106,7 @@ function ServiceDecisionApp({ user }) {
       setUploadMeta(null);
       setUploadedFiles([]);
       setUploadParsedRecords([]);
-      setError(err?.message || "Excel file read nahi ho payi.");
+      setError(err?.message || "The Excel file could not be read.");
     } finally {
       setUploadBusy(false);
       event.target.value = "";
@@ -5261,7 +5261,7 @@ function ServiceDecisionApp({ user }) {
         finish();
       } catch (error) {
         console.error("Bulk vehicle detail load failed:", error);
-        setError("Selected vehicle detail load nahi ho payi.");
+        setError("The selected vehicle details could not be loaded.");
       }
     };
 
@@ -5287,7 +5287,7 @@ function ServiceDecisionApp({ user }) {
     }
 
     const timeout = window.setTimeout(() => {
-      if (!cancelled && !loaded) setError("Vehicle detail load nahi ho payi. Please vehicle link dobara open karein.");
+      if (!cancelled && !loaded) setError("Vehicle details could not be loaded. Please open the vehicle link again.");
     }, 12000);
 
     return () => {
@@ -5398,7 +5398,7 @@ function ServiceDecisionApp({ user }) {
       });
     } catch (e) {
       setAnalysis(null);
-      setError(e.message || "Excel data read nahi ho paya.");
+      setError(e.message || "The Excel data could not be read.");
     }
   };
 
@@ -5441,7 +5441,7 @@ function ServiceDecisionApp({ user }) {
     } catch (e) {
       setBulkResults([]);
       setBulkMeta(null);
-      setError(e.message || "Bulk data read nahi ho paya.");
+      setError(e.message || "The bulk data could not be read.");
     }
   };
 
@@ -5797,7 +5797,7 @@ function ServiceDecisionApp({ user }) {
       const history=await loadEstimateHistoryByVin(analysis.vehicle.vin);
       setEstimateHistory(history);
       setEstimateSourceModel("");
-      setEstimateNotice(history.vehicleRows.length||history.modelRows.length ? "Vehicle history loaded. Missing items will be sourced from the same model history in DB. Alternate Model is always available." : "No historical service data found. Alternate Model is available for DB-based service parts.");
+      setEstimateNotice(history.vehicleRows.length||history.modelRows.length ? "Vehicle history loaded. Missing items will be sourced from the same model history in the database. Alternate Model is always available." : "No historical service data found. Alternate Model is available for DB-based service parts.");
     } catch {
       setEstimateHistory({vehicleRows:[],modelRows:[],globalPartRates:[]});
       setEstimateNotice("Historical data could not be loaded. Manual estimate entry is available.");
@@ -5936,12 +5936,12 @@ function ServiceDecisionApp({ user }) {
         : [];
       setEstimateModelList(models);
       if (!models.length) {
-        setEstimateVehicleLookupMessage("DB se model list nahi mili. Please try again.");
+        setEstimateVehicleLookupMessage("The model list could not be loaded. Please try again.");
       }
     } catch (error) {
       console.warn("Estimate model list lookup failed:", error);
       setEstimateModelList([]);
-      setEstimateVehicleLookupMessage("DB model list load nahi ho saki. Please try again.");
+      setEstimateVehicleLookupMessage("The model list could not be loaded. Please try again.");
     } finally {
       setEstimateModelLoading(false);
     }
@@ -5952,7 +5952,7 @@ function ServiceDecisionApp({ user }) {
     if (!selectedModel) return;
 
     if (estimateModelSelectionMode === "required" && !String(estimateVehicle?.customerName || "").trim()) {
-      setEstimateVehicleLookupMessage("Customer Name required hai. Pehle customer name enter karein.");
+      setEstimateVehicleLookupMessage("Please enter Customer Name before selecting a model.");
       return;
     }
 
@@ -5989,12 +5989,12 @@ function ServiceDecisionApp({ user }) {
       setEstimateNotice(
         hasServiceParts
           ? "Model " + selectedModel + " selected. Service Part No. and Qty will be sourced from this model's DB history."
-          : "Model " + selectedModel + " me usable service-part data nahi mila. Please another model select karein."
+          : "Model " + selectedModel + " me usable service-part data nahi mila. Please select another model."
       );
       setEstimateStage(hasServiceParts ? "select" : "model");
     } catch (error) {
       console.warn("Estimate model history lookup failed:", error);
-      setEstimateVehicleLookupMessage("Selected model ka DB service data load nahi ho saka.");
+      setEstimateVehicleLookupMessage("Service data for the selected model could not be loaded.");
     } finally {
       setEstimateModelLoading(false);
     }
@@ -6042,7 +6042,7 @@ function ServiceDecisionApp({ user }) {
           sale:null
         });
         setEstimateHistory({vehicleRows:[],modelRows:[],globalPartRates:[]});
-        setEstimateVehicleLookupMessage("Vehicle not found in DB. Select Customer Name and Model.");
+        setEstimateVehicleLookupMessage("Vehicle not found in the database. Select Customer Name and Model.");
         await openEstimateModelSelector("required");
         return;
       }
@@ -6134,7 +6134,7 @@ function ServiceDecisionApp({ user }) {
       setEstimateLabour(pricedItems.filter(item => item.type === "labour"));
       setEstimateNotice(
         (history.vehicleRows?.length || history.modelRows?.length)
-          ? "Estimate prepared from vehicle history and same-model DB fallback. Price List Master MRP applied where the exact part number is available."
+          ? "Estimate prepared from vehicle history and same-model database fallback. Price List Master MRP applied where the exact part number is available."
           : "No historical estimate items found. Please add the required items manually."
       );
       setEstimateStage("estimate");
@@ -8152,7 +8152,7 @@ function ServiceDecisionApp({ user }) {
                   <div style={{border:"1px solid #d5d5d5",borderRadius:8,padding:14}}>
                     <div style={{fontWeight:800,fontSize:16,marginBottom:8}}>
                       {estimateModelSelectionMode === "required"
-                        ? "Vehicle DB me nahi mila. Service estimate ke liye model select karein."
+                        ? "Vehicle was not found in the database. Select a model for the service estimate."
                         : "Alternate Model Select"}
                     </div>
                     {estimateModelSelectionMode === "required" && (
@@ -8165,18 +8165,28 @@ function ServiceDecisionApp({ user }) {
                           placeholder="Enter Customer / Transporter Name"
                           autoFocus
                         />
-                        <div className="small-note" style={{marginTop:5}}>Vehicle DB me nahi mila. Customer Name aur selected Model estimate/PDF ke liye final rahenge.</div>
+                        <div className="small-note" style={{marginTop:5}}>Vehicle was not found in the database. Customer Name and the selected Model will be final for the estimate and PDF.</div>
                       </div>
                     )}
                     <div className="small-note" style={{marginBottom:10}}>
-                      Model list DB se aa rahi hai. Search karke koi bhi similar model select kar sakte hain.
+                      The model list is loaded from the database. Search and select any suitable model.
                     </div>
+                    {estimateModelSelectionMode === "required" && !String(estimateVehicle?.customerName || "").trim() && (
+                      <div style={{marginBottom:10,padding:"9px 12px",borderRadius:6,background:"#fff3cd",color:"#664d03",fontWeight:700}}>
+                        Enter Customer Name first. Model selection will be enabled after Customer Name is entered.
+                      </div>
+                    )}
+                    {estimateVehicleLookupMessage && (
+                      <div style={{marginBottom:10,padding:"9px 12px",borderRadius:6,background:"#fde8e8",color:"#991b1b",fontWeight:700}}>
+                        {estimateVehicleLookupMessage}
+                      </div>
+                    )}
                     <input
                       className="excel-input"
                       value={estimateModelSearch}
                       onChange={e=>setEstimateModelSearch(e.target.value)}
                       placeholder="Search model..."
-                      autoFocus
+                      autoFocus={estimateModelSelectionMode !== "required"}
                     />
                     <div style={{marginTop:10,maxHeight:"48vh",overflowY:"auto",border:"1px solid #ddd",borderRadius:7}}>
                       {estimateModelLoading ? (
@@ -8191,6 +8201,8 @@ function ServiceDecisionApp({ user }) {
                               className="excel-button"
                               style={{display:"block",width:"100%",textAlign:"left",borderRadius:0,border:"0",borderBottom:"1px solid #ddd",background:"#fff",color:"#111"}}
                               onClick={()=>void selectEstimateModel(model)}
+                              disabled={estimateModelSelectionMode === "required" && !String(estimateVehicle?.customerName || "").trim()}
+                              title={estimateModelSelectionMode === "required" && !String(estimateVehicle?.customerName || "").trim() ? "Enter Customer Name before selecting a model." : "Select this model"}
                             >{model}</button>
                           ))
                       )}

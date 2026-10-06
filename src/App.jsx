@@ -4382,6 +4382,7 @@ function ServiceDecisionApp({ user }) {
   const [estimateVehicleLookupBusy, setEstimateVehicleLookupBusy] = useState(false);
   const [estimateVehicleLookupMessage, setEstimateVehicleLookupMessage] = useState("");
   const [estimateLoading, setEstimateLoading] = useState(false);
+  const [estimatePrepareBusy, setEstimatePrepareBusy] = useState(false);
   const [estimateSelectedServices, setEstimateSelectedServices] = useState([]);
   const [estimateParts, setEstimateParts] = useState([]);
   const [estimateLabour, setEstimateLabour] = useState([]);
@@ -5807,34 +5808,40 @@ function ServiceDecisionApp({ user }) {
     });
   }
   async function prepareEstimate() {
-    const history = Array.isArray(estimateHistory)
-      ? { vehicleRows: estimateHistory, modelRows: [] }
-      : (estimateHistory || { vehicleRows: [], modelRows: [] });
+    if (estimatePrepareBusy) return;
+    setEstimatePrepareBusy(true);
+    try {
+      const history = Array.isArray(estimateHistory)
+        ? { vehicleRows: estimateHistory, modelRows: [] }
+        : (estimateHistory || { vehicleRows: [], modelRows: [] });
 
-    if (estimateSavedId && !(history.vehicleRows?.length || history.modelRows?.length)) {
-      setEstimateNotice("Aggregate service selection updated. Your existing saved estimate lines are retained.");
+      if (estimateSavedId && !(history.vehicleRows?.length || history.modelRows?.length)) {
+        setEstimateNotice("Aggregate service selection updated. Your existing saved estimate lines are retained.");
+        setEstimateStage("estimate");
+        return;
+      }
+
+      const items = estimateHistoryToItems(
+        history.vehicleRows || [],
+        estimateSelectedServices,
+        history.modelRows || [],
+        history.globalPartRates || []
+      );
+      const pricedItems = await hydrateEstimatePriceMaster(items);
+
+      // Do not leave the old DB rate on screen after Price Master lookup.
+      // Price List MRP is the final source for every matched part number.
+      setEstimateParts(pricedItems.filter(item => item.type === "part"));
+      setEstimateLabour(pricedItems.filter(item => item.type === "labour"));
+      setEstimateNotice(
+        (history.vehicleRows?.length || history.modelRows?.length)
+          ? "Estimate prepared from vehicle history and same-model DB fallback. Price List Master MRP applied where the exact part number is available."
+          : "No historical estimate items found. Please add the required items manually."
+      );
       setEstimateStage("estimate");
-      return;
+    } finally {
+      setEstimatePrepareBusy(false);
     }
-
-    const items = estimateHistoryToItems(
-      history.vehicleRows || [],
-      estimateSelectedServices,
-      history.modelRows || [],
-      history.globalPartRates || []
-    );
-    const pricedItems = await hydrateEstimatePriceMaster(items);
-
-    // Do not leave the old DB rate on screen after Price Master lookup.
-    // Price List MRP is the final source for every matched part number.
-    setEstimateParts(pricedItems.filter(item => item.type === "part"));
-    setEstimateLabour(pricedItems.filter(item => item.type === "labour"));
-    setEstimateNotice(
-      (history.vehicleRows?.length || history.modelRows?.length)
-        ? "Estimate prepared from vehicle history and same-model DB fallback. Price List Master MRP applied where the exact part number is available."
-        : "No historical estimate items found. Please add the required items manually."
-    );
-    setEstimateStage("estimate");
   }
   function reviseEstimateServices() { setEstimateStage("select"); }
   function updateEstimateItem(type, id, field, value) {
@@ -6436,7 +6443,10 @@ function ServiceDecisionApp({ user }) {
 
         .history-table th { position:sticky; top:0; z-index:2; background:#4472c4; color:#fff; border:1px solid #b7b7b7; padding:5px 7px; font-size:12px; }
         .estimate-workspace .history-table th { position:static; top:auto; z-index:auto; }
-        .estimate-header { display:flex; align-items:center; gap:10px; margin-bottom:12px; border-bottom:1px solid #ddd; padding-bottom:10px; min-width:0; }
+        .estimate-processing { display:flex; align-items:center; justify-content:center; gap:9px; width:100%; margin-top:12px; padding:8px 10px; box-sizing:border-box; font-size:13px; font-weight:700; color:#555; background:#f6f7f9; border-radius:7px; }
+.estimate-spinner { width:18px; height:18px; border:3px solid #d7dce2; border-top-color:#198754; border-radius:50%; animation:estimateSpin .8s linear infinite; flex:0 0 auto; }
+@keyframes estimateSpin { to { transform:rotate(360deg); } }
+.estimate-header { display:flex; align-items:center; gap:10px; margin-bottom:12px; border-bottom:1px solid #ddd; padding-bottom:10px; min-width:0; }
         .estimate-title { font-size:22px; font-weight:800; flex:0 0 auto; }
         .estimate-meta { min-width:0; }
         .estimate-mode-label { font-size:12px; color:#666; white-space:nowrap; }
@@ -7574,9 +7584,15 @@ function ServiceDecisionApp({ user }) {
                   </div>
                   {estimateLoading && <div style={{marginTop:12,padding:10,textAlign:"center",background:"#f5f5f5",borderRadius:7}}>Loading vehicle history...</div>}
                   {!estimateLoading && estimateNotice && <div style={{marginTop:12,padding:10,background:"#f5f5f5",borderRadius:7}}>{estimateNotice}</div>}
-                  <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:16}}>
+                                    {estimatePrepareBusy && (
+                    <div className="estimate-processing" role="status" aria-live="polite">
+                      <span className="estimate-spinner" aria-hidden="true"></span>
+                      <span>Processing estimate, please wait...</span>
+                    </div>
+                  )}
+<div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:16}}>
                     <button className="excel-button" onClick={()=>{setEstimateOpen(false);setMode("home");}}>Cancel</button>
-                    <button className="excel-button green" disabled={estimateLoading} onClick={prepareEstimate}>OK / Prepare Estimate</button>
+                    <button className="excel-button green" disabled={estimateLoading || estimatePrepareBusy} onClick={prepareEstimate}>{estimatePrepareBusy ? "Processing..." : "OK / Prepare Estimate"}</button>
                   </div>
                 </>
               ) : (

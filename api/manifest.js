@@ -14,18 +14,19 @@ export default function handler(req, res) {
     display: "standalone",
     background_color: "#ffffff",
     theme_color: "#ffffff",
+    prefer_related_applications: false,
     icons: [
       {
-        src: "/favicon.svg?v=20261006-4",
+        src: "/icon-light-192.jpg?v=20261006-5",
         sizes: "192x192",
-        type: "image/svg+xml",
+        type: "image/jpeg",
         purpose: "any"
       },
       {
-        src: "/favicon.svg?v=20261006-4",
+        src: "/icon-light-512.jpg?v=20261006-5",
         sizes: "512x512",
-        type: "image/svg+xml",
-        purpose: "any maskable"
+        type: "image/jpeg",
+        purpose: "any"
       }
     ]
   });

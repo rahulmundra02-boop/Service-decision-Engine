@@ -5913,6 +5913,15 @@ function ServiceDecisionApp({ user }) {
     const width = 190;
     const vehicle = estimateVehicle || analysis?.vehicle || {};
     const workshop = String(user?.dealerName || "Workshop").trim();
+    const branding = user?.preferences || {};
+    const letterheadImage = branding?.letterhead?.image || "";
+    const signatureImage = branding?.signature?.image || "";
+    const signaturePlacement = branding?.signaturePlacement || { x:70, y:91, width:20 };
+    const drawLetterheadBackground = () => {
+      if (!letterheadImage) return;
+      try { pdf.addImage(letterheadImage, "JPEG", 0, 0, 210, 297, undefined, "FAST"); } catch (e) { console.warn("Letterhead PDF background failed:", e); }
+    };
+    drawLetterheadBackground();
 
     // jsPDF's built-in Helvetica does not render the ₹ glyph reliably.
     // Use plain ASCII "INR" in the PDF so Adobe/Edge do not show broken
@@ -5925,20 +5934,21 @@ function ServiceDecisionApp({ user }) {
       });
     };
 
+    const contentTop = letterheadImage ? 48 : 14;
     pdf.setFont("helvetica","bold");
     pdf.setFontSize(17);
-    pdf.text("SERVICE ESTIMATE",105,14,{align:"center"});
+    pdf.text("SERVICE ESTIMATE",105,contentTop,{align:"center"});
     pdf.setFontSize(10);
-    pdf.text(workshop,105,21,{align:"center"});
+    pdf.text(workshop,105,contentTop + 7,{align:"center"});
     pdf.setFont("helvetica","normal");
     pdf.setFontSize(8.5);
-    pdf.text("Estimate only - subject to actual inspection and applicable rates.",105,25,{align:"center"});
+    pdf.text("Estimate only - subject to actual inspection and applicable rates.",105,contentTop + 11,{align:"center"});
     pdf.setFontSize(8);
-    pdf.text("Estimate No. (Session): " + (estimateNumber || "-"),margin,30);
-    pdf.text("Prepared: " + formatDate(new Date()),width + margin,30,{align:"right"});
+    pdf.text("Estimate No. (Session): " + (estimateNumber || "-"),margin,contentTop + 16);
+    pdf.text("Prepared: " + formatDate(new Date()),width + margin,contentTop + 16,{align:"right"});
 
     autoTable(pdf,{
-      startY:35,
+      startY:contentTop + 21,
       margin:{left:margin,right:margin},
       tableWidth:width,
       theme:"grid",
@@ -5952,7 +5962,8 @@ function ServiceDecisionApp({ user }) {
       body:[
         ["Customer\n"+(vehicle.customerName||"-"),"Reg. No.\n"+(vehicle.reg||"-"),"VIN\n"+(vehicle.vin||"-")],
         ["Model\n"+(vehicle.model||"-"),"Current Reading\n"+(analysis?.running?.current ? formatNumber(analysis.running.current)+" "+(analysis.running.unit||getTargetUnit(vehicle)) : "-"),"Date\n"+formatDate(new Date())]
-      ]
+      ],
+      willDrawPage:()=>drawLetterheadBackground()
     });
 
     let y=(pdf.lastAutoTable?.finalY||58)+7;
@@ -6004,7 +6015,8 @@ function ServiceDecisionApp({ user }) {
         2:{cellWidth:18},
         3:{cellWidth:27},
         4:{cellWidth:35}
-      }
+      },
+      willDrawPage:()=>drawLetterheadBackground()
     });
 
     y=(pdf.lastAutoTable?.finalY||y+20)+7;
@@ -6039,7 +6051,8 @@ function ServiceDecisionApp({ user }) {
         1:{cellWidth:20},
         2:{cellWidth:25},
         3:{cellWidth:35}
-      }
+      },
+      willDrawPage:()=>drawLetterheadBackground()
     });
 
     y=(pdf.lastAutoTable?.finalY||y+20)+7;
@@ -6065,14 +6078,38 @@ function ServiceDecisionApp({ user }) {
       columnStyles:{
         0:{cellWidth:45,fontStyle:"bold"},
         1:{cellWidth:35,halign:"right"}
-      }
+      },
+      willDrawPage:()=>drawLetterheadBackground()
     });
 
     y=(pdf.lastAutoTable?.finalY||y+25)+12;
-    pdf.setFont("helvetica","normal");
-    pdf.setFontSize(8);
-    pdf.line(140,y-2,190,y-2);
-    pdf.text("Authorized Signatory",165,y,{align:"center"});
+    const signatureX = Math.max(5, Math.min(210 - (210 * Number(signaturePlacement.width || 20) / 100) - 5, 210 * Number(signaturePlacement.x || 70) / 100));
+    const signatureW = Math.max(10, Math.min(90, 210 * Number(signaturePlacement.width || 20) / 100));
+    const signatureY = Math.max(y, Math.min(282, 297 * Number(signaturePlacement.y || 91) / 100));
+    if(signatureImage){
+      try {
+        const sigImg = new Image();
+        sigImg.src = signatureImage;
+        const sigRatio = sigImg.width && sigImg.height ? sigImg.height / sigImg.width : 0.35;
+        const signatureH = Math.min(24, Math.max(8, signatureW * sigRatio));
+        pdf.addImage(signatureImage, "PNG", signatureX, signatureY, signatureW, signatureH, undefined, "FAST");
+        pdf.setFont("helvetica","normal");
+        pdf.setFontSize(8);
+        pdf.line(signatureX, signatureY + signatureH + 2, signatureX + signatureW, signatureY + signatureH + 2);
+        pdf.text("Authorized Signatory", signatureX + signatureW / 2, signatureY + signatureH + 7, {align:"center"});
+      } catch(e) {
+        console.warn("Signature PDF rendering failed:", e);
+        pdf.setFont("helvetica","normal");
+        pdf.setFontSize(8);
+        pdf.line(140,y-2,190,y-2);
+        pdf.text("Authorized Signatory",165,y,{align:"center"});
+      }
+    } else {
+      pdf.setFont("helvetica","normal");
+      pdf.setFontSize(8);
+      pdf.line(140,y-2,190,y-2);
+      pdf.text("Authorized Signatory",165,y,{align:"center"});
+    }
 
     if(autoPrint){
       pdf.autoPrint();

@@ -4406,6 +4406,119 @@ function ServiceDecisionApp({ user }) {
 
   // Versioned browser cache for the complete Price Master.
   // This cache is separate from Job Card cache and vehicle/job-card DB data.
+
+  // ============================================================
+  // LOCAL ESTIMATE CACHE
+  // Estimates are intentionally NOT stored in Neon/PostgreSQL.
+  // IndexedDB is used so the same data works in Chrome and in an
+  // installed mobile/PWA version of this website. A small
+  // localStorage fallback is kept for browsers without IndexedDB.
+  // Cache is separated by logged-in user on the same device.
+  // ============================================================
+  const ESTIMATE_CACHE_DB = "serviceDecisionEstimateCacheV1";
+  const ESTIMATE_CACHE_VERSION = 1;
+  const ESTIMATE_CACHE_STORE = "estimates";
+  const ESTIMATE_CACHE_PREFIX = "serviceDecisionEstimateCache_";
+
+  const estimateCacheOwner = () => String(user?.id || user?.username || "local").trim();
+
+  const openEstimateCache = () => new Promise((resolve, reject) => {
+    if (!window.indexedDB) return resolve(null);
+    const request = indexedDB.open(ESTIMATE_CACHE_DB, ESTIMATE_CACHE_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(ESTIMATE_CACHE_STORE)) {
+        const store = db.createObjectStore(ESTIMATE_CACHE_STORE, { keyPath:"cacheKey" });
+        store.createIndex("ownerKey", "ownerKey", { unique:false });
+        store.createIndex("estimateNo", "estimateNo", { unique:false });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+
+  const readEstimateCache = async () => {
+    const ownerKey = estimateCacheOwner();
+    try {
+      const db = await openEstimateCache();
+      if (db) {
+        return await new Promise((resolve, reject) => {
+          const tx = db.transaction(ESTIMATE_CACHE_STORE, "readonly");
+          const store = tx.objectStore(ESTIMATE_CACHE_STORE);
+          const request = store.index("ownerKey").getAll(ownerKey);
+          request.onsuccess = () => resolve((request.result || []).sort((a,b) => String(b.updated_at || "").localeCompare(String(a.updated_at || ""))));
+          request.onerror = () => reject(request.error);
+        });
+      }
+    } catch (error) {
+      console.warn("Estimate IndexedDB read failed:", error);
+    }
+
+    try {
+      const raw = localStorage.getItem(ESTIMATE_CACHE_PREFIX + ownerKey);
+      const list = raw ? JSON.parse(raw) : [];
+      return Array.isArray(list) ? list : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const writeEstimateCache = async item => {
+    const ownerKey = estimateCacheOwner();
+    const cacheKey = ownerKey + "::" + String(item.estimate_no || "");
+    const normalized = {
+      ...item,
+      cacheKey,
+      ownerKey,
+      updated_at: item.updated_at || new Date().toISOString(),
+      created_at: item.created_at || item.updated_at || new Date().toISOString()
+    };
+
+    try {
+      const db = await openEstimateCache();
+      if (db) {
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(ESTIMATE_CACHE_STORE, "readwrite");
+          tx.objectStore(ESTIMATE_CACHE_STORE).put(normalized);
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error);
+        });
+        return normalized;
+      }
+    } catch (error) {
+      console.warn("Estimate IndexedDB write failed:", error);
+    }
+
+    try {
+      const existing = await readEstimateCache();
+      const next = [normalized, ...existing.filter(item => item.cacheKey !== cacheKey)];
+      localStorage.setItem(ESTIMATE_CACHE_PREFIX + ownerKey, JSON.stringify(next.slice(0,200)));
+      return normalized;
+    } catch (error) {
+      throw new Error("This browser could not save the estimate locally.");
+    }
+  };
+
+  const readOneEstimateCache = async cacheId => {
+    const ownerKey = estimateCacheOwner();
+    try {
+      const db = await openEstimateCache();
+      if (db) {
+        return await new Promise((resolve, reject) => {
+          const tx = db.transaction(ESTIMATE_CACHE_STORE, "readonly");
+          const request = tx.objectStore(ESTIMATE_CACHE_STORE).get(String(cacheId));
+          request.onsuccess = () => resolve(request.result || null);
+          request.onerror = () => reject(request.error);
+        });
+      }
+    } catch (error) {
+      console.warn("Estimate IndexedDB item read failed:", error);
+    }
+
+    const list = await readEstimateCache();
+    return list.find(item => String(item.cacheKey || item.id) === String(cacheId)) || null;
+  };
+
   const PRICE_MASTER_CACHE_DB = "serviceDecisionPriceMasterV2";
   const PRICE_MASTER_CACHE_VERSION = 1;
   const PRICE_MASTER_CACHE_STORE = "parts";
@@ -5614,23 +5727,17 @@ function ServiceDecisionApp({ user }) {
   async function loadSavedEstimates() {
     setSavedEstimatesLoading(true);
     try {
-      const token = localStorage.getItem("serviceDecisionAuthToken");
-      if (!token) return;
-      const response = await fetch("/api/estimates", {
-        method:"POST",
-        headers:{ "Content-Type":"application/json", Authorization:`Bearer ${token}` },
-        body:JSON.stringify({ action:"list" }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (response.ok && data.success) setSavedEstimates(Array.isArray(data.estimates) ? data.estimates : []);
+      const cached = await readEstimateCache();
+      setSavedEstimates(Array.isArray(cached) ? cached : []);
     } catch (error) {
-      console.warn("Saved estimate list load failed:", error);
+      console.warn("Saved estimate cache load failed:", error);
+      setSavedEstimates([]);
     } finally {
       setSavedEstimatesLoading(false);
     }
   }
 
-  async function saveEstimateToDb() {
+  async function saveEstimateToCache() {
     const vehicleNo = String(estimateVehicle?.reg || estimateVehicleNo || "").replace(/\s+/g,"").trim().toUpperCase();
     if (!vehicleNo) {
       setEstimateNotice("Vehicle No. is required before saving the estimate.");
@@ -5643,30 +5750,32 @@ function ServiceDecisionApp({ user }) {
 
     setEstimateSaveBusy(true);
     try {
-      const token = localStorage.getItem("serviceDecisionAuthToken");
-      const response = await fetch("/api/estimates", {
-        method:"POST",
-        headers:{ "Content-Type":"application/json", Authorization:`Bearer ${token}` },
-        body:JSON.stringify({
-          action:"save",
-          estimateNo:estimateNumber,
-          vehicleNo,
-          vehicle:{
-            ...estimateVehicle,
-            sale:estimateVehicle?.sale instanceof Date ? estimateVehicle.sale.toISOString() : estimateVehicle?.sale || null,
-          },
-          selectedServices:estimateSelectedServices,
-          parts:estimateParts,
-          labour:estimateLabour,
-        }),
+      const now = new Date().toISOString();
+      const existing = await readEstimateCache();
+      const old = existing.find(item => String(item.estimate_no || "") === String(estimateNumber));
+
+      const saved = await writeEstimateCache({
+        id: old?.id || (window.crypto?.randomUUID ? window.crypto.randomUUID() : String(Date.now())),
+        estimate_no: estimateNumber,
+        vehicle_no: vehicleNo,
+        vehicle_data: {
+          ...estimateVehicle,
+          sale: estimateVehicle?.sale instanceof Date
+            ? estimateVehicle.sale.toISOString()
+            : estimateVehicle?.sale || null,
+        },
+        selected_services: estimateSelectedServices,
+        parts: estimateParts,
+        labour: estimateLabour,
+        created_at: old?.created_at || now,
+        updated_at: now,
       });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data.success) throw new Error(data.error || "Unable to save estimate.");
-      setEstimateSavedId(data.estimate?.id || estimateSavedId);
-      setEstimateNotice(`Estimate ${estimateNumber} saved successfully. Future saves will update the same estimate number.`);
+
+      setEstimateSavedId(saved.id || saved.cacheKey);
+      setEstimateNotice("Estimate " + estimateNumber + " saved on this device. It is stored in browser/app local cache, not in the server DB.");
       await loadSavedEstimates();
     } catch (error) {
-      setEstimateNotice(error.message || "Unable to save estimate.");
+      setEstimateNotice(error.message || "Unable to save estimate locally.");
     } finally {
       setEstimateSaveBusy(false);
     }
@@ -5676,18 +5785,11 @@ function ServiceDecisionApp({ user }) {
     setEstimateLoading(true);
     setEstimateOpen(true);
     try {
-      const token = localStorage.getItem("serviceDecisionAuthToken");
-      const response = await fetch("/api/estimates", {
-        method:"POST",
-        headers:{ "Content-Type":"application/json", Authorization:`Bearer ${token}` },
-        body:JSON.stringify({ action:"get", id }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data.success || !data.estimate) throw new Error(data.error || "Unable to load saved estimate.");
+      const saved = await readOneEstimateCache(id);
+      if (!saved) throw new Error("Saved estimate was not found in this device/browser cache.");
 
-      const saved = data.estimate;
       const vehicle = saved.vehicle_data || {};
-      setEstimateSavedId(saved.id);
+      setEstimateSavedId(saved.id || saved.cacheKey);
       setEstimateNumber(saved.estimate_no || "");
       setEstimateVehicleNo(String(saved.vehicle_no || vehicle.reg || "").replace(/\s+/g,"").toUpperCase());
       setEstimateVehicle({
@@ -5705,7 +5807,7 @@ function ServiceDecisionApp({ user }) {
       setEstimateParts(refreshedSavedParts);
       setEstimateLabour(savedLabour);
       setEstimateHistory({vehicleRows:[],modelRows:[],globalPartRates:[]});
-      setEstimateNotice("Saved estimate loaded. Current Price List Master MRP has been applied where the exact part number is available.");
+      setEstimateNotice("Saved estimate loaded from this device/app cache. Current Price List Master MRP has been applied where the exact part number is available.");
       setEstimateStage("estimate");
     } catch (error) {
       setEstimateOpen(false);setMode("home");
@@ -5716,7 +5818,7 @@ function ServiceDecisionApp({ user }) {
   }
 
   useEffect(() => {
-    if (user?.id) void loadSavedEstimates();
+    void loadSavedEstimates();
   }, [user?.id]);
 
   async function lookupEstimateVehicle() {
@@ -7716,7 +7818,7 @@ function ServiceDecisionApp({ user }) {
                   <table className="history-table estimate-labour-table"><thead><tr><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th><th></th></tr></thead><tbody>{estimateLabour.map(item=><tr key={item.id}><td data-label="Description"><input value={item.description} onChange={e=>updateEstimateItem("labour",item.id,"description",e.target.value)}/></td><td data-label="Qty"><input type="number" min="0" step="0.01" value={item.qty ?? ""} onChange={e=>updateEstimateItem("labour",item.id,"qty",e.target.value)} onBlur={normalizeEstimateQuantities} onKeyDown={e=>{if(e.key==="Enter") normalizeEstimateQuantities();}} style={{width:80}}/></td><td data-label="Rate"><input type="number" min="0" step="0.01" value={item.rate} onChange={e=>updateEstimateItem("labour",item.id,"rate",e.target.value)} style={{width:110}}/></td><td data-label="Amount">{formatNumber(item.qty*item.rate)}</td><td data-label="Action"><button className="excel-button no-print" onClick={()=>removeEstimateItem("labour",item.id)}>Delete</button></td></tr>)}{!estimateLabour.length&&<tr><td colSpan="5">No historical labour found. Add manually.</td></tr>}</tbody></table>
                   <div style={{margin:"8px 0"}}><button className="excel-button no-print" onClick={()=>addEstimateItem("labour")}>+ Add Labour</button></div>
                   <div style={{marginTop:16,marginLeft:"auto",maxWidth:380,borderTop:"2px solid #222",paddingTop:10}}><div style={{display:"flex",justifyContent:"space-between"}}><span>Parts Total</span><b>₹ {formatNumber(estimatePartsTotal)}</b></div><div style={{display:"flex",justifyContent:"space-between"}}><span>Labour Subtotal</span><b>₹ {formatNumber(estimateLabourBase)}</b></div><div style={{display:"flex",justifyContent:"space-between"}}><span>GST on Labour (18%)</span><b>₹ {formatNumber(estimateLabourGst)}</b></div><div style={{display:"flex",justifyContent:"space-between",fontSize:18,marginTop:6}}><span>Grand Total</span><b>₹ {formatNumber(estimateGrandTotal)}</b></div></div>
-                  <div className="no-print" style={{display:"flex",flexWrap:"wrap",justifyContent:"flex-end",gap:8,marginTop:18,paddingTop:12,borderTop:"1px solid #ddd"}}><button className="excel-button" onClick={reviseEstimateServices}>Revise Aggregate Service</button><button className="excel-button green" disabled={estimateSaveBusy} onClick={saveEstimateToDb}>{estimateSaveBusy ? "Saving..." : "Save Estimate"}</button><button className="excel-button" onClick={()=>buildEstimatePdf(true)}>Print A4</button><button className="excel-button green" onClick={()=>buildEstimatePdf(false)}>Download PDF</button></div>
+                  <div className="no-print" style={{display:"flex",flexWrap:"wrap",justifyContent:"flex-end",gap:8,marginTop:18,paddingTop:12,borderTop:"1px solid #ddd"}}><button className="excel-button" onClick={reviseEstimateServices}>Revise Aggregate Service</button><button className="excel-button green" disabled={estimateSaveBusy} onClick={saveEstimateToCache}>{estimateSaveBusy ? "Saving..." : "Save Estimate"}</button><button className="excel-button" onClick={()=>buildEstimatePdf(true)}>Print A4</button><button className="excel-button green" onClick={()=>buildEstimatePdf(false)}>Download PDF</button></div>
                   <div style={{marginTop:8,fontSize:12,color:"#666"}}>Estimate only. Historical DB rates are without GST; 18% GST is added to historical part rates shown above. Missing items/rates can be entered manually using GST-inclusive rates.</div>
                 </>
               )}

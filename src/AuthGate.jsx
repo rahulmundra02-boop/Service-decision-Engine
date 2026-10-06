@@ -1283,8 +1283,8 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
                 const box=e.currentTarget.getBoundingClientRect();
                 const dx=((e.clientX-window.__sigDrag.startX)/box.width)*100;
                 const dy=((e.clientY-window.__sigDrag.startY)/box.height)*100;
-                if(window.__sigDrag.mode==="move") setPlacement(p=>({...p,x:Math.max(2,Math.min(78,p.x+dx)),y:Math.max(60,Math.min(91,p.y+dy))}));
-                if(window.__sigDrag.mode==="resize") setPlacement(p=>({...p,width:Math.max(8,Math.min(45,p.width+dx))}));
+                if(window.__sigDrag.mode==="move") setPlacement({...window.__sigDrag.base,x:Math.max(2,Math.min(78,window.__sigDrag.base.x+dx)),y:Math.max(60,Math.min(91,window.__sigDrag.base.y+dy))});
+                if(window.__sigDrag.mode==="resize") setPlacement({...window.__sigDrag.base,width:Math.max(8,Math.min(45,window.__sigDrag.base.width+dx))});
               }}
               onPointerUp={()=>{window.__sigDrag=null;}}
               onPointerLeave={()=>{window.__sigDrag=null;}}
@@ -1292,10 +1292,10 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
               <div style={{position:"absolute",left:"8%",right:"8%",top:"8%",height:"1px",background:"#ddd"}}/>
               <div style={{position:"absolute",left:"8%",right:"8%",bottom:"13%",height:"1px",background:"#ddd"}}/>
               <div style={{position:"absolute",left:(placement.x||70)+"%",top:(placement.y||91)+"%",width:(placement.width||20)+"%",height:"10%",border:"2px solid #00a86b",background:"#00a86b18",transform:"translate(-0%,-0%)",touchAction:"none"}}
-                onPointerDown={e=>{e.stopPropagation();const r=e.currentTarget.parentElement.getBoundingClientRect();window.__sigDrag={mode:"move",startX:e.clientX,startY:e.clientY};}}
+                onPointerDown={e=>{e.stopPropagation();window.__sigDrag={mode:"move",startX:e.clientX,startY:e.clientY,base:{...placement}};}}
               >
                 {form.signature?.image && <img src={form.signature.image} alt="" style={{width:"100%",height:"100%",objectFit:"contain",pointerEvents:"none"}}/>}
-                <div title="Resize" onPointerDown={e=>{e.stopPropagation();window.__sigDrag={mode:"resize",startX:e.clientX,startY:e.clientY};}} style={{position:"absolute",right:-6,bottom:-6,width:16,height:16,borderRadius:"50%",background:"#00a86b",border:"2px solid #fff",cursor:"nwse-resize"}}/>
+                <div title="Resize" onPointerDown={e=>{e.stopPropagation();window.__sigDrag={mode:"resize",startX:e.clientX,startY:e.clientY,base:{...placement}};}} style={{position:"absolute",right:-6,bottom:-6,width:16,height:16,borderRadius:"50%",background:"#00a86b",border:"2px solid #fff",cursor:"nwse-resize"}}/>
               </div>
               <div style={{position:"absolute",left:"8%",right:"8%",bottom:"8%",textAlign:"right",fontSize:9,color:"#555"}}>Authorized Signatory</div>
             </div>

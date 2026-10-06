@@ -74,6 +74,82 @@ export default function AuthGate({ children }) {
   const [campaignUploadBusy, setCampaignUploadBusy] = useState(false);
   const [campaignUploadMessage, setCampaignUploadMessage] = useState("");
   const [campaignUploadError, setCampaignUploadError] = useState("");
+  const [priceMasterMeta, setPriceMasterMeta] = useState({ version:0, rowCount:0, updatedAt:null, fileName:"" });
+  const [priceMasterUploadBusy, setPriceMasterUploadBusy] = useState(false);
+  const [priceMasterUploadMessage, setPriceMasterUploadMessage] = useState("");
+  const [priceMasterUploadError, setPriceMasterUploadError] = useState("");
+  const clickQueueRef = useRef([]);
+  const clickFlushTimerRef = useRef(null);
+
+
+  useEffect(() => {
+    if (!user) return undefined;
+
+    const flushClickQueue = async () => {
+      const events = clickQueueRef.current.splice(0, 100);
+      if (!events.length) return;
+      const token = localStorage.getItem(TOKEN_KEY);
+      if (!token) {
+        clickQueueRef.current.unshift(...events);
+        return;
+      }
+      try {
+        await api("log-activity-batch", { events }, token);
+      } catch {
+        clickQueueRef.current.unshift(...events.slice(0, 100));
+      }
+    };
+
+    const getClickTarget = (target) => {
+      if (!(target instanceof Element)) return null;
+      return target.closest("button,a,input,select,textarea,[role='button'],[role='tab'],[role='option'],[role='menuitem'],[data-activity]");
+    };
+
+    const handleClick = (event) => {
+      const target = getClickTarget(event.target);
+      if (!target) return;
+      const textValue = String(
+        target.getAttribute("data-activity") ||
+        target.getAttribute("aria-label") ||
+        target.getAttribute("title") ||
+        target.innerText ||
+        target.value ||
+        target.name ||
+        target.id ||
+        target.tagName
+      ).replace(/\s+/g, " ").trim().slice(0, 180);
+
+      clickQueueRef.current.push({
+        clientTime: new Date().toISOString(),
+        details: {
+          label: textValue || target.tagName,
+          tag: target.tagName,
+          id: target.id || "",
+          className: String(target.className || "").slice(0, 160),
+          page: window.location.pathname || "/"
+        }
+      });
+
+      if (clickQueueRef.current.length >= 10) {
+        void flushClickQueue();
+      } else if (!clickFlushTimerRef.current) {
+        clickFlushTimerRef.current = window.setTimeout(() => {
+          clickFlushTimerRef.current = null;
+          void flushClickQueue();
+        }, 3000);
+      }
+    };
+
+    document.addEventListener("click", handleClick, true);
+    return () => {
+      document.removeEventListener("click", handleClick, true);
+      if (clickFlushTimerRef.current) {
+        window.clearTimeout(clickFlushTimerRef.current);
+        clickFlushTimerRef.current = null;
+      }
+      void flushClickQueue();
+    };
+  }, [user]);
 
   useEffect(() => {
     const token = localStorage.getItem(TOKEN_KEY);
@@ -128,6 +204,10 @@ export default function AuthGate({ children }) {
 
   const logout = async () => {
     const token = localStorage.getItem(TOKEN_KEY);
+    const pendingClicks = clickQueueRef.current.splice(0, 100);
+    if (token && pendingClicks.length) {
+      try { await api("log-activity-batch", { events: pendingClicks }, token); } catch {}
+    }
     try { await api("logout", {}, token); } catch {}
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(ACTIVITY_KEY);
@@ -236,6 +316,113 @@ export default function AuthGate({ children }) {
     setEmergencyDbUploadCutoff(data?.settings?.enabled === true);
     setMessage(data.message || "Emergency DB upload cutoff updated.");
   });
+
+  const loadPriceMasterMeta = async () => {
+    try {
+      const response = await fetch("/api/save-history?priceMaster=1");
+      const data = await response.json();
+      if (!response.ok || data?.success === false) throw new Error(data?.error || "Unable to load Price List status.");
+      setPriceMasterMeta({
+        version:Number(data?.version || 0),
+        rowCount:Number(data?.rowCount || 0),
+        updatedAt:data?.updatedAt || null,
+        fileName:data?.fileName || ""
+      });
+    } catch (e) {
+      setPriceMasterUploadError(e.message || "Unable to load Price List status.");
+    }
+  };
+
+  const uploadPriceMasterExcel = async (file) => {
+    if (!file) return;
+    setPriceMasterUploadBusy(true);
+    setPriceMasterUploadMessage("");
+    setPriceMasterUploadError("");
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, {type:"array", cellDates:true, raw:true});
+      const rowsOut = [];
+      const cleanHeader = (value) => String(value ?? "").trim().toLowerCase().replace(/[\s_\-\.]+/g, "");
+      const indexesFor = (headers) => {
+        const aliases = {
+          partNo:["partno","partnumber","partnumbercode","partcode","partnumber"],
+          description:["partdescription","description","partdesc"],
+          mrp:["mrp","maximumretailprice","price"]
+        };
+        const out = {};
+        Object.entries(aliases).forEach(([key, names]) => {
+          const idx = headers.findIndex(h => names.includes(h));
+          if (idx >= 0) out[key] = idx;
+        });
+        return out;
+      };
+      for (const sheetName of workbook.SheetNames) {
+        const sheet = workbook.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(sheet,{header:1,raw:true,defval:"",blankrows:false});
+        if (!rows.length) continue;
+        const headers = rows[0].map(cleanHeader);
+        const idx = indexesFor(headers);
+        if (idx.partNo === undefined || idx.description === undefined || idx.mrp === undefined) continue;
+        for (const row of rows.slice(1)) {
+          const partNo = String(row[idx.partNo] ?? "").trim().toUpperCase().replace(/\s+/g,"");
+          const description = String(row[idx.description] ?? "").trim();
+          const mrpText = String(row[idx.mrp] ?? "").replace(/,/g,"").replace(/[^0-9.\-]/g,"");
+          const mrp = Number(mrpText);
+          if (!partNo || !description || !Number.isFinite(mrp) || mrp < 0) continue;
+          rowsOut.push({partNo,description,mrp});
+        }
+      }
+      const deduped = new Map();
+      rowsOut.forEach(row => deduped.set(row.partNo,row));
+      const rows = [...deduped.values()];
+      if (!rows.length) throw new Error("Valid Price List rows nahi mile. Required columns: Part No, Part Description, MRP.");
+      const uploadId = "price-master-" + Date.now() + "-" + Math.random().toString(36).slice(2,8);
+      // Keep requests comfortably below Vercel/Neon request-size limits while
+      // reducing the number of DB transactions for large masters.
+      const batchSize = 5000;
+      for (let start=0; start<rows.length; start+=batchSize) {
+        const batch=rows.slice(start,start+batchSize);
+        const finalize = start + batch.length >= rows.length;
+        const response=await fetch("/api/save-history",{
+          method:"POST",
+          headers:{
+            "Content-Type":"application/json",
+            Authorization:"Bearer " + (localStorage.getItem(TOKEN_KEY) || "")
+          },
+          body:JSON.stringify({
+            action:"admin-upload-price-master",
+            uploadId,
+            fileName:file.name,
+            replace:start===0,
+            finalize,
+            rows:batch
+          })
+        });
+        const data=await response.json().catch(()=>({}));
+        if(!response.ok || data?.success===false) throw new Error(data?.error || "Price List upload failed.");
+        setPriceMasterUploadMessage(
+          "Uploading Price List… " +
+          Math.min(start+batch.length,rows.length).toLocaleString("en-IN") +
+          " / " + rows.length.toLocaleString("en-IN")
+        );
+        if (finalize) {
+          setPriceMasterMeta(prev => ({...prev,version:Number(data?.version || 0),rowCount:Number(data?.rowCount || rows.length)}));
+        }
+      }
+      await loadPriceMasterMeta();
+      const latest=await fetch("/api/save-history?priceMaster=1");
+      const latestData=await latest.json().catch(()=>({}));
+      setPriceMasterUploadMessage(
+        rows.length.toLocaleString("en-IN") +
+        " parts uploaded successfully. Price List Version " +
+        Number(latestData?.version || 0) + "."
+      );
+    } catch(e) {
+      setPriceMasterUploadError(e.message || "Price List upload failed.");
+    } finally {
+      setPriceMasterUploadBusy(false);
+    }
+  };
 
   const loadCampaignMeta = async () => {
     try {
@@ -390,6 +577,7 @@ export default function AuthGate({ children }) {
       loadJobCardCacheSettings();
       loadEmergencyDbUploadCutoff();
       loadCampaignMeta();
+      loadPriceMasterMeta();
     }
   }, [user?.role, adminOpen, analyticsIncludeAdmins]);
 
@@ -672,6 +860,11 @@ export default function AuthGate({ children }) {
           campaignUploadMessage={campaignUploadMessage}
           campaignUploadError={campaignUploadError}
           onUploadCampaignExcel={uploadCampaignExcel}
+          priceMasterMeta={priceMasterMeta}
+          priceMasterUploadBusy={priceMasterUploadBusy}
+          priceMasterUploadMessage={priceMasterUploadMessage}
+          priceMasterUploadError={priceMasterUploadError}
+          onUploadPriceMasterExcel={uploadPriceMasterExcel}
         />
       ) : cloneElement(children, { user })}
     </div>
@@ -687,7 +880,7 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
   return <div className="auth-modal-backdrop"><div className="auth-modal" style={{maxWidth:820,width:"min(820px,calc(100vw - 32px))",maxHeight:"90vh",overflow:"auto",boxSizing:"border-box"}}><h2>Profile & Dashboard Settings</h2><p className="auth-hint">Ye settings sirf aapki user ID ke liye save hongi. Table width header divider ko mouse se drag karke set hogi.</p><label>Person Name</label><input value={form.personName} onChange={e=>setForm({...form,personName:e.target.value})}/><label>Dealer / Workshop Name</label><input value={form.dealerName} onChange={e=>setForm({...form,dealerName:e.target.value})}/><label>Mobile</label><input value={form.mobile} onChange={e=>setForm({...form,mobile:e.target.value})}/><label className="booking-field-label">Advance Booking Contact 1 {!form.booking1 && <span className="booking-field-dot" />}</label><input value={form.booking1} onChange={e=>setForm({...form,booking1:e.target.value})} placeholder="Optional mobile number"/><label className="booking-field-label">Advance Booking Contact 2 {!form.booking2 && <span className="booking-field-dot" />}</label><input value={form.booking2} onChange={e=>setForm({...form,booking2:e.target.value})} placeholder="Optional mobile number"/><label>WhatsApp Opening Line (Optional)</label><textarea value={form.whatsappOpeningLine} onChange={e=>setForm({...form,whatsappOpeningLine:e.target.value})} placeholder="Applies to the top of the WhatsApp due message. Leave blank if no extra line is required." rows={3} style={{minHeight:72,resize:"vertical"}}/><div className="auth-hint">This is your personal wording. It will be saved with your user ID and reused in future WhatsApp due summaries.</div><div style={{fontWeight:800}}>Single Vehicle Service History Table</div><div className="auth-hint">Checkbox = show/hide · Text box = custom heading · width by mouse drag.</div><div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:"6px 12px",margin:"8px 0 16px",minWidth:0}}>{singleCols.map(([k,l])=>editor("singleColumns",k,l))}</div><div style={{fontWeight:800}}>Bulk Vehicle Due / Service Summary Table</div><div className="auth-hint">Checkbox = show/hide · Text box = custom heading · width by mouse drag.</div><div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:"6px 12px",margin:"8px 0",minWidth:0}}>{bulkCols.map(([k,l])=>editor("bulkColumns",k,l))}<div style={{display:"grid",gridTemplateColumns:"28px 1fr",gap:7,alignItems:"center"}}><span></span><input value={(form.bulkColumnLabels||{}).serial||"S.No. / Due"} onChange={e=>setLabel("bulkColumnLabels","serial",e.target.value)} placeholder="S.No. / Due"/></div></div><div className="auth-modal-actions"><button className="auth-secondary" onClick={onClose}>Cancel</button><button className="auth-primary" onClick={onSave} disabled={loading}>Save Profile & Settings</button></div></div></div>;
 }
 
-function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel }) {
+function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel, priceMasterMeta, priceMasterUploadBusy, priceMasterUploadMessage, priceMasterUploadError, onUploadPriceMasterExcel }) {
   const analyticsDetailRef = useRef(null);
   const [view, setView] = useState("overview");
 
@@ -719,10 +912,11 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
     users:acc.users+1,
     active:acc.active+(u.status==="active"?1:0),
     logins:acc.logins+(u.totalLogins||0),
-    vehicles:acc.vehicles+(u.vehiclesAnalyzed||0),
+    vehicles:acc.vehicles,
     files:acc.files+(u.filesProcessed||0),
     activities:acc.activities+(u.totalActivities||0),
   }),{users:0,active:0,logins:0,vehicles:0,files:0,activities:0});
+  totals.vehicles = Number(analytics.uniqueVehiclesAnalyzed || 0);
 
   const topUsers = [...summary].sort((a,b)=>(b.vehiclesAnalyzed||0)-(a.vehiclesAnalyzed||0));
   const topActiveUsers = [...summary].sort((a,b)=>(b.totalActivities||0)-(a.totalActivities||0));
@@ -881,6 +1075,30 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
           <div style={{marginTop:12,fontSize:11,color:"#6b7280"}}>
             Required headers: Chassis Number, Engine, Registration Number, Campaign Number, Campaign Desc, From Date, To Date, Item, Quantity.
           </div>
+        </div>
+
+        <div className="admin-panel-card" style={{marginTop:16,padding:"18px 20px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
+            <div>
+              <div className="admin-panel-card-title">Part Price List Master</div>
+              <div className="admin-panel-card-sub">Upload Excel with Part No, Part Description and MRP. Every new Excel upload creates the next Price List Version and replaces the previous master.</div>
+            </div>
+            <button className="auth-primary" type="button" onClick={()=>document.getElementById("admin-price-master-input")?.click()} disabled={priceMasterUploadBusy}>
+              {priceMasterUploadBusy ? "Uploading..." : "Upload Price List Excel"}
+            </button>
+          </div>
+          <input id="admin-price-master-input" type="file" accept=".xlsx,.xls,.xlsm,.csv" style={{display:"none"}} onChange={e=>{
+            const file=e.target.files?.[0]; e.target.value="";
+            if(file && window.confirm("Current Price List Master replace karke selected Excel upload karein?")) void onUploadPriceMasterExcel(file);
+          }} />
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:12,marginTop:16}}>
+            <div><div className="admin-panel-card-sub">Price List Version</div><strong>{Number(priceMasterMeta?.version||0)}</strong></div>
+            <div><div className="admin-panel-card-sub">Parts in Master</div><strong>{Number(priceMasterMeta?.rowCount||0).toLocaleString("en-IN")}</strong></div>
+            <div><div className="admin-panel-card-sub">Last Uploaded File</div><strong>{priceMasterMeta?.fileName||"Not uploaded"}</strong></div>
+            <div><div className="admin-panel-card-sub">Last Updated</div><strong>{priceMasterMeta?.updatedAt ? new Date(priceMasterMeta.updatedAt).toLocaleString("en-IN") : "Not uploaded"}</strong></div>
+          </div>
+          {(priceMasterUploadMessage || priceMasterUploadError) && <div style={{marginTop:12,padding:"10px 12px",borderRadius:8,background:priceMasterUploadError?"#fff1f2":"#ecfdf5",color:priceMasterUploadError?"#b91c1c":"#166534",fontWeight:700}}>{priceMasterUploadError||priceMasterUploadMessage}</div>}
+          <div style={{marginTop:12,fontSize:11,color:"#6b7280"}}>Required headers: Part No, Part Description, MRP. Same Part No duplicate rows me last valid row will be used. This master will be shared by Website and Android Estimate app.</div>
         </div>
 
         <div className="admin-analytics-toolbar professional">

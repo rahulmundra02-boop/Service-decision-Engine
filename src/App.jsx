@@ -4343,10 +4343,31 @@ function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResu
         ) : savedEstimates.length ? (
           <div className="saved-estimate-list">
             {savedEstimates.map(item => (
-              <button key={item.id} type="button" className="saved-estimate-row" onClick={() => onOpenSavedEstimate(item.id)}>
-                <span><b>{item.estimate_no}</b><small>{item.vehicle_no || "Vehicle No. not entered"}</small></span>
-                <span>Open →</span>
-              </button>
+              <div key={item.id || item.cacheKey} className="saved-estimate-row">
+                <button type="button" style={{flex:1,textAlign:"left",background:"transparent",border:0,padding:0,color:"inherit",cursor:"pointer"}} onClick={() => onOpenSavedEstimate(item.id || item.cacheKey)}>
+                  <span><b>{item.estimate_no}</b><small>{item.vehicle_no || "Vehicle No. not entered"}</small></span>
+                </button>
+                <button
+                  type="button"
+                  className="excel-button"
+                  style={{padding:"7px 11px",marginLeft:8}}
+                  onClick={async event => {
+                    event.stopPropagation();
+                    const ok = window.confirm("Delete estimate " + (item.estimate_no || "") + " from this device?");
+                    if (!ok) return;
+                    try {
+                      await deleteEstimateCache(item.id || item.cacheKey);
+                      if (String(estimateNumber || "") === String(item.estimate_no || "")) {
+                        setEstimateSavedId(null);
+                      }
+                      await loadSavedEstimates();
+                      setEstimateNotice("Estimate " + (item.estimate_no || "") + " deleted from this device.");
+                    } catch (error) {
+                      setEstimateNotice(error.message || "Unable to delete estimate.");
+                    }
+                  }}
+                >Delete</button>
+              </div>
             ))}
           </div>
         ) : (
@@ -4496,6 +4517,41 @@ function ServiceDecisionApp({ user }) {
       return normalized;
     } catch (error) {
       throw new Error("This browser could not save the estimate locally.");
+    }
+  };
+
+  const deleteEstimateCache = async cacheId => {
+    try {
+      const db = await openEstimateCache();
+      if (db) {
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(ESTIMATE_CACHE_STORE, "readwrite");
+          const store = tx.objectStore(ESTIMATE_CACHE_STORE);
+          const request = store.index("ownerKey").getAll(estimateCacheOwner());
+          request.onsuccess = () => {
+            const item = (request.result || []).find(row =>
+              String(row.id || "") === String(cacheId) ||
+              String(row.cacheKey || "") === String(cacheId)
+            );
+            if (item?.cacheKey) store.delete(item.cacheKey);
+          };
+          request.onerror = () => reject(request.error);
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error);
+        });
+      } else {
+        const list = await readEstimateCache();
+        localStorage.setItem(
+          ESTIMATE_CACHE_PREFIX + estimateCacheOwner(),
+          JSON.stringify(list.filter(item =>
+            String(item.id || "") !== String(cacheId) &&
+            String(item.cacheKey || "") !== String(cacheId)
+          ))
+        );
+      }
+    } catch (error) {
+      console.warn("Estimate cache delete failed:", error);
+      throw new Error("Unable to delete the local estimate.");
     }
   };
 

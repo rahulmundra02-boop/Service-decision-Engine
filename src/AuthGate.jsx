@@ -620,6 +620,9 @@ export default function AuthGate({ children }) {
         bulkColumns: profileForm.bulkColumns,
         singleColumnLabels: profileForm.singleColumnLabels,
         bulkColumnLabels: profileForm.bulkColumnLabels,
+        letterhead: profileForm.letterhead || null,
+        signature: profileForm.signature || null,
+        signaturePlacement: profileForm.signaturePlacement || { x: 70, y: 91, width: 20 },
       }
     }, localStorage.getItem(TOKEN_KEY));
     setUser(normalizeLoggedInUser(data.user));
@@ -640,6 +643,9 @@ export default function AuthGate({ children }) {
       bulkColumns:Array.isArray(p.bulkColumns) && p.bulkColumns.length ? p.bulkColumns : ["customerName","vin","reg","saleDate","model","currentReading","services"],
       singleColumnLabels:{date:"Date",jobCard:"Job Card",reading:"Reading",plant:"Plant",parts:"Part No. / Service / Qty",...(p.singleColumnLabels || {})},
       bulkColumnLabels:{serial:"S.No. / Due",customerName:"Customer Name",vin:"VIN",reg:"Reg. No.",saleDate:"Sale Date",model:"Model",currentReading:"Current Reading",services:"Service To Be Completed",...(p.bulkColumnLabels || {})},
+      letterhead:p.letterhead || null,
+      signature:p.signature || null,
+      signaturePlacement:p.signaturePlacement || { x:70, y:91, width:20 },
     });
     setProfileOpen(true);
     setError("");
@@ -871,15 +877,300 @@ export default function AuthGate({ children }) {
   );
 }
 
-function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
-  const toggleColumn=(key,value,checked)=>{const list=Array.isArray(form[key])?form[key]:[];setForm({...form,[key]:checked?[...new Set([...list,value])]:list.filter(x=>x!==value)});};
-  const setLabel=(group,key,value)=>setForm({...form,[group]:{...(form[group]||{}),[key]:value}});
-  const singleCols=[["date","Date"],["jobCard","Job Card"],["reading","Reading"],["plant","Plant"],["parts","Part / Service / Qty"]];
-  const bulkCols=[["customerName","Customer Name"],["vin","VIN"],["reg","Reg. No."],["saleDate","Sale Date"],["model","Model"],["currentReading","Current Reading"],["services","Service To Be Completed"]];
-  const editor=(group,key,label)=>{const lg=group==="singleColumns"?"singleColumnLabels":"bulkColumnLabels";return <div key={key} style={{display:"grid",gridTemplateColumns:"20px minmax(0,1fr)",gap:6,alignItems:"center",minWidth:0,marginBottom:6}}><input type="checkbox" checked={(form[group]||[]).includes(key)} onChange={e=>toggleColumn(group,key,e.target.checked)} style={{width:16,height:16,margin:0,justifySelf:"center"}}/><input value={(form[lg]||{})[key]||label} onChange={e=>setLabel(lg,key,e.target.value)} placeholder={label} style={{width:"100%",minWidth:0,boxSizing:"border-box"}}/></div>};
-  return <div className="auth-modal-backdrop"><div className="auth-modal" style={{maxWidth:820,width:"min(820px,calc(100vw - 32px))",maxHeight:"90vh",overflow:"auto",boxSizing:"border-box"}}><h2>Profile & Dashboard Settings</h2><p className="auth-hint">Ye settings sirf aapki user ID ke liye save hongi. Table width header divider ko mouse se drag karke set hogi.</p><label>Person Name</label><input value={form.personName} onChange={e=>setForm({...form,personName:e.target.value})}/><label>Dealer / Workshop Name</label><input value={form.dealerName} onChange={e=>setForm({...form,dealerName:e.target.value})}/><label>Mobile</label><input value={form.mobile} onChange={e=>setForm({...form,mobile:e.target.value})}/><label className="booking-field-label">Advance Booking Contact 1 {!form.booking1 && <span className="booking-field-dot" />}</label><input value={form.booking1} onChange={e=>setForm({...form,booking1:e.target.value})} placeholder="Optional mobile number"/><label className="booking-field-label">Advance Booking Contact 2 {!form.booking2 && <span className="booking-field-dot" />}</label><input value={form.booking2} onChange={e=>setForm({...form,booking2:e.target.value})} placeholder="Optional mobile number"/><label>WhatsApp Opening Line (Optional)</label><textarea value={form.whatsappOpeningLine} onChange={e=>setForm({...form,whatsappOpeningLine:e.target.value})} placeholder="Applies to the top of the WhatsApp due message. Leave blank if no extra line is required." rows={3} style={{minHeight:72,resize:"vertical"}}/><div className="auth-hint">This is your personal wording. It will be saved with your user ID and reused in future WhatsApp due summaries.</div><div style={{fontWeight:800}}>Single Vehicle Service History Table</div><div className="auth-hint">Checkbox = show/hide · Text box = custom heading · width by mouse drag.</div><div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:"6px 12px",margin:"8px 0 16px",minWidth:0}}>{singleCols.map(([k,l])=>editor("singleColumns",k,l))}</div><div style={{fontWeight:800}}>Bulk Vehicle Due / Service Summary Table</div><div className="auth-hint">Checkbox = show/hide · Text box = custom heading · width by mouse drag.</div><div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:"6px 12px",margin:"8px 0",minWidth:0}}>{bulkCols.map(([k,l])=>editor("bulkColumns",k,l))}<div style={{display:"grid",gridTemplateColumns:"28px 1fr",gap:7,alignItems:"center"}}><span></span><input value={(form.bulkColumnLabels||{}).serial||"S.No. / Due"} onChange={e=>setLabel("bulkColumnLabels","serial",e.target.value)} placeholder="S.No. / Due"/></div></div><div className="auth-modal-actions"><button className="auth-secondary" onClick={onClose}>Cancel</button><button className="auth-primary" onClick={onSave} disabled={loading}>Save Profile & Settings</button></div></div></div>;
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
+function resizeImageDataUrl(dataUrl, maxWidth = 1600, maxHeight = 2260, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxWidth / img.width, maxHeight / img.height);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(img.width * scale));
+      canvas.height = Math.max(1, Math.round(img.height * scale));
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+}
+
+function detectLetterheadCrop(dataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      const scale = Math.min(1, 700 / img.width, 1000 / img.height);
+      canvas.width = Math.max(1, Math.round(img.width * scale));
+      canvas.height = Math.max(1, Math.round(img.height * scale));
+      const ctx = canvas.getContext("2d", { willReadFrequently:true });
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+      let minX=canvas.width, minY=canvas.height, maxX=0, maxY=0, found=0;
+      for(let y=0;y<canvas.height;y+=3){
+        for(let x=0;x<canvas.width;x+=3){
+          const i=(y*canvas.width+x)*4;
+          const lum=0.299*data[i]+0.587*data[i+1]+0.114*data[i+2];
+          if(lum < 235){
+            minX=Math.min(minX,x); minY=Math.min(minY,y);
+            maxX=Math.max(maxX,x); maxY=Math.max(maxY,y); found++;
+          }
+        }
+      }
+      if(found < 20 || maxX-minX < canvas.width*0.35 || maxY-minY < canvas.height*0.35){
+        resolve({left:2,top:2,right:98,bottom:98});
+        return;
+      }
+      const padX=Math.max(8,(maxX-minX)*0.035);
+      const padY=Math.max(8,(maxY-minY)*0.035);
+      resolve({
+        left:Math.max(0,((minX-padX)/canvas.width)*100),
+        top:Math.max(0,((minY-padY)/canvas.height)*100),
+        right:Math.min(100,((maxX+padX)/canvas.width)*100),
+        bottom:Math.min(100,((maxY+padY)/canvas.height)*100)
+      });
+    };
+    img.onerror=()=>resolve({left:2,top:2,right:98,bottom:98});
+    img.src=dataUrl;
+  });
+}
+
+function renderLetterheadCrop(dataUrl, crop, filterName) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const sx=Math.max(0,Math.round(img.width*(crop.left/100)));
+      const sy=Math.max(0,Math.round(img.height*(crop.top/100)));
+      const ex=Math.min(img.width,Math.round(img.width*(crop.right/100)));
+      const ey=Math.min(img.height,Math.round(img.height*(crop.bottom/100)));
+      const sw=Math.max(1,ex-sx), sh=Math.max(1,ey-sy);
+      const scale=Math.min(1,1600/sw,2260/sh);
+      const canvas=document.createElement("canvas");
+      canvas.width=Math.max(1,Math.round(sw*scale));
+      canvas.height=Math.max(1,Math.round(sh*scale));
+      const ctx=canvas.getContext("2d");
+      ctx.drawImage(img,sx,sy,sw,sh,0,0,canvas.width,canvas.height);
+      const pixels=ctx.getImageData(0,0,canvas.width,canvas.height);
+      if(filterName!=="original"){
+        const d=pixels.data;
+        for(let i=0;i<d.length;i+=4){
+          const lum=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+          if(filterName==="bright"){
+            d[i]=Math.min(255,d[i]*1.08+8); d[i+1]=Math.min(255,d[i+1]*1.08+8); d[i+2]=Math.min(255,d[i+2]*1.08+8);
+          } else if(filterName==="contrast"){
+            d[i]=Math.max(0,Math.min(255,(d[i]-128)*1.25+128)); d[i+1]=Math.max(0,Math.min(255,(d[i+1]-128)*1.25+128)); d[i+2]=Math.max(0,Math.min(255,(d[i+2]-128)*1.25+128));
+          } else if(filterName==="gray"){
+            d[i]=d[i+1]=d[i+2]=lum;
+          } else if(filterName==="scan"){
+            const v=lum>205?255:lum<115?0:Math.round((lum-115)*255/90);
+            d[i]=d[i+1]=d[i+2]=v;
+          }
+        }
+        ctx.putImageData(pixels,0,0);
+      }
+      resolve(canvas.toDataURL("image/jpeg",0.82));
+    };
+    img.onerror=reject;
+    img.src=dataUrl;
+  });
+}
+
+function LetterheadScanner({ initialValue, onUse, onClose }) {
+  const [source, setSource] = useState(initialValue?.image || "");
+  const [crop, setCrop] = useState(initialValue?.crop || {left:2,top:2,right:98,bottom:98});
+  const [filterName, setFilterName] = useState(initialValue?.filter || "scan");
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const videoRef=useRef(null);
+  const streamRef=useRef(null);
+  const fileRef=useRef(null);
+
+  useEffect(()=>()=>{ if(streamRef.current) streamRef.current.getTracks().forEach(t=>t.stop()); },[]);
+
+  const openCamera=async()=>{
+    try{
+      const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1920},height:{ideal:1080}},audio:false});
+      streamRef.current=stream;
+      setCameraOpen(true);
+      setTimeout(()=>{ if(videoRef.current){ videoRef.current.srcObject=stream; void videoRef.current.play(); } },80);
+    }catch(e){ window.alert("Camera permission nahi mili. Browser camera permission allow karke dobara try karein."); }
+  };
+  const closeCamera=()=>{ if(streamRef.current) streamRef.current.getTracks().forEach(t=>t.stop()); streamRef.current=null; setCameraOpen(false); };
+  const capture=async()=>{
+    if(!videoRef.current) return;
+    const video=videoRef.current;
+    const canvas=document.createElement("canvas");
+    canvas.width=video.videoWidth||1280; canvas.height=video.videoHeight||720;
+    canvas.getContext("2d").drawImage(video,0,0,canvas.width,canvas.height);
+    const data=canvas.toDataURL("image/jpeg",0.92);
+    closeCamera();
+    setSource(data);
+    setBusy(true);
+    setCrop(await detectLetterheadCrop(data));
+    setBusy(false);
+  };
+  const chooseFile=async(e)=>{
+    const file=e.target.files?.[0];
+    if(!file) return;
+    const data=await fileToDataUrl(file);
+    setSource(data);
+    setBusy(true);
+    setCrop(await detectLetterheadCrop(data));
+    setBusy(false);
+    e.target.value="";
+  };
+  const autoCrop=async()=>{ if(!source)return; setBusy(true); setCrop(await detectLetterheadCrop(source)); setBusy(false); };
+  const useImage=async()=>{
+    if(!source)return;
+    setBusy(true);
+    try{
+      const image=await renderLetterheadCrop(source,crop,filterName);
+      onUse({image,crop,filter:filterName});
+    }finally{setBusy(false);}
+  };
+  const adjust=(key,value)=>setCrop(prev=>({...prev,[key]:Math.max(0,Math.min(100,Number(value)||0))}));
+  return <div className="auth-modal-backdrop" style={{zIndex:10010}}>
+    <div className="auth-modal" style={{maxWidth:760,width:"min(760px,calc(100vw - 24px))",maxHeight:"92vh",overflow:"auto",boxSizing:"border-box"}}>
+      <h2>Company Letterhead Scanner</h2>
+      <p className="auth-hint">Scan ya image select karein. Auto crop ke baad aap crop controls aur filter manually adjust kar sakte hain.</p>
+      {cameraOpen ? <div style={{display:"grid",gap:10}}>
+        <video ref={videoRef} playsInline muted style={{width:"100%",maxHeight:"55vh",background:"#111",borderRadius:8,objectFit:"contain"}} />
+        <div className="auth-modal-actions"><button className="auth-secondary" onClick={closeCamera}>Cancel</button><button className="auth-primary" onClick={capture}>Capture & Auto Crop</button></div>
+      </div> : <>
+        <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:10}}>
+          <button className="auth-primary" onClick={openCamera}>📷 Scan Letterhead</button>
+          <button className="auth-secondary" onClick={()=>fileRef.current?.click()}>Upload Image</button>
+          <input ref={fileRef} type="file" accept="image/*" onChange={chooseFile} style={{display:"none"}} />
+          {source && <button className="auth-secondary" onClick={autoCrop} disabled={busy}>Auto Detect Crop</button>}
+        </div>
+        {source && <div style={{display:"grid",gap:10}}>
+          <div style={{background:"#eef0f3",padding:8,borderRadius:8,textAlign:"center"}}>
+            <img src={source} alt="Letterhead preview" style={{maxWidth:"100%",maxHeight:320,objectFit:"contain",background:"#fff"}} />
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:8}}>
+            {[["left","Left"],["top","Top"],["right","Right"],["bottom","Bottom"]].map(([k,l])=><label key={k} style={{fontSize:12,fontWeight:700}}>{l} <input type="range" min="0" max="100" step="0.5" value={crop[k]} onChange={e=>adjust(k,e.target.value)} style={{width:"100%"}}/><span>{Number(crop[k]).toFixed(1)}%</span></label>)}
+          </div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:7}}>
+            {["original","bright","contrast","gray","scan"].map(f=><button key={f} className={filterName===f?"auth-primary":"auth-secondary"} onClick={()=>setFilterName(f)}>{f==="scan"?"Scan Clean":f[0].toUpperCase()+f.slice(1)}</button>)}
+          </div>
+        </div>}
+        {busy && <div className="auth-hint">Processing image...</div>}
+        <div className="auth-modal-actions"><button className="auth-secondary" onClick={onClose}>Cancel</button>{source && <button className="auth-primary" onClick={useImage} disabled={busy}>Use This Letterhead</button>}</div>
+      </>}
+    </div>
+  </div>;
+}
+
+function SignaturePad({ initialValue, onUse, onClose }) {
+  const canvasRef=useRef(null);
+  const drawingRef=useRef(false);
+  const [hasInk,setHasInk]=useState(false);
+  useEffect(()=>{
+    const canvas=canvasRef.current;
+    if(!canvas)return;
+    const ctx=canvas.getContext("2d");
+    ctx.fillStyle="#fff"; ctx.fillRect(0,0,canvas.width,canvas.height);
+    if(initialValue?.image){
+      const img=new Image();
+      img.onload=()=>ctx.drawImage(img,0,0,canvas.width,canvas.height);
+      img.src=initialValue.image;
+      setHasInk(true);
+    }
+  },[initialValue?.image]);
+  const point=e=>{
+    const rect=canvasRef.current.getBoundingClientRect();
+    const t=e.touches?.[0] || e;
+    return {x:(t.clientX-rect.left)*(canvasRef.current.width/rect.width),y:(t.clientY-rect.top)*(canvasRef.current.height/rect.height)};
+  };
+  const start=e=>{e.preventDefault();drawingRef.current=true;const p=point(e);const ctx=canvasRef.current.getContext("2d");ctx.beginPath();ctx.moveTo(p.x,p.y);};
+  const move=e=>{if(!drawingRef.current)return;e.preventDefault();const p=point(e);const ctx=canvasRef.current.getContext("2d");ctx.lineWidth=3.2;ctx.lineCap="round";ctx.lineJoin="round";ctx.strokeStyle="#111";ctx.lineTo(p.x,p.y);ctx.stroke();setHasInk(true);};
+  const end=()=>{drawingRef.current=false;};
+  const clear=()=>{const c=canvasRef.current,ctx=c.getContext("2d");ctx.fillStyle="#fff";ctx.fillRect(0,0,c.width,c.height);setHasInk(false);};
+  const save=()=>{if(!hasInk){window.alert("Signature draw kijiye.");return;} onUse({image:canvasRef.current.toDataURL("image/png")});};
+  return <div className="auth-modal-backdrop" style={{zIndex:10020}}>
+    <div className="auth-modal" style={{maxWidth:900,width:"min(900px,calc(100vw - 24px))",boxSizing:"border-box"}}>
+      <h2>Authorized Signature</h2>
+      <p className="auth-hint">Mobile par landscape view me signature karna best rahega.</p>
+      <canvas ref={canvasRef} width={1200} height={420} style={{width:"100%",height:"auto",background:"#fff",border:"1px solid #bbb",borderRadius:8,touchAction:"none"}} onPointerDown={start} onPointerMove={move} onPointerUp={end} onPointerCancel={end} />
+      <div className="auth-modal-actions"><button className="auth-secondary" onClick={clear}>Clear</button><button className="auth-secondary" onClick={onClose}>Cancel</button><button className="auth-primary" onClick={save}>Save Signature</button></div>
+    </div>
+  </div>;
+}
+
+function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
+  const [scannerOpen,setScannerOpen]=useState(false);
+  const [signatureOpen,setSignatureOpen]=useState(false);
+  const [placement,setPlacement]=useState(form.signaturePlacement || {x:70,y:91,width:20});
+  const setLabel=(group,key,value)=>setForm({...form,[group]:{...(form[group]||{}),[key]:value}});
+  const editor=(group,key,label)=>(
+    <div style={{display:"grid",gridTemplateColumns:"28px 1fr",gap:7,alignItems:"center"}}>
+      <input type="checkbox" checked={(form[group]||[]).includes(key)} onChange={e=>setForm({...form,[group]:e.target.checked?[...(form[group]||[]),key]:(form[group]||[]).filter(x=>x!==key)})}/>
+      <input value={(form[group+"Labels"]||{})[key]||label} onChange={e=>setLabel(group+"Labels",key,e.target.value)} />
+    </div>
+  );
+  const savePlacement=()=>setForm({...form,signaturePlacement:placement});
+  return <div className="auth-modal-backdrop"><div className="auth-modal" style={{maxWidth:820,width:"min(820px,calc(100vw - 32px))",maxHeight:"90vh",overflow:"auto",boxSizing:"border-box"}}>
+    <h2>Profile & Dashboard Settings</h2>
+    <p className="auth-hint">Ye settings sirf aapki user ID ke liye save hongi. Table width header divider ko mouse se drag karke set hogi.</p>
+    <label>Person Name</label><input value={form.personName} onChange={e=>setForm({...form,personName:e.target.value})}/>
+    <label>Dealer / Workshop Name</label><input value={form.dealerName} onChange={e=>setForm({...form,dealerName:e.target.value})}/>
+    <label>Mobile</label><input value={form.mobile} onChange={e=>setForm({...form,mobile:e.target.value})}/>
+    <label className="booking-field-label">Advance Booking Contact 1 {!form.booking1 && <span className="booking-field-dot" />}</label><input value={form.booking1} onChange={e=>setForm({...form,booking1:e.target.value})} placeholder="Optional mobile number"/>
+    <label className="booking-field-label">Advance Booking Contact 2 {!form.booking2 && <span className="booking-field-dot" />}</label><input value={form.booking2} onChange={e=>setForm({...form,booking2:e.target.value})} placeholder="Optional mobile number"/>
+    <label>WhatsApp Opening Line (Optional)</label><textarea value={form.whatsappOpeningLine} onChange={e=>setForm({...form,whatsappOpeningLine:e.target.value})} placeholder="Applies to the top of the WhatsApp due message. Leave blank if no extra line is required." rows={3} style={{minHeight:72,resize:"vertical"}}/>
+    <div className="auth-hint">This is your personal wording. It will be saved with your user ID and reused in future WhatsApp due summaries.</div>
+
+    <div style={{marginTop:18,paddingTop:14,borderTop:"1px solid #ddd"}}>
+      <div style={{fontWeight:800,fontSize:16}}>Estimate PDF / Print Branding</div>
+      <div className="auth-hint">Letterhead screen par nahi dikhega. Sirf Estimate PDF / Print me background ke roop me lagega.</div>
+      <div style={{display:"grid",gap:10}}>
+        <div style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:8}}>
+          <button className="auth-primary" type="button" onClick={()=>setScannerOpen(true)}>📷 {form.letterhead ? "Change Letterhead" : "Scan Letterhead"}</button>
+          {form.letterhead && <button className="auth-secondary" type="button" onClick={()=>setForm({...form,letterhead:null})}>Remove</button>}
+          {form.letterhead && <span className="auth-hint">Letterhead saved</span>}
+        </div>
+        {form.letterhead?.image && <div style={{border:"1px solid #ddd",borderRadius:8,padding:8,background:"#f7f7f7"}}><img src={form.letterhead.image} alt="Saved letterhead" style={{width:"100%",maxHeight:180,objectFit:"contain",background:"#fff"}} /></div>}
+
+        <div style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:8}}>
+          <button className="auth-primary" type="button" onClick={()=>setSignatureOpen(true)}>✍️ {form.signature ? "Change Signature" : "Add Authorized Signature"}</button>
+          {form.signature && <button className="auth-secondary" type="button" onClick={()=>setForm({...form,signature:null})}>Remove</button>}
+          {form.signature && <span className="auth-hint">Signature saved</span>}
+        </div>
+        {form.signature?.image && <div style={{border:"1px solid #ddd",borderRadius:8,padding:8,background:"#f7f7f7"}}><img src={form.signature.image} alt="Saved signature" style={{width:"260px",maxWidth:"100%",height:90,objectFit:"contain",background:"#fff"}} /></div>}
+        {form.signature && <div style={{borderTop:"1px solid #eee",paddingTop:10}}>
+          <div style={{fontWeight:700,marginBottom:6}}>Signature position / size in A4</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:8}}>
+            <label style={{fontSize:12}}>Left %<input type="number" min="0" max="90" value={placement.x} onChange={e=>setPlacement({...placement,x:Number(e.target.value)})}/></label>
+            <label style={{fontSize:12}}>Top %<input type="number" min="70" max="98" value={placement.y} onChange={e=>setPlacement({...placement,y:Number(e.target.value)})}/></label>
+            <label style={{fontSize:12}}>Width %<input type="number" min="5" max="45" value={placement.width} onChange={e=>setPlacement({...placement,width:Number(e.target.value)})}/></label>
+          </div>
+          <button className="auth-secondary" type="button" style={{marginTop:7}} onClick={savePlacement}>Apply Signature Position</button>
+        </div>}
+      </div>
+    </div>
+
+    <div style={{fontWeight:800,marginTop:18}}>Single Vehicle Service History Table</div>
+    <div className="auth-hint">Checkbox = show/hide · Text box = custom heading · width by mouse drag.</div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:"6px 12px",margin:"8px 0 16px",minWidth:0}}>{singleCols.map(([k,l])=>editor("singleColumns",k,l))}</div>
+    <div style={{fontWeight:800}}>Bulk Vehicle Due / Service Summary Table</div>
+    <div className="auth-hint">Checkbox = show/hide · Text box = custom heading · width by mouse drag.</div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:"6px 12px",margin:"8px 0",minWidth:0}}>{bulkCols.map(([k,l])=>editor("bulkColumns",k,l))}<div style={{display:"grid",gridTemplateColumns:"28px 1fr",gap:7,alignItems:"center"}}><span></span><input value={(form.bulkColumnLabels||{}).serial||"S.No. / Due"} onChange={e=>setLabel("bulkColumnLabels","serial",e.target.value)} placeholder="S.No. / Due"/></div></div>
+    <div className="auth-modal-actions"><button className="auth-secondary" onClick={onClose}>Cancel</button><button className="auth-primary" onClick={onSave} disabled={loading}>Save Profile & Settings</button></div>
+  </div>
+  {scannerOpen && <LetterheadScanner initialValue={form.letterhead} onUse={v=>{setForm({...form,letterhead:v});setScannerOpen(false);}} onClose={()=>setScannerOpen(false)}/>}
+  {signatureOpen && <SignaturePad initialValue={form.signature} onUse={v=>{setForm({...form,signature:v});setSignatureOpen(false);}} onClose={()=>setSignatureOpen(false)}/>}
+  </div>;
+}
 function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel, priceMasterMeta, priceMasterUploadBusy, priceMasterUploadMessage, priceMasterUploadError, onUploadPriceMasterExcel }) {
   const analyticsDetailRef = useRef(null);
   const [view, setView] = useState("overview");

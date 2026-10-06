@@ -5909,19 +5909,88 @@ function ServiceDecisionApp({ user }) {
   const estimateGrandTotal = estimatePartsTotal+estimateLabourTotal;
   function buildEstimatePdf(autoPrint = false) {
     const pdf = new jsPDF({ unit:"mm", format:"a4", orientation:"portrait", compress:true });
+    const pageWidth = 210;
+    const pageHeight = 297;
     const margin = 10;
     const width = 190;
+    const bottomMargin = 19;
+    const bottomSafeY = pageHeight - bottomMargin;
     const vehicle = estimateVehicle || analysis?.vehicle || {};
     const workshop = String(user?.dealerName || "Workshop").trim();
     const branding = user?.preferences || {};
     const letterheadImage = branding?.letterhead?.image || "";
     const signatureImage = branding?.signature?.image || "";
     const signaturePlacement = branding?.signaturePlacement || { x:70, y:91, width:20 };
+    const pageHeaderDrawn = new Set();
+
     const drawLetterheadBackground = () => {
       if (!letterheadImage) return;
-      try { pdf.addImage(letterheadImage, "JPEG", 0, 0, 210, 297, undefined, "FAST"); } catch (e) { console.warn("Letterhead PDF background failed:", e); }
+      try {
+        pdf.addImage(letterheadImage, "JPEG", 0, 0, pageWidth, pageHeight, undefined, "FAST");
+      } catch (e) {
+        console.warn("Letterhead PDF background failed:", e);
+      }
     };
-    drawLetterheadBackground();
+
+    // Keep a clear printable area inside the letterhead. The same header and
+    // vehicle details are repeated automatically on every A4 page.
+    const contentTop = letterheadImage ? 48 : 18;
+    const headerHeight = 49;
+    const tableTop = contentTop + headerHeight + 5;
+
+    const drawPageHeader = () => {
+      const pageNo = pdf.internal.getCurrentPageInfo().pageNumber;
+      if (pageHeaderDrawn.has(pageNo)) return;
+      pageHeaderDrawn.add(pageNo);
+
+      drawLetterheadBackground();
+
+      pdf.setFont("helvetica","bold");
+      pdf.setFontSize(17);
+      pdf.text("SERVICE ESTIMATE",105,contentTop,{align:"center"});
+      pdf.setFontSize(10);
+      pdf.text(workshop,105,contentTop + 7,{align:"center"});
+      pdf.setFont("helvetica","normal");
+      pdf.setFontSize(8.5);
+      pdf.text("Estimate only - subject to actual inspection and applicable rates.",105,contentTop + 11,{align:"center"});
+      pdf.setFontSize(8);
+      pdf.text("Estimate No. (Session): " + (estimateNumber || "-"),margin,contentTop + 16);
+      pdf.text("Prepared: " + formatDate(new Date()),width + margin,contentTop + 16,{align:"right"});
+
+      const colWidth = width / 3;
+      const rowHeight = 12;
+      const vehicleTop = contentTop + 21;
+      const vehicleRows = [
+        [["Customer", vehicle.customerName || "-"], ["Reg. No.", vehicle.reg || "-"], ["VIN", vehicle.vin || "-"]],
+        [["Model", vehicle.model || "-"], ["Current Reading", analysis?.running?.current ? formatNumber(analysis.running.current) + " " + (analysis.running.unit || getTargetUnit(vehicle)) : "-"], ["Date", formatDate(new Date())]]
+      ];
+
+      pdf.setFontSize(7.2);
+      vehicleRows.forEach((row, rowIndex) => {
+        row.forEach((field, colIndex) => {
+          const x = margin + colIndex * colWidth;
+          const y = vehicleTop + rowIndex * rowHeight;
+          pdf.rect(x, y, colWidth, rowHeight);
+          pdf.setFont("helvetica","bold");
+          pdf.text(field[0], x + 2.5, y + 4);
+          pdf.setFont("helvetica","normal");
+          pdf.text(String(field[1]), x + 2.5, y + 8.5, { maxWidth: colWidth - 5 });
+        });
+      });
+
+      return vehicleTop + rowHeight * 2;
+    };
+
+    const pageMargins = {
+      top: tableTop,
+      bottom: bottomMargin,
+      left: margin,
+      right: margin
+    };
+
+    const tablePageHeader = () => {
+      drawPageHeader();
+    };
 
     // jsPDF's built-in Helvetica does not render the ₹ glyph reliably.
     // Use plain ASCII "INR" in the PDF so Adobe/Edge do not show broken
@@ -5934,62 +6003,29 @@ function ServiceDecisionApp({ user }) {
       });
     };
 
-    const contentTop = letterheadImage ? 48 : 14;
-    pdf.setFont("helvetica","bold");
-    pdf.setFontSize(17);
-    pdf.text("SERVICE ESTIMATE",105,contentTop,{align:"center"});
-    pdf.setFontSize(10);
-    pdf.text(workshop,105,contentTop + 7,{align:"center"});
-    pdf.setFont("helvetica","normal");
-    pdf.setFontSize(8.5);
-    pdf.text("Estimate only - subject to actual inspection and applicable rates.",105,contentTop + 11,{align:"center"});
-    pdf.setFontSize(8);
-    pdf.text("Estimate No. (Session): " + (estimateNumber || "-"),margin,contentTop + 16);
-    pdf.text("Prepared: " + formatDate(new Date()),width + margin,contentTop + 16,{align:"right"});
+    drawPageHeader();
 
-    autoTable(pdf,{
-      startY:contentTop + 21,
-      margin:{left:margin,right:margin},
-      tableWidth:width,
-      theme:"grid",
-      styles:{
-        font:"helvetica",
-        fontSize:8.5,
-        cellPadding:3,
-        lineColor:[150,150,150],
-        lineWidth:0.2
-      },
-      body:[
-        ["Customer\n"+(vehicle.customerName||"-"),"Reg. No.\n"+(vehicle.reg||"-"),"VIN\n"+(vehicle.vin||"-")],
-        ["Model\n"+(vehicle.model||"-"),"Current Reading\n"+(analysis?.running?.current ? formatNumber(analysis.running.current)+" "+(analysis.running.unit||getTargetUnit(vehicle)) : "-"),"Date\n"+formatDate(new Date())]
-      ],
-      willDrawPage:()=>drawLetterheadBackground()
-    });
-
-    let y=(pdf.lastAutoTable?.finalY||58)+7;
+    let y = tableTop + 2;
     pdf.setFont("helvetica","bold");
     pdf.setFontSize(10);
     pdf.text("Selected Aggregate Services",margin,y);
-    y+=4;
+    y += 4;
 
-    const selectedNames=BULK_SERVICE_LABELS
-      .filter(([,key])=>estimateSelectedServices.includes(key))
-      .map(([name])=>name);
+    const selectedNames = BULK_SERVICE_LABELS
+      .filter(([,key]) => estimateSelectedServices.includes(key))
+      .map(([name]) => name);
 
     pdf.setFont("helvetica","normal");
     pdf.setFontSize(8.5);
-    pdf.text(
-      selectedNames.length ? selectedNames.join(", ") : "No aggregate service selected",
-      margin,
-      y+3,
-      {maxWidth:width}
-    );
-    y+=selectedNames.length?9:7;
+    const selectedText = selectedNames.length ? selectedNames.join(", ") : "No aggregate service selected";
+    const selectedLines = pdf.splitTextToSize(selectedText, width);
+    pdf.text(selectedLines, margin, y + 3);
+    y += Math.max(7, selectedLines.length * 4.5 + 3);
 
     autoTable(pdf,{
       startY:y,
-      margin:{left:margin,right:margin},
-      tableWidth:width,
+      margin:pageMargins,
+      pageBreak:"auto",
       theme:"grid",
       styles:{
         font:"helvetica",
@@ -6016,18 +6052,19 @@ function ServiceDecisionApp({ user }) {
         3:{cellWidth:27},
         4:{cellWidth:35}
       },
-      willDrawPage:()=>drawLetterheadBackground()
+      willDrawPage:tablePageHeader
     });
 
     y=(pdf.lastAutoTable?.finalY||y+20)+7;
     pdf.setFont("helvetica","bold");
+    pdf.setFontSize(10);
     pdf.text("Labour",margin,y);
     y+=4;
 
     autoTable(pdf,{
       startY:y,
-      margin:{left:margin,right:margin},
-      tableWidth:width,
+      margin:pageMargins,
+      pageBreak:"auto",
       theme:"grid",
       styles:{
         font:"helvetica",
@@ -6052,15 +6089,23 @@ function ServiceDecisionApp({ user }) {
         2:{cellWidth:25},
         3:{cellWidth:35}
       },
-      willDrawPage:()=>drawLetterheadBackground()
+      willDrawPage:tablePageHeader
     });
 
     y=(pdf.lastAutoTable?.finalY||y+20)+7;
 
+    // Keep totals together. If there is not enough room, start a fresh page
+    // with the same letterhead, estimate number and vehicle details.
+    if (y + 48 > bottomSafeY) {
+      pdf.addPage();
+      drawPageHeader();
+      y = tableTop + 7;
+    }
+
     autoTable(pdf,{
       startY:y,
-      margin:{left:120,right:margin},
-      tableWidth:80,
+      margin:pageMargins,
+      pageBreak:"avoid",
       theme:"grid",
       styles:{
         font:"helvetica",
@@ -6079,16 +6124,35 @@ function ServiceDecisionApp({ user }) {
         0:{cellWidth:45,fontStyle:"bold"},
         1:{cellWidth:35,halign:"right"}
       },
-      willDrawPage:()=>drawLetterheadBackground()
+      willDrawPage:tablePageHeader
     });
 
-    y=(pdf.lastAutoTable?.finalY||y+25)+12;
-    const signatureX = Math.max(5, Math.min(210 - (210 * Number(signaturePlacement.width || 20) / 100) - 5, 210 * Number(signaturePlacement.x || 70) / 100));
-    const signatureW = Math.max(10, Math.min(90, 210 * Number(signaturePlacement.width || 20) / 100));
-    const signatureY = Math.max(y, Math.min(282, 297 * Number(signaturePlacement.y || 91) / 100));
+    y=(pdf.lastAutoTable?.finalY||y+25)+10;
+
+    const signatureW = Math.max(10, Math.min(90, pageWidth * Number(signaturePlacement.width || 20) / 100));
+    const signatureH = Math.min(24, Math.max(10, signatureW * 0.28));
+
+    if (y + signatureH + 10 > bottomSafeY) {
+      pdf.addPage();
+      drawPageHeader();
+      y = tableTop + 8;
+    }
+
+    const signatureX = Math.max(
+      5,
+      Math.min(
+        pageWidth - signatureW - 5,
+        pageWidth * Number(signaturePlacement.x || 70) / 100
+      )
+    );
+    const configuredSignatureY = pageHeight * Number(signaturePlacement.y || 91) / 100;
+    const signatureY = Math.max(
+      y + 2,
+      Math.min(configuredSignatureY, bottomSafeY - signatureH - 7)
+    );
+
     if(signatureImage){
       try {
-        const signatureH = Math.min(24, Math.max(10, signatureW * 0.28));
         pdf.addImage(signatureImage, "PNG", signatureX, signatureY, signatureW, signatureH, undefined, "FAST");
         pdf.setFont("helvetica","normal");
         pdf.setFontSize(8);
@@ -6098,14 +6162,14 @@ function ServiceDecisionApp({ user }) {
         console.warn("Signature PDF rendering failed:", e);
         pdf.setFont("helvetica","normal");
         pdf.setFontSize(8);
-        pdf.line(140,y-2,190,y-2);
-        pdf.text("Authorized Signatory",165,y,{align:"center"});
+        pdf.line(140,signatureY,190,signatureY);
+        pdf.text("Authorized Signatory",165,signatureY + 5,{align:"center"});
       }
     } else {
       pdf.setFont("helvetica","normal");
       pdf.setFontSize(8);
-      pdf.line(140,y-2,190,y-2);
-      pdf.text("Authorized Signatory",165,y,{align:"center"});
+      pdf.line(140,signatureY,190,signatureY);
+      pdf.text("Authorized Signatory",165,signatureY + 5,{align:"center"});
     }
 
     if(autoPrint){

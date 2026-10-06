@@ -5785,11 +5785,13 @@ function ServiceDecisionApp({ user }) {
     setEstimateSavedId(null);
     setEstimateNumber("EST-" + new Date().getFullYear() + String(new Date().getMonth()+1).padStart(2,"0") + String(new Date().getDate()).padStart(2,"0") + "-" + String(Date.now()).slice(-5));
     setEstimateParts([]); setEstimateLabour([]); setEstimateNotice(""); setEstimateVehicleLookupMessage("");
+    setEstimateSourceModel("");
     setEstimateStage("select"); setEstimateOpen(true); setEstimateLoading(true);
     try {
       const history=await loadEstimateHistoryByVin(analysis.vehicle.vin);
       setEstimateHistory(history);
-      setEstimateNotice(history.vehicleRows.length||history.modelRows.length ? "Vehicle history loaded. Missing items will be sourced from the same model history in DB." : "No historical service data found. Estimate items can be entered manually.");
+      setEstimateSourceModel("");
+      setEstimateNotice(history.vehicleRows.length||history.modelRows.length ? "Vehicle history loaded. Missing items will be sourced from the same model history in DB. Alternate Model is always available." : "No historical service data found. Alternate Model is available for DB-based service parts.");
     } catch {
       setEstimateHistory({vehicleRows:[],modelRows:[],globalPartRates:[]});
       setEstimateNotice("Historical data could not be loaded. Manual estimate entry is available.");
@@ -5802,6 +5804,7 @@ function ServiceDecisionApp({ user }) {
     setEstimateHistory({vehicleRows:[],modelRows:[],globalPartRates:[]});
     setEstimateSelectedServices([]); setEstimateParts([]); setEstimateLabour([]);
     setEstimateNotice(""); setEstimateVehicleLookupMessage("");
+    setEstimateSourceModel("");
     setEstimateSavedId(null);
     setEstimateNumber("EST-" + new Date().getFullYear() + String(new Date().getMonth()+1).padStart(2,"0") + String(new Date().getDate()).padStart(2,"0") + "-" + String(Date.now()).slice(-5));
     setEstimateStage("vehicle"); setEstimateOpen(true);
@@ -5955,12 +5958,18 @@ function ServiceDecisionApp({ user }) {
         setEstimateVehicle(prev => ({...prev, model:selectedModel}));
       }
 
-      setEstimateNotice(
-        modelRows.length
-          ? "Model " + selectedModel + " selected. Service Part No. and Qty will be sourced from this model's DB history."
-          : "Model " + selectedModel + " has no usable service history. You can select another model."
+      const hasServiceParts = modelRows.some(row =>
+        String(row?.item_category || "").toUpperCase().startsWith("P002") &&
+        String(row?.part_code || "").trim() &&
+        Number(row?.quantity || 0) > 0
       );
-      setEstimateStage("select");
+
+      setEstimateNotice(
+        hasServiceParts
+          ? "Model " + selectedModel + " selected. Service Part No. and Qty will be sourced from this model's DB history."
+          : "Model " + selectedModel + " me usable service-part data nahi mila. Please another model select karein."
+      );
+      setEstimateStage(hasServiceParts ? "select" : "model");
     } catch (error) {
       console.warn("Estimate model history lookup failed:", error);
       setEstimateVehicleLookupMessage("Selected model ka DB service data load nahi ho saka.");
@@ -6006,7 +6015,6 @@ function ServiceDecisionApp({ user }) {
       setEstimateVehicleLookupMessage("DB lookup failed. You can continue with manual vehicle details.");
     } finally {
       setEstimateVehicleLookupBusy(false);
-      setEstimateStage("estimate");
     }
   }
 
@@ -7999,7 +8007,7 @@ function ServiceDecisionApp({ user }) {
                     </div>
                   </div>
                 </>
-              ) : estimateStage === "select" ? 
+              ) : estimateStage === "select" ? (
                 <>
                   <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
                     <div style={{fontSize:22,fontWeight:800}}>SELECT AGGREGATE SERVICES</div><div className="estimate-meta">Estimate No. (Session): <b>{estimateNumber || "-"}</b> · Date: <b>{formatDate(new Date())}</b></div>

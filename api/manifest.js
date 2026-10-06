@@ -16,8 +16,14 @@ export default function handler(req, res) {
     theme_color: "#ffffff",
     icons: [
       {
-        src: "/favicon.svg?v=20261006-2",
-        sizes: "any",
+        src: "/favicon.svg?v=20261006-4",
+        sizes: "192x192",
+        type: "image/svg+xml",
+        purpose: "any"
+      },
+      {
+        src: "/favicon.svg?v=20261006-4",
+        sizes: "512x512",
         type: "image/svg+xml",
         purpose: "any maskable"
       }

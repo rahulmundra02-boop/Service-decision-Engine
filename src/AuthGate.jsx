@@ -1301,7 +1301,7 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
               <div style={{position:"absolute",left:"8%",right:"8%",bottom:"8%",textAlign:"right",fontSize:9,color:"#555"}}>Authorized Signatory</div>
             </div>
           </div>
-          <div className="auth-hint" style={{marginTop:7}}>Position and size update automatically. For final changes, use <b>Save Profile & Settings</b>  below to save the final changes.</div>
+          <div className="auth-hint" style={{marginTop:7}}>Position and size update automatically. For final changes, use <b>Save Profile & Settings</b> below.</div>
         </div>}
       </div>
     </div>

@@ -434,7 +434,8 @@ export default async function handler(req, res) {
         });
       }
       if (partNo) {
-        // Price Master must win over historical DB for every direct part lookup.
+        // Current Price Master is authoritative for direct Part No. lookups.
+        // Never silently fall back to historical DB pricing, which can be stale.
         try {
           const sourceResponse = await fetch(
             BETA_PRICE_MASTER_API + "?priceMasterPart=1&partNo=" + encodeURIComponent(partNo)
@@ -452,44 +453,24 @@ export default async function handler(req, res) {
                   rate:Number((mrp / 1.18).toFixed(2)),
                   rateInclGst:Number(mrp.toFixed(2)),
                   mrp
-                }
+                },
+                source:"Price List Master (MRP)"
               });
             }
           }
         } catch (error) {
-          console.warn("Price Master part lookup failed, using historical DB:", error?.message || error);
+          console.warn("Price Master part lookup failed:", error?.message || error);
+          return res.status(503).json({
+            success:false,
+            error:"Current Price Master lookup unavailable. Historical DB rate is not used for direct Part No. lookup."
+          });
         }
 
-        const result = await client.query(
-          "WITH paid_rates AS ( " +
-          "SELECT sh.part_code, sh.part_description, sh.rate, jc.job_date, jc.id AS job_card_id, sh.id AS service_history_id, " +
-          "ROW_NUMBER() OVER (" +
-          "ORDER BY (CASE WHEN UPPER(REPLACE(COALESCE(sh.repair_line_item_type, ''), ' ', '')) LIKE '%POSTWARRANTY/PAIDORDER%' THEN 1 ELSE 2 END), " +
-          "jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC) AS rn " +
-          "FROM service_history sh JOIN job_cards jc ON jc.id=sh.job_card_id " +
-          "WHERE sh.item_category LIKE 'P002%' " +
-          "AND (" +
-          "  UPPER(REPLACE(TRIM(sh.part_code), ' ', ''))=$1 " +
-          "  OR UPPER(REPLACE(TRIM(sh.part_code), ' ', ''))=$1 || '(L)' " +
-          "  OR UPPER(REPLACE(TRIM(sh.part_code), ' ', '')) LIKE $1 || '(%)' " +
-          "  OR UPPER(REPLACE(REGEXP_REPLACE(TRIM(sh.part_code), '\\([A-Za-z0-9]+\\)$', ''), ' ', ''))=$1 " +
-          ") " +
-          "AND sh.rate IS NOT NULL AND sh.rate > 0 " +
-          ") " +
-          "SELECT part_code, part_description, rate, job_date " +
-          "FROM paid_rates WHERE rn <= 10 " +
-          "ORDER BY rate DESC, job_date DESC NULLS LAST, job_card_id DESC, service_history_id DESC LIMIT 1",
-          [partNo]
-        );
-        const row = result.rows[0] || null;
-        return res.status(200).json({
+        return res.status(404).json({
           success:true,
-          part: row ? {
-            partNo: row.part_code ? row.part_code.replace(/\([A-Za-z0-9]+\)$/, '') : partNo,
-            description: row.part_description || "",
-            rate: Number(row.rate || 0),
-            rateInclGst: Number((Number(row.rate || 0) * 1.18).toFixed(2))
-          } : null
+          part:null,
+          source:"Price List Master",
+          message:"Part No. not found in current Price Master."
         });
       }
 

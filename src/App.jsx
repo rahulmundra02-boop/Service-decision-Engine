@@ -6436,6 +6436,41 @@ function ServiceDecisionApp({ user }) {
 
         .history-table th { position:sticky; top:0; z-index:2; background:#4472c4; color:#fff; border:1px solid #b7b7b7; padding:5px 7px; font-size:12px; }
         .estimate-workspace .history-table th { position:static; top:auto; z-index:auto; }
+        .estimate-header { display:flex; align-items:center; gap:10px; margin-bottom:12px; border-bottom:1px solid #ddd; padding-bottom:10px; min-width:0; }
+        .estimate-title { font-size:22px; font-weight:800; flex:0 0 auto; }
+        .estimate-meta { min-width:0; }
+        .estimate-mode-label { font-size:12px; color:#666; white-space:nowrap; }
+        .estimate-workshop-name { margin-left:auto; font-weight:700; white-space:nowrap; }
+        .estimate-vehicle-details { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:8px; margin-bottom:12px; min-width:0; }
+        .estimate-vehicle-field { min-width:0; }
+        .estimate-vehicle-field b { display:block; margin-bottom:3px; }
+        .estimate-vehicle-field .excel-input { width:100%; box-sizing:border-box; min-width:0; }
+        .estimate-parts-table, .estimate-labour-table { width:100%; min-width:0; table-layout:fixed; }
+        .estimate-parts-table input, .estimate-labour-table input { max-width:100%; box-sizing:border-box; min-width:0; }
+        @media (max-width:700px) {
+          .estimate-workspace { width:calc(100vw - 12px) !important; max-width:none !important; max-height:96vh !important; padding:10px !important; border-radius:10px !important; overflow-x:hidden !important; }
+          .estimate-header { display:grid !important; grid-template-columns:minmax(0,1fr) auto; gap:6px 8px !important; align-items:center !important; margin-bottom:10px !important; padding-bottom:8px !important; }
+          .estimate-title { font-size:19px !important; line-height:1.1; }
+          .estimate-meta { grid-column:1 / -1; order:3; font-size:12px; line-height:1.35; overflow-wrap:anywhere; }
+          .estimate-date-separator { display:none; }
+          .estimate-mode-label { grid-column:1 / 2; order:4; font-size:11px; white-space:normal; }
+          .estimate-workshop-name { grid-column:1 / 2; order:5; margin-left:0 !important; font-size:14px; white-space:normal; }
+          .estimate-close-button { grid-column:2; grid-row:1 / span 2; margin-left:0 !important; white-space:nowrap; }
+          .estimate-vehicle-details { grid-template-columns:1fr !important; gap:7px !important; margin-bottom:10px !important; }
+          .estimate-vehicle-field { display:grid; grid-template-columns:90px minmax(0,1fr); gap:7px; align-items:center; }
+          .estimate-vehicle-field b { margin:0; font-size:13px; }
+          .estimate-vehicle-field .excel-input { width:100% !important; min-width:0 !important; }
+          .estimate-parts-table, .estimate-parts-table tbody, .estimate-parts-table tr, .estimate-parts-table td,
+          .estimate-labour-table, .estimate-labour-table tbody, .estimate-labour-table tr, .estimate-labour-table td { display:block !important; width:100% !important; box-sizing:border-box; }
+          .estimate-parts-table thead, .estimate-labour-table thead { display:none !important; }
+          .estimate-parts-table tr, .estimate-labour-table tr { margin:0 0 8px; border:1px solid #cfd6df; border-radius:6px; overflow:hidden; background:#fff; }
+          .estimate-parts-table td, .estimate-labour-table td { display:grid !important; grid-template-columns:92px minmax(0,1fr); gap:7px; align-items:center; padding:6px 7px !important; text-align:left; border:0 !important; border-bottom:1px solid #e5e7eb !important; min-width:0; }
+          .estimate-parts-table td:last-child, .estimate-labour-table td:last-child { border-bottom:0 !important; }
+          .estimate-parts-table td::before, .estimate-labour-table td::before { content:attr(data-label); font-weight:700; font-size:11px; color:#555; }
+          .estimate-parts-table td[colspan], .estimate-labour-table td[colspan] { display:block !important; }
+          .estimate-parts-table td[colspan]::before, .estimate-labour-table td[colspan]::before { content:none; }
+          .estimate-parts-table input, .estimate-labour-table input { width:100% !important; max-width:100% !important; min-width:0 !important; }
+        }
         .history-table td { border:1px solid #d0d0d0; padding:5px 7px; font-size:12px; }
         .history-table tr:nth-child(even) td { background:#fafafa; }
         .bulk-service-table { min-width: 1120px; }
@@ -7546,24 +7581,25 @@ function ServiceDecisionApp({ user }) {
                 </>
               ) : (
                 <>
-                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,borderBottom:"1px solid #ddd",paddingBottom:10}}>
-                    <div style={{fontSize:22,fontWeight:800}}>SERVICE ESTIMATE</div><div className="estimate-meta">Estimate No. (Session): <b>{estimateNumber || "-"}</b> · Date: <b>{formatDate(new Date())}</b></div>
-                    <span style={{fontSize:12,color:"#666"}}>Single Vehicle Only</span>
-                    <span style={{marginLeft:"auto",fontWeight:700}}>{user?.dealerName || "Workshop"}</span>
-                    <button className="excel-button no-print" onClick={()=>{setEstimateOpen(false);setMode("home");}}>Close</button>
+                  <div className="estimate-header">
+                    <div className="estimate-title">SERVICE ESTIMATE</div>
+                    <div className="estimate-meta">Estimate No. (Session): <b>{estimateNumber || "-"}</b> <span className="estimate-date-separator">·</span> Date: <b>{formatDate(new Date())}</b></div>
+                    <span className="estimate-mode-label">Single Vehicle Only</span>
+                    <span className="estimate-workshop-name">{user?.dealerName || "Workshop"}</span>
+                    <button className="excel-button no-print estimate-close-button" onClick={()=>{setEstimateOpen(false);setMode("home");}}>Close</button>
                   </div>
-                   <div style={{display:"grid",gridTemplateColumns:"repeat(5,minmax(0,1fr))",gap:8,marginBottom:12}}>
-                     {[["Customer","customerName"],["Reg. No.","reg"],["Chassis / VIN","vin"],["Engine No.","engine"],["Model","model"]].map(([label,key]) => (
-                       <div key={key}><b>{label}</b><input className="excel-input" value={estimateVehicle?.[key] || ""} onChange={e=>setEstimateVehicle(prev=>({...prev,[key]:e.target.value}))} /></div>
+                   <div className="estimate-vehicle-details">
+                     {[["Customer","customerName"],["Reg. No.","reg"],["Chassis / VIN","vin"],["Engine No.","engine"],["Sale Date","saleDate"],["Model","model"]].map(([label,key]) => (
+                       <div className="estimate-vehicle-field" key={key}><b>{label}</b><input className="excel-input" value={estimateVehicle?.[key] || ""} onChange={e=>setEstimateVehicle(prev=>({...prev,[key]:e.target.value}))} /></div>
                      ))}
                    </div>
                   <div style={{fontWeight:800,margin:"10px 0 6px"}}>Selected Aggregate Services</div>
                   <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>{BULK_SERVICE_LABELS.filter(([,key])=>estimateSelectedServices.includes(key)).map(([label])=><span key={label} style={{border:"1px solid #bbb",padding:"5px 8px",borderRadius:5,fontSize:12,background:"#f7f7f7"}}>{label}</span>)}</div>
                   <div style={{fontWeight:800,margin:"10px 0 6px"}}>Parts</div>
-                  <table className="history-table"><thead><tr><th>Part No.</th><th>Description</th><th>Qty</th><th>Rate (Incl. GST)</th><th>Amount</th><th></th></tr></thead><tbody>{estimateParts.map(item=><tr key={item.id}><td><input value={item.partNo} onChange={e=>updateEstimateItem("part",item.id,"partNo",e.target.value)} onBlur={e=>lookupManualEstimatePart(item.id,e.target.value)} title="Enter Part No. and leave the field to auto-fill description and rate"/></td><td><input value={item.description} onChange={e=>updateEstimateItem("part",item.id,"description",e.target.value)}/></td><td><input type="number" min="0" step="0.01" value={item.qty ?? ""} placeholder="Qty" onChange={e=>updateEstimateItem("part",item.id,"qty",e.target.value)} onBlur={normalizeEstimateQuantities} onKeyDown={e=>{if(e.key==="Enter") normalizeEstimateQuantities();}} style={{width:80}}/></td><td><input type="number" min="0" step="0.01" value={item.rate} onChange={e=>updateEstimateItem("part",item.id,"rate",e.target.value)} style={{width:110}}/></td><td>{formatNumber(item.qty*item.rate)}</td><td><button className="excel-button no-print" onClick={()=>removeEstimateItem("part",item.id)}>Delete</button></td></tr>)}{!estimateParts.length&&<tr><td colSpan="6">No historical part found. Add manually.</td></tr>}</tbody></table>
+                  <table className="history-table estimate-parts-table"><thead><tr><th>Part No.</th><th>Description</th><th>Qty</th><th>Rate (Incl. GST)</th><th>Amount</th><th></th></tr></thead><tbody>{estimateParts.map(item=><tr key={item.id}><td data-label="Part No."><input value={item.partNo} onChange={e=>updateEstimateItem("part",item.id,"partNo",e.target.value)} onBlur={e=>lookupManualEstimatePart(item.id,e.target.value)} title="Enter Part No. and leave the field to auto-fill description and rate"/></td><td data-label="Description"><input value={item.description} onChange={e=>updateEstimateItem("part",item.id,"description",e.target.value)}/></td><td data-label="Qty"><input type="number" min="0" step="0.01" value={item.qty ?? ""} placeholder="Qty" onChange={e=>updateEstimateItem("part",item.id,"qty",e.target.value)} onBlur={normalizeEstimateQuantities} onKeyDown={e=>{if(e.key==="Enter") normalizeEstimateQuantities();}} style={{width:80}}/></td><td data-label="Rate (Incl. GST)"><input type="number" min="0" step="0.01" value={item.rate} onChange={e=>updateEstimateItem("part",item.id,"rate",e.target.value)} style={{width:110}}/></td><td data-label="Amount">{formatNumber(item.qty*item.rate)}</td><td data-label="Action"><button className="excel-button no-print" onClick={()=>removeEstimateItem("part",item.id)}>Delete</button></td></tr>)}{!estimateParts.length&&<tr><td colSpan="6">No historical part found. Add manually.</td></tr>}</tbody></table>
                   <div style={{margin:"8px 0"}}><button className="excel-button no-print" onClick={()=>addEstimateItem("part")}>+ Add Part</button></div>
                   <div style={{fontWeight:800,margin:"14px 0 6px"}}>Labour</div>
-                  <table className="history-table"><thead><tr><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th><th></th></tr></thead><tbody>{estimateLabour.map(item=><tr key={item.id}><td><input value={item.description} onChange={e=>updateEstimateItem("labour",item.id,"description",e.target.value)}/></td><td><input type="number" min="0" step="0.01" value={item.qty ?? ""} onChange={e=>updateEstimateItem("labour",item.id,"qty",e.target.value)} onBlur={normalizeEstimateQuantities} onKeyDown={e=>{if(e.key==="Enter") normalizeEstimateQuantities();}} style={{width:80}}/></td><td><input type="number" min="0" step="0.01" value={item.rate} onChange={e=>updateEstimateItem("labour",item.id,"rate",e.target.value)} style={{width:110}}/></td><td>{formatNumber(item.qty*item.rate)}</td><td><button className="excel-button no-print" onClick={()=>removeEstimateItem("labour",item.id)}>Delete</button></td></tr>)}{!estimateLabour.length&&<tr><td colSpan="5">No historical labour found. Add manually.</td></tr>}</tbody></table>
+                  <table className="history-table estimate-labour-table"><thead><tr><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th><th></th></tr></thead><tbody>{estimateLabour.map(item=><tr key={item.id}><td data-label="Description"><input value={item.description} onChange={e=>updateEstimateItem("labour",item.id,"description",e.target.value)}/></td><td data-label="Qty"><input type="number" min="0" step="0.01" value={item.qty ?? ""} onChange={e=>updateEstimateItem("labour",item.id,"qty",e.target.value)} onBlur={normalizeEstimateQuantities} onKeyDown={e=>{if(e.key==="Enter") normalizeEstimateQuantities();}} style={{width:80}}/></td><td data-label="Rate"><input type="number" min="0" step="0.01" value={item.rate} onChange={e=>updateEstimateItem("labour",item.id,"rate",e.target.value)} style={{width:110}}/></td><td data-label="Amount">{formatNumber(item.qty*item.rate)}</td><td data-label="Action"><button className="excel-button no-print" onClick={()=>removeEstimateItem("labour",item.id)}>Delete</button></td></tr>)}{!estimateLabour.length&&<tr><td colSpan="5">No historical labour found. Add manually.</td></tr>}</tbody></table>
                   <div style={{margin:"8px 0"}}><button className="excel-button no-print" onClick={()=>addEstimateItem("labour")}>+ Add Labour</button></div>
                   <div style={{marginTop:16,marginLeft:"auto",maxWidth:380,borderTop:"2px solid #222",paddingTop:10}}><div style={{display:"flex",justifyContent:"space-between"}}><span>Parts Total</span><b>₹ {formatNumber(estimatePartsTotal)}</b></div><div style={{display:"flex",justifyContent:"space-between"}}><span>Labour Subtotal</span><b>₹ {formatNumber(estimateLabourBase)}</b></div><div style={{display:"flex",justifyContent:"space-between"}}><span>GST on Labour (18%)</span><b>₹ {formatNumber(estimateLabourGst)}</b></div><div style={{display:"flex",justifyContent:"space-between",fontSize:18,marginTop:6}}><span>Grand Total</span><b>₹ {formatNumber(estimateGrandTotal)}</b></div></div>
                   <div className="no-print" style={{display:"flex",flexWrap:"wrap",justifyContent:"flex-end",gap:8,marginTop:18,paddingTop:12,borderTop:"1px solid #ddd"}}><button className="excel-button" onClick={reviseEstimateServices}>Revise Aggregate Service</button><button className="excel-button green" disabled={estimateSaveBusy} onClick={saveEstimateToDb}>{estimateSaveBusy ? "Saving..." : "Save Estimate"}</button><button className="excel-button" onClick={()=>buildEstimatePdf(true)}>Print A4</button><button className="excel-button green" onClick={()=>buildEstimatePdf(false)}>Download PDF</button></div>

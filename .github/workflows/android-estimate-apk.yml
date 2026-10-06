@@ -1,16 +1,10 @@
 name: Android Estimate Beta APK
 
 # Beta builds come only from android-estimate-commit.
+# Auto-build is temporarily disabled. Use manual workflow_dispatch when ready.
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - android-estimate-commit
-    paths:
-      - "android-estimate/**"
-      - "api/save-history.js"
-      - ".github/workflows/android-estimate-apk.yml"
 
 concurrency:
   group: android-estimate-apk
@@ -100,4 +94,3 @@ jobs:
               --notes "Android Service Estimate Beta APK release. Build ${{ steps.release_version.outputs.build }}." \
               --latest=false
           fi
-

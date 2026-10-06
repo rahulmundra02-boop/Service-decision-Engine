@@ -2991,6 +2991,7 @@ const ESTIMATE_LABOUR_REFERENCE = {
   axleOil: [{ code:"RAX145", description:"Drain and Refill oil in Rear Axle" }],
   steeringOil: [{ code:"STH110", description:"Drain and Refill Steering Box oil" }],
   apdaFilter: [{ code:"AIR165Z", description:"R & R APDA Desiccant Cartridges" }],
+  defInline: [{ code:"XFM00800", description:"R & R DEF Inline Filter" }],
   hubGrease: [
     { code:"WHL165A", description:"Hub Greasing - Front Axle - 2 Hubs" },
     { code:"WHL165C", description:"Hub Greasing - Front Axle - 4 Hubs" },

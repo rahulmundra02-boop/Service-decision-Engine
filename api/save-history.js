@@ -1,3 +1,4 @@
+import crypto from "crypto";
 
 import { Pool } from "pg";
 
@@ -81,6 +82,56 @@ function serviceLineIdentityFromDb(row = {}) {
     normalizeLineIdentityText(row.complaint_code),
     normalizeLineIdentityText(row.repair_type),
   ].join("|");
+}
+
+async function ensurePriceMasterSchema(client) {
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS part_price_master (
+      part_no TEXT PRIMARY KEY,
+      description TEXT,
+      mrp NUMERIC,
+      version INTEGER NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS part_price_master_meta (
+      id INTEGER PRIMARY KEY CHECK (id=1),
+      version INTEGER NOT NULL DEFAULT 0,
+      row_count INTEGER NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      file_name TEXT
+    )
+  `);
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS part_price_master_staging (
+      upload_id TEXT NOT NULL,
+      part_no TEXT NOT NULL,
+      description TEXT,
+      mrp NUMERIC,
+      PRIMARY KEY (upload_id, part_no)
+    )
+  `);
+  await client.query("CREATE INDEX IF NOT EXISTS idx_price_master_staging_upload ON part_price_master_staging(upload_id)");
+  await client.query("INSERT INTO part_price_master_meta (id,version,row_count,updated_at) VALUES (1,0,0,NOW()) ON CONFLICT (id) DO NOTHING");
+}
+function normalizePricePart(value) { return String(value ?? "").trim().toUpperCase().replace(/\\s+/g, ""); }
+function normalizePriceDescription(value) { return String(value ?? "").trim(); }
+function normalizeMrp(value) {
+  if (value === undefined || value === null || String(value).trim() === "") return null;
+  const n = Number(String(value).replace(/,/g, "").replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+async function requireAdminForPriceMaster(client, req) {
+  const token = String(req.headers?.authorization || "").replace(/^Bearer\s+/i, "").trim();
+  if (!token) return {error:"Admin authentication required.",status:401};
+  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+  const result = await client.query(
+    "SELECT u.id,u.role FROM auth_sessions s JOIN app_users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>NOW() AND u.status='active' LIMIT 1",
+    [tokenHash]
+  );
+  if (!result.rows[0] || result.rows[0].role !== "admin") return {error:"Admin access required.",status:403};
+  return {user:result.rows[0]};
 }
 
 export default async function handler(req, res) {
@@ -582,6 +633,93 @@ export default async function handler(req, res) {
   }
 
   const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
+
+  if (body.action === "admin-upload-price-master") {
+    const rows = Array.isArray(body.rows) ? body.rows : [];
+    const fileName = String(body.fileName || "").trim().slice(0,255);
+    const replace = body.replace === true;
+    const finalize = body.finalize === true;
+    const uploadId = String(body.uploadId || "").trim();
+    if (!rows.length || !uploadId) {
+      return res.status(400).json({success:false,error:"Price list rows and upload ID are required."});
+    }
+
+    const client = await pool.connect();
+    const adminCheck = await requireAdminForPriceMaster(client, req);
+    if (adminCheck.error) {
+      client.release();
+      return res.status(adminCheck.status).json({success:false,error:adminCheck.error});
+    }
+
+    try {
+      await ensurePriceMasterSchema(client);
+      await client.query("BEGIN");
+
+      if (replace) {
+        await client.query("DELETE FROM part_price_master_staging WHERE upload_id=$1", [uploadId]);
+      }
+
+      const values = [];
+      const placeholders = [];
+      let n = 0;
+      for (const item of rows) {
+        const partNo = normalizePricePart(item?.partNo);
+        const mrp = normalizeMrp(item?.mrp);
+        if (!partNo || mrp === null) continue;
+        values.push(partNo, normalizePriceDescription(item?.description) || null, mrp, uploadId);
+        placeholders.push("($" + (++n) + ",$" + (++n) + ",$" + (++n) + ",$" + (++n) + ")");
+      }
+
+      if (placeholders.length) {
+        await client.query(
+          "INSERT INTO part_price_master_staging (part_no,description,mrp,upload_id) VALUES " +
+          placeholders.join(",") +
+          " ON CONFLICT (upload_id,part_no) DO UPDATE SET description=EXCLUDED.description,mrp=EXCLUDED.mrp",
+          values
+        );
+      }
+
+      let version = null;
+      let rowCount = 0;
+
+      if (finalize) {
+        const meta = await client.query("SELECT version FROM part_price_master_meta WHERE id=1 FOR UPDATE");
+        version = Number(meta.rows[0]?.version || 0) + 1;
+
+        await client.query("DELETE FROM part_price_master");
+        await client.query(
+          "INSERT INTO part_price_master (part_no,description,mrp,version,updated_at) " +
+          "SELECT part_no,description,mrp,$1,NOW() FROM part_price_master_staging WHERE upload_id=$2",
+          [version, uploadId]
+        );
+
+        const count = await client.query("SELECT COUNT(*)::int AS count FROM part_price_master");
+        rowCount = Number(count.rows[0]?.count || 0);
+
+        await client.query(
+          "UPDATE part_price_master_meta SET version=$1,row_count=$2,updated_at=NOW(),file_name=$3 WHERE id=1",
+          [version,rowCount,fileName || null]
+        );
+        await client.query("DELETE FROM part_price_master_staging WHERE upload_id=$1", [uploadId]);
+      }
+
+      await client.query("COMMIT");
+      return res.status(200).json({
+        success:true,
+        version:version || 0,
+        rowCount,
+        finalized:finalize,
+        message:finalize ? "Price list uploaded successfully." : "Price list batch accepted."
+      });
+    } catch(error) {
+      await client.query("ROLLBACK").catch(()=>{});
+      console.error("Price Master Upload Error:",error);
+      return res.status(500).json({success:false,error:error?.message||"Price master upload failed"});
+    } finally {
+      client.release();
+    }
+  }
+
   // Defense-in-depth: block all DB-related POST operations while the admin emergency cutoff is active.
   // Existing GET history remains available for estimates/history.
   const cutoffResult = await pool.query(

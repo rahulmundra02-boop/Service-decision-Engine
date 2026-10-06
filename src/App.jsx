@@ -3338,7 +3338,6 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
   // that line is not available for this VIN.
   function rowsByReferenceOrService(sourceRows, serviceKey) {
     return sourceRows.filter(row =>
-      estimateCategory(row) === "part" &&
       estimatePartMatchesService(row, serviceKey) &&
       Number(row?.quantity || 0) > 0
     );
@@ -3421,14 +3420,14 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
       for (const reference of references) {
         const referenceCode = normalizePartCode(reference);
         const vinExact = vehicle.filter(row =>
-          estimateCategory(row) === "part" &&
           normalizePartCode(row?.part_code) === referenceCode &&
+          estimatePartMatchesService(row, serviceKey) &&
           Number(row?.quantity || 0) > 0
         );
 
         const modelExact = modelHistory.filter(row =>
-          estimateCategory(row) === "part" &&
           normalizePartCode(row?.part_code) === referenceCode &&
+          estimatePartMatchesService(row, serviceKey) &&
           Number(row?.quantity || 0) > 0
         );
 

@@ -915,36 +915,87 @@ function detectLetterheadCrop(dataUrl) {
       canvas.height = Math.max(1, Math.round(img.height * scale));
       const ctx = canvas.getContext("2d", { willReadFrequently:true });
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-      let minX=canvas.width, minY=canvas.height, maxX=0, maxY=0, found=0;
-      for(let y=0;y<canvas.height;y+=3){
-        for(let x=0;x<canvas.width;x+=3){
-          const i=(y*canvas.width+x)*4;
-          const lum=0.299*data[i]+0.587*data[i+1]+0.114*data[i+2];
-          if(lum < 235){
-            minX=Math.min(minX,x); minY=Math.min(minY,y);
-            maxX=Math.max(maxX,x); maxY=Math.max(maxY,y); found++;
-          }
+
+      const w=canvas.width, h=canvas.height;
+      const pixels=ctx.getImageData(0,0,w,h).data;
+      const border=[];
+      const step=Math.max(1,Math.floor(Math.min(w,h)/120));
+      const push=(x,y)=>{
+        const i=(y*w+x)*4;
+        border.push([pixels[i],pixels[i+1],pixels[i+2]]);
+      };
+      for(let x=0;x<w;x+=step){ push(x,0); push(x,h-1); }
+      for(let y=0;y<h;y+=step){ push(0,y); push(w-1,y); }
+      const avg=border.reduce((a,p)=>[a[0]+p[0],a[1]+p[1],a[2]+p[2]],[0,0,0]).map(v=>v/border.length);
+
+      // Detect the largest connected region whose colour/brightness differs
+      // from the surrounding desk/background. This is much more reliable for
+      // a white/light paper than the old "all dark pixels" bounding box.
+      const mask=new Uint8Array(w*h);
+      let active=0;
+      for(let y=1;y<h-1;y++){
+        for(let x=1;x<w-1;x++){
+          const i=(y*w+x)*4;
+          const dr=pixels[i]-avg[0], dg=pixels[i+1]-avg[1], db=pixels[i+2]-avg[2];
+          const dist=Math.sqrt(dr*dr+dg*dg+db*db);
+          const lum=0.299*pixels[i]+0.587*pixels[i+1]+0.114*pixels[i+2];
+          const bgLum=0.299*avg[0]+0.587*avg[1]+0.114*avg[2];
+          if(dist>16 || Math.abs(lum-bgLum)>12){ mask[y*w+x]=1; active++; }
         }
       }
-      if(found < 20 || maxX-minX < canvas.width*0.35 || maxY-minY < canvas.height*0.35){
-        resolve({left:2,top:2,right:98,bottom:98});
+
+      // Close small gaps so the sheet becomes one connected component.
+      for(let pass=0;pass<2;pass++){
+        const next=new Uint8Array(mask);
+        for(let y=1;y<h-1;y++) for(let x=1;x<w-1;x++){
+          const p=y*w+x;
+          if(mask[p] || mask[p-1] || mask[p+1] || mask[p-w] || mask[p+w]) next[p]=1;
+        }
+        mask.set(next);
+      }
+
+      const seen=new Uint8Array(w*h);
+      const qx=new Int32Array(w*h), qy=new Int32Array(w*h);
+      let best=null;
+      for(let sy=1;sy<h-1;sy+=2){
+        for(let sx=1;sx<w-1;sx+=2){
+          const seed=sy*w+sx;
+          if(!mask[seed] || seen[seed]) continue;
+          let head=0,tail=0,minX=sx,maxX=sx,minY=sy,maxY=sy,count=0;
+          qx[tail]=sx; qy[tail]=sy; tail++; seen[seed]=1;
+          while(head<tail){
+            const x=qx[head], y=qy[head]; head++; count++;
+            if(x<minX)minX=x; if(x>maxX)maxX=x; if(y<minY)minY=y; if(y>maxY)maxY=y;
+            const np=[y*w+x-1,y*w+x+1,(y-1)*w+x,(y+1)*w+x];
+            for(const n of np){
+              if(n<0||n>=w*h||seen[n]||!mask[n]) continue;
+              seen[n]=1; qx[tail]=n%w; qy[tail]=Math.floor(n/w); tail++;
+            }
+          }
+          const bw=maxX-minX+1, bh=maxY-minY+1, area=bw*bh;
+          const fill=count/Math.max(1,area);
+          const plausible=area>w*h*0.05 && area<w*h*0.92 && bw>w*0.28 && bh>h*0.18 && fill>0.12;
+          if(plausible && (!best || area>best.area)) best={minX,maxX,minY,maxY,area};
+        }
+      }
+
+      if(!best){
+        resolve({left:3,top:3,right:97,bottom:97});
         return;
       }
-      const padX=Math.max(8,(maxX-minX)*0.035);
-      const padY=Math.max(8,(maxY-minY)*0.035);
+      const padX=Math.max(6,(best.maxX-best.minX+1)*0.025);
+      const padY=Math.max(6,(best.maxY-best.minY+1)*0.025);
       resolve({
-        left:Math.max(0,((minX-padX)/canvas.width)*100),
-        top:Math.max(0,((minY-padY)/canvas.height)*100),
-        right:Math.min(100,((maxX+padX)/canvas.width)*100),
-        bottom:Math.min(100,((maxY+padY)/canvas.height)*100)
+        left:Math.max(0,((best.minX-padX)/w)*100),
+        top:Math.max(0,((best.minY-padY)/h)*100),
+        right:Math.min(100,((best.maxX+padX)/w)*100),
+        bottom:Math.min(100,((best.maxY+padY)/h)*100)
       });
     };
-    img.onerror=()=>resolve({left:2,top:2,right:98,bottom:98});
+    img.onerror=()=>resolve({left:3,top:3,right:97,bottom:97});
     img.src=dataUrl;
   });
 }
-
 function renderLetterheadCrop(dataUrl, crop, filterName) {
   return new Promise((resolve, reject) => {
     const img = new Image();

@@ -247,7 +247,7 @@ export default function AuthGate({ children }) {
 
     const timer = window.setInterval(() => {
       void validateSession();
-    }, 10 * 1000);
+    }, 2 * 60 * 1000);
 
     return () => {
       document.removeEventListener("click", handleClick, true);

@@ -1237,6 +1237,7 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
   const [scannerOpen,setScannerOpen]=useState(false);
   const [signatureOpen,setSignatureOpen]=useState(false);
   const [placement,setPlacement]=useState(form.signaturePlacement || {x:70,y:91,width:20});
+  useEffect(()=>{setForm(prev=>({...prev,signaturePlacement:placement}));},[placement,setForm]);
   const setLabel=(group,key,value)=>setForm({...form,[group]:{...(form[group]||{}),[key]:value}});
   const editor=(group,key,label)=>(
     <div style={{display:"grid",gridTemplateColumns:"28px 1fr",gap:7,alignItems:"center"}}>
@@ -1300,7 +1301,7 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
               <div style={{position:"absolute",left:"8%",right:"8%",bottom:"8%",textAlign:"right",fontSize:9,color:"#555"}}>Authorized Signatory</div>
             </div>
           </div>
-          <button className="auth-secondary" type="button" onClick={savePlacement}>✓ Save Signature Position</button>
+          <div className="auth-hint" style={{marginTop:7}}>Position aur size automatically update ho rahe hain. Final changes ke liye neeche <b>Save Profile & Settings</b> dabayein.</div>
         </div>
       </div>
     </div>

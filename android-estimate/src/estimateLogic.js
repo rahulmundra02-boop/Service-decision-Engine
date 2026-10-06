@@ -43,14 +43,14 @@ export const REFERENCE_PARTS = {
   gearOil: ['G9999994'],
   axleOil: ['GB699991'],
   steeringOil: ['PSB99994', 'PD600391'],
-  clutchOil: ['CFD99991', 'CLA99994', 'U9999995', 'U9999999', 'U9999996'],
+  clutchOil: ['CFD99991', 'U9999995'],
   defInline: ['XFM00800'],
   coolant: ['C9999993'],
   hubGrease: ['S9999997', 'F1721500', 'FJ607400', 'H5001220', 'F1771900', 'CLOTH'],
   fuelFilter: ['P5105609'],
   airFilter: ['P5105688', 'P5105689'],
-  defFilter: ['MB404069', 'XFM00200', 'XFM00300', 'XFM00500', 'PET00001'],
-  apdaFilter: ['P1800240', 'PD600968', 'PD601037', 'PD601147']
+  defFilter: ['XFM00500', 'PET00001'],
+  apdaFilter: ['PD600968']
 };
 
 /**
@@ -139,20 +139,6 @@ export const ORIGINAL_AL_DESCRIPTIONS = {
   PD600968: 'APDA DESICCANT CARTRIDGE'
 };
 
-export const SERVICE_PART_CATALOG = Object.entries(
-  Object.values(REFERENCE_PARTS).flat().reduce((acc, code) => {
-    const clean = String(code || '').toUpperCase().replace(/\s+/g, '').trim();
-    if (clean) {
-      acc[clean] = {
-        partNo: clean,
-        description: ORIGINAL_AL_DESCRIPTIONS[clean] || PART_STANDARDIZATION[clean] || clean
-      };
-    }
-    return acc;
-  }, {})
-).map(([, item]) => item);
-
-
 const LABOUR = {
   airFilter: ['AIS110', 'R and R Air Filter And Replace Element'],
   defFilter: ['ATS455Z', 'R & R DEF tank suction filter'],
@@ -209,9 +195,7 @@ function isPostWarrantyRepair(row) {
   const value = String(row?.repair_line_item_type || row?.repair_type || '')
     .toUpperCase()
     .replace(/\s+/g, '');
-  // Paid-rate history is strictly Post Warranty / Paid Order.
-  // Generic Warranty rows must never be treated as paid history.
-  return value.includes('POSTWARRANTY') || value.includes('PAIDORDER') || value === 'PAID';
+  return value.includes('POSTWARRANTY') || value.includes('PAID') || value.includes('WARRANTY');
 }
 
 function rank(row) {
@@ -220,11 +204,9 @@ function rank(row) {
 }
 
 function bestRate(rows, paidOnly = false) {
-  const validRows = rows.filter((r) => Number(r?.rate) > 0);
-  const paidRows = validRows.filter(isPostWarrantyRepair);
-  // When paidOnly is requested, warranty/AMC/non-paid history is excluded.
-  const pool = paidOnly ? paidRows : validRows;
-  const sorted = pool.slice().sort((a, b) => rank(b) - rank(a)).slice(0, 10);
+  const paidRows = rows.filter((r) => isPostWarrantyRepair(r) && Number(r?.rate) > 0);
+  const pool = paidOnly && paidRows.length > 0 ? paidRows : rows.filter((r) => Number(r?.rate) > 0);
+  const sorted = pool.sort((a, b) => rank(b) - rank(a)).slice(0, 10);
   return sorted.length ? Math.max(...sorted.map((r) => Number(r.rate))) : 0;
 }
 
@@ -410,8 +392,7 @@ function historicalItem(
   partNo,
   globalRates,
   fixedQty = null,
-  fixedDescription = '',
-  priceMaster = {}
+  fixedDescription = ''
 ) {
   const code = normalizeCode(partNo);
   if (!code && type === 'part') return null;
@@ -435,37 +416,21 @@ function historicalItem(
 
   if (!(qty > 0)) return null;
 
-  // Part MRP and description are Price Master only.
-  // Historical DB/global rates are intentionally NOT used for part pricing.
-  if (type === 'part') {
-    const master = priceMaster?.[code];
-    const mrp = Number(master?.mrp || 0);
-    if (!master || mrp <= 0) return null;
-
-    return {
-      id: `${type}-${key}-${code}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      type,
-      serviceKey: key,
-      partNo: master.partNo || code,
-      description: String(master.description || '').trim(),
-      qty,
-      rate: Number(mrp.toFixed(2)),
-      baseRate: Number((mrp / 1.18).toFixed(2)),
-      source: 'Price List Master (MRP)'
-    };
-  }
-
-  // Labour keeps its existing historical DB/global rate behavior.
-  const historyRate = bestRate(safeRows, false);
+  // Rate lookup: best historical rate from top 10 post-warranty / paid rows
+  const historyRate = bestRate(safeRows, type === 'part');
   const dbRate = globalRate(code, globalRates);
   const finalRate = Math.max(historyRate, dbRate);
-  if (!(finalRate > 0)) return null;
+
+  // Description lookup: prioritize actual DB part_description, then standardized_part, then ORIGINAL_AL_DESCRIPTIONS
   const orderedRows = safeRows.slice().sort((a, b) => rank(b) - rank(a));
   const selectedRow = orderedRows[0] || {};
+
   const description = String(
     selectedRow.part_description ||
       selectedRow.standardized_part ||
       fixedDescription ||
+      ORIGINAL_AL_DESCRIPTIONS[code] ||
+      PART_STANDARDIZATION[code] ||
       code ||
       ''
   ).trim();
@@ -477,92 +442,38 @@ function historicalItem(
     partNo: code,
     description,
     qty,
-    rate: Number(finalRate.toFixed(2)),
+    rate: Number((type === 'part' ? finalRate * 1.18 : finalRate).toFixed(2)),
     baseRate: finalRate,
-    source: 'Historical DB - Labour base rate'
+    source: finalRate
+      ? type === 'part'
+        ? 'Historical DB (18% GST added)'
+        : 'Historical DB - Labour base rate'
+      : 'Manual'
   };
 }
 
-function matchesAggregatePart(key, row) {
-  if (category(row) !== 'part') return false;
-  const name = standardName(row);
-  if (!name) return false;
-
-  switch (key) {
-    case 'engineOil':
-      return name.includes('ENGINE OIL') || name.includes('ENGINE OIL FILTER') ||
-        name.includes('FUEL FILTER & ENGINE OIL FILTER KIT');
-    case 'coolant':
-      return name.includes('COOLANT');
-    case 'gearOil':
-      return name.includes('GEAR OIL');
-    case 'hubGrease':
-      return name.includes('HUB GREASE');
-    case 'axleOil':
-      return name.includes('AXLE OIL');
-    case 'fuelFilter':
-      return name.includes('FUEL FILTER');
-    case 'steeringOil':
-      return name.includes('STEERING OIL');
-    case 'airFilter':
-      return name.includes('AIR FILTER');
-    case 'clutchOil':
-      return name.includes('CLUTCH OIL');
-    case 'defFilter':
-      return name.includes('DEF FILTER') && !name.includes('INLINE') && !name.includes('SUCTION');
-    case 'defInline':
-      return name.includes('DEF INLINE FILTER');
-    case 'apdaFilter':
-      return name.includes('APDA FILTER');
-    default:
-      return false;
-  }
-}
-
-function aggregatePartCodes(key, vehicle, model) {
-  const vehicleMatches = (vehicle || []).filter((row) => matchesAggregatePart(key, row));
-  const modelMatches = (model || []).filter((row) => matchesAggregatePart(key, row));
-  const source = vehicleMatches.length ? vehicleMatches : modelMatches;
-  const codes = [];
-  const seen = new Set();
-
-  for (const row of source) {
-    const code = normalizeCode(row?.part_code);
-    if (code && !seen.has(code)) {
-      seen.add(code);
-      codes.push(code);
-    }
-  }
-
-  // Safety fallback keeps the previous reference list available if DB history
-  // has no standardized row for the selected aggregate.
-  return codes.length ? codes : (REFERENCE_PARTS[key] || []).map(normalizeCode);
-}
-
-function bestAlternativePart(key, codes, vehicle, model, globalRates, priceMaster = {}) {
+function bestAlternativePart(key, codes, vehicle, model, globalRates) {
   const options = [];
   for (const code of codes) {
-    const item = historicalItem('part', key, vehicle, model, code, globalRates, null, '', priceMaster);
+    const item = historicalItem('part', key, vehicle, model, code, globalRates);
     if (item) options.push(item);
   }
   if (!options.length) return null;
   return options.sort((a, b) => Number(b.qty) - Number(a.qty))[0];
 }
 
-export function buildServiceItems(a = [], b = [], c = [], d = [], e = {}) {
-  let rows, modelRows, globalRates, selectedKeys, priceMaster;
+export function buildServiceItems(a = [], b = [], c = [], d = []) {
+  let rows, modelRows, globalRates, selectedKeys;
   if (Array.isArray(a) && a.length > 0 && typeof a[0] === 'string') {
     selectedKeys = a;
     rows = b;
     modelRows = c;
     globalRates = d;
-    priceMaster = e || {};
   } else if (Array.isArray(d) && d.length > 0 && typeof d[0] === 'string') {
     rows = a;
     modelRows = b;
     globalRates = c;
     selectedKeys = d;
-    priceMaster = e || {};
   } else {
     const args = [a, b, c, d];
     const keyArg = args.find((x) => Array.isArray(x) && x.every((i) => typeof i === 'string'));
@@ -570,7 +481,6 @@ export function buildServiceItems(a = [], b = [], c = [], d = [], e = {}) {
     rows = Array.isArray(a) && a !== keyArg ? a : [];
     modelRows = Array.isArray(b) && b !== keyArg ? b : [];
     globalRates = Array.isArray(c) && c !== keyArg ? c : [];
-    priceMaster = e || {};
   }
 
   const vehicle = Array.isArray(rows) ? rows : [];
@@ -578,37 +488,55 @@ export function buildServiceItems(a = [], b = [], c = [], d = [], e = {}) {
   const output = [];
 
   for (const key of selectedKeys) {
-    // Part number selection is DB-driven. The old quantity/rule logic remains
-    // in determineQuantity(), which continues to read vehicle/model DB rows.
-    const dbCodes = aggregatePartCodes(key, vehicle, model);
-
     if (key === 'clutchOil' || key === 'airFilter') {
-      const selectedPart = bestAlternativePart(key, dbCodes, vehicle, model, globalRates, priceMaster);
+      const selectedPart = bestAlternativePart(key, REFERENCE_PARTS[key], vehicle, model, globalRates);
       if (selectedPart) output.push(selectedPart);
+    } else if (key === 'hubGrease') {
+      // 1. Grease part S9999997 (Range 3-7 applies!)
+      const greaseItem = historicalItem(
+        'part',
+        key,
+        vehicle,
+        model,
+        'S9999997',
+        globalRates,
+        null,
+        'HUB GREASE (BLUE)'
+      );
+      if (greaseItem) output.push(greaseItem);
+
+      // 2. Gaskets & Non-grease parts (FJ607400, F1721500, F1771900, H5001220, CLOTH)
+      // Range 3-7 DOES NOT apply to these gaskets/hardware per user specification!
+      const nonGreaseParts = [
+        ['F1721500', 'GASKET HUB CAP FRONT FA90'],
+        ['FJ607400', 'GASKET-10TG HUB-12 HOLES'],
+        ['H5001220', 'SPLIT PIN'],
+        ['F1771900', 'WHEEL BEARING GREASE / SEAL'],
+        ['CLOTH', 'CLEANING CLOTH / COTTON WASTE']
+      ];
+
+      for (const [code, desc] of nonGreaseParts) {
+        const item = historicalItem('part', key, vehicle, model, code, globalRates, null, desc);
+        if (item) output.push(item);
+      }
     } else {
-      for (const code of dbCodes) {
-        const item = historicalItem('part', key, vehicle, model, code, globalRates, null, '', priceMaster);
+      for (const code of REFERENCE_PARTS[key] || []) {
+        const item = historicalItem('part', key, vehicle, model, code, globalRates);
         if (item) output.push(item);
       }
     }
 
-    // Labour is automatic only when a real DB labour code exists.
-    // Never create a blank labour row for aggregates that do not have a mapped labour code.
-    const ref = LABOUR[key];
-    if (ref?.[0]) {
-      const labourCode = normalizeCode(ref[0]);
-      const exactVehicleLabour = vehicle.filter(
-        (r) => category(r) === 'labour' && normalizeCode(r?.part_code) === labourCode
-      );
-      const exactModelLabour = model.filter(
-        (r) => category(r) === 'labour' && normalizeCode(r?.part_code) === labourCode
-      );
-      if (exactVehicleLabour.length || exactModelLabour.length) {
-        const item = historicalItem('labour', key, vehicle, model, labourCode, globalRates, null, '', priceMaster);
-        if (item && item.description && Number(item.qty) > 0 && Number(item.rate) > 0) {
-          item.description = ref[1];
-          output.push(item);
-        }
+    // Labour matching
+    const labourRows = vehicle.filter((r) => matchesLabour(r, key));
+    const fallbackLabour = labourRows.length
+      ? labourRows
+      : model.filter((r) => matchesLabour(r, key));
+    if (fallbackLabour.length) {
+      const ref = LABOUR[key];
+      const item = historicalItem('labour', key, vehicle, model, ref?.[0] || '', globalRates);
+      if (item) {
+        if (ref) item.description = ref[1];
+        output.push(item);
       }
     }
   }
@@ -630,13 +558,13 @@ export function buildServiceItems(a = [], b = [], c = [], d = [], e = {}) {
   return result;
 }
 
-export function prebuildAllAggregates(rows = [], modelRows = [], globalRates = [], priceMaster = {}) {
+export function prebuildAllAggregates(rows = [], modelRows = [], globalRates = []) {
   makeGlobalRateMap(globalRates);
   const cache = {};
   for (const item of AGGREGATES) {
     const key = Array.isArray(item) ? item[1] : item?.key;
     if (key) {
-      cache[key] = buildServiceItems([key], rows, modelRows, globalRates, priceMaster);
+      cache[key] = buildServiceItems([key], rows, modelRows, globalRates);
     }
   }
   return cache;
@@ -654,23 +582,28 @@ export function makeManualItem(type = 'part') {
   };
 }
 
-export function rateForManualPart(partNo, modelRows = [], globalRates = [], priceMaster = {}) {
+export function rateForManualPart(partNo, modelRows = [], globalRates = []) {
   const code = normalizeCode(partNo);
   if (!code) return null;
-  const master = priceMaster?.[code];
-  if (master?.mrp > 0 || master?.description) {
-    const mrp = Number(master.mrp || 0);
-    return {
-      partNo: code,
-      description: master.description || code,
-      rate: mrp > 0 ? Number(mrp.toFixed(2)) : 0,
-      baseRate: mrp > 0 ? Number((mrp / 1.18).toFixed(2)) : 0,
-      source: 'Price List Master (MRP)'
-    };
-  }
-  // Manual part pricing is also Price Master only.
-  // Do not fall back to vehicle/model DB rates or DB descriptions.
-  return null;
+  const historyRate = bestRate(
+    (modelRows || []).filter(
+      (r) => category(r) === 'part' && normalizeCode(r?.part_code) === code
+    ),
+    true
+  );
+  const dbRate = globalRate(code, globalRates);
+  const finalRate = Math.max(historyRate, dbRate);
+  if (!finalRate) return null;
+
+  const descRow = (modelRows || []).find(
+    (r) => normalizeCode(r?.part_code) === code && (r?.part_description || r?.standardized_part)
+  );
+  return {
+    partNo: code,
+    description: descRow?.part_description || descRow?.standardized_part || ORIGINAL_AL_DESCRIPTIONS[code] || code,
+    rate: Number((finalRate * 1.18).toFixed(2)),
+    source: 'Historical Database'
+  };
 }
 
 export function totals(parts = [], labour = []) {

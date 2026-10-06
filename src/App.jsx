@@ -604,6 +604,7 @@ function isUsableCustomerNumber(value) {
 function normalizePartCode(value) {
   return String(value ?? "")
     .toUpperCase()
+    .replace(/\([A-Z0-9]+\)$/g, "")
     .replace(/\(L\)/g, "")
     .replace(/\s+/g, "")
     .trim();
@@ -3049,7 +3050,11 @@ function estimateLabourText(row = {}) {
 }
 
 function estimatePartMatchesService(row = {}, serviceKey = "") {
-  if (estimateCategory(row) !== "part") return false;
+  // Some historical DMS rows have an incomplete/blank item_category.
+  // For estimate fallback, a clear part/service description is sufficient
+  // to classify the row. Explicit P001 labour rows are still rejected.
+  const category = estimateCategory(row);
+  if (category === "labour") return false;
 
   const code = normalizePartCode(row.part_code);
   const referenceCodes = (ESTIMATE_REFERENCE_PARTS[serviceKey] || []).map(normalizePartCode);

@@ -8,6 +8,7 @@ export default function handler(req, res) {
   res.status(200).json({
     name,
     short_name: shortName,
+    description: "Vehicle service decision and estimate application",
     id: "/",
     start_url: "/",
     scope: "/",
@@ -17,13 +18,19 @@ export default function handler(req, res) {
     prefer_related_applications: false,
     icons: [
       {
-        src: "/icon-light-192.jpg?v=20261006-5",
+        src: "/favicon.svg?v=20261006-7",
+        sizes: "512x512",
+        type: "image/svg+xml",
+        purpose: "any"
+      },
+      {
+        src: "/icon-light-192.jpg?v=20261006-7",
         sizes: "192x192",
         type: "image/jpeg",
         purpose: "any"
       },
       {
-        src: "/icon-light-512.jpg?v=20261006-5",
+        src: "/icon-light-512.jpg?v=20261006-7",
         sizes: "512x512",
         type: "image/jpeg",
         purpose: "any"

@@ -2601,13 +2601,13 @@ async function copyCustomerSummary(group, dealerName = "", preferences = {}) {
       ta.select();
       const ok = document.execCommand('copy');
       ta.remove();
-      if (!ok) throw new Error('Browser ne clipboard copy allow nahi kiya.');
+      if (!ok) throw new Error('The browser did not allow clipboard access.');
     }
 
-    window.alert('WhatsApp summary copied successfully. Ab WhatsApp me Ctrl+V karein.');
+    window.alert('WhatsApp summary copied successfully. Ab Paste it into WhatsApp using Ctrl+V.');
   } catch (err) {
     console.error('WhatsApp copy error:', err);
-    window.alert(`WhatsApp summary copy nahi ho saki:\n\n${err?.message || err}`);
+    window.alert(`The WhatsApp summary could not be copied:\n\n${err?.message || err}`);
   }
 }
 
@@ -4065,8 +4065,8 @@ function WarrantyTagPanel({user,onBack}){
     try{
       const dataset=await readWarrantyWorkbook(file,WARRANTY_TAG_ALIASES);
       const missing=warrantyMissingHeaders(dataset,WARRANTY_CLAIM_REQUIRED);
-      if(!dataset.headers.length||!dataset.rows.length) throw new Error("Billed JC Claim Statement me recognizable header row / data nahi mila.");
-      if(missing.length) throw new Error("Billed JC Claim Statement me mandatory header(s) missing: "+missing.join(", ")+".");
+      if(!dataset.headers.length||!dataset.rows.length) throw new Error("No recognizable header row or data was found in the Billed JC Claim Statement.");
+      if(missing.length) throw new Error("Mandatory header(s) are missing from the Billed JC Claim Statement: "+missing.join(", ")+".");
       setClaimDataset(dataset);setTags([]);setRemovedDescriptions([]);
       setMessage(dataset.rows.length.toLocaleString("en-IN")+" source rows detected from "+file.name+".");
     }catch(e){setClaimDataset(null);setError(e.message||"Unable to read Billed JC Claim Statement.");}
@@ -4078,8 +4078,8 @@ function WarrantyTagPanel({user,onBack}){
     try{
       const dataset=await readWarrantyWorkbook(file,WARRANTY_SUMMARY_ALIASES);
       const missing=warrantyMissingHeaders(dataset,WARRANTY_SUMMARY_REQUIRED);
-      if(!dataset.headers.length||!dataset.rows.length) throw new Error("Jobcard Summary me recognizable header row / data nahi mila.");
-      if(missing.length) throw new Error("Jobcard Summary me mandatory header(s) missing: "+missing.join(", ")+".");
+      if(!dataset.headers.length||!dataset.rows.length) throw new Error("No recognizable header row or data was found in the Jobcard Summary.");
+      if(missing.length) throw new Error("Mandatory header(s) are missing from the Jobcard Summary: "+missing.join(", ")+".");
       setSummaryDataset(dataset);setTags([]);setRemovedDescriptions([]);
       setMessage(dataset.rows.length.toLocaleString("en-IN")+" Job Card Summary rows detected from "+file.name+".");
     }catch(e){setSummaryDataset(null);setError(e.message||"Unable to read Jobcard Summary.");}
@@ -4111,7 +4111,7 @@ function WarrantyTagPanel({user,onBack}){
     if(missingJobCards.length){
       setTags([]);
       setRemovedDescriptions([]);
-      setError("Please upload same date data of Jobcard Summary and Billed JC Claim Statement.");
+      setError("Please upload Jobcard Summary and Billed JC Claim Statement data for the same date.");
       return;
     }
 
@@ -5190,7 +5190,7 @@ function ServiceDecisionApp({ user }) {
       cleanup();
       try { if (opened && !opened.closed) opened.close(); } catch {}
       console.error("Bulk vehicle detail open failed:", error);
-      window.alert("Vehicle detail open nahi ho payi.");
+      window.alert("Vehicle details could not be opened.");
     }
   };
   useEffect(() => {
@@ -5989,7 +5989,7 @@ function ServiceDecisionApp({ user }) {
       setEstimateNotice(
         hasServiceParts
           ? "Model " + selectedModel + " selected. Service Part No. and Qty will be sourced from this model's DB history."
-          : "Model " + selectedModel + " me usable service-part data nahi mila. Please select another model."
+          : "No usable service-part data was found for model " + selectedModel + ". Please select another model."
       );
       setEstimateStage(hasServiceParts ? "select" : "model");
     } catch (error) {

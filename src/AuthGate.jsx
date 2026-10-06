@@ -375,7 +375,7 @@ export default function AuthGate({ children }) {
       const deduped = new Map();
       rowsOut.forEach(row => deduped.set(row.partNo,row));
       const rows = [...deduped.values()];
-      if (!rows.length) throw new Error("Valid Price List rows nahi mile. Required columns: Part No, Part Description, MRP.");
+      if (!rows.length) throw new Error("No valid Price List rows were found. Required columns: Part No, Part Description, MRP.");
       const uploadId = "price-master-" + Date.now() + "-" + Math.random().toString(36).slice(2,8);
       // Keep requests comfortably below Vercel/Neon request-size limits while
       // reducing the number of DB transactions for large masters.
@@ -530,7 +530,7 @@ export default function AuthGate({ children }) {
       }
 
       if (!allRows.length) {
-        throw new Error("Valid campaign rows nahi mile. Excel headers check karein: Chassis Number, Campaign Desc etc.");
+        throw new Error("No valid campaign rows were found. Check the Excel headers: Chassis Number, Campaign Desc, etc.");
       }
 
       const uploadId = "campaign-" + Date.now();
@@ -1094,7 +1094,7 @@ function LetterheadScanner({ initialValue, onUse, onClose }) {
       const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1920},height:{ideal:1080}},audio:false});
       streamRef.current=stream; setCameraOpen(true);
       setTimeout(()=>{if(videoRef.current){videoRef.current.srcObject=stream;void videoRef.current.play();}},80);
-    }catch(e){window.alert("Camera permission nahi mili. Browser camera permission allow karke dobara try karein.");}
+    }catch(e){window.alert("Camera permission was not granted. Allow camera permission in the browser and try again.");}
   };
   const closeCamera=()=>{if(streamRef.current)streamRef.current.getTracks().forEach(t=>t.stop());streamRef.current=null;setCameraOpen(false);};
 
@@ -1155,7 +1155,7 @@ function LetterheadScanner({ initialValue, onUse, onClose }) {
   return <div className="auth-modal-backdrop" style={{zIndex:10010}}>
     <div className="auth-modal" style={{maxWidth:760,width:"min(760px,calc(100vw - 24px))",maxHeight:"94vh",overflow:"auto",boxSizing:"border-box"}}>
       <h2>Company Letterhead Scanner</h2>
-      <p className="auth-hint">Photo me document ke 4 corners ko drag karke exact paper select karein. Filter button dabate hi preview badlega.</p>
+      <p className="auth-hint">Drag the four corners to select the document precisely. The preview will update when you apply the filter.</p>
 
       {cameraOpen ? <div style={{display:"grid",gap:10}}>
         <video ref={videoRef} playsInline muted style={{width:"100%",maxHeight:"55vh",background:"#111",borderRadius:8,objectFit:"contain"}}/>
@@ -1185,7 +1185,7 @@ function LetterheadScanner({ initialValue, onUse, onClose }) {
             <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:7}}>
               {Object.keys(filterLabels).map(f=><button key={f} type="button" className={filterName===f?"auth-primary":"auth-secondary"} onClick={()=>setFilterName(f)}>{filterLabels[f]}</button>)}
             </div>
-            <div className="auth-hint" style={{marginTop:7}}>Button dabate hi upar photo ka live preview change hoga. Final saved image bhi isi filter me hogi.</div>
+            <div className="auth-hint" style={{marginTop:7}}>The live photo preview above will update when you apply the filter. The saved image will use the same filter.</div>
           </div>
 
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,fontSize:12}}>
@@ -1223,7 +1223,7 @@ function SignaturePad({ initialValue, onUse, onClose }) {
   return <div className="auth-modal-backdrop" style={{zIndex:10020}}>
     <div className="auth-modal" style={{maxWidth:900,width:"min(900px,calc(100vw - 24px))",boxSizing:"border-box"}}>
       <h2>Authorized Signature</h2>
-      <p className="auth-hint">White board par signature karein. Save ke baad neeche A4 preview me signature ko drag karke position aur size set kar sakte hain.</p>
+      <p className="auth-hint">Sign on the white board. After saving, drag the signature in the A4 preview below to set its position and size.</p>
       <div style={{background:"#fff",border:"1px solid #bbb",borderRadius:8,padding:8}}>
         <canvas ref={canvasRef} width={1200} height={420} style={{display:"block",width:"100%",height:"auto",background:"#fff",touchAction:"none"}} onPointerDown={start} onPointerMove={move} onPointerUp={end} onPointerCancel={end}/>
       </div>
@@ -1248,7 +1248,7 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
   const savePlacement=()=>setForm({...form,signaturePlacement:placement});
   return <div><div className="auth-modal-backdrop"><div className="auth-modal" style={{maxWidth:820,width:"min(820px,calc(100vw - 32px))",maxHeight:"90vh",overflow:"auto",boxSizing:"border-box"}}>
     <h2>Profile & Dashboard Settings</h2>
-    <p className="auth-hint">Ye settings sirf aapki user ID ke liye save hongi. Table width header divider ko mouse se drag karke set hogi.</p>
+    <p className="auth-hint">These settings are saved only for your user ID. Drag the table header divider with the mouse to set the column width.</p>
     <label>Person Name</label><input value={form.personName} onChange={e=>setForm({...form,personName:e.target.value})}/>
     <label>Dealer / Workshop Name</label><input value={form.dealerName} onChange={e=>setForm({...form,dealerName:e.target.value})}/>
     <label>Mobile</label><input value={form.mobile} onChange={e=>setForm({...form,mobile:e.target.value})}/>
@@ -1259,7 +1259,7 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
 
     <div style={{marginTop:18,paddingTop:14,borderTop:"1px solid #ddd"}}>
       <div style={{fontWeight:800,fontSize:16}}>Estimate PDF / Print Branding</div>
-      <div className="auth-hint">Letterhead screen par nahi dikhega. Sirf Estimate PDF / Print me background ke roop me lagega.</div>
+      <div className="auth-hint">The letterhead will not appear on this screen. It will be used only as the background for Estimate PDF / Print.</div>
       <div style={{display:"grid",gap:10}}>
         <div style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:8}}>
           <button className="auth-primary" type="button" onClick={()=>setScannerOpen(true)}>📷 {form.letterhead ? "Change Letterhead" : "Scan Letterhead"}</button>
@@ -1276,7 +1276,7 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
         {form.signature?.image && <div style={{border:"1px solid #ddd",borderRadius:8,padding:8,background:"#f7f7f7"}}><img src={form.signature.image} alt="Saved signature" style={{width:"260px",maxWidth:"100%",height:90,objectFit:"contain",background:"#fff"}} /></div>}
         {form.signature && <div style={{borderTop:"1px solid #eee",paddingTop:10}}>
           <div style={{fontWeight:700,marginBottom:6}}>Signature Position & Size</div>
-          <div className="auth-hint">Neeche A4 preview me green signature box ko drag karein. Bottom-right handle ko drag karke size badlein/ghatayein.</div>
+          <div className="auth-hint">Drag the green signature box in the A4 preview below. Drag the bottom-right handle to resize it.</div>
           <div style={{display:"flex",justifyContent:"center",padding:"10px 0"}}>
             <div id="signature-placement-preview" style={{position:"relative",width:"min(330px,100%)",aspectRatio:"210 / 297",background:"#fff",border:"1px solid #bbb",boxShadow:"0 2px 8px #0002",overflow:"hidden",touchAction:"none"}}
               onPointerMove={e=>{
@@ -1301,7 +1301,7 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
               <div style={{position:"absolute",left:"8%",right:"8%",bottom:"8%",textAlign:"right",fontSize:9,color:"#555"}}>Authorized Signatory</div>
             </div>
           </div>
-          <div className="auth-hint" style={{marginTop:7}}>Position aur size automatically update ho rahe hain. Final changes ke liye neeche <b>Save Profile & Settings</b> dabayein.</div>
+          <div className="auth-hint" style={{marginTop:7}}>Position and size update automatically. For final changes, use <b>Save Profile & Settings</b>  below to save the final changes.</div>
         </div>}
       </div>
     </div>
@@ -1471,7 +1471,7 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
               const file = e.target.files?.[0];
               e.target.value = "";
               if (file) {
-                if (window.confirm("Current campaign master replace karke selected Excel upload karein?")) {
+                if (window.confirm("Replace the current Campaign Master with the selected Excel file?")) {
                   void onUploadCampaignExcel(file);
                 }
               }
@@ -1527,7 +1527,7 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
           </div>
           <input id="admin-price-master-input" type="file" accept=".xlsx,.xls,.xlsm,.csv" style={{display:"none"}} onChange={e=>{
             const file=e.target.files?.[0]; e.target.value="";
-            if(file && window.confirm("Current Price List Master replace karke selected Excel upload karein?")) void onUploadPriceMasterExcel(file);
+            if(file && window.confirm("Replace the current Price List Master with the selected Excel file?")) void onUploadPriceMasterExcel(file);
           }} />
           <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:12,marginTop:16}}>
             <div><div className="admin-panel-card-sub">Price List Version</div><strong>{Number(priceMasterMeta?.version||0)}</strong></div>

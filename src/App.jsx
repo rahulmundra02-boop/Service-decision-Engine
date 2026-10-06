@@ -7589,8 +7589,8 @@ function ServiceDecisionApp({ user }) {
                     <button className="excel-button no-print estimate-close-button" onClick={()=>{setEstimateOpen(false);setMode("home");}}>Close</button>
                   </div>
                    <div className="estimate-vehicle-details">
-                     {[["Customer","customerName"],["Reg. No.","reg"],["Chassis / VIN","vin"],["Engine No.","engine"],["Sale Date","saleDate"],["Model","model"]].map(([label,key]) => (
-                       <div className="estimate-vehicle-field" key={key}><b>{label}</b><input className="excel-input" value={estimateVehicle?.[key] || ""} onChange={e=>setEstimateVehicle(prev=>({...prev,[key]:e.target.value}))} /></div>
+                     {[["Customer","customerName"],["Reg. No.","reg"],["VIN","vin"],["Engine No.","engine"],["Sale Date","sale"],["Model","model"]].map(([label,key]) => (
+                       <div className="estimate-vehicle-field" key={key}><b>{label}</b><input className="excel-input" value={key==="sale" ? formatDate(estimateVehicle?.sale) : (estimateVehicle?.[key] || "")} onChange={e=>setEstimateVehicle(prev=>({...prev,[key]:key==="sale" ? e.target.value : e.target.value}))} /></div>
                      ))}
                    </div>
                   <div style={{fontWeight:800,margin:"10px 0 6px"}}>Selected Aggregate Services</div>

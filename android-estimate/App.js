@@ -32,7 +32,6 @@ import * as ImagePicker from 'expo-image-picker';
 import { Image as ExpoImage } from 'expo-image';
 import * as XLSX from 'xlsx';
 import DocumentScanner from 'react-native-document-scanner-plugin';
-import Svg, { Path } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   restoreSession,
@@ -43,17 +42,14 @@ import {
   getVehicleByRegistration,
   getPartRate,
   getModelList,
-  getServiceDataByModel,
-  syncPartsMaster,
-  readPriceMaster,
-  getCachedPriceMaster,
-  getCachedPriceMasterPart
+  getServiceDataByModel
 } from './src/api';
 import {
   AGGREGATES,
   buildServiceItems,
   prebuildAllAggregates,
   makeManualItem,
+  rateForManualPart,
   totals
 } from './src/estimateLogic';
 
@@ -322,48 +318,32 @@ function ItemCard({
           <View style={styles.descriptionCol}>
             <View style={styles.field}>
               <Text style={styles.label}>Description</Text>
-              {isAutomatic ? (
-                <View style={[styles.input, styles.descriptionReadOnly]}>
-                  <Text numberOfLines={1} ellipsizeMode="tail" style={styles.descriptionReadOnlyText}>
-                    {String(item.description ?? '') || 'Part Description'}
-                  </Text>
-                </View>
-              ) : (
-                <TextInput
-                  ref={descriptionRef}
-                  value={String(item.description ?? '')}
-                  onChangeText={(v) => set('description', v)}
-                  onFocus={() => ensureVisible(descriptionRef)}
-                  onSubmitEditing={focusQty}
-                  returnKeyType="next"
-                  placeholder="Part Description"
-                  style={[styles.input, { textAlign: 'left' }]}
-                />
-              )}
+              <TextInput
+                ref={descriptionRef}
+                value={String(item.description ?? '')}
+                onChangeText={(v) => set('description', v)}
+                onFocus={() => ensureVisible(descriptionRef)}
+                onSubmitEditing={focusQty}
+                returnKeyType="next"
+                placeholder="Part Description"
+                style={styles.input}
+              />
             </View>
           </View>
         </View>
       ) : (
         <View style={styles.field}>
           <Text style={styles.label}>Description</Text>
-          {isAutomatic ? (
-            <View style={[styles.input, styles.descriptionReadOnly]}>
-              <Text numberOfLines={1} ellipsizeMode="tail" style={styles.descriptionReadOnlyText}>
-                {String(item.description ?? '') || 'Labour Description'}
-              </Text>
-            </View>
-          ) : (
-            <TextInput
-              ref={descriptionRef}
-              value={String(item.description ?? '')}
-              onChangeText={(v) => set('description', v)}
-              onFocus={() => ensureVisible(descriptionRef)}
-              onSubmitEditing={focusQty}
-              returnKeyType="next"
-              placeholder="Labour Description"
-              style={[styles.input, { textAlign: 'left' }]}
-            />
-          )}
+          <TextInput
+            ref={descriptionRef}
+            value={String(item.description ?? '')}
+            onChangeText={(v) => set('description', v)}
+            onFocus={() => ensureVisible(descriptionRef)}
+            onSubmitEditing={focusQty}
+            returnKeyType="next"
+            placeholder="Labour Description"
+            style={styles.input}
+          />
         </View>
       )}
 
@@ -453,9 +433,6 @@ function LoginScreen({ onLogin }) {
     setBusy(true);
     try {
       const data = await login(identifier, password, true);
-      // Login sync: compare local Parts Master version with server version.
-      // If the local version is older, the complete latest Parts Master is downloaded once.
-      await syncPartsMaster();
       onLogin(data.user);
     } catch (e) {
       Alert.alert('Login failed', e.message);
@@ -503,7 +480,6 @@ function LoginScreen({ onLogin }) {
       if (token) {
         const sessionUser = await restoreSession(token);
         if (sessionUser) {
-          syncPartsMaster().catch(() => {});
           onLogin(sessionUser);
           return;
         }
@@ -513,7 +489,6 @@ function LoginScreen({ onLogin }) {
       if (savedCreds?.identifier && savedCreds?.password) {
         const loginData = await login(savedCreds.identifier, savedCreds.password, true);
         if (loginData?.user) {
-          await syncPartsMaster();
           onLogin(loginData.user);
           return;
         }
@@ -554,14 +529,11 @@ function LoginScreen({ onLogin }) {
           {/* White Login Card */}
           <View style={styles.loginCard}>
             <View style={styles.loginWelcomeRow}>
-              <View style={styles.loginWelcomeAvatar}>
-                <Text style={styles.loginWelcomeAvatarText}>●</Text>
-              </View>
-              <View>
-                <Text style={styles.loginTitle}>Welcome Back 👋</Text>
-                <Text style={styles.loginWelcomeSub}>Sign in to continue</Text>
-              </View>
+              <View style={styles.loginAccentBar} />
+              <Text style={styles.loginTitle}>Welcome Back 👋</Text>
             </View>
+            <Text style={styles.loginSub}>Sign in to continue</Text>
+
             {/* Email / Mobile Field */}
             <View style={styles.inputGroup}>
               <View style={styles.inputLabelRow}>
@@ -668,25 +640,7 @@ function LoginScreen({ onLogin }) {
   );
 }
 
-function LoadingOverlay({ visible, text = 'Processing...' }) {
-  if (!visible) return null;
-  return (
-    <View style={styles.loadingOverlay} pointerEvents="auto">
-      <View style={styles.loadingCard}>
-        <ActivityIndicator size="large" color="#053775" />
-        <Text style={styles.loadingOverlayTitle}>{text}</Text>
-        <Text style={styles.loadingOverlayHint}>Please wait, do not press again.</Text>
-      </View>
-    </View>
-  );
-}
-
-function UpdateScreen({ update }) {
-  useEffect(() => {
-    const blockBack = () => true;
-    const subscription = BackHandler.addEventListener('hardwareBackPress', blockBack);
-    return () => subscription.remove();
-  }, []);
+function UpdateScreen({ update, onLater }) {
   const [busy, setBusy] = useState(false);
 
   const downloadAndInstall = async () => {
@@ -699,26 +653,11 @@ function UpdateScreen({ update }) {
       await FileSystem.deleteAsync(fileUri, { idempotent: true });
       const result = await FileSystem.downloadAsync(update.downloadUrl, fileUri);
       const contentUri = await FileSystem.getContentUriAsync(result.uri);
-      try {
-        await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
-          data: contentUri,
-          type: 'application/vnd.android.package-archive',
-          flags: 1
-        });
-      } catch (installError) {
-        // Android 8+ requires the user to allow this app to install unknown APKs.
-        try {
-          await IntentLauncher.startActivityAsync('android.settings.MANAGE_UNKNOWN_APP_SOURCES', {
-            data: 'package:' + Application.applicationId
-          });
-          Alert.alert(
-            'Allow installation',
-            'Please enable "Allow from this source" for AL Service Estimate Beta, then tap Download & Install again.'
-          );
-        } catch {
-          throw installError;
-        }
-      }
+      await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+        data: contentUri,
+        type: 'application/vnd.android.package-archive',
+        flags: 1
+      });
     } catch (e) {
       Alert.alert(
         'Update',
@@ -734,8 +673,8 @@ function UpdateScreen({ update }) {
       <View style={styles.updateWrap}>
         <View style={styles.updateCard}>
           <Text style={styles.updateIcon}>↑</Text>
-          <Text style={styles.updateTitle}>Update Required</Text>
-          <Text style={styles.updateText}>A new version of Service Estimate is available. Please update the app to continue.</Text>
+          <Text style={styles.updateTitle}>New Update Available</Text>
+          <Text style={styles.updateText}>A newer version of Service Estimate is available.</Text>
           <View style={styles.updateVersionBox}>
             <Text style={styles.updateVersionLabel}>Latest version</Text>
             <Text style={styles.updateVersion}>
@@ -744,10 +683,11 @@ function UpdateScreen({ update }) {
           </View>
           {update.notes ? <Text style={styles.updateNotes}>{update.notes}</Text> : null}
           <Button
-            title={busy ? 'Downloading...' : 'Update Now'}
+            title={busy ? 'Downloading...' : 'Download & Install'}
             onPress={downloadAndInstall}
             disabled={busy}
           />
+          <Button title="Later" secondary onPress={onLater} disabled={busy} />
           <Text style={styles.updateHint}>
             The APK will download automatically. Android may ask you to confirm the installation.
           </Text>
@@ -766,40 +706,22 @@ function HomeScreen({
   onOpenVehiclesList,
   onLogout,
   onOpenSettings,
-  recentVehicles = [],
-  loading = false
+  recentVehicles = []
 }) {
   const latestVehicle = recentVehicles?.[0] || null;
 
   return (
     <SafeAreaView style={styles.homeSafe}>
-      <LoadingOverlay visible={loading} text="Loading vehicle..." />
       <StatusBar barStyle="light-content" backgroundColor="#053775" />
       <ScrollView
         contentContainerStyle={styles.homeScroll}
         showsVerticalScrollIndicator={false}
       >
-        {/* Premium Blue Header */}
+        {/* Top Header Bar without Profile / Bell icons per user instructions */}
         <View style={styles.homeTopBar}>
           <View style={styles.homeBrandBlock}>
-            <Image
-              source={require('./assets/login_header.png')}
-              style={styles.homeLogo}
-              resizeMode="contain"
-            />
+            <Text style={styles.homeBrandTitle}>AL SERVICE ESTIMATE</Text>
             <Text style={styles.homeBrandSub}>Ashok Leyland Estimate App</Text>
-          </View>
-          <View style={styles.homeHeaderActions}>
-            <TouchableOpacity style={styles.homeHeaderIcon} activeOpacity={0.8}>
-              <Text style={styles.homeHeaderIconText}>🔔</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.homeHeaderIcon}
-              activeOpacity={0.8}
-              onPress={onOpenSettings}
-            >
-              <Text style={styles.homeHeaderIconText}>👤</Text>
-            </TouchableOpacity>
           </View>
         </View>
 
@@ -1041,7 +963,6 @@ function VehicleScreen({
 
   return (
     <SafeAreaView style={styles.safe}>
-      <LoadingOverlay visible={busy} text="Loading vehicle data..." />
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.container}>
         <View style={styles.rowBetween}>
           <View>
@@ -1054,6 +975,9 @@ function VehicleScreen({
                 : 'Search vehicle registration or choose from recent searches'}
             </Text>
           </View>
+          <Pressable onPress={onBack}>
+            <Text style={styles.back}>Home</Text>
+          </Pressable>
         </View>
 
         <View style={styles.vehicleSearchCard}>
@@ -1379,28 +1303,8 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
   );
   const [saving, setSaving] = useState(false);
   const [rateLoadingId, setRateLoadingId] = useState(null);
-  const [processing, setProcessing] = useState(false);
   const [focusPartId, setFocusPartId] = useState(null);
   const [focusLabourId, setFocusLabourId] = useState(null);
-  const [priceMasterReady, setPriceMasterReady] = useState(
-    Object.keys(getCachedPriceMaster()).length > 0
-  );
-
-  // Price Master refresh is background-only. Cached data can render immediately,
-  // then the fresh master replaces DB pricing without blocking the estimate screen.
-  useEffect(() => {
-    let active = true;
-    syncPartsMaster()
-      .then(() => {
-        if (active) setPriceMasterReady(true);
-      })
-      .catch(() => {
-        if (active) setPriceMasterReady(Object.keys(getCachedPriceMaster()).length > 0);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
 
   useEffect(() => {
     const showSub = Keyboard.addListener('keyboardDidShow', (e) => {
@@ -1417,122 +1321,34 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
 
   // Pre-calculate all aggregate items once when entering the screen (Instant 0ms selection)
   const prebuiltAggregates = useMemo(() => {
-    // Always prefer the latest in-memory Price Master snapshot over the
-    // vehicle response snapshot. Aggregate automatic parts must use Price List
-    // MRP, not historical DB rate, whenever the master contains the part.
-    const currentMaster = getCachedPriceMaster();
-    const effectiveMaster = Object.keys(currentMaster).length
-      ? currentMaster
-      : (data.priceMaster || {});
     return prebuildAllAggregates(
       data.rows || [],
       data.modelRows || [],
-      data.globalPartRates || [],
-      effectiveMaster
+      data.globalPartRates || []
     );
-  }, [data, priceMasterReady]);
+  }, [data]);
 
-  // If an aggregate was selected before the background Price Master refresh
-  // completed, re-price its automatic part lines immediately after refresh.
-  useEffect(() => {
-    if (!priceMasterReady) return;
-    const master = getCachedPriceMaster();
-    if (!Object.keys(master).length) return;
-    setParts((prev) => prev.map((item) => {
-      if (!item?.serviceKey) return item;
-      const code = String(item.partNo || '').replace(/\s+/g, '').toUpperCase();
-      const pm = master[code];
-      const mrp = Number(pm?.mrp || 0);
-      if (!pm || mrp <= 0) return item;
-      return {
-        ...item,
-        partNo: pm.partNo || code,
-        description: pm.description || item.description || code,
-        rate: Number(mrp.toFixed(2)),
-        baseRate: Number((mrp / 1.18).toFixed(2)),
-        source: 'Price List Master (MRP)'
-      };
-    }));
-  }, [priceMasterReady]);
-
-  const toggleAggregate = async (key) => {
-    setProcessing(true);
-    try {
-      const nextSelected = selected.includes(key)
+  const toggleAggregate = (key) => {
+    const nextSelected = selected.includes(key)
       ? selected.filter((x) => x !== key)
       : [...selected, key];
     setSelected(nextSelected);
 
-    // Always read the already-downloaded local Price Master before building
-    // automatic parts. This avoids using an older data.priceMaster snapshot.
-    let localMaster = getCachedPriceMaster();
-    if (!Object.keys(localMaster).length) {
-      localMaster = data?.priceMaster || {};
-      try {
-        const cached = await readPriceMaster();
-        if (cached?.parts && Object.keys(cached.parts).length) {
-          localMaster = cached.parts;
-        }
-      } catch {}
-    }
-
-    // Do not build an aggregate until Price Master is actually available.
-    // Background sync can still be running when the user taps the first aggregate.
-    // In that race, building immediately would produce zero automatic parts.
-    if (!Object.keys(localMaster).length) {
-      try {
-        const synced = await syncPartsMaster();
-        if (synced?.parts && Object.keys(synced.parts).length) {
-          localMaster = synced.parts;
-          setPriceMasterReady(true);
-        }
-      } catch {}
-    }
-
     const builtParts = [];
     const builtLabour = [];
     for (const k of nextSelected) {
-      // Aggregate data is already prebuilt when this screen opens.
-      // Reuse it directly so selecting an aggregate does not recalculate
-      // vehicle/model history again.
-      // Rebuild from the now-confirmed local Price Master.
-      // Do not reuse an empty prebuild created before Price Master sync finished.
-      const items = buildServiceItems(
-        [k],
-        data.rows || [],
-        data.modelRows || [],
-        data.globalPartRates || [],
-        localMaster
-      );
+      const items =
+        prebuiltAggregates[k] ||
+        buildServiceItems([k], data.rows || [], data.modelRows || [], data.globalPartRates || []);
       if (items?.parts) builtParts.push(...items.parts);
       if (items?.labour) builtLabour.push(...items.labour);
     }
-
-    // Price Master is the final rate source. Automatic parts are rendered
-    // directly with the cached MRP, never with the historical DB rate first.
-    const pricedParts = builtParts.map((item) => {
-      const code = String(item?.partNo || '').replace(/\s+/g, '').toUpperCase();
-      const master = localMaster?.[code];
-      const mrp = Number(master?.mrp || 0);
-      if (!master || mrp <= 0) return item;
-      return {
-        ...item,
-        partNo: master.partNo || code,
-        description: master.description || item.description || code,
-        rate: Number(mrp.toFixed(2)),
-        baseRate: Number((mrp / 1.18).toFixed(2)),
-        source: 'Price List Master (MRP)'
-      };
-    });
-
     const manualParts = parts.filter((x) => !x.serviceKey);
     const manualLabour = labour.filter((x) => !x.serviceKey);
-    setParts([...manualParts, ...pricedParts]);
-      setLabour([...manualLabour, ...builtLabour]);
-    } finally {
-      setProcessing(false);
-    }
-  };
+    setParts([...manualParts, ...builtParts]);
+    setLabour([...manualLabour, ...builtLabour]);
+
+  };;
 
   const addPart = () => {
     const item = makeManualItem('part');
@@ -1559,31 +1375,6 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
     const rawPart = directPartNo || (typeof target === 'object' ? target?.partNo : '') || '';
     const partNo = String(rawPart).replace(/\s+/g, '').toUpperCase();
     if (!itemId || !partNo) return;
-    // Cache hit must be completely silent: no loading indicator.
-    // Use the in-memory Price Master first. This avoids even an AsyncStorage
-    // read for a normal manual part lookup.
-    const master = getCachedPriceMasterPart(partNo) || data?.priceMaster?.[partNo];
-    if (master?.mrp > 0 || master?.description) {
-        setParts((prev) =>
-          prev.map((x) => {
-            if (x.id !== itemId) return x;
-            const currentQty = Number(x.qty);
-            return {
-              ...x,
-              partNo,
-              description: master.description || partNo,
-              rate: Number(master.mrp || 0),
-              qty: !currentQty || currentQty <= 0 ? 1 : currentQty,
-              serviceKey: null,
-              source: 'Price List Master (MRP)'
-            };
-          })
-        );
-        return;
-    }
-
-    // Only a Price Master cache miss needs a network lookup, so the spinner
-    // appears only for the exceptional fallback path.
     setRateLoadingId(itemId);
     try {
       const live = await getPartRate(partNo);
@@ -1615,9 +1406,23 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
         );
         return;
       }
-      // No DB fallback. MRP and description come only from Price Master.
-      if (!live?.part) {
-        Alert.alert('Part not found', 'This part is not available in the Price List Master.');
+      const local = rateForManualPart(partNo, data.modelRows || [], data.globalPartRates || []);
+      if (local) {
+        setParts((prev) =>
+          prev.map((x) => {
+            if (x.id !== itemId) return x;
+            const currentQty = Number(x.qty);
+            return {
+              ...x,
+              partNo: local.partNo,
+              description: local.description || local.partNo,
+              rate: Number(local.rate || 0),
+              qty: !currentQty || currentQty <= 0 ? 1 : currentQty,
+              serviceKey: null,
+              source: local.source
+            };
+          })
+        );
       }
     } catch (err) {
       console.warn('lookupRate error:', err);
@@ -2144,7 +1949,7 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
   );
 }
 
-function SavedEstimatesScreen({ records, onOpen, onNew, onBack, activeTab, onHome, onEstimates, onVehicles, onMore }) {
+function SavedEstimatesScreen({ records, onOpen, onNew, onBack }) {
   const [query, setQuery] = useState('');
   const filtered = useMemo(() => {
     const q = String(query || '').trim().toLowerCase();
@@ -2161,14 +1966,16 @@ function SavedEstimatesScreen({ records, onOpen, onNew, onBack, activeTab, onHom
   }, [records, query]);
 
   return (
-    <View style={{ flex: 1 }}>
-      <SafeAreaView style={[styles.safe, { flex: 1 }]}>
+    <SafeAreaView style={styles.safe}>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.container}>
         <View style={styles.rowBetween}>
           <View>
             <Text style={styles.heading}>Saved Estimates</Text>
             <Text style={styles.muted}>Stored securely on this mobile device</Text>
           </View>
+          <Pressable onPress={onBack}>
+            <Text style={styles.back}>Home</Text>
+          </Pressable>
         </View>
         <TextInput
           value={query}
@@ -2203,14 +2010,6 @@ function SavedEstimatesScreen({ records, onOpen, onNew, onBack, activeTab, onHom
         </View>
       </ScrollView>
     </SafeAreaView>
-      <BottomNavigation
-        activeTab={activeTab}
-        onHome={onHome}
-        onEstimates={onEstimates}
-        onVehicles={onVehicles}
-        onMore={onMore}
-      />
-    </View>
   );
 }
 
@@ -2262,30 +2061,10 @@ function SignatureScreen({ signature, letterhead, onSave, onLetterheadSave, onBa
     const p = getLocalPoint(e);
     setStrokes((prev) => {
       if (!prev.length) return prev;
-      const lastIndex = prev.length - 1;
-      const stroke = prev[lastIndex] || [];
-      const last = stroke[stroke.length - 1];
-      if (!last) return prev;
-
-      const dx = p.x - last.x;
-      const dy = p.y - last.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      if (distance < 0.35) return prev;
-
-      // Interpolate touch gaps so Android move-event spacing cannot render a dotted signature.
-      const steps = Math.max(1, Math.ceil(distance / 1.5));
-      const added = [];
-      for (let i = 1; i <= steps; i += 1) {
-        added.push({
-          x: last.x + (dx * i) / steps,
-          y: last.y + (dy * i) / steps
-        });
-      }
-
-      const nextStroke = [...stroke, ...added];
-      const next = [...prev];
-      next[lastIndex] = nextStroke;
-      currentStrokeRef.current = nextStroke;
+      const next = prev.map((stroke, index) =>
+        index === prev.length - 1 ? [...stroke, p] : stroke
+      );
+      currentStrokeRef.current = next[next.length - 1];
       return next;
     });
   };
@@ -2369,16 +2148,30 @@ function SignatureScreen({ signature, letterhead, onSave, onLetterheadSave, onBa
     strokeWidthRef.current = strokeWidth;
   }, [strokeWidth]);
 
-  const strokePath = (stroke) => {
-    if (!stroke || stroke.length < 2) return '';
-    const first = stroke[0];
-    return stroke
-      .map((point, index) => {
-        const x = Number(point.x || 0).toFixed(2);
-        const y = Number(point.y || 0).toFixed(2);
-        return index === 0 ? `M ${x} ${y}` : `L ${x} ${y}`;
-      })
-      .join(' ');
+  const lineFor = (a, b, index) => {
+    if (!a || !b) return null;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const length = Math.sqrt(dx * dx + dy * dy);
+    if (length < 0.5) return null;
+    const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+    return (
+      <View
+        key={index}
+        style={[
+          styles.signatureStroke,
+          {
+            left: a.x,
+            top: a.y - strokeWidth / 2,
+            width: length,
+            height: strokeWidth,
+            backgroundColor: '#1456c0',
+            borderRadius: strokeWidth / 2,
+            transform: [{ rotate: angle + 'deg' }]
+          }
+        ]}
+      />
+    );
   };
 
   const drawBoard = (large = false) => (
@@ -2404,25 +2197,9 @@ function SignatureScreen({ signature, letterhead, onSave, onLetterheadSave, onBa
       style={[styles.signaturePad, large && styles.signaturePadFull]}
       {...panResponder.panHandlers}
     >
-      <Svg
-        pointerEvents="none"
-        width="100%"
-        height="100%"
-        style={StyleSheet.absoluteFill}
-        viewBox={`0 0 ${Math.max(1, padSize.width)} ${Math.max(1, padSize.height)}`}
-      >
-        {strokes.map((stroke, si) => (
-          <Path
-            key={`signature-${si}`}
-            d={strokePath(stroke)}
-            fill="none"
-            stroke="#1456c0"
-            strokeWidth={strokeWidth}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        ))}
-      </Svg>
+      {strokes.map((stroke, si) =>
+        stroke.map((point, pi) => lineFor(point, stroke[pi + 1], `${si}-${pi}`))
+      )}
       {!strokes.length && (
         <Text style={styles.signaturePadHint}>Sign here with your finger</Text>
       )}
@@ -2557,7 +2334,6 @@ function SignatureScreen({ signature, letterhead, onSave, onLetterheadSave, onBa
 
   return (
     <SafeAreaView style={styles.safe}>
-      <LoadingOverlay visible={processing || saving} text={saving ? 'Saving estimate...' : 'Processing...'} />
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.rowBetween}>
           <View>
@@ -2629,16 +2405,18 @@ function SignatureScreen({ signature, letterhead, onSave, onLetterheadSave, onBa
   );
 }
 
-function SettingsScreen({ user, onLogout, onBack, activeTab, onHome, onEstimates, onVehicles, onMore }) {
+function SettingsScreen({ user, onLogout, onBack }) {
   return (
-    <View style={{ flex: 1 }}>
-      <SafeAreaView style={[styles.safe, { flex: 1 }]}>
+    <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.rowBetween}>
           <View>
             <Text style={styles.heading}>App Settings</Text>
             <Text style={styles.muted}>Service Estimate Configuration</Text>
           </View>
+          <Pressable onPress={onBack}>
+            <Text style={styles.back}>Home</Text>
+          </Pressable>
         </View>
 
         <View style={styles.card}>
@@ -2662,7 +2440,7 @@ function SettingsScreen({ user, onLogout, onBack, activeTab, onHome, onEstimates
         </View>
 
         <Button
-          title="Clear Recent Vehicle History"
+          title="Clear Vehicle Search Cache"
           secondary
           onPress={async () => {
             await AsyncStorage.removeItem(RECENT_VEHICLES_KEY);
@@ -2672,43 +2450,11 @@ function SettingsScreen({ user, onLogout, onBack, activeTab, onHome, onEstimates
         <Button title="Logout" secondary onPress={onLogout} style={{ marginTop: 8 }} />
       </ScrollView>
     </SafeAreaView>
-      <BottomNavigation
-        activeTab={activeTab}
-        onHome={onHome}
-        onEstimates={onEstimates}
-        onVehicles={onVehicles}
-        onMore={onMore}
-      />
-    </View>
-  );
-}
-
-function BottomNavigation({ activeTab, onHome, onEstimates, onVehicles, onMore }) {
-  return (
-    <View style={styles.bottomNavWrap}>
-      <TouchableOpacity style={styles.navTabItem} onPress={onHome}>
-        <Text style={[styles.navTabIcon, activeTab === 'home' && styles.navTabIconActive]}>🏠</Text>
-        <Text style={[styles.navTabLabel, activeTab === 'home' && styles.navTabLabelActive]}>Home</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.navTabItem} onPress={onEstimates}>
-        <Text style={[styles.navTabIcon, activeTab === 'estimates' && styles.navTabIconActive]}>📄</Text>
-        <Text style={[styles.navTabLabel, activeTab === 'estimates' && styles.navTabLabelActive]}>Estimates</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.navTabItem} onPress={onVehicles}>
-        <Text style={[styles.navTabIcon, activeTab === 'vehicles' && styles.navTabIconActive]}>🚛</Text>
-        <Text style={[styles.navTabLabel, activeTab === 'vehicles' && styles.navTabLabelActive]}>Vehicles</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.navTabItem} onPress={onMore}>
-        <Text style={[styles.navTabIcon, activeTab === 'more' && styles.navTabIconActive]}>•••</Text>
-        <Text style={[styles.navTabLabel, activeTab === 'more' && styles.navTabLabelActive]}>More</Text>
-      </TouchableOpacity>
-    </View>
   );
 }
 
 export default function App() {
   const [loading, setLoading] = useState(true);
-  const [recentVehicleLoading, setRecentVehicleLoading] = useState(false);
   const [user, setUser] = useState(null);
   const [mode, setMode] = useState(null);
   const [vehicleData, setVehicleData] = useState(null);
@@ -2818,76 +2564,32 @@ export default function App() {
         if (Platform.OS !== 'android') return;
 
         const currentBuild = Number(Application.nativeBuildVersion || 0);
-        const isBeta = Application.applicationId === 'com.rahulmundra.serviceestimate.beta';
-        const updateSourceUrl = isBeta
-          ? 'https://api.github.com/repos/rahulmundra02-boop/Service-decision-Engine/releases?per_page=100&t=' + Date.now()
-          : 'https://service-decision-engine.vercel.app/mobile/latest.json?t=' + Date.now();
-
-        const response = await fetch(updateSourceUrl, {
-          headers: {
-            Accept: 'application/json',
-            'Cache-Control': 'no-cache'
+        const response = await fetch(
+          'https://service-decision-engine.vercel.app/mobile/beta/latest.json?t=' + Date.now(),
+          {
+            headers: {
+              Accept: 'application/json',
+              'Cache-Control': 'no-cache'
+            }
           }
-        });
+        );
 
         if (!response.ok) return;
 
-        const payload = await response.json();
+        const release = await response.json();
+        const latestBuild = Number(release?.build || 0);
 
-        // Beta APKs are published as GitHub Releases. Do not depend on
-        // GitHub's /releases/latest selection because the repository also
-        // contains multiple historical Beta releases.
-        const release = isBeta
-          ? (Array.isArray(payload)
-              ? payload
-                  .filter((item) => {
-                    const tag = String(item?.tag_name || '');
-                    return !item?.draft &&
-                      !item?.prerelease &&
-                      /^android-beta-v[0-9.]+-build\d+$/i.test(tag);
-                  })
-                  .map((item) => {
-                    const match = String(item?.tag_name || '').match(/build(\d+)/i);
-                    return {
-                      ...item,
-                      betaBuild: Number(match?.[1] || 0)
-                    };
-                  })
-                  .filter((item) => item.betaBuild > 0)
-                  .sort((a, b) => b.betaBuild - a.betaBuild)[0] || null
-              : null)
-          : payload;
-
-        if (!release) return;
-
-        const betaBuildMatch = String(release?.tag_name || '').match(/build(\d+)/i);
-        const latestBuild = isBeta
-          ? Number(release?.betaBuild || betaBuildMatch?.[1] || 0)
-          : Number(release?.build || 0);
-        const betaApk = isBeta
-          ? (Array.isArray(release?.assets)
-              ? release.assets.find((asset) => String(asset?.name || '') === 'app-release.apk')
-              : null)
-          : null;
-        const downloadUrl = isBeta
-          ? String(betaApk?.browser_download_url || '')
-          : String(release?.downloadUrl || '');
-        const latestVersion = isBeta
-          ? String(String(release?.tag_name || '').match(/v([0-9.]+)/i)?.[1] || Application.nativeApplicationVersion || 'New')
-          : String(release?.version || 'New');
-
-        if (!cancelled && latestBuild > currentBuild && downloadUrl) {
+        if (!cancelled && latestBuild > currentBuild && release?.downloadUrl) {
           setUpdateDismissed(false);
           setUpdateInfo({
-            version: latestVersion,
+            version: String(release?.version || 'New'),
             build: latestBuild,
-            downloadUrl,
-            notes: isBeta
-              ? 'A new Beta Android update is available. Download and install the latest Beta update.'
-              : 'A new Android update is available. Download and install the latest update.'
+            downloadUrl: String(release.downloadUrl),
+            notes: 'A new Beta Android update is available. Download and install the latest Beta update.'
           });
         }
       } catch {}
+
     };
 
     checkForUpdate();
@@ -2940,10 +2642,6 @@ export default function App() {
     if (user) {
       loadSavedEstimates();
       loadRecentVehicles();
-      // Revalidate the versioned Price Master in the background for persisted
-      // sessions too. If unchanged, the server returns immediately; if changed,
-      // the local master is refreshed without blocking the UI.
-      syncPartsMaster().catch(() => {});
     }
   }, [user?.id, user?.email, user?.personName]);
 
@@ -2980,22 +2678,20 @@ export default function App() {
     return () => subscription.remove();
   }, [mode, vehicleData, missingVehicleReg, signatureScreen, savedScreen, settingsScreen]);
 
-  const handleSelectRecentVehicle = async (regNum) => {
+  const handleSelectRecentVehicle = (regNum) => {
     setMode('service');
-    setRecentVehicleLoading(true);
-    try {
-      const data = await getVehicleByRegistration(regNum);
-      if (data?.vehicle) {
-        saveRecentVehicle(data.vehicle);
-        setVehicleData(data);
-      } else {
+    getVehicleByRegistration(regNum)
+      .then((data) => {
+        if (data?.vehicle) {
+          saveRecentVehicle(data.vehicle);
+          setVehicleData(data);
+        } else {
+          setMissingVehicleReg(regNum);
+        }
+      })
+      .catch(() => {
         setMissingVehicleReg(regNum);
-      }
-    } catch {
-      setMissingVehicleReg(regNum);
-    } finally {
-      setRecentVehicleLoading(false);
-    }
+      });
   };
 
   const clearRecentVehicles = async () => {
@@ -3029,8 +2725,13 @@ export default function App() {
     );
   }
 
-  if (updateInfo) {
-    return <UpdateScreen update={updateInfo} />;
+  if (updateInfo && !updateDismissed) {
+    return (
+      <UpdateScreen
+        update={updateInfo}
+        onLater={() => setUpdateDismissed(true)}
+      />
+    );
   }
 
   if (!user) {
@@ -3059,11 +2760,6 @@ export default function App() {
           setSettingsScreen(false);
         }}
         onBack={() => setSettingsScreen(false)}
-        activeTab={activeTab}
-        onHome={() => { setSettingsScreen(false); setActiveTab('home'); setMode(null); }}
-        onEstimates={() => { setSettingsScreen(false); loadSavedEstimates(); setActiveTab('estimates'); setSavedScreen(true); }}
-        onVehicles={() => { setSettingsScreen(false); setActiveTab('vehicles'); setMode('service'); }}
-        onMore={() => setActiveTab('more')}
       />
     );
   }
@@ -3081,11 +2777,6 @@ export default function App() {
           setSavedScreen(false);
         }}
         onBack={() => setSavedScreen(false)}
-        activeTab={activeTab}
-        onHome={() => { setSavedScreen(false); setActiveTab('home'); setMode(null); }}
-        onEstimates={() => { loadSavedEstimates(); setActiveTab('estimates'); }}
-        onVehicles={() => { setSavedScreen(false); setActiveTab('vehicles'); setMode('service'); }}
-        onMore={() => { setSavedScreen(false); setActiveTab('more'); setSettingsScreen(true); }}
       />
     );
   }
@@ -3177,7 +2868,7 @@ export default function App() {
 
           <TouchableOpacity
             style={styles.navTabItem}
-            onPress={() => { setActiveTab('more'); setSettingsScreen(true); }}
+            onPress={() => setSettingsScreen(true)}
           >
             <Text style={[styles.navTabIcon, activeTab === 'more' && styles.navTabIconActive]}>
               •••
@@ -3236,7 +2927,6 @@ export default function App() {
         }}
         onOpenSettings={() => setSettingsScreen(true)}
         recentVehicles={recentVehicles}
-        loading={recentVehicleLoading}
       />
 
       {/* Bottom Navigation Tabs */}
@@ -3326,62 +3016,40 @@ const styles = StyleSheet.create({
     backgroundColor: '#e6f0fa'
   },
   loginScroll: {
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 8 : 14,
-    paddingBottom: 24,
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 10 : 20,
+    paddingBottom: 30,
     alignItems: 'center'
   },
   loginHeaderWrap: {
     alignItems: 'center',
-    marginBottom: 10,
-    width: '100%'
+    marginBottom: 16
   },
   loginHeaderImage: {
-    width: 300,
-    height: 150
+    width: 260,
+    height: 120
   },
   loginTagline: {
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#083a6b',
-    letterSpacing: 1.5,
-    marginTop: -10
+    letterSpacing: 1.2,
+    marginTop: -4
   },
   loginCard: {
     width: '100%',
     backgroundColor: '#ffffff',
-    borderRadius: 24,
-    paddingHorizontal: 18,
-    paddingVertical: 20,
+    borderRadius: 22,
+    paddingHorizontal: 20,
+    paddingVertical: 22,
     shadowColor: '#03254c',
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    elevation: 5
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 4
   },
   loginWelcomeRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 2
-  },
-  loginWelcomeAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#e4f0fc',
-    borderWidth: 1,
-    borderColor: '#c7def5',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10
-  },
-  loginWelcomeAvatarText: {
-    fontSize: 18,
-    color: '#0871c9'
-  },
-  loginWelcomeSub: {
-    fontSize: 11,
-    color: '#627d98',
-    marginTop: 1
+    alignItems: 'center'
   },
   loginAccentBar: {
     width: 4,
@@ -3392,7 +3060,7 @@ const styles = StyleSheet.create({
   },
   loginTitle: {
     fontSize: 20,
-    fontWeight: '900',
+    fontWeight: '800',
     color: '#0f2942'
   },
   loginSub: {
@@ -3423,10 +3091,10 @@ const styles = StyleSheet.create({
   modernInput: {
     backgroundColor: '#f8fafc',
     borderWidth: 1,
-    borderColor: '#cfdae6',
-    borderRadius: 12,
-    paddingHorizontal: 13,
-    paddingVertical: 10,
+    borderColor: '#d2dce6',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
     fontSize: 14,
     color: '#102a43'
   },
@@ -3446,16 +3114,12 @@ const styles = StyleSheet.create({
     fontSize: 16
   },
   primaryLoginBtn: {
-    backgroundColor: '#0875cf',
-    borderRadius: 12,
-    paddingVertical: 14,
+    backgroundColor: '#053775',
+    borderRadius: 10,
+    paddingVertical: 13,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 10,
-    elevation: 3,
-    shadowColor: '#0875cf',
-    shadowOpacity: 0.2,
-    shadowRadius: 5
+    marginTop: 10
   },
   primaryLoginBtnText: {
     color: '#ffffff',
@@ -3484,8 +3148,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#ffffff',
     borderWidth: 1.5,
-    borderColor: '#3f82ba',
-    borderRadius: 12,
+    borderColor: '#053775',
+    borderRadius: 10,
     paddingVertical: 11
   },
   fingerprintIcon: {
@@ -3509,16 +3173,15 @@ const styles = StyleSheet.create({
   loginTruckWrap: {
     width: '100%',
     alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 0,
-    overflow: 'hidden'
+    marginTop: 12,
+    marginBottom: 4
   },
   loginTruckImage: {
     width: '100%',
-    height: 128
+    height: 115
   },
   loginFooterWrap: {
-    marginTop: 2,
+    marginTop: 6,
     alignItems: 'center'
   },
   loginFooterText: {
@@ -3537,44 +3200,15 @@ const styles = StyleSheet.create({
     paddingBottom: 70
   },
   homeTopBar: {
-    backgroundColor: '#0755a3',
+    backgroundColor: '#053775',
     paddingHorizontal: 16,
     paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 8 : 12,
-    paddingBottom: 18,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between'
-  },
-  homeLogo: {
-    width: 190,
-    height: 78
-  },
-  homeHeaderActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8
-  },
-  homeHeaderIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.22)'
-  },
-  homeHeaderIconText: {
-    color: '#ffffff',
-    fontSize: 20,
-    fontWeight: '800'
+    paddingBottom: 16,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20
   },
   homeBrandBlock: {
-    flex: 1,
-    flexDirection: 'column',
-    alignItems: 'flex-start'
+    flexDirection: 'column'
   },
   homeBrandTitle: {
     fontSize: 18,
@@ -3583,26 +3217,23 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5
   },
   homeBrandSub: {
-    fontSize: 10,
-    color: '#d5e7fb',
-    marginTop: -2,
-    marginLeft: 3
+    fontSize: 11,
+    color: '#b0cbe8',
+    marginTop: 1
   },
   greetingCard: {
     backgroundColor: '#ffffff',
     marginHorizontal: 14,
-    marginTop: -14,
-    borderRadius: 20,
-    padding: 14,
+    marginTop: -10,
+    borderRadius: 14,
+    padding: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    elevation: 4,
-    shadowColor: '#0b3868',
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    borderWidth: 1,
-    borderColor: '#edf2f7'
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 5
   },
   greetingLeft: {
     flexDirection: 'row',
@@ -3610,12 +3241,10 @@ const styles = StyleSheet.create({
     flex: 1
   },
   avatarCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#e1effc',
-    borderWidth: 1,
-    borderColor: '#cce2f7',
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#e1ecf8',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10
@@ -3665,17 +3294,14 @@ const styles = StyleSheet.create({
   },
 
   createEstimateBanner: {
-    backgroundColor: '#075fbd',
+    backgroundColor: '#053775',
     marginHorizontal: 14,
     marginTop: 14,
-    borderRadius: 18,
-    padding: 15,
+    borderRadius: 14,
+    padding: 14,
     flexDirection: 'row',
     alignItems: 'center',
-    elevation: 4,
-    shadowColor: '#075fbd',
-    shadowOpacity: 0.18,
-    shadowRadius: 8
+    elevation: 4
   },
   bannerIconSquare: {
     width: 44,
@@ -3720,12 +3346,12 @@ const styles = StyleSheet.create({
 
   quickMenuWrap: {
     marginHorizontal: 14,
-    marginTop: 20
+    marginTop: 18
   },
   sectionHeaderTitle: {
-    fontSize: 16,
-    fontWeight: '900',
-    color: '#123b62',
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#102a43',
     marginBottom: 10
   },
   quickMenuGrid: {
@@ -3736,40 +3362,35 @@ const styles = StyleSheet.create({
   quickMenuItem: {
     width: '48%',
     backgroundColor: '#ffffff',
-    borderRadius: 14,
-    padding: 13,
+    borderRadius: 12,
+    padding: 12,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#e6edf5',
-    elevation: 3,
-    shadowColor: '#1f4f7a',
-    shadowOpacity: 0.07,
-    shadowRadius: 5,
+    borderColor: '#e2e8f0',
+    elevation: 2,
     alignItems: 'flex-start'
   },
   menuIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 11,
-    backgroundColor: '#e8f3ff',
-    borderWidth: 1,
-    borderColor: '#d4e8fa',
+    width: 38,
+    height: 38,
+    borderRadius: 8,
+    backgroundColor: '#eef5fc',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 9
+    marginBottom: 8
   },
   menuIconText: {
     fontSize: 18
   },
   menuItemTitle: {
     fontSize: 12,
-    fontWeight: '800',
-    color: '#163a5d'
+    fontWeight: '700',
+    color: '#102a43'
   },
 
   recentVehiclesSection: {
     marginHorizontal: 14,
-    marginTop: 14
+    marginTop: 12
   },
   sectionHeaderRow: {
     flexDirection: 'row',
@@ -3784,11 +3405,11 @@ const styles = StyleSheet.create({
   },
   recentVehicleCard: {
     backgroundColor: '#ffffff',
-    borderRadius: 14,
+    borderRadius: 12,
     padding: 12,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: '#e3ebf4',
+    borderColor: '#e2e8f0',
     flexDirection: 'row',
     alignItems: 'center',
     elevation: 2
@@ -3845,12 +3466,12 @@ const styles = StyleSheet.create({
   },
 
   homeFooterStrip: {
-    backgroundColor: '#0755a3',
+    backgroundColor: '#0c243c',
     marginHorizontal: 14,
-    marginTop: 14,
-    borderRadius: 12,
-    paddingHorizontal: 13,
-    paddingVertical: 11,
+    marginTop: 12,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center'
@@ -3861,9 +3482,9 @@ const styles = StyleSheet.create({
     fontWeight: '700'
   },
   footerStripMotto: {
-    color: '#d8e8f7',
+    color: '#a0aec0',
     fontSize: 10,
-    fontWeight: '700'
+    fontWeight: '600'
   },
 
   // Bottom Navigation Bar
@@ -3872,17 +3493,14 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: 62,
+    height: 56,
     backgroundColor: '#ffffff',
     borderTopWidth: 1,
-    borderTopColor: '#e1eaf3',
+    borderTopColor: '#e2e8f0',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-    elevation: 10,
-    shadowColor: '#173b5d',
-    shadowOpacity: 0.08,
-    shadowRadius: 6
+    elevation: 8
   },
   navTabItem: {
     alignItems: 'center',
@@ -4714,15 +4332,6 @@ const styles = StyleSheet.create({
   },
   strokeButtonTextSelected: {
     color: '#1456c0'
-  },
-  descriptionReadOnly: {
-    justifyContent: 'center',
-    overflow: 'hidden'
-  },
-  descriptionReadOnlyText: {
-    color: '#17212b',
-    fontSize: 14,
-    textAlign: 'left'
   },
   signatureStroke: {
     position: 'absolute'

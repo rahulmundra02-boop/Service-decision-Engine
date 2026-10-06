@@ -1578,9 +1578,14 @@ function deriveRunningReading(records, vehicle) {
 }
 
 function aggregateHistory(records) {
-  // Vehicle Service History is intentionally limited to PART_STANDARDIZATION.
-  // Do not display arbitrary DMS/labour/R&R description lines.
-  const historyRecords = Array.isArray(records) ? records.filter(isMappedServiceLine) : [];
+  // Keep every genuine uploaded history row available for Full History.
+  // Schedule Service History applies the PART_STANDARDIZATION boundary later.
+  // This prevents the Full History view from losing valid DMS rows before the
+  // user even switches the history filter.
+  const historyRecords = Array.isArray(records) ? records.filter(record => {
+    if (!record || !record.date && !record.jobCard && !record.partCode && !record.partDescription && !record.part && !record.standardizedPart) return false;
+    return true;
+  }) : [];
   const groups = new Map();
 
   for (const r of historyRecords) {
@@ -1763,14 +1768,15 @@ function isCalculationEligibleLine(record, visit, vehicle, decision) {
   return false;
 }
 
-function getVisitParts(visit, vehicle, decision) {
+function getVisitParts(visit, vehicle, decision, historyMode = "schedule") {
   // History summary: if the same part appears multiple times in the same
   // Job Card, show it once and total its quantity.
   const grouped = new Map();
 
   for (const record of visit) {
-    // Vehicle history must never fall back to free-text descriptions.
-    if (!isMappedServiceLine(record)) continue;
+    // Schedule view is restricted to mapped service-history lines.
+    // Full History intentionally shows all genuine DMS part/service rows.
+    if (historyMode !== "full" && !isMappedServiceLine(record)) continue;
 
     const code = normalizePartCode(record?.partCode);
     const mappedName = code ? PART_STANDARDIZATION[code] : "";
@@ -7291,7 +7297,7 @@ function ServiceDecisionApp({ user }) {
     {index < singleTableColumns.length - 1 && <span className="column-resizer" onPointerDown={e=>resizeTableColumn("single",key,e)} />}
   </th>
 ))}</tr></thead><tbody>
-{visibleSingleVisits.length ? visibleSingleVisits.map((visit,i)=>{const visitDate=getVisitDate(visit),jobCard=getVisitJobCard(visit),visitReading=getVisitReading(visit,analysis.vehicle,decisionBasis),allParts=getVisitParts(visit,analysis.vehicle,analysis.decision),parts=historyViewMode === "full" ? allParts : allParts.filter(part => part.historyEligible);return <tr key={i}>
+{visibleSingleVisits.length ? visibleSingleVisits.map((visit,i)=>{const visitDate=getVisitDate(visit),jobCard=getVisitJobCard(visit),visitReading=getVisitReading(visit,analysis.vehicle,decisionBasis),allParts=getVisitParts(visit,analysis.vehicle,analysis.decision,historyViewMode),parts=historyViewMode === "full" ? allParts : allParts.filter(part => part.historyEligible);return <tr key={i}>
 {isSingleColumnVisible("date")&&<td style={tableColumnStyle("single","date")}>{formatDateShort(visitDate)}</td>}
 {isSingleColumnVisible("jobCard")&&<td style={tableColumnStyle("single","jobCard")}>{jobCard}</td>}
 {isSingleColumnVisible("reading")&&<td style={tableColumnStyle("single","reading")}>{visitReading?`${formatNumber(visitReading)} ${decisionBasis === "HRS" ? "HRS" : "KM"}`:"-"}</td>}

@@ -4500,14 +4500,19 @@ function ServiceDecisionApp({ user }) {
   };
 
   const readOneEstimateCache = async cacheId => {
-    const ownerKey = estimateCacheOwner();
     try {
       const db = await openEstimateCache();
       if (db) {
         return await new Promise((resolve, reject) => {
           const tx = db.transaction(ESTIMATE_CACHE_STORE, "readonly");
-          const request = tx.objectStore(ESTIMATE_CACHE_STORE).get(String(cacheId));
-          request.onsuccess = () => resolve(request.result || null);
+          const request = tx.objectStore(ESTIMATE_CACHE_STORE).index("ownerKey").getAll(estimateCacheOwner());
+          request.onsuccess = () => {
+            const found = (request.result || []).find(item =>
+              String(item.id || "") === String(cacheId) ||
+              String(item.cacheKey || "") === String(cacheId)
+            );
+            resolve(found || null);
+          };
           request.onerror = () => reject(request.error);
         });
       }
@@ -4516,7 +4521,10 @@ function ServiceDecisionApp({ user }) {
     }
 
     const list = await readEstimateCache();
-    return list.find(item => String(item.cacheKey || item.id) === String(cacheId)) || null;
+    return list.find(item =>
+      String(item.id || "") === String(cacheId) ||
+      String(item.cacheKey || "") === String(cacheId)
+    ) || null;
   };
 
   const PRICE_MASTER_CACHE_DB = "serviceDecisionPriceMasterV2";

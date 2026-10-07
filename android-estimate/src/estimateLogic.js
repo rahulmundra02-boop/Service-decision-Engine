@@ -305,9 +305,47 @@ function matchesLabour(row, key) {
  * 4. For non-grease parts under Hub Grease (FJ607400, F1721500, F1771900, H5001220, CLOTH)
  *    and other regular parts: normal historical mode is applied, fallback 1.
  */
-export function determineQuantity(key, code, vehicleRows = [], modelRows = []) {
+export function determineQuantity(key, code, vehicleRows = [], modelRows = [], vehicleModel = '') {
   const normCode = normalizeCode(code);
   const rule = AGGREGATE_RULES[key];
+
+  // Neptune validation: the model must START with exactly 4 digits followed immediately by N.
+  // Examples: 4825N, 5525N, 4832N. Do not treat N appearing elsewhere as Neptune.
+  const modelText = String(vehicleModel || '').trim().toUpperCase();
+  const isNeptune = /^\d{4}N/.test(modelText);
+
+  // Neptune Engine Oil: quantity must come only from the same VIN's vehicle history.
+  // The normal 12-22 litre rule remains active; if no valid same-vehicle history exists,
+  // default to 21 litres. Model history must never be used for this Neptune case.
+  if (key === 'engineOil' && normCode === 'EN699991' && isNeptune) {
+    const min = AGGREGATE_RULES.engineOil.min;
+    const max = AGGREGATE_RULES.engineOil.max;
+    const vehicleOilRows = (vehicleRows || []).filter(
+      (r) =>
+        category(r) === 'part' &&
+        normalizeCode(r?.part_code) === 'EN699991' &&
+        Number.isFinite(Number(r?.quantity)) &&
+        Number(r.quantity) >= min &&
+        Number(r.quantity) <= max
+    );
+
+    if (vehicleOilRows.length > 0) {
+      const pwRows = vehicleOilRows.filter(isPostWarrantyRepair);
+      const activePool = pwRows.length > 0 ? pwRows : vehicleOilRows;
+      const top10 = activePool.slice().sort((a, b) => rank(b) - rank(a)).slice(0, 10);
+      const counts = new Map();
+      for (const row of top10) {
+        const q = Number(row?.quantity);
+        if (q > 0) counts.set(q, (counts.get(q) || 0) + 1);
+      }
+      if (counts.size > 0) {
+        const sortedCounts = [...counts.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0]);
+        return sortedCounts[0][0];
+      }
+    }
+
+    return 21;
+  }
 
   // If rule applies to this specific part
   if (rule && rule.applicableParts.map(normalizeCode).includes(normCode)) {
@@ -406,7 +444,8 @@ function historicalItem(
   partNo,
   globalRates,
   fixedQty = null,
-  fixedDescription = ''
+  fixedDescription = '',
+  vehicleModel = ''
 ) {
   const code = normalizeCode(partNo);
   if (!code && type === 'part') return null;
@@ -425,7 +464,7 @@ function historicalItem(
   } else if (type === 'labour') {
     qty = latestQty(safeRows, 1);
   } else {
-    qty = determineQuantity(key, code, allVehicleRows, allModelRows);
+    qty = determineQuantity(key, code, allVehicleRows, allModelRows, vehicleModel);
   }
 
   if (!(qty > 0)) return null;
@@ -476,8 +515,9 @@ function bestAlternativePart(key, codes, vehicle, model, globalRates) {
   return options.sort((a, b) => Number(b.qty) - Number(a.qty))[0];
 }
 
-export function buildServiceItems(a = [], b = [], c = [], d = []) {
+export function buildServiceItems(a = [], b = [], c = [], d = [], e = '') {
   let rows, modelRows, globalRates, selectedKeys;
+  const vehicleModel = String(e || '').trim();
   if (Array.isArray(a) && a.length > 0 && typeof a[0] === 'string') {
     selectedKeys = a;
     rows = b;
@@ -515,7 +555,8 @@ export function buildServiceItems(a = [], b = [], c = [], d = []) {
         'S9999997',
         globalRates,
         null,
-        'HUB GREASE (BLUE)'
+        'HUB GREASE (BLUE)',
+        vehicleModel
       );
       if (greaseItem) output.push(greaseItem);
 
@@ -530,12 +571,12 @@ export function buildServiceItems(a = [], b = [], c = [], d = []) {
       ];
 
       for (const [code, desc] of nonGreaseParts) {
-        const item = historicalItem('part', key, vehicle, model, code, globalRates, null, desc);
+        const item = historicalItem('part', key, vehicle, model, code, globalRates, null, desc, vehicleModel);
         if (item) output.push(item);
       }
     } else {
       for (const code of REFERENCE_PARTS[key] || []) {
-        const item = historicalItem('part', key, vehicle, model, code, globalRates);
+        const item = historicalItem('part', key, vehicle, model, code, globalRates, null, '', vehicleModel);
         if (item) output.push(item);
       }
     }
@@ -578,13 +619,13 @@ export function buildServiceItems(a = [], b = [], c = [], d = []) {
   return result;
 }
 
-export function prebuildAllAggregates(rows = [], modelRows = [], globalRates = []) {
+export function prebuildAllAggregates(rows = [], modelRows = [], globalRates = [], vehicleModel = '') {
   makeGlobalRateMap(globalRates);
   const cache = {};
   for (const item of AGGREGATES) {
     const key = Array.isArray(item) ? item[1] : item?.key;
     if (key) {
-      cache[key] = buildServiceItems([key], rows, modelRows, globalRates);
+      cache[key] = buildServiceItems([key], rows, modelRows, globalRates, vehicleModel);
     }
   }
   return cache;

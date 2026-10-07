@@ -623,6 +623,7 @@ export default function AuthGate({ children }) {
         letterhead: profileForm.letterhead || null,
         signature: profileForm.signature || null,
         signaturePlacement: profileForm.signaturePlacement || { x: 70, y: 91, width: 20 },
+         theme: profileForm.theme || "blue",
       }
     }, localStorage.getItem(TOKEN_KEY));
     setUser(normalizeLoggedInUser(data.user));
@@ -1283,6 +1284,16 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading, onChang
     <label>Person Name</label><input value={form.personName} onChange={e=>setForm({...form,personName:e.target.value})}/>
     <label>Dealer / Workshop Name</label><input value={form.dealerName} onChange={e=>setForm({...form,dealerName:e.target.value})}/>
     <label>Mobile</label><input value={form.mobile} onChange={e=>setForm({...form,mobile:e.target.value})}/>
+     <div className="profile-theme-section">
+       <div className="profile-theme-title">Dashboard Theme</div>
+       <div className="profile-theme-options">
+         {[["blue","Classic Blue"],["green","Excel Green"],["navy","Navy"],["teal","Teal"],["purple","Purple"]].map(([key,label]) => (
+           <button key={key} type="button" className={"profile-theme-option theme-"+key+" "+((form.theme || "blue")===key ? "active" : "")} onClick={()=>setForm({...form,theme:key})}>
+             <span className="profile-theme-swatch"></span>{label}
+           </button>
+         ))}
+       </div>
+     </div>
     <label className="booking-field-label">Advance Booking Contact 1 {!form.booking1 && <span className="booking-field-dot" />}</label><input value={form.booking1} onChange={e=>setForm({...form,booking1:e.target.value})} placeholder="Optional mobile number"/>
     <label className="booking-field-label">Advance Booking Contact 2 {!form.booking2 && <span className="booking-field-dot" />}</label><input value={form.booking2} onChange={e=>setForm({...form,booking2:e.target.value})} placeholder="Optional mobile number"/>
     <label>WhatsApp Opening Line (Optional)</label><textarea value={form.whatsappOpeningLine} onChange={e=>setForm({...form,whatsappOpeningLine:e.target.value})} placeholder="Applies to the top of the WhatsApp due message. Leave blank if no extra line is required." rows={3} style={{minHeight:72,resize:"vertical"}}/>

@@ -529,3 +529,18 @@
   .auth-visual-copy h1{font-size:43px}
   .auth-card{padding-left:32px;padding-right:32px}
 }
+
+
+.mobile-bottom-nav{display:none}.mobile-profile-account-actions{display:none}
+@media (max-width:600px) and (orientation:portrait){
+.app-auth-shell{padding-bottom:78px;box-sizing:border-box}.auth-userbar{display:none!important}
+.mobile-bottom-nav{position:fixed;left:8px;right:8px;bottom:8px;z-index:10000;height:64px;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:5px;padding:5px;box-sizing:border-box;background:#14263a;border:1px solid rgba(255,255,255,.12);border-radius:14px;box-shadow:0 8px 28px rgba(0,0,0,.28)}
+.mobile-bottom-nav-item{min-width:0;min-height:52px;padding:4px 2px;margin:0;border:1px solid rgba(255,255,255,.14);border-radius:9px;background:#263f58;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:8px;line-height:1;font-weight:800;cursor:pointer;box-sizing:border-box}
+.mobile-bottom-nav-item:active{transform:scale(.96);background:#337db5}.mobile-bottom-nav-item.profile{background:#1f8f55}
+.mobile-bottom-nav-icon{width:25px;height:25px;display:flex;align-items:center;justify-content:center;border-radius:7px;background:rgba(255,255,255,.1);font-size:15px;line-height:1;font-weight:900}
+.auth-inline-error,.auth-inline-message{margin:7px 10px}
+.auth-modal-backdrop{align-items:flex-start;padding:12px;overflow-y:auto}.auth-modal{width:100%;max-width:100%;max-height:calc(100vh - 24px);overflow-y:auto;margin:auto 0;box-sizing:border-box;border-radius:14px;padding:17px}
+.mobile-profile-account-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:18px;padding-top:14px;border-top:1px solid #dce4eb}
+.mobile-profile-action{width:100%;min-height:42px;border:1px solid #b9c8d5;border-radius:8px;background:#f5f8fa;color:#17324d;padding:9px 8px;font-weight:800;cursor:pointer}
+.mobile-profile-action.admin{background:#eef5fb;border-color:#8eb2d0;color:#245579}.mobile-profile-action.logout{background:#fff1f2;border-color:#e3aeb3;color:#9a3038}
+}

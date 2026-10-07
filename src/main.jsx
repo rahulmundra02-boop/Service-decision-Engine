@@ -7,7 +7,13 @@ function PwaInstallControl() {
   const [installPrompt, setInstallPrompt] = useState(null)
   const [installed, setInstalled] = useState(false)
   const [showNameDialog, setShowNameDialog] = useState(false)
-  const [appName, setAppName] = useState('Service Estimate')
+  const [appName, setAppName] = useState(() => {
+    try {
+      return localStorage.getItem('pwaPendingAppName') || 'Service Estimate'
+    } catch {
+      return 'Service Estimate'
+    }
+  })
   const [installing, setInstalling] = useState(false)
 
   useEffect(() => {
@@ -27,6 +33,11 @@ function PwaInstallControl() {
       setInstallPrompt(null)
       setShowNameDialog(false)
       setInstalling(false)
+      try {
+        localStorage.removeItem('pwaPendingAppName')
+      } catch {
+        // Ignore storage cleanup failures.
+      }
     }
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstall)
@@ -62,19 +73,40 @@ function PwaInstallControl() {
       return
     }
 
+    // Android Chrome can keep the manifest metadata that was used when
+    // beforeinstallprompt fired. Therefore the selected name must be present
+    // BEFORE that event is generated. On mobile we save the name and reload
+    // once; index.html then points to the manifest containing this name.
+    const isAndroid = /Android/i.test(navigator.userAgent)
+
+    if (isAndroid) {
+      try {
+        localStorage.setItem('pwaPendingAppName', trimmedName)
+      } catch {
+        // Continue even if localStorage is unavailable.
+      }
+
+      setInstalling(true)
+      window.location.reload()
+      return
+    }
+
     setInstalling(true)
 
     try {
-      // Keep prompt() inside the original button click/user activation.
-      // Awaiting manifest/network work here causes Chromium's install prompt
-      // to lose the user gesture and can leave the UI stuck on "Installing…".
       document.title = trimmedName
       updateManifestName(trimmedName)
 
       const promptPromise = installPrompt.prompt()
       Promise.resolve(promptPromise)
         .then((result) => {
-          if (result?.outcome !== 'accepted') {
+          if (result?.outcome === 'accepted') {
+            try {
+              localStorage.removeItem('pwaPendingAppName')
+            } catch {
+              // Ignore storage cleanup failures.
+            }
+          } else {
             setInstalling(false)
             setInstallPrompt(null)
             setShowNameDialog(false)
@@ -94,7 +126,22 @@ function PwaInstallControl() {
     <>
       <button
         type="button"
-        onClick={() => setShowNameDialog(true)}
+        onClick={() => {
+          const isAndroid = /Android/i.test(navigator.userAgent)
+          let pendingName = ''
+          try {
+            pendingName = localStorage.getItem('pwaPendingAppName') || ''
+          } catch {
+            pendingName = ''
+          }
+
+          if (isAndroid && pendingName.trim()) {
+            setAppName(pendingName)
+            startInstall()
+          } else {
+            setShowNameDialog(true)
+          }
+        }}
         style={{
           position:'fixed', right:16, bottom:16, zIndex:9998,
           border:'0', borderRadius:12, padding:'11px 16px',

@@ -835,7 +835,38 @@ export default function AuthGate({ children }) {
           onSave={saveProfile}
           onClose={()=>setProfileOpen(false)}
           loading={loading}
+          onChangePassword={()=>{ setProfileOpen(false); setShowPassword(true); setError(""); setMessage(""); }}
+          onLogout={logout}
+          isAdmin={user.role === "admin"}
+          onAdmin={()=>{ setProfileOpen(false); setAdminOpen(true); setError(""); setMessage(""); }}
         />
+      )}
+
+      
+      {!adminOpen && (
+        <div className="mobile-bottom-nav" aria-label="Mobile app navigation">
+          {[
+            ["home","⌂","Home"],
+            ["single","▣","Single"],
+            ["bulk","▤","Bulk"],
+            ["estimate","₹","Estimate"],
+            ["warranty-tags","▦","Warranty"],
+          ].map(([key,icon,label]) => (
+            <button
+              key={key}
+              type="button"
+              className="mobile-bottom-nav-item"
+              onClick={() => window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:key}}))}
+            >
+              <span className="mobile-bottom-nav-icon">{icon}</span>
+              <span>{label}</span>
+            </button>
+          ))}
+          <button type="button" className="mobile-bottom-nav-item profile" onClick={openProfile}>
+            <span className="mobile-bottom-nav-icon">●</span>
+            <span>Profile</span>
+          </button>
+        </div>
       )}
 
       {adminOpen && user.role === "admin" ? (
@@ -1231,7 +1262,7 @@ function SignaturePad({ initialValue, onUse, onClose }) {
     </div>
   </div>;
 }
-function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
+function ProfileSettingsModal({ form, setForm, onSave, onClose, loading, onChangePassword, onLogout, isAdmin, onAdmin }) {
   const singleCols=[["date","Date"],["jobCard","Job Card"],["reading","Reading"],["plant","Plant"],["parts","Part No. / Service / Qty"]];
   const bulkCols=[["customerName","Customer Name"],["vin","VIN"],["reg","Reg. No."],["saleDate","Sale Date"],["model","Model"],["currentReading","Current Reading"],["services","Service To Be Completed"]];
   const [scannerOpen,setScannerOpen]=useState(false);
@@ -1312,6 +1343,11 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading }) {
     <div style={{fontWeight:800}}>Bulk Vehicle Due / Service Summary Table</div>
     <div className="auth-hint">Checkbox = show/hide · Text box = custom heading · width by mouse drag.</div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:"6px 12px",margin:"8px 0",minWidth:0}}>{bulkCols.map(([k,l])=>editor("bulkColumns",k,l))}<div style={{display:"grid",gridTemplateColumns:"28px 1fr",gap:7,alignItems:"center"}}><span></span><input value={(form.bulkColumnLabels||{}).serial||"S.No. / Due"} onChange={e=>setLabel("bulkColumnLabels","serial",e.target.value)} placeholder="S.No. / Due"/></div></div>
+    <div className="mobile-profile-account-actions">
+      {isAdmin && <button type="button" className="mobile-profile-action admin" onClick={onAdmin}>Admin Dashboard</button>}
+      <button type="button" className="mobile-profile-action" onClick={onChangePassword}>Change Password</button>
+      <button type="button" className="mobile-profile-action logout" onClick={onLogout}>Logout</button>
+    </div>
     <div className="auth-modal-actions"><button className="auth-secondary" onClick={onClose}>Cancel</button><button className="auth-primary" onClick={onSave} disabled={loading}>Save Profile & Settings</button></div>
   </div></div>
   {scannerOpen && <LetterheadScanner initialValue={form.letterhead} onUse={v=>{setForm({...form,letterhead:v});setScannerOpen(false);}} onClose={()=>setScannerOpen(false)}/>}

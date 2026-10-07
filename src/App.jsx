@@ -4466,7 +4466,7 @@ function WarrantyTagPanel({user,onBack}){
     })}</div>}
   </>;
 }
-function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResults, savedEstimates, savedEstimatesLoading, onOpenSavedEstimate, theme = "blue", onThemeChange }) {
+function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResults, savedEstimates, savedEstimatesLoading, onOpenSavedEstimate }) {
   const dueVehicles = (bulkResults || []).filter(item => Array.isArray(item?.services) && item.services.length > 0).length;
   const totalVehicles = (bulkResults || []).length;
   const savedCount = Array.isArray(savedEstimates) ? savedEstimates.length : 0;
@@ -8368,8 +8368,8 @@ function ServiceDecisionApp({ user }) {
           </main>
 
         {estimateOpen && (
-          <div className="no-print" style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-            <div className="estimate-workspace" style={{background:"#fff",color:"#111",width:"min(1100px,96vw)",maxHeight:"94vh",overflow:"auto",borderRadius:10,padding:18}}>
+          <div className="estimate-modal-overlay no-print">
+            <div className="estimate-workspace">
               {estimateStage === "vehicle" ? (
                 <>
                   <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>

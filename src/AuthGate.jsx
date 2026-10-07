@@ -60,7 +60,7 @@ export default function AuthGate({ children }) {
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminForm, setAdminForm] = useState({ userId:null, personName:"", dealerName:"", email:"", mobile:"", password:"" });
   const [profileOpen, setProfileOpen] = useState(false);
-  const [profileForm, setProfileForm] = useState({ personName:"", dealerName:"", mobile:"", booking1:"", booking2:"", singleColumns:["date","jobCard","reading","plant","parts"], bulkColumns:["customerName","vin","reg","saleDate","model","currentReading","services"], singleColumnLabels:{date:"Date",jobCard:"Job Card",reading:"Reading",plant:"Plant",parts:"Part No. / Service / Qty"}, bulkColumnLabels:{serial:"S.No. / Due",customerName:"Customer Name",vin:"VIN",reg:"Reg. No.",saleDate:"Sale Date",model:"Model",currentReading:"Current Reading",services:"Service To Be Completed"} });
+  const [profileForm, setProfileForm] = useState({ personName:"", dealerName:"", mobile:"", booking1:"", booking2:"", singleColumns:["date","jobCard","reading","plant","parts"], bulkColumns:["customerName","vin","reg","saleDate","model","currentReading","services"], singleColumnLabels:{date:"Date",jobCard:"Job Card",reading:"Reading",plant:"Plant",parts:"Part No. / Service / Qty"}, bulkColumnLabels:{serial:"S.No. / Due",customerName:"Customer Name",vin:"VIN",reg:"Reg. No.",saleDate:"Sale Date",model:"Model",currentReading:"Current Reading",services:"Service To Be Completed"}, theme:"blue" });
   const [adminAnalytics, setAdminAnalytics] = useState({ summary:[], recent:[], periods:[] });
   const [analyticsUserId, setAnalyticsUserId] = useState(null);
   const [analyticsRange, setAnalyticsRange] = useState(30);
@@ -647,6 +647,7 @@ export default function AuthGate({ children }) {
       letterhead:p.letterhead || null,
       signature:p.signature || null,
       signaturePlacement:p.signaturePlacement || { x:70, y:91, width:20 },
+       theme:p.theme || "blue",
     });
     setProfileOpen(true);
     setError("");

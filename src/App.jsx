@@ -4505,22 +4505,7 @@ function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResu
         <div className="portal-kpi"><span>Due Vehicles</span><strong>{dueVehicles}</strong><small>Current upload</small></div>
         <div className="portal-kpi"><span>Saved Estimates</span><strong>{savedCount}</strong><small>Available to open</small></div>
       </div>
-      <div className="portal-section-title">Quick Actions</div>
-      <div className="portal-action-grid">{cards.map(card => <button key={card.key} className="portal-action-card" onClick={() => onNavigate(card.key)}><span className="portal-action-icon">{card.icon}</span><span className="portal-action-title">{card.title}</span><span className="portal-action-text">{card.text}</span><span className="portal-action-link">Open →</span></button>)}
-        <button className="portal-action-card" onClick={() => onNavigate("estimate")}><span className="portal-action-icon">🧾</span><span className="portal-action-title">Service Estimate</span><span className="portal-action-text">Prepare an estimate directly from Home. Vehicle details and parts can be loaded from the database or entered manually.</span><span className="portal-action-link">Open Estimate →</span></button>
-      </div>
-      <div className="home-estimate-preview" onClick={() => onNavigate("estimate")} role="button" tabIndex={0} onKeyDown={event => { if(event.key==="Enter" || event.key===" ") onNavigate("estimate"); }}>
-        <div className="home-estimate-preview-head">
-          <div><strong>SERVICE ESTIMATE</strong><span>Same estimate format • Click to open</span></div>
-          <button type="button" className="excel-button green no-print" onClick={event => { event.stopPropagation(); onNavigate("estimate"); }}>Open Estimate</button>
-        </div>
-        <div className="home-estimate-preview-grid">
-          <div><b>Vehicle No.</b><span>Vehicle number → DB lookup</span></div>
-          <div><b>Vehicle Details</b><span>Customer, Model, Engine, Chassis / VIN</span></div>
-          <div><b>Parts</b><span>Part No. → Description + MRP / Rate</span></div>
-          <div><b>Qty / Rate / Amount</b><span>Editable estimate lines and totals</span></div>
-        </div>
-      </div>
+
       <div className="home-saved-estimates">
         <div className="portal-section-title">Saved Estimates</div>
         {savedEstimatesLoading ? (
@@ -6448,6 +6433,26 @@ function ServiceDecisionApp({ user }) {
   const estimateLabourGst = estimateLabourBase*0.18;
   const estimateLabourTotal = estimateLabourBase+estimateLabourGst;
   const estimateGrandTotal = estimatePartsTotal+estimateLabourTotal;
+  function downloadXlsxBlob(workbook, fileName) {
+    const arrayBuffer = XLSX.write(workbook, {
+      bookType: "xlsx",
+      type: "array",
+      compression: true,
+    });
+    const blob = new Blob([arrayBuffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    link.rel = "noopener";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
   function exportEstimateExcel() {
     const vehicle = estimateVehicle || {};
     const printModel = String(estimatePrintModel || vehicle.model || "").trim();
@@ -6583,7 +6588,7 @@ function ServiceDecisionApp({ user }) {
 
     wb.Props = {Title:"Service Estimate",Subject:"A4 Ready Service Estimate"};
     const fileName = ("Service_Estimate_" + (vehicle.reg || vehicle.vin || "Vehicle")).replace(/[^a-z0-9_.-]+/gi,"_") + ".xlsx";
-    XLSX.writeFile(wb,fileName,{bookType:"xlsx",cellStyles:true,compression:true});
+    downloadXlsxBlob(wb, fileName);
   }
 
   async function buildEstimatePdf(autoPrint = false, sharePdf = false) {

@@ -8017,6 +8017,37 @@ function ServiceDecisionApp({ user }) {
 
           <input id="excel-file-input" className="no-print" type="file" accept=".xlsx,.xls,.xlsm,.csv" multiple style={{display:"none"}} onChange={handleExcelUpload} disabled={uploadBusy} />
 
+          <div className="mobile-work-actions no-print">
+            {mode !== "home" && mode !== "warranty-tags" && (
+              <>
+                <button className="mobile-work-action" onClick={() => document.getElementById("excel-file-input")?.click()} disabled={uploadBusy}>Upload Excel</button>
+                <button className="mobile-work-action" onClick={clear}>Clear</button>
+                <button className="mobile-work-action primary" onClick={mode === "bulk" ? analyzeBulk : analyze} disabled={uploadBusy || (!excelData.trim() && !uploadParsedRecords.length)}>
+                  {mode === "bulk" ? "Analyze All" : "Analyze"}
+                </button>
+              </>
+            )}
+            {mode === "single" && analysis && (
+              <>
+                <input
+                  className="mobile-work-input"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={overrideReading}
+                  onChange={(e)=>{setOverrideReading(e.target.value);setError("")}}
+                  placeholder={decisionBasis === "HRS" ? "HRS" : "KM"}
+                  aria-label={`Override ${decisionBasis === "HRS" ? "HRS" : "KM"}`}
+                />
+                <select className="mobile-work-input" value={decisionBasis} onChange={(e)=>changeDecisionBasis(e.target.value)} aria-label="Decision Basis">
+                  <option value="KM">KM</option><option value="HRS">HRS</option>
+                </select>
+                <button className="mobile-work-action primary" onClick={recalculateWithOverride}>Recalculate</button>
+                <button className="mobile-work-action" onClick={captureSingleScreenshot} disabled={screenshotBusy}>{screenshotBusy ? "Preparing..." : "Screenshot"}</button>
+              </>
+            )}
+          </div>
+
           <main className="excel-sheet">
             {mode === "home" ? (
               <PortalHome user={user} theme={dashboardPrefs.theme || "blue"} onThemeChange={changeDashboardTheme} hasAnalysis={Boolean(analysis)} bulkResults={bulkResults}

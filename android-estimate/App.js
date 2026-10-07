@@ -1396,7 +1396,8 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
     return prebuildAllAggregates(
       data.rows || [],
       data.modelRows || [],
-      data.globalPartRates || []
+      data.globalPartRates || [],
+      vehicle.model || ''
     );
   }, [data]);
 
@@ -1411,7 +1412,7 @@ function EstimateScreen({ mode, data, user, onBack, savedEstimate, onSaved }) {
     for (const k of nextSelected) {
       const items =
         prebuiltAggregates[k] ||
-        buildServiceItems([k], data.rows || [], data.modelRows || [], data.globalPartRates || []);
+        buildServiceItems([k], data.rows || [], data.modelRows || [], data.globalPartRates || [], vehicle.model || '');
       if (items?.parts) builtParts.push(...items.parts);
       if (items?.labour) builtLabour.push(...items.labour);
     }

@@ -7,15 +7,16 @@
     <script>
       (function () {
         try {
-          var savedName = localStorage.getItem('pwaPendingAppName') || 'Service Estimate'
+          var params = new URLSearchParams(window.location.search)
+          var selectedName = params.get('pwaName') || 'Service Estimate'
           var manifest = document.createElement('link')
           manifest.rel = 'manifest'
-          manifest.href = '/api/manifest?name=' + encodeURIComponent(savedName) + '&v=20261007-2'
+          manifest.href = '/api/manifest?name=' + encodeURIComponent(selectedName) + '&v=20261007-3'
           document.head.appendChild(manifest)
         } catch (error) {
           var manifest = document.createElement('link')
           manifest.rel = 'manifest'
-          manifest.href = '/api/manifest?name=Service%20Estimate&v=20261007-2'
+          manifest.href = '/api/manifest?name=Service%20Estimate&v=20261007-3'
           document.head.appendChild(manifest)
         }
       })()

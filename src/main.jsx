@@ -55,7 +55,7 @@ function PwaInstallControl() {
     })
   }
 
-  const startInstall = async () => {
+  const startInstall = () => {
     const trimmedName = appName.trim()
 
     if (!trimmedName) {
@@ -65,18 +65,25 @@ function PwaInstallControl() {
     setInstalling(true)
 
     try {
-      await updateManifestName(trimmedName)
+      // Keep prompt() inside the original button click/user activation.
+      // Awaiting manifest/network work here causes Chromium's install prompt
+      // to lose the user gesture and can leave the UI stuck on "Installing…".
+      document.title = trimmedName
+      updateManifestName(trimmedName)
 
-      // Give Chromium a moment to pick up the newly selected manifest.
-      await new Promise((resolve) => setTimeout(resolve, 150))
-
-      const result = await installPrompt.prompt()
-
-      if (result?.outcome !== 'accepted') {
-        setInstalling(false)
-        setInstallPrompt(null)
-        setShowNameDialog(false)
-      }
+      const promptPromise = installPrompt.prompt()
+      Promise.resolve(promptPromise)
+        .then((result) => {
+          if (result?.outcome !== 'accepted') {
+            setInstalling(false)
+            setInstallPrompt(null)
+            setShowNameDialog(false)
+          }
+        })
+        .catch((error) => {
+          console.error('PWA install failed:', error)
+          setInstalling(false)
+        })
     } catch (error) {
       console.error('PWA install failed:', error)
       setInstalling(false)

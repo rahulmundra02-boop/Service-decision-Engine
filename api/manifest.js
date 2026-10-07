@@ -10,16 +10,11 @@ function cleanName(value) {
 
 export default function handler(req, res) {
   const name = cleanName(req.query?.name)
-  // Android Chrome's install sheet on this flow has been dropping the first
-  // visible character. Keep an invisible leading word-joiner in manifest
-  // names so the actual first letter remains visible in the installed name.
-  const androidSafeName = `\u2060${name}`
-
   res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8')
   res.setHeader('Cache-Control', 'no-store, max-age=0')
   res.status(200).json({
-    name: androidSafeName,
-    short_name: androidSafeName,
+    name,
+    short_name: name,
     description: 'Vehicle service decision and estimate application',
     id: '/',
     start_url: '/',

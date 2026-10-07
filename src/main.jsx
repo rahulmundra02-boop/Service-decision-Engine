@@ -80,15 +80,27 @@ function PwaInstallControl() {
     const isAndroid = /Android/i.test(navigator.userAgent)
 
     if (isAndroid) {
+      let pendingName = ''
       try {
-        localStorage.setItem('pwaPendingAppName', trimmedName)
+        pendingName = localStorage.getItem('pwaPendingAppName') || ''
       } catch {
-        // Continue even if localStorage is unavailable.
+        pendingName = ''
       }
 
-      setInstalling(true)
-      window.location.reload()
-      return
+      // First click: save the selected name and reload so Android Chrome
+      // evaluates the manifest with that name. After reload, use the stored
+      // name and call prompt() directly.
+      if (!pendingName.trim()) {
+        try {
+          localStorage.setItem('pwaPendingAppName', trimmedName)
+        } catch {
+          // Continue even if localStorage is unavailable.
+        }
+
+        setInstalling(true)
+        window.location.reload()
+        return
+      }
     }
 
     setInstalling(true)

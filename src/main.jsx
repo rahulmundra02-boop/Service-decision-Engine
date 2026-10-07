@@ -9,7 +9,7 @@ function PwaInstallControl() {
   const [showNameDialog, setShowNameDialog] = useState(false)
   const [appName, setAppName] = useState(() => {
     try {
-      return localStorage.getItem('pwaPendingAppName') || 'Service Estimate'
+      return new URLSearchParams(window.location.search).get('pwaName') || 'Service Estimate'
     } catch {
       return 'Service Estimate'
     }
@@ -18,13 +18,16 @@ function PwaInstallControl() {
 
   useEffect(() => {
     try {
-      const pendingName = localStorage.getItem('pwaPendingAppName') || ''
-      if (pendingName.trim()) {
-        setAppName(pendingName)
+      const params = new URLSearchParams(window.location.search)
+      const installName = params.get('pwaName') || ''
+      const installFlow = params.get('pwaInstall') === '1'
+
+      if (installFlow && installName.trim()) {
+        setAppName(installName)
         setShowNameDialog(true)
       }
     } catch {
-      // Ignore storage access failures.
+      // Ignore URL parsing failures.
     }
 
     if ('serviceWorker' in navigator) {
@@ -44,9 +47,12 @@ function PwaInstallControl() {
       setShowNameDialog(false)
       setInstalling(false)
       try {
-        localStorage.removeItem('pwaPendingAppName')
+        const cleanUrl = new URL(window.location.href)
+        cleanUrl.searchParams.delete('pwaName')
+        cleanUrl.searchParams.delete('pwaInstall')
+        window.history.replaceState({}, '', cleanUrl)
       } catch {
-        // Ignore storage cleanup failures.
+        // Ignore URL cleanup failures.
       }
     }
 
@@ -84,46 +90,34 @@ function PwaInstallControl() {
     }
 
     const isAndroid = /Android/i.test(navigator.userAgent)
+    const params = new URLSearchParams(window.location.search)
+    const alreadyPrepared = params.get('pwaInstall') === '1' && Boolean(params.get('pwaName'))
 
-    // On Android the manifest must be loaded with the selected name before
-    // Chromium creates the install prompt. The first Continue saves the name
-    // and reloads; after reload the same dialog is shown again and the second
-    // Continue opens the native install sheet.
-    if (isAndroid) {
-      let pendingName = ''
-      try {
-        pendingName = localStorage.getItem('pwaPendingAppName') || ''
-      } catch {
-        pendingName = ''
-      }
-
-      if (!pendingName.trim()) {
-        try {
-          localStorage.setItem('pwaPendingAppName', trimmedName)
-        } catch {
-          // Continue even if localStorage is unavailable.
-        }
-
-        setInstalling(true)
-        window.location.reload()
-        return
-      }
+    if (isAndroid && !alreadyPrepared) {
+      const nextUrl = new URL(window.location.href)
+      nextUrl.searchParams.set('pwaName', trimmedName)
+      nextUrl.searchParams.set('pwaInstall', '1')
+      setInstalling(true)
+      window.location.assign(nextUrl.toString())
+      return
     }
 
     setInstalling(true)
 
     try {
       document.title = trimmedName
-      updateManifestName(trimmedName)
-
       const promptPromise = installPrompt.prompt()
+
       Promise.resolve(promptPromise)
         .then((result) => {
           if (result?.outcome === 'accepted') {
             try {
-              localStorage.removeItem('pwaPendingAppName')
+              const cleanUrl = new URL(window.location.href)
+              cleanUrl.searchParams.delete('pwaName')
+              cleanUrl.searchParams.delete('pwaInstall')
+              window.history.replaceState({}, '', cleanUrl)
             } catch {
-              // Ignore storage cleanup failures.
+              // Ignore URL cleanup failures.
             }
           } else {
             setInstalling(false)

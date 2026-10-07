@@ -4490,16 +4490,6 @@ function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResu
           <button className="excel-button" onClick={onClear}>Clear</button>
         </div>
       </div>
-      <div className="home-theme-picker">
-        <div className="home-theme-picker-title">Dashboard Theme</div>
-        <div className="home-theme-options">
-          {[["blue","Classic Blue"],["green","Excel Green"],["navy","Navy"],["teal","Teal"],["purple","Purple"]].map(([key,label]) => (
-            <button key={key} type="button" className={`home-theme-option ${theme===key ? "active" : ""} theme-${key}`} onClick={() => onThemeChange?.(key)}>
-              <span className="home-theme-swatch" aria-hidden="true"></span>{label}
-            </button>
-          ))}
-        </div>
-      </div>
       <div className="portal-kpi-grid">
         <div className="portal-kpi"><span>Vehicles in Current Upload</span><strong>{totalVehicles}</strong><small>Current session</small></div>
         <div className="portal-kpi"><span>Due Vehicles</span><strong>{dueVehicles}</strong><small>Current upload</small></div>
@@ -8509,7 +8499,7 @@ function ServiceDecisionApp({ user }) {
                       <span>Processing estimate, please wait...</span>
                     </div>
                   )}
-<div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:16}}>
+<div className="estimate-select-actions"  style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:16}}>
                     <button className="excel-button" onClick={()=>{setEstimateOpen(false);setMode("home");}}>Cancel</button>
                     <button className="excel-button green" disabled={estimateLoading || estimatePrepareBusy} onClick={prepareEstimate}>{estimatePrepareBusy ? "Processing..." : "OK / Prepare Estimate"}</button>
                   </div>

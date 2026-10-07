@@ -561,3 +561,13 @@
   .mobile-bottom-nav{bottom:4px;height:68px}
   .mobile-bottom-nav-item{min-height:56px}
 }
+
+
+/* Dashboard Theme moved from Home to Profile & Dashboard Settings. */
+.profile-dashboard-theme{margin-top:18px;padding:14px 0;border-top:1px solid #dce4eb;border-bottom:1px solid #dce4eb}
+.profile-settings-section-title{font-weight:800;font-size:16px;margin-bottom:9px;color:#17324d}
+.profile-theme-options{display:flex;gap:7px;flex-wrap:wrap}
+.profile-theme-option{display:inline-flex;align-items:center;gap:6px;border:1px solid #b7c3cd;background:#fff;color:#34495a;border-radius:5px;padding:7px 9px;font:700 11px Arial,sans-serif;cursor:pointer}
+.profile-theme-option.active{border-color:#315d82;background:#315d82;color:#fff}
+.profile-theme-swatch{width:10px;height:10px;border-radius:50%;background:#4472c4;display:inline-block;border:1px solid rgba(0,0,0,.15)}
+.profile-theme-option.theme-green .profile-theme-swatch{background:#217346}.profile-theme-option.theme-navy .profile-theme-swatch{background:#17365d}.profile-theme-option.theme-teal .profile-theme-swatch{background:#0f766e}.profile-theme-option.theme-purple .profile-theme-swatch{background:#6b46c1}.profile-theme-option.theme-blue .profile-theme-swatch{background:#4472c4}

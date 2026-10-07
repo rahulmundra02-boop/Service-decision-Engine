@@ -4,7 +4,22 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/jpeg" href="/favicon-light.jpg?v=20261006-6" media="(prefers-color-scheme: light)" />
     <link rel="icon" type="image/jpeg" href="/favicon-dark.jpg?v=20261006-6" media="(prefers-color-scheme: dark)" />
-    <link rel="manifest" href="/api/manifest?name=Service%20Estimate&v=20261007-1" />
+    <script>
+      (function () {
+        try {
+          var savedName = localStorage.getItem('pwaPendingAppName') || 'Service Estimate'
+          var manifest = document.createElement('link')
+          manifest.rel = 'manifest'
+          manifest.href = '/api/manifest?name=' + encodeURIComponent(savedName) + '&v=20261007-2'
+          document.head.appendChild(manifest)
+        } catch (error) {
+          var manifest = document.createElement('link')
+          manifest.rel = 'manifest'
+          manifest.href = '/api/manifest?name=Service%20Estimate&v=20261007-2'
+          document.head.appendChild(manifest)
+        }
+      })()
+    </script>
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />

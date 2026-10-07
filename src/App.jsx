@@ -4581,6 +4581,42 @@ function ServiceDecisionApp({ user }) {
   const [uploadMeta, setUploadMeta] = useState(null);
   const [uploadParsedRecords, setUploadParsedRecords] = useState([]);
   const [estimateOpen, setEstimateOpen] = useState(false);
+
+  useEffect(() => {
+    const handleMobileNavigation = (event) => {
+      const nextMode = event?.detail?.mode;
+      if (!nextMode) return;
+      if (nextMode === "estimate") {
+        setMode("estimate");
+        if (analysis) void openEstimate();
+        else openStandaloneEstimate();
+        return;
+      }
+      setEstimateOpen(false);
+      if (nextMode === "home") {
+        setMode("home");
+        return;
+      }
+      if (nextMode === "single") {
+        setMode("single");
+        setError("");
+        setBulkResults([]);
+        return;
+      }
+      if (nextMode === "bulk") {
+        setMode("bulk");
+        setError("");
+        setAnalysis(null);
+        return;
+      }
+      if (nextMode === "warranty-tags") {
+        setMode("warranty-tags");
+        setError("");
+      }
+    };
+    window.addEventListener("service-decision-mobile-nav", handleMobileNavigation);
+    return () => window.removeEventListener("service-decision-mobile-nav", handleMobileNavigation);
+  }, [analysis]);
   const [estimateStage, setEstimateStage] = useState("select");
   const [estimateHistory, setEstimateHistory] = useState([]);
   const [estimateVehicle, setEstimateVehicle] = useState({ customerName:"", reg:"", vin:"", engine:"", model:"", sale:null });

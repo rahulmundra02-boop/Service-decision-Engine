@@ -17,6 +17,16 @@ function PwaInstallControl() {
   const [installing, setInstalling] = useState(false)
 
   useEffect(() => {
+    try {
+      const pendingName = localStorage.getItem('pwaPendingAppName') || ''
+      if (pendingName.trim()) {
+        setAppName(pendingName)
+        setShowNameDialog(true)
+      }
+    } catch {
+      // Ignore storage access failures.
+    }
+
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch((error) => {
         console.error('PWA service worker registration failed:', error)
@@ -73,12 +83,12 @@ function PwaInstallControl() {
       return
     }
 
-    // Android Chrome can keep the manifest metadata that was used when
-    // beforeinstallprompt fired. Therefore the selected name must be present
-    // BEFORE that event is generated. On mobile we save the name and reload
-    // once; index.html then points to the manifest containing this name.
     const isAndroid = /Android/i.test(navigator.userAgent)
 
+    // On Android the manifest must be loaded with the selected name before
+    // Chromium creates the install prompt. The first Continue saves the name
+    // and reloads; after reload the same dialog is shown again and the second
+    // Continue opens the native install sheet.
     if (isAndroid) {
       let pendingName = ''
       try {
@@ -87,9 +97,6 @@ function PwaInstallControl() {
         pendingName = ''
       }
 
-      // First click: save the selected name and reload so Android Chrome
-      // evaluates the manifest with that name. After reload, use the stored
-      // name and call prompt() directly.
       if (!pendingName.trim()) {
         try {
           localStorage.setItem('pwaPendingAppName', trimmedName)
@@ -139,20 +146,7 @@ function PwaInstallControl() {
       <button
         type="button"
         onClick={() => {
-          const isAndroid = /Android/i.test(navigator.userAgent)
-          let pendingName = ''
-          try {
-            pendingName = localStorage.getItem('pwaPendingAppName') || ''
-          } catch {
-            pendingName = ''
-          }
-
-          if (isAndroid && pendingName.trim()) {
-            setAppName(pendingName)
-            startInstall()
-          } else {
-            setShowNameDialog(true)
-          }
+          setShowNameDialog(true)
         }}
         style={{
           position:'fixed', right:16, bottom:16, zIndex:9998,

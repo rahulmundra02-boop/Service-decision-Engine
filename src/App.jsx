@@ -2977,8 +2977,120 @@ const HUB_GREASE_STANDARD_CODES = new Set([
   "S9999997",
   "FJ607400",
   "F1721500",
+  "F1771900",
   "H5001220",
+  "CLOTH",
 ]);
+
+// ============================================================
+// HUB GREASING - HARD CODED MODEL CONFIGURATION
+// ============================================================
+// For a model found in this table, Hub Greasing PARTS + QTY and
+// LABOUR + QTY come ONLY from this configuration.
+// DB / vehicle history must NOT decide applicability or quantity.
+// Model matching is intentionally "contains": a 4-digit model code
+// can appear anywhere in the vehicle model text (e.g. NM4220/66 H CC).
+// Non-numeric configured model codes (ALFVB, AL13, LS15, LT15, VK20)
+// are also matched by contains.
+// DB is used only as a rare fallback when no configured model matches.
+const HUB_GREASE_MODEL_CONFIG = {
+  "1214": { front: 2, rear: 2 },
+  "1618": { front: 2, rear: 2 },
+  "2518": { front: 2, rear: 4 },
+  "3116": { front: 4, rear: 4 },
+  "3118": { front: 4, rear: 4 },
+  "3518": { front: 2, rear: 2 },
+  "3718": { front: 4, rear: 4, stla: 2 },
+  "4019": { front: 2, rear: 2 },
+  "4123": { front: 4, rear: 4, dtla: 2 },
+  "4218": { front: 4, rear: 4, stla: 2 },
+  "4923": { front: 2, rear: 2 },
+  "ALFVB": { front: 2, rear: 2 },
+  "1215": { front: 2, rear: 2 },
+  "1415": { front: 2, rear: 2 },
+  "1615": { front: 2, rear: 2 },
+  "1915": { front: 2, rear: 2 },
+  "2820": { front: 2, rear: 4 },
+  "1916": { front: 2, rear: 2 },
+  "1920": { front: 2, rear: 2 },
+  "4020": { front: 2, rear: 2 },
+  "4620": { front: 2, rear: 2 },
+  "3120": { front: 2, rear: 4 },
+  "3520": { front: 4, rear: 4 },
+  "4120": { front: 2, rear: 4, dtla: 2 },
+  "4220": { front: 4, rear: 4, stla: 2 },
+  "4225": { front: 4, rear: 4, stla: 2 },
+  "4825": { front: 4, rear: 4, dtla: 2 },
+  "4828": { front: 4, rear: 4, dtla: 2 },
+  "4925": { front: 2, rear: 2 },
+  "AL13": { front: 2, rear: 2 },
+  "LS15": { front: 2, rear: 2 },
+  "LT15": { front: 2, rear: 2 },
+  "3525": { front: 2, rear: 4 },
+  "5525": { front: 2, rear: 2 },
+  "5532": { front: 2, rear: 2 },
+  "VK20": { front: 2, rear: 2 },
+};
+
+const HUB_GREASE_PART_QTY = {
+  front2: { S9999997: 1, FJ607400: 0, F1721500: 2, F1771900: 0, H5001220: 0, CLOTH: 1 },
+  front4: { S9999997: 2, FJ607400: 0, F1721500: 4, F1771900: 0, H5001220: 0, CLOTH: 2 },
+  rear2: { S9999997: 2, FJ607400: 2, F1721500: 0, F1771900: 0, H5001220: 2, CLOTH: 1 },
+  rear4: { S9999997: 4, FJ607400: 2, F1721500: 0, F1771900: 0, H5001220: 0, CLOTH: 2 },
+  stla2: { S9999997: 1, FJ607400: 0, F1721500: 2, F1771900: 2, H5001220: 0, CLOTH: 1 },
+  dtla2: { S9999997: 1, FJ607400: 0, F1721500: 2, F1771900: 2, H5001220: 0, CLOTH: 1 },
+};
+
+const HUB_GREASE_LABOUR = {
+  front2: { code: "WHL165A", description: "Hub Greasing - Front Axle - 2 Hubs" },
+  front4: { code: "WHL165C", description: "Hub Greasing - Front Axle - 4 Hubs" },
+  rear2: { code: "WHL170A", description: "Hub Greasing - Rear Axle - 2 Hubs" },
+  rear4: { code: "WHL170C", description: "Hub Greasing - Rear Axle - 4 Hubs" },
+  stla2: { code: "WHL175A", description: "Hub Greasing - STLA - 2 Hubs" },
+  dtla2: { code: "WHL180A", description: "Hub Greasing - DTLA - 2 Hubs" },
+};
+
+function getHardcodedHubGreaseConfig(vehicleModel = "") {
+  const modelText = String(vehicleModel || "").toUpperCase().trim();
+  if (!modelText) return null;
+
+  // IMPORTANT: contains matching, not exact model matching.
+  // This is deliberately NOT /^\\d{4}$/ and does not require the
+  // model to be only four characters.
+  const match = Object.entries(HUB_GREASE_MODEL_CONFIG).find(([code]) =>
+    modelText.includes(String(code).toUpperCase())
+  );
+  return match ? { code: match[0], ...match[1] } : null;
+}
+
+function mergeHubGreasePartQuantities(config) {
+  const result = {};
+  const addGroup = group => {
+    Object.entries(group || {}).forEach(([code, qty]) => {
+      result[code] = Number(result[code] || 0) + Number(qty || 0);
+    });
+  };
+
+  if (config?.front === 2) addGroup(HUB_GREASE_PART_QTY.front2);
+  if (config?.front === 4) addGroup(HUB_GREASE_PART_QTY.front4);
+  if (config?.rear === 2) addGroup(HUB_GREASE_PART_QTY.rear2);
+  if (config?.rear === 4) addGroup(HUB_GREASE_PART_QTY.rear4);
+  if (config?.stla === 2) addGroup(HUB_GREASE_PART_QTY.stla2);
+  if (config?.dtla === 2) addGroup(HUB_GREASE_PART_QTY.dtla2);
+
+  return result;
+}
+
+function getHardcodedHubGreaseLabour(config) {
+  const result = [];
+  if (config?.front === 2) result.push(HUB_GREASE_LABOUR.front2);
+  if (config?.front === 4) result.push(HUB_GREASE_LABOUR.front4);
+  if (config?.rear === 2) result.push(HUB_GREASE_LABOUR.rear2);
+  if (config?.rear === 4) result.push(HUB_GREASE_LABOUR.rear4);
+  if (config?.stla === 2) result.push(HUB_GREASE_LABOUR.stla2);
+  if (config?.dtla === 2) result.push(HUB_GREASE_LABOUR.dtla2);
+  return result;
+}
 
 const ESTIMATE_LABOUR_REFERENCE = {
   airFilter: [{ code:"AIS110", description:"R and R Air Filter And Replace Element" }],
@@ -3329,10 +3441,11 @@ function estimateRowsForCompleteService(rows = [], serviceKey = "") {
   );
 }
 
-function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows = [], globalPartRates = []) {
+function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows = [], globalPartRates = [], vehicleModel = "") {
   const vehicle = Array.isArray(vehicleRows) ? vehicleRows : [];
   const modelHistory = Array.isArray(modelRows) ? modelRows : [];
   const allModelRates = Array.isArray(globalPartRates) ? globalPartRates : [];
+  const hardcodedHubGreaseConfig = getHardcodedHubGreaseConfig(vehicleModel);
 
   function latestGlobalPartRate(partCode) {
     const code = normalizePartCode(partCode);
@@ -3378,6 +3491,49 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
   }
 
   function buildPartItemsForService(serviceKey) {
+    // Hub Greasing is completely hardcoded for configured models.
+    // DB/history is intentionally bypassed for BOTH part numbers and quantities.
+    // Only models outside the hardcoded table reach the existing DB fallback below.
+    if (serviceKey === "hubGrease" && hardcodedHubGreaseConfig) {
+      const quantities = mergeHubGreasePartQuantities(hardcodedHubGreaseConfig);
+      const result = [];
+
+      for (const [partNo, qty] of Object.entries(quantities)) {
+        const description =
+          PART_STANDARDIZATION[partNo] ||
+          (partNo === "CLOTH" ? "CLOTH" : partNo);
+
+        const syntheticRow = {
+          part_code: partNo,
+          part_description: description,
+          standardized_part: description,
+          quantity: qty,
+          item_category: "P002",
+        };
+
+        const item = estimateBuildHistoricalItem(
+          "part",
+          serviceKey,
+          [syntheticRow],
+          partNo,
+          qty,
+          0
+        );
+
+        if (item) {
+          item.partNo = partNo;
+          item.description = description;
+          item.qty = qty;
+          item.baseRate = 0;
+          item.rate = 0;
+          item.source = "Hardcoded Hub Greasing Model Rule";
+          result.push(item);
+        }
+      }
+
+      return result;
+    }
+
     const baseReferences = ESTIMATE_REFERENCE_PARTS[serviceKey] || [];
 
     // F1771900 is a model/variant-dependent hub-grease part.
@@ -3560,7 +3716,42 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
     );
     const labourRows = vehicleLabour.length ? vehicleLabour : modelLabour;
 
-    if (serviceKey === "hubGrease") {
+    if (serviceKey === "hubGrease" && hardcodedHubGreaseConfig) {
+      // Configured Hub Greasing models use ONLY the hardcoded labour operations.
+      // Do not inspect VIN/model-history labour rows.
+      const hardcodedLabour = getHardcodedHubGreaseLabour(hardcodedHubGreaseConfig);
+
+      for (const reference of hardcodedLabour) {
+        const fixedRate = ESTIMATE_LABOUR_FIXED_RATES[normalizePartCode(reference.code)];
+        const syntheticRow = {
+          part_code: reference.code,
+          part_description: reference.description,
+          standardized_part: reference.description,
+          quantity: 1,
+          item_category: "P001",
+        };
+
+        const labourItem = estimateBuildHistoricalItem(
+          "labour",
+          serviceKey,
+          [syntheticRow],
+          reference.code,
+          1,
+          fixedRate !== undefined ? fixedRate : 0
+        );
+
+        if (labourItem) {
+          labourItem.description = reference.description;
+          labourItem.partNo = reference.code;
+          labourItem.qty = 1;
+          labourItem.rate = Number(fixedRate || 0);
+          labourItem.baseRate = Number(fixedRate || 0);
+          labourItem.source = "Hardcoded Hub Greasing Model Rule";
+          labourItem.latestRow = syntheticRow;
+          items.push(labourItem);
+        }
+      }
+    } else if (serviceKey === "hubGrease") {
       const referenceRows = ESTIMATE_LABOUR_REFERENCE.hubGrease || [];
 
       // Hub configuration is position-specific. For a 4-hub vehicle the
@@ -6124,7 +6315,8 @@ function ServiceDecisionApp({ user }) {
         history.vehicleRows || [],
         estimateSelectedServices,
         history.modelRows || [],
-        history.globalPartRates || []
+        history.globalPartRates || [],
+        estimateVehicle?.model || ""
       );
       const pricedItems = await hydrateEstimatePriceMaster(items);
 
@@ -6486,9 +6678,17 @@ function ServiceDecisionApp({ user }) {
         font:"helvetica",
         fontSize:8,
         cellPadding:2.5,
+        fillColor:false,
         lineColor:[150,150,150],
         lineWidth:0.2,
         overflow:"linebreak"
+      },
+      bodyStyles:{ fillColor:false },
+      alternateRowStyles:{ fillColor:false },
+      headStyles:{
+        fillColor:[31,190,160],
+        textColor:[255,255,255],
+        fontStyle:"bold"
       },
       head:[["Part No.","Description","Qty","Rate (Incl. GST)","Amount"]],
       body:estimateParts.length
@@ -6525,9 +6725,17 @@ function ServiceDecisionApp({ user }) {
         font:"helvetica",
         fontSize:8,
         cellPadding:2.5,
+        fillColor:false,
         lineColor:[150,150,150],
         lineWidth:0.2,
         overflow:"linebreak"
+      },
+      bodyStyles:{ fillColor:false },
+      alternateRowStyles:{ fillColor:false },
+      headStyles:{
+        fillColor:[31,190,160],
+        textColor:[255,255,255],
+        fontStyle:"bold"
       },
       head:[["Description","Qty","Rate","Amount"]],
       body:estimateLabour.length
@@ -6567,9 +6775,12 @@ function ServiceDecisionApp({ user }) {
         font:"helvetica",
         fontSize:8.5,
         cellPadding:3,
+        fillColor:false,
         lineColor:[150,150,150],
         lineWidth:0.2
       },
+      bodyStyles:{ fillColor:false },
+      alternateRowStyles:{ fillColor:false },
       body:[
         ["Parts Total (GST Incl.)",money(estimatePartsTotal)],
         ["Labour Subtotal",money(estimateLabourBase)],

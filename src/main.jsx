@@ -5,31 +5,11 @@ import App from './App.jsx'
 
 function PwaInstallControl() {
   const [installPrompt, setInstallPrompt] = useState(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [appName, setAppName] = useState(() => localStorage.getItem('serviceEstimateInstallName') || 'Service Estimate')
   const [installed, setInstalled] = useState(false)
-  const [showNameDialog, setShowNameDialog] = useState(false)
-  const [appName, setAppName] = useState(() => {
-    try {
-      return new URLSearchParams(window.location.search).get('pwaName') || 'Service Estimate'
-    } catch {
-      return 'Service Estimate'
-    }
-  })
-  const [installing, setInstalling] = useState(false)
 
   useEffect(() => {
-    try {
-      const params = new URLSearchParams(window.location.search)
-      const installName = params.get('pwaName') || ''
-      const installFlow = params.get('pwaInstall') === '1'
-
-      if (installFlow && installName.trim()) {
-        setAppName(installName)
-        setShowNameDialog(true)
-      }
-    } catch {
-      // Ignore URL parsing failures.
-    }
-
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch((error) => {
         console.error('PWA service worker registration failed:', error)
@@ -44,16 +24,7 @@ function PwaInstallControl() {
     const handleInstalled = () => {
       setInstalled(true)
       setInstallPrompt(null)
-      setShowNameDialog(false)
-      setInstalling(false)
-      try {
-        const cleanUrl = new URL(window.location.href)
-        cleanUrl.searchParams.delete('pwaName')
-        cleanUrl.searchParams.delete('pwaInstall')
-        window.history.replaceState({}, '', cleanUrl)
-      } catch {
-        // Ignore URL cleanup failures.
-      }
+      setDialogOpen(false)
     }
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstall)
@@ -67,71 +38,22 @@ function PwaInstallControl() {
 
   if (!installPrompt || installed) return null
 
-  const updateManifestName = async (name) => {
-    const manifestLink = document.querySelector('link[rel="manifest"]')
-    if (!manifestLink) return
-
-    const manifestUrl = `/api/manifest?name=${encodeURIComponent(name)}&v=${Date.now()}`
-
-    await new Promise((resolve) => {
-      const nextLink = manifestLink.cloneNode(true)
-      nextLink.href = manifestUrl
-      nextLink.onload = resolve
-      nextLink.onerror = resolve
-      manifestLink.replaceWith(nextLink)
-    })
+  const openDialog = () => {
+    setAppName(localStorage.getItem('serviceEstimateInstallName') || 'Service Estimate')
+    setDialogOpen(true)
   }
 
-  const startInstall = () => {
-    const trimmedName = appName.trim()
-
-    if (!trimmedName) {
-      return
-    }
-
-    const isAndroid = /Android/i.test(navigator.userAgent)
-    const params = new URLSearchParams(window.location.search)
-    const alreadyPrepared = params.get('pwaInstall') === '1' && Boolean(params.get('pwaName'))
-
-    if (isAndroid && !alreadyPrepared) {
-      const nextUrl = new URL(window.location.href)
-      nextUrl.searchParams.set('pwaName', trimmedName)
-      nextUrl.searchParams.set('pwaInstall', '1')
-      setInstalling(true)
-      window.location.assign(nextUrl.toString())
-      return
-    }
-
-    setInstalling(true)
+  const install = async () => {
+    const name = String(appName || '').trim().replace(/[<>\\/\x00-\x1F]/g, '').slice(0, 40) || 'Service Estimate'
+    localStorage.setItem('serviceEstimateInstallName', name)
+    document.title = name
+    setDialogOpen(false)
 
     try {
-      document.title = trimmedName
-      const promptPromise = installPrompt.prompt()
-
-      Promise.resolve(promptPromise)
-        .then((result) => {
-          if (result?.outcome === 'accepted') {
-            try {
-              const cleanUrl = new URL(window.location.href)
-              cleanUrl.searchParams.delete('pwaName')
-              cleanUrl.searchParams.delete('pwaInstall')
-              window.history.replaceState({}, '', cleanUrl)
-            } catch {
-              // Ignore URL cleanup failures.
-            }
-          } else {
-            setInstalling(false)
-            setInstallPrompt(null)
-            setShowNameDialog(false)
-          }
-        })
-        .catch((error) => {
-          console.error('PWA install failed:', error)
-          setInstalling(false)
-        })
+      const result = await installPrompt.prompt()
+      if (result?.outcome !== 'accepted') setInstallPrompt(null)
     } catch (error) {
       console.error('PWA install failed:', error)
-      setInstalling(false)
     }
   }
 
@@ -139,9 +61,7 @@ function PwaInstallControl() {
     <>
       <button
         type="button"
-        onClick={() => {
-          setShowNameDialog(true)
-        }}
+        onClick={openDialog}
         style={{
           position:'fixed', right:16, bottom:16, zIndex:9998,
           border:'0', borderRadius:12, padding:'11px 16px',
@@ -152,96 +72,47 @@ function PwaInstallControl() {
         Install App
       </button>
 
-      {showNameDialog && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="pwa-install-title"
-          style={{
-            position:'fixed',
-            inset:0,
-            zIndex:9999,
-            background:'rgba(0,0,0,.45)',
-            display:'flex',
-            alignItems:'center',
-            justifyContent:'center',
-            padding:20
-          }}
-        >
-          <div
-            style={{
-              width:'100%',
-              maxWidth:390,
-              background:'#fff',
-              borderRadius:16,
-              padding:22,
-              boxShadow:'0 12px 40px rgba(0,0,0,.28)',
-              fontFamily:'Arial, sans-serif'
-            }}
-          >
-            <div id="pwa-install-title" style={{fontSize:20, fontWeight:800, marginBottom:8}}>
-              App Name
+      {dialogOpen && (
+        <div style={{
+          position:'fixed', inset:0, zIndex:9999,
+          background:'rgba(0,0,0,.55)', display:'flex',
+          alignItems:'center', justifyContent:'center', padding:20
+        }}>
+          <div style={{
+            width:'min(420px,100%)', background:'#fff', color:'#1f2933',
+            borderRadius:16, padding:22, boxShadow:'0 18px 50px rgba(0,0,0,.3)'
+          }}>
+            <div style={{fontSize:20,fontWeight:900,marginBottom:7}}>Install App</div>
+            <div style={{fontSize:13,color:'#68737d',marginBottom:16}}>
+              Choose the name you want to use for this browser session.
             </div>
-
-            <div style={{fontSize:14, color:'#555', marginBottom:14}}>
-              Enter the name you want to use for the installed app.
-            </div>
-
             <input
               autoFocus
-              type="text"
               value={appName}
-              onChange={(event) => setAppName(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && !installing) startInstall()
-              }}
-              maxLength={60}
-              disabled={installing}
+              maxLength={40}
+              onChange={(e)=>setAppName(e.target.value)}
+              onKeyDown={(e)=>{ if(e.key==='Enter') install() }}
+              placeholder="Service Estimate"
               style={{
-                width:'100%',
-                boxSizing:'border-box',
-                border:'1px solid #bbb',
-                borderRadius:10,
-                padding:'12px 13px',
-                fontSize:16,
-                outline:'none',
-                marginBottom:16
+                width:'100%', boxSizing:'border-box', padding:'12px 13px',
+                border:'1px solid #cbd5df', borderRadius:10, fontSize:15,
+                outline:'none'
               }}
             />
-
-            <div style={{display:'flex', justifyContent:'flex-end', gap:10}}>
+            <div style={{display:'flex',justifyContent:'flex-end',gap:9,marginTop:18}}>
               <button
                 type="button"
-                onClick={() => setShowNameDialog(false)}
-                disabled={installing}
-                style={{
-                  border:'1px solid #bbb',
-                  borderRadius:10,
-                  padding:'10px 15px',
-                  background:'#fff',
-                  color:'#333',
-                  fontWeight:700,
-                  cursor:installing ? 'default' : 'pointer'
-                }}
+                onClick={()=>setDialogOpen(false)}
+                style={{border:'1px solid #cbd5df',background:'#fff',borderRadius:10,padding:'10px 15px',fontWeight:700}}
               >
                 Cancel
               </button>
-
               <button
                 type="button"
-                onClick={startInstall}
-                disabled={installing || !appName.trim()}
-                style={{
-                  border:'0',
-                  borderRadius:10,
-                  padding:'10px 16px',
-                  background:installing || !appName.trim() ? '#9bbce0' : '#0876d1',
-                  color:'#fff',
-                  fontWeight:800,
-                  cursor:installing || !appName.trim() ? 'default' : 'pointer'
-                }}
+                onClick={install}
+                style={{border:0,background:'#0876d1',color:'#fff',borderRadius:10,padding:'10px 17px',fontWeight:800}}
               >
-                {installing ? 'Installing…' : 'Continue Install'}
+                Continue Install
               </button>
             </div>
           </div>

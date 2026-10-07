@@ -1836,23 +1836,7 @@ const TIP_RULES = {
   clutchOil:[2000,12], steeringOil:[4000,24], airFilter:[1000,12], fuelFilter:[1000,12],
   defFilter:[1500,18], apdaFilter:[2000,24], defInline:[1500,12]
 };
-const SERVICE_SCHEDULE_ROWS = [
-  ['Engine Oil', 'Special GB2822G/50 H CO: 20,000 KM; otherwise existing model rule', 'Special: 6 months (+/- 1 month); otherwise existing rule', '1,000 or 1,500 Hrs by tipper model; 60 Hrs early buffer', '18 months'],
-  ['Spark Plug', 'CNG models: 20,000 KM', 'No time limit', 'Not applicable', 'Not applicable'],
-  ['CNG Filter', 'CNG models: 40,000 KM', 'CNG models: 6 months', 'Not applicable', 'Not applicable'],
-  ['Body Building Check Up — GB2822G/50 H CO', '1-5,000 KM', '3 months (+/- 1 month)', 'Not applicable', 'Not applicable'],
-  ['Coolant', '320,000 KM', '36 months', '5,000 Hrs', '36 months'],
-  ['Gear Oil', '160,000 KM', '18 months', '2,000 Hrs', '18 months'],
-  ['Hub Grease', '80,000 KM', '12 months', '1,500 Hrs', '12 months'],
-  ['Axle Oil', '200,000 KM', '24 months', '2,000 Hrs', '24 months'],
-  ['Fuel Filter', '80,000 KM', '12 months', '1,000 Hrs', '12 months'],
-  ['Steering Oil', '160,000 KM', '24 months', '4,000 Hrs', '24 months'],
-  ['Air Filter', '80,000 KM', '12 months', '1,000 Hrs', '12 months'],
-  ['Clutch Oil', '80,000 KM', '18 months', '2,000 Hrs', '12 months'],
-  ['DEF Filter', '120,000 KM (BS-VI only)', '18 months', '1,500 Hrs (BS-VI only)', '18 months'],
-  ['DEF Inline Filter', '80,000 KM (applicable vehicles)', '12 months', '1,500 Hrs (applicable vehicles)', '12 months'],
-  ['APDA Filter', '200,000 KM (BS-VI only)', '24 months', '2,000 Hrs (BS-VI only)', '24 months']
-];
+
 function monthsAfter(date, months){ const d=new Date(date); d.setMonth(d.getMonth()+months); return d; }
 function daysBetween(a,b){ return Math.floor((b-a)/86400000); }
 function is4825Model(model){
@@ -4489,7 +4473,6 @@ function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResu
   const cards = [
     { key:"single", icon:"🚚", title:"Single Vehicle", text:"Check one vehicle service history, service requirements and completed work." },
     { key:"bulk", icon:"📊", title:"Bulk Vehicle", text:"Analyse multiple vehicles and prepare customer-wise service due summaries." },
-    { key:"schedule", icon:"📅", title:"Service Schedule", text:"Review service intervals and applicable maintenance schedules." },
     { key:"estimate", icon:"🧾", title:"Prepare Estimate", text:"Open the existing Service Estimate module and prepare a vehicle estimate." },
     { key:"warranty-tags", icon:"🏷️", title:"Warranty Tag Print", text:"Generate and print warranty tags from Billed JC Claim Statement + Jobcard Summary." },
   ];
@@ -7924,13 +7907,12 @@ function ServiceDecisionApp({ user }) {
               <div className={"excel-tab " + (mode === "home" ? "active" : "")} onClick={() => { setEstimateOpen(false); setMode("home"); }}>Home</div>
               <div className={"excel-tab " + (mode === "single" ? "active" : "")} onClick={() => { setEstimateOpen(false); setMode("single"); setError(""); setBulkResults([]); setBulkMeta(null); }}>Single Vehicle</div>
               <div className={`excel-tab ${mode === "bulk" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("bulk"); setError(""); setAnalysis(null); }}>Bulk Vehicle</div>
-              <div className={`excel-tab ${mode === "schedule" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("schedule"); setError(""); logUsage("Service Schedule Viewed", { mode:"schedule" }); }}>Service Schedule Chart</div>
               <div className={`excel-tab ${estimateOpen ? "active" : ""}`} onClick={() => { setMode("estimate"); if (analysis) void openEstimate(); else openStandaloneEstimate(); }}>Prepare Estimate</div>
               <div className={`excel-tab ${mode === "warranty-tags" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("warranty-tags"); setError(""); }}>Warranty Tag Print</div>
             </div>
             {mode !== "warranty-tags" && (
             <div className="excel-toolbar">
-              {mode !== "schedule" && mode !== "home" && <>
+              {mode !== "home" && <>
                 <button className="excel-button green" onClick={() => document.getElementById("excel-file-input")?.click()} disabled={uploadBusy}>Upload Excel</button>
                 <button className="excel-button" onClick={clear}>Clear</button>
                 <button className="excel-button green" onClick={mode === "bulk" ? analyzeBulk : analyze} disabled={uploadBusy || (!excelData.trim() && !uploadParsedRecords.length)}>{mode === "bulk" ? "Analyze All Vehicles" : "Analyze Vehicle"}</button>
@@ -8320,29 +8302,8 @@ function ServiceDecisionApp({ user }) {
                   )}
                 </>}
               </>
-            ) : (
-              <>
-                <div className="sheet-heading">SERVICE SCHEDULE CHART</div>
-                <div className="sheet-subheading">Reference intervals used by Service Decision. The dashboard applies the relevant model, BS norm, service history, reading and date conditions.</div>
-                <div className="section-title">Scheduled Service Intervals</div>
-                <div className="history-wrap" style={{maxHeight:"none"}}>
-                  <table className="history-table">
-                    <thead><tr><th>Service</th><th>Normal Vehicle — Reading</th><th>Normal Vehicle — Time</th><th>Tipper / RMC — Reading</th><th>Tipper / RMC — Time</th></tr></thead>
-                    <tbody>{SERVICE_SCHEDULE_ROWS.map(([service, normalReading, normalTime, tipperReading, tipperTime]) => <tr key={service}><td className="service-name">{service}</td><td>{normalReading}</td><td>{normalTime}</td><td>{tipperReading}</td><td>{tipperTime}</td></tr>)}</tbody>
-                  </table>
-                </div>
-                <div className="section-title">Free and Additional Service Windows</div>
-                <table className="decision-table"><thead><tr><th>Service</th><th>Eligibility Window</th><th>Notes</th></tr></thead><tbody>
-                  <tr><td className="service-name">1st Free Service — Normal</td><td>37,000–43,000 KM or 5–7 months</td><td>Not repeated once recorded in history.</td></tr>
-                  <tr><td className="service-name">2nd Free Service — Normal</td><td>77,000–83,000 KM or 11–13 months</td><td>Not repeated once recorded in history.</td></tr>
-                  <tr><td className="service-name">3rd Free Service — Normal</td><td>117,000–123,000 KM or 17–19 months</td><td>Not repeated once recorded in history.</td></tr>
-                  <tr><td className="service-name">Tipper Free Service</td><td>1st: 440–560 HRS / 2–4 months; 2nd: 940–1060 HRS / 5–7 months; 3rd: 1940–2060 HRS / 8–10 months</td><td>Not repeated once recorded in history.</td></tr>
-                  <tr><td className="service-name">RMC Free Service</td><td>1st: 440–560 HRS / 2–4 months; 2nd: 940–1060 HRS / 5–7 months; 3rd: 1440–1560 HRS / 8–10 months</td><td>Not repeated once recorded in history.</td></tr>
-                  <tr><td className="service-name">Wheel Alignment</td><td>Normal: 7,000–45,000 KM; Tipper: 0–2,060 HRS in four service windows</td><td>Existing 4-digit model list; Tipper included, RMC excluded.</td></tr>
-                  <tr><td className="service-name">Body Building Check Up</td><td>1–5,000 KM and up to 4 months</td><td>Specified models only.</td></tr>
-                </tbody></table>
-              </>
-            )}
+            ) : null
+
           </main>
 
         {estimateOpen && (

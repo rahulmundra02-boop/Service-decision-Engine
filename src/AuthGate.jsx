@@ -1355,6 +1355,16 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading, onChang
     <div style={{fontWeight:800}}>Bulk Vehicle Due / Service Summary Table</div>
     <div className="auth-hint">Checkbox = show/hide · Text box = custom heading · width by mouse drag.</div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:"6px 12px",margin:"8px 0",minWidth:0}}>{bulkCols.map(([k,l])=>editor("bulkColumns",k,l))}<div style={{display:"grid",gridTemplateColumns:"28px 1fr",gap:7,alignItems:"center"}}><span></span><input value={(form.bulkColumnLabels||{}).serial||"S.No. / Due"} onChange={e=>setLabel("bulkColumnLabels","serial",e.target.value)} placeholder="S.No. / Due"/></div></div>
+    <div className="profile-dashboard-theme">
+      <div className="profile-settings-section-title">Dashboard Theme</div>
+      <div className="profile-theme-options">
+        {[["blue","Classic Blue"],["green","Excel Green"],["navy","Navy"],["teal","Teal"],["purple","Purple"]].map(([key,label]) => (
+          <button key={key} type="button" className={`profile-theme-option theme-${key} ${(form.theme || "blue")===key ? "active" : ""}`} onClick={()=>setForm({...form,theme:key})}>
+            <span className="profile-theme-swatch" aria-hidden="true"></span>{label}
+          </button>
+        ))}
+      </div>
+    </div>
     <div className="mobile-profile-account-actions">
       {isAdmin && <button type="button" className="mobile-profile-action admin" onClick={onAdmin}>Admin Dashboard</button>}
       <button type="button" className="mobile-profile-action" onClick={onChangePassword}>Change Password</button>

@@ -6678,9 +6678,17 @@ function ServiceDecisionApp({ user }) {
         font:"helvetica",
         fontSize:8,
         cellPadding:2.5,
+        fillColor:false,
         lineColor:[150,150,150],
         lineWidth:0.2,
         overflow:"linebreak"
+      },
+      bodyStyles:{ fillColor:false },
+      alternateRowStyles:{ fillColor:false },
+      headStyles:{
+        fillColor:[31,190,160],
+        textColor:[255,255,255],
+        fontStyle:"bold"
       },
       head:[["Part No.","Description","Qty","Rate (Incl. GST)","Amount"]],
       body:estimateParts.length
@@ -6717,9 +6725,17 @@ function ServiceDecisionApp({ user }) {
         font:"helvetica",
         fontSize:8,
         cellPadding:2.5,
+        fillColor:false,
         lineColor:[150,150,150],
         lineWidth:0.2,
         overflow:"linebreak"
+      },
+      bodyStyles:{ fillColor:false },
+      alternateRowStyles:{ fillColor:false },
+      headStyles:{
+        fillColor:[31,190,160],
+        textColor:[255,255,255],
+        fontStyle:"bold"
       },
       head:[["Description","Qty","Rate","Amount"]],
       body:estimateLabour.length
@@ -6759,9 +6775,12 @@ function ServiceDecisionApp({ user }) {
         font:"helvetica",
         fontSize:8.5,
         cellPadding:3,
+        fillColor:false,
         lineColor:[150,150,150],
         lineWidth:0.2
       },
+      bodyStyles:{ fillColor:false },
+      alternateRowStyles:{ fillColor:false },
       body:[
         ["Parts Total (GST Incl.)",money(estimatePartsTotal)],
         ["Labour Subtotal",money(estimateLabourBase)],

@@ -275,3 +275,47 @@ tr:last-child td { border-bottom:0; }
   .warranty-tag-page{width:100%}
   .warranty-tag-print-root{overflow-x:hidden}
 }
+
+
+.mobile-work-actions{display:none}
+@media (max-width:600px) and (orientation:portrait){
+  .excel-ribbon{display:none!important}
+  .excel-sheet{padding-bottom:18px!important}
+  .mobile-work-actions{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    flex-wrap:wrap;
+    padding:8px 10px;
+    background:#eef3f8;
+    border-bottom:1px solid #d5dee6;
+  }
+  .mobile-work-action{
+    min-height:34px;
+    padding:7px 10px;
+    border:1px solid #b9c8d5;
+    border-radius:7px;
+    background:#fff;
+    color:#17324d;
+    font-size:11px;
+    font-weight:800;
+    cursor:pointer;
+  }
+  .mobile-work-action.primary{background:#217346;color:#fff;border-color:#217346}
+  .mobile-work-action:disabled{opacity:.5;cursor:not-allowed}
+  .mobile-work-input{
+    min-width:0;
+    width:78px;
+    min-height:34px;
+    box-sizing:border-box;
+    padding:6px 7px;
+    border:1px solid #b9c8d5;
+    border-radius:7px;
+    background:#fff;
+    color:#17324d;
+    font-size:11px;
+    font-weight:700;
+  }
+  .excel-titlebar{height:46px!important;padding:0 12px!important}
+  .excel-title{font-size:13px!important}
+}

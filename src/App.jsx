@@ -8303,7 +8303,7 @@ function ServiceDecisionApp({ user }) {
                 </>}
               </>
             ) : null
-
+            )}
           </main>
 
         {estimateOpen && (

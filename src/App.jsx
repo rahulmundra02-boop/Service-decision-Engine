@@ -3499,6 +3499,9 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
       const result = [];
 
       for (const [partNo, qty] of Object.entries(quantities)) {
+        // Never display a configured part with zero quantity.
+        if (Number(qty) <= 0) continue;
+
         const description =
           PART_STANDARDIZATION[partNo] ||
           (partNo === "CLOTH" ? "CLOTH" : partNo);

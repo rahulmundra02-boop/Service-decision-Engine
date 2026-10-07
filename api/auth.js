@@ -223,6 +223,27 @@ async function bootstrapAdmin(client) {
   }
 }
 
+const AUTO_INACTIVE_DAYS = 10;
+
+async function autoDeactivateInactiveUsers(client) {
+  const deactivated = await client.query(
+    `UPDATE app_users
+        SET status='inactive'
+      WHERE role <> 'admin'
+        AND status='active'
+        AND COALESCE(last_activity_at,last_login_at,created_at) < NOW() - ($1 * INTERVAL '1 day')
+      RETURNING id`,
+    [AUTO_INACTIVE_DAYS]
+  );
+
+  const ids = deactivated.rows.map((row) => Number(row.id)).filter(Number.isInteger);
+  if (ids.length) {
+    await client.query("DELETE FROM auth_sessions WHERE user_id = ANY($1::bigint[])", [ids]);
+  }
+
+  return ids;
+}
+
 async function getUserByToken(client, token) {
   if (!token) return null;
   const tokenHash = hashValue(token);
@@ -416,7 +437,7 @@ async function createOrUpdateUser(client, body) {
       await client.query(
         `UPDATE app_users
             SET person_name=$1,dealer_name=$2,email=$3,mobile=$4,password_hash=$5,
-                status='active',email_verified=TRUE,mobile_verified=TRUE
+                email_verified=TRUE,mobile_verified=TRUE
           WHERE id=$6`,
         [personName, dealerName, email, mobile || null, passwordHash, existing.id]
       );
@@ -459,6 +480,7 @@ export default async function handler(req, res) {
   try {
     await client.query("BEGIN");
     await initAuthSchemaOnce(client);
+    await autoDeactivateInactiveUsers(client);
 
     if (action === "login") {
       const identifier = clean(body.identifier);
@@ -1258,7 +1280,7 @@ export default async function handler(req, res) {
 
       const passwordHash = await hashPassword(newPassword);
       const updated = await client.query(
-        "UPDATE app_users SET password_hash=$1,status='active',email_verified=TRUE,mobile_verified=TRUE WHERE id=$2 RETURNING *",
+        "UPDATE app_users SET password_hash=$1,email_verified=TRUE,mobile_verified=TRUE WHERE id=$2 RETURNING *",
         [passwordHash,userId]
       );
       if (!updated.rows[0]) {

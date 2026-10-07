@@ -8302,8 +8302,7 @@ function ServiceDecisionApp({ user }) {
                   )}
                 </>}
               </>
-            ) : null
-            )}
+            ) : null}
           </main>
 
         {estimateOpen && (

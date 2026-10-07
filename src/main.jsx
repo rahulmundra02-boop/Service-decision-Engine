@@ -10,6 +10,8 @@ function PwaInstallControl() {
   const [installed, setInstalled] = useState(false)
 
   useEffect(() => {
+    let mounted = true
+
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch((error) => {
         console.error('PWA service worker registration failed:', error)
@@ -18,10 +20,11 @@ function PwaInstallControl() {
 
     const handleBeforeInstall = (event) => {
       event.preventDefault()
-      setInstallPrompt(event)
+      if (mounted) setInstallPrompt(event)
     }
 
     const handleInstalled = () => {
+      if (!mounted) return
       setInstalled(true)
       setInstallPrompt(null)
       setDialogOpen(false)
@@ -31,12 +34,21 @@ function PwaInstallControl() {
     window.addEventListener('appinstalled', handleInstalled)
 
     return () => {
+      mounted = false
       window.removeEventListener('beforeinstallprompt', handleBeforeInstall)
       window.removeEventListener('appinstalled', handleInstalled)
     }
   }, [])
 
-  if (!installPrompt || installed) return null
+  useEffect(() => {
+    if ('getInstalledRelatedApps' in navigator) {
+      navigator.getInstalledRelatedApps().then((apps) => {
+        if (apps?.length) setInstalled(true)
+      }).catch(() => {})
+    }
+  }, [])
+
+  if (installed) return null
 
   const openDialog = () => {
     setAppName(localStorage.getItem('serviceEstimateInstallName') || 'Service Estimate')
@@ -47,6 +59,12 @@ function PwaInstallControl() {
     const name = String(appName || '').trim().replace(/[<>\\/\x00-\x1F]/g, '').slice(0, 40) || 'Service Estimate'
     localStorage.setItem('serviceEstimateInstallName', name)
     document.title = name
+
+    if (!installPrompt) {
+      setDialogOpen(false)
+      return
+    }
+
     setDialogOpen(false)
 
     try {
@@ -79,19 +97,23 @@ function PwaInstallControl() {
           alignItems:'center', justifyContent:'center', padding:20
         }}>
           <div style={{
-            width:'min(420px,100%)', background:'#fff', color:'#1f2933',
+            width:'min(440px,100%)', background:'#fff', color:'#1f2933',
             borderRadius:16, padding:22, boxShadow:'0 18px 50px rgba(0,0,0,.3)'
           }}>
-            <div style={{fontSize:20,fontWeight:900,marginBottom:7}}>Install App</div>
+            <div style={{fontSize:20,fontWeight:900,marginBottom:7}}>Install Service Estimate</div>
+
             <div style={{fontSize:13,color:'#68737d',marginBottom:16}}>
-              Choose the name you want to use for this browser session.
+              {installPrompt
+                ? 'Choose the name you want to use for this browser session.'
+                : 'The browser has not exposed the one-click install prompt yet. The app is still ready to be installed from Microsoft Edge.'}
             </div>
+
             <input
               autoFocus
               value={appName}
               maxLength={40}
               onChange={(e)=>setAppName(e.target.value)}
-              onKeyDown={(e)=>{ if(e.key==='Enter') install() }}
+              onKeyDown={(e)=>{ if(e.key==='Enter' && installPrompt) install() }}
               placeholder="Service Estimate"
               style={{
                 width:'100%', boxSizing:'border-box', padding:'12px 13px',
@@ -99,21 +121,37 @@ function PwaInstallControl() {
                 outline:'none'
               }}
             />
+
+            {!installPrompt && (
+              <div style={{
+                marginTop:14, padding:13, borderRadius:10,
+                background:'#f3f6fa', fontSize:13, lineHeight:1.55
+              }}>
+                <b>Edge me install karne ke liye:</b><br/>
+                Top-right <b>⋯</b> → <b>Apps</b> → <b>Install Service Estimate</b>.
+                <br/><br/>
+                Agar <b>Apps</b> me install option na dikhe, page ko ek baar
+                <b> Ctrl + F5</b> se refresh karke 5–10 seconds wait karein.
+              </div>
+            )}
+
             <div style={{display:'flex',justifyContent:'flex-end',gap:9,marginTop:18}}>
               <button
                 type="button"
                 onClick={()=>setDialogOpen(false)}
                 style={{border:'1px solid #cbd5df',background:'#fff',borderRadius:10,padding:'10px 15px',fontWeight:700}}
               >
-                Cancel
+                Close
               </button>
-              <button
-                type="button"
-                onClick={install}
-                style={{border:0,background:'#0876d1',color:'#fff',borderRadius:10,padding:'10px 17px',fontWeight:800}}
-              >
-                Continue Install
-              </button>
+              {installPrompt && (
+                <button
+                  type="button"
+                  onClick={install}
+                  style={{border:0,background:'#0876d1',color:'#fff',borderRadius:10,padding:'10px 17px',fontWeight:800}}
+                >
+                  Continue Install
+                </button>
+              )}
             </div>
           </div>
         </div>

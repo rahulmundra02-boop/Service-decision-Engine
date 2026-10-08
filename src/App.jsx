@@ -4397,12 +4397,22 @@ function WarrantyTagPanel({user,onBack}){
               <button className={repairFilter==="ALL"?"active":""} type="button" onClick={()=>setRepairFilter("ALL")}>ALL REPAIR TYPES</button>
             </div>
           </div>
-          <div className="warranty-tag-control-block"><div className="warranty-tag-control-title">Part Numbers in Current Format</div><div className="warranty-tag-part-list">{partOptions.map(([partNo,item])=>{const removed=removedPartNos.includes(partNo);return <div className={"warranty-tag-part-item "+(removed?"removed":"")} key={partNo}><span><strong>{partNo}</strong>{item.description?" | "+item.description:""}{item.count>1?" ("+item.count+" tags)":""}</span>{removed?<button type="button" onClick={()=>restorePartNo(partNo)}>Add</button>:<button type="button" onClick={()=>removePartNo(partNo)}>Remove</button>}</div>;})}</div>{removedPartNos.length>0&&<button className="warranty-tag-reset-removals" type="button" onClick={clearSavedPartNos}>Reset Saved Removals ({removedPartNos.length})</button>}</div>;
+          <div className="warranty-tag-control-block">
+            <div className="warranty-tag-control-title">Part Numbers in Current Format</div>
+            <div className="warranty-tag-part-list">
+              {partOptions.map(([partNo,item])=>{
+                const removed=removedPartNos.includes(partNo);
+                return <div className={"warranty-tag-part-item "+(removed?"removed":"")} key={partNo}>
+                  <span><strong>{partNo}</strong>{item.description?" | "+item.description:""}{item.count>1?" ("+item.count+" tags)":""}</span>
+                  {removed
+                    ? <button type="button" onClick={()=>restorePartNo(partNo)}>Add</button>
+                    : <button type="button" onClick={()=>removePartNo(partNo)}>Remove</button>}
+                </div>;
               })}
             </div>
+            {removedPartNos.length>0&&<button className="warranty-tag-reset-removals" type="button" onClick={clearSavedPartNos}>Reset Saved Removals ({removedPartNos.length})</button>}
           </div>
         </div>
-
         <div className="warranty-tag-layout-control no-print">
           <div>
             <strong>A4 Print Format</strong>

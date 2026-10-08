@@ -3016,15 +3016,6 @@ const HUB_GREASE_MODEL_CONFIG = {
   "VK20": { front: 2, rear: 2 },
 };
 
-const HUB_GREASE_PART_QTY = {
-  front2: { S9999997: 1, FJ607400: 0, F1721500: 2, F1771900: 0, H5001220: 0, CLOTH: 1 },
-  front4: { S9999997: 2, FJ607400: 0, F1721500: 4, F1771900: 0, H5001220: 0, CLOTH: 2 },
-  rear2: { S9999997: 2, FJ607400: 2, F1721500: 0, F1771900: 0, H5001220: 2, CLOTH: 1 },
-  rear4: { S9999997: 4, FJ607400: 2, F1721500: 0, F1771900: 2, H5001220: 0, CLOTH: 2 },
-  stla2: { S9999997: 1, FJ607400: 0, F1721500: 2, F1771900: 0, H5001220: 0, CLOTH: 1 },
-  dtla2: { S9999997: 1, FJ607400: 0, F1721500: 2, F1771900: 0, H5001220: 0, CLOTH: 1 },
-};
-
 const HUB_GREASE_LABOUR = {
   front2: { code: "WHL165A", description: "Hub Greasing - Front Axle - 2 Hubs" },
   front4: { code: "WHL165C", description: "Hub Greasing - Front Axle - 4 Hubs" },
@@ -3032,6 +3023,17 @@ const HUB_GREASE_LABOUR = {
   rear4: { code: "WHL170C", description: "Hub Greasing - Rear Axle - 4 Hubs" },
   stla2: { code: "WHL175A", description: "Hub Greasing - STLA - 2 Hubs" },
   dtla2: { code: "WHL180A", description: "Hub Greasing - DTLA - 2 Hubs" },
+};
+
+// Part quantity configuration is now explicitly mapped to the labour code.
+// This table is the direct source of truth for Hub Greasing estimate parts.
+const HUB_GREASE_PART_QTY_BY_LABOUR = {
+  WHL165A: { S9999997: 1, FJ607400: 0, F1721500: 2, F1771900: 0, H5001220: 0, CLOTH: 1 },
+  WHL165C: { S9999997: 2, FJ607400: 0, F1721500: 4, F1771900: 0, H5001220: 0, CLOTH: 2 },
+  WHL170A: { S9999997: 2, FJ607400: 2, F1721500: 0, F1771900: 0, H5001220: 2, CLOTH: 1 },
+  WHL170C: { S9999997: 4, FJ607400: 2, F1721500: 0, F1771900: 2, H5001220: 0, CLOTH: 2 },
+  WHL175A: { S9999997: 1, FJ607400: 0, F1721500: 2, F1771900: 0, H5001220: 0, CLOTH: 1 },
+  WHL180A: { S9999997: 1, FJ607400: 0, F1721500: 2, F1771900: 0, H5001220: 0, CLOTH: 1 },
 };
 
 function getHardcodedHubGreaseConfig(vehicleModel = "") {
@@ -3049,18 +3051,23 @@ function getHardcodedHubGreaseConfig(vehicleModel = "") {
 
 function mergeHubGreasePartQuantities(config) {
   const result = {};
-  const addGroup = group => {
+  const addLabourParts = labourKey => {
+    const labour = HUB_GREASE_LABOUR[labourKey];
+    const group = labour?.code
+      ? HUB_GREASE_PART_QTY_BY_LABOUR[labour.code]
+      : null;
+
     Object.entries(group || {}).forEach(([code, qty]) => {
       result[code] = Number(result[code] || 0) + Number(qty || 0);
     });
   };
 
-  if (config?.front === 2) addGroup(HUB_GREASE_PART_QTY.front2);
-  if (config?.front === 4) addGroup(HUB_GREASE_PART_QTY.front4);
-  if (config?.rear === 2) addGroup(HUB_GREASE_PART_QTY.rear2);
-  if (config?.rear === 4) addGroup(HUB_GREASE_PART_QTY.rear4);
-  if (config?.stla === 2) addGroup(HUB_GREASE_PART_QTY.stla2);
-  if (config?.dtla === 2) addGroup(HUB_GREASE_PART_QTY.dtla2);
+  if (config?.front === 2) addLabourParts("front2");
+  if (config?.front === 4) addLabourParts("front4");
+  if (config?.rear === 2) addLabourParts("rear2");
+  if (config?.rear === 4) addLabourParts("rear4");
+  if (config?.stla === 2) addLabourParts("stla2");
+  if (config?.dtla === 2) addLabourParts("dtla2");
 
   return result;
 }

@@ -4656,6 +4656,12 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       if (nextMode === "warranty-tags") {
         setMode("warranty-tags");
         setError("");
+        return;
+      }
+      if (nextMode === "profile") {
+        setMode("profile");
+        setError("");
+        return;
       }
     };
     window.addEventListener("service-decision-mobile-nav", handleMobileNavigation);

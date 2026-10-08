@@ -571,3 +571,6 @@
 .profile-theme-option.active{border-color:#315d82;background:#315d82;color:#fff}
 .profile-theme-swatch{width:10px;height:10px;border-radius:50%;background:#4472c4;display:inline-block;border:1px solid rgba(0,0,0,.15)}
 .profile-theme-option.theme-green .profile-theme-swatch{background:#217346}.profile-theme-option.theme-navy .profile-theme-swatch{background:#17365d}.profile-theme-option.theme-teal .profile-theme-swatch{background:#0f766e}.profile-theme-option.theme-purple .profile-theme-swatch{background:#6b46c1}.profile-theme-option.theme-blue .profile-theme-swatch{background:#4472c4}
+
+/* Beta: account actions are now inside the Profile tab. */
+.auth-userbar{display:none!important}

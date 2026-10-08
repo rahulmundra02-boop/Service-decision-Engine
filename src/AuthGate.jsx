@@ -795,18 +795,7 @@ export default function AuthGate({ children }) {
   }
   return (
     <div className="app-auth-shell">
-      <div className="auth-userbar">
-        <span><strong>{user.personName}</strong> · {user.dealerName}</span>
-        <div className="auth-user-actions">
-          <button className="profile-button-with-dot" onClick={openProfile}>
-            Profile & Settings
-            {!(user?.preferences?.booking1 || user?.preferences?.booking2) && <span className="profile-alert-dot" />}
-          </button>
-          {user.role === "admin" && <button onClick={() => { setAdminOpen(true); setError(""); setMessage(""); }}>Admin</button>}
-          <button onClick={() => { setShowPassword(true); setError(""); setMessage(""); }}>Change Password</button>
-          <button className="logout-btn" onClick={logout}>Logout</button>
-        </div>
-      </div>
+      <div className="auth-userbar" aria-hidden="true"></div>
 
       {error && <div className="auth-inline-error">{error}</div>}
       {message && <div className="auth-inline-message">{message}</div>}
@@ -864,7 +853,7 @@ export default function AuthGate({ children }) {
               <span>{label}</span>
             </button>
           ))}
-          <button type="button" className="mobile-bottom-nav-item profile" onClick={openProfile}>
+          <button type="button" className="mobile-bottom-nav-item profile" onClick={() => window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:"profile"}}))}>
             <span className="mobile-bottom-nav-icon">●</span>
             <span>Profile</span>
           </button>
@@ -905,7 +894,13 @@ export default function AuthGate({ children }) {
           priceMasterUploadError={priceMasterUploadError}
           onUploadPriceMasterExcel={uploadPriceMasterExcel}
         />
-      ) : cloneElement(children, { user })}
+      ) : cloneElement(children, {
+        user,
+        onOpenProfile: openProfile,
+        onOpenAdmin: () => { setAdminOpen(true); setError(""); setMessage(""); },
+        onChangePassword: () => { setShowPassword(true); setError(""); setMessage(""); },
+        onLogout: logout,
+      })}
     </div>
   );
 }

@@ -338,3 +338,29 @@ tr:last-child td { border-bottom:0; }
 .estimate-modal-overlay{position:fixed;inset:0;z-index:10002;background:rgba(15,23,42,.62);display:flex;align-items:flex-start;justify-content:center;padding:10px;box-sizing:border-box;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .estimate-workspace{width:min(1100px,96vw);max-height:calc(100vh - 20px);overflow:auto;box-sizing:border-box;margin:0 auto;padding:18px;background:#fff;color:#1f2933;border:1px solid #cbd5df;border-radius:10px;box-shadow:0 18px 50px rgba(0,0,0,.28)}
 @media (max-width:600px) and (orientation:portrait){.estimate-modal-overlay{z-index:10002;padding:10px 10px 92px;background:rgba(15,23,42,.62)}.estimate-workspace{width:min(1100px,96vw)!important;max-height:calc(100vh - 108px)!important;overflow:auto!important;margin-bottom:4px;padding:18px 12px 100px!important;background:#fff!important;border-radius:10px;box-sizing:border-box}}
+
+/* Beta Profile tab: account controls moved out of the top user bar. */
+.portal-profile-section{width:100%;max-width:1100px;margin:0 auto;padding:18px 0 30px}
+.portal-profile-header{background:#f7fbff;border:1px solid #cbd7e3;border-radius:10px;padding:22px 24px}
+.portal-profile-header h2{margin:4px 0 6px;font-size:28px;color:#17324d}
+.portal-profile-header p{margin:0;color:#60758a;font-size:13px}
+.portal-profile-user-card{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:14px}
+.portal-profile-user-card>div{background:#fff;border:1px solid #cbd7e3;border-radius:9px;padding:14px}
+.portal-profile-user-card span{display:block;font-size:11px;color:#60758a;margin-bottom:5px}
+.portal-profile-user-card strong{font-size:15px;color:#17324d}
+.portal-profile-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px}
+.portal-profile-card{appearance:none;text-align:left;border:1px solid #cbd7e3;border-radius:10px;background:#fff;padding:18px;min-height:125px;cursor:pointer;display:flex;flex-direction:column;gap:7px;box-shadow:0 2px 8px rgba(20,45,70,.06)}
+.portal-profile-card:hover{border-color:#4472c4;box-shadow:0 5px 16px rgba(20,45,70,.1)}
+.portal-profile-card-icon{font-size:22px;line-height:1}
+.portal-profile-card strong{font-size:16px;color:#17324d}
+.portal-profile-card small{font-size:12px;line-height:1.45;color:#60758a}
+.portal-profile-card.logout{border-color:#e0b4b7}
+.portal-profile-card.logout strong{color:#8d3438}
+@media (max-width:600px){
+  .portal-profile-section{padding:10px 0 30px}
+  .portal-profile-header{padding:16px}
+  .portal-profile-header h2{font-size:22px}
+  .portal-profile-user-card{grid-template-columns:1fr}
+  .portal-profile-grid{grid-template-columns:1fr}
+  .portal-profile-card{min-height:105px}
+}

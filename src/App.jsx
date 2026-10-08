@@ -4130,7 +4130,7 @@ function buildWarrantyTags(claimRows,summaryRows){
     const primaryReading=summary.reading
       ? formatNumber(summary.reading)+" "+(summary.readingUnit||"")
       : "";
-    const key=[row.claimNo,row.claimDate,row.reg,row.chassis,row.engine,row.partNo,row.qty,row.partDesc,row.jobCard].map(value=>warrantyText(value).toUpperCase()).join("|");
+    const key=[row.activeClaimNo,row.claimNo,row.claimDate,row.reg,row.chassis,row.engine,row.partNo,row.qty,row.partDesc,row.jobCard].map(value=>warrantyText(value).toUpperCase()).join("|");
     if(seen.has(key)) return null;
     seen.add(key);
     return {
@@ -4229,7 +4229,9 @@ function WarrantyTagPanel({user,onBack}){
   const [claimDataset,setClaimDataset]=useState(null);
   const [summaryDataset,setSummaryDataset]=useState(null);
   const [tags,setTags]=useState([]);
-  const [removedDescriptions,setRemovedDescriptions]=useState([]);
+  const warrantyRemovedPartStorageKey="serviceDecisionWarrantyRemovedPartNosV1_"+String(user?.id||user?.username||"local").trim();
+  const [removedPartNos,setRemovedPartNos]=useState(()=>{try{const raw=localStorage.getItem(warrantyRemovedPartStorageKey);const parsed=raw?JSON.parse(raw):[];return Array.isArray(parsed)?parsed.map(value=>warrantyText(value)).filter(Boolean):[];}catch{return [];}});
+  const persistRemovedPartNos=next=>{const clean=[...new Set((next||[]).map(value=>warrantyText(value)).filter(Boolean))];try{localStorage.setItem(warrantyRemovedPartStorageKey,JSON.stringify(clean));}catch{}return clean;};
   const [repairFilter,setRepairFilter]=useState("ALL");
   const [printLayout,setPrintLayout]=useState("10");
   const [busy,setBusy]=useState(false);
@@ -4245,7 +4247,7 @@ function WarrantyTagPanel({user,onBack}){
       const missing=warrantyMissingHeaders(dataset,WARRANTY_CLAIM_REQUIRED);
       if(!dataset.headers.length||!dataset.rows.length) throw new Error("No recognizable header row or data was found in the Billed JC Claim Statement.");
       if(missing.length) throw new Error("Mandatory header(s) are missing from the Billed JC Claim Statement: "+missing.join(", ")+".");
-      setClaimDataset(dataset);setTags([]);setRemovedDescriptions([]);
+      setClaimDataset(dataset);setTags([]);
       setMessage(dataset.rows.length.toLocaleString("en-IN")+" source rows detected from "+file.name+".");
     }catch(e){setClaimDataset(null);setError(e.message||"Unable to read Billed JC Claim Statement.");}
     finally{setBusy(false);}
@@ -4258,7 +4260,7 @@ function WarrantyTagPanel({user,onBack}){
       const missing=warrantyMissingHeaders(dataset,WARRANTY_SUMMARY_REQUIRED);
       if(!dataset.headers.length||!dataset.rows.length) throw new Error("No recognizable header row or data was found in the Jobcard Summary.");
       if(missing.length) throw new Error("Mandatory header(s) are missing from the Jobcard Summary: "+missing.join(", ")+".");
-      setSummaryDataset(dataset);setTags([]);setRemovedDescriptions([]);
+      setSummaryDataset(dataset);setTags([]);
       setMessage(dataset.rows.length.toLocaleString("en-IN")+" Job Card Summary rows detected from "+file.name+".");
     }catch(e){setSummaryDataset(null);setError(e.message||"Unable to read Jobcard Summary.");}
     finally{setBusy(false);}
@@ -4288,7 +4290,7 @@ function WarrantyTagPanel({user,onBack}){
 
     if(missingJobCards.length){
       setTags([]);
-      setRemovedDescriptions([]);
+      
       setError("Please upload Jobcard Summary and Billed JC Claim Statement data for the same date.");
       return;
     }
@@ -4298,47 +4300,23 @@ function WarrantyTagPanel({user,onBack}){
 
     if(!eligibleTags.length){
       setTags([]);
-      setRemovedDescriptions([]);
+      
       setError("No eligible part numbers found for warranty tag printing.");
       return;
     }
 
     setTags(eligibleTags);
-    setRemovedDescriptions([]);
+    
     setRepairFilter("ALL");
     setMessage(eligibleTags.length.toLocaleString("en-IN")+" warranty tags ready.");
   };
 
-  const descriptionOptions=useMemo(()=>{
-    const map=new Map();
-    tags.forEach(tag=>{
-      const tagRepairType=getWarrantyRepairType(tag.claimType);
-      if(repairFilter==="AMC" && tagRepairType!=="AMC") return;
-      if(repairFilter==="NON_AMC" && tagRepairType!=="NON_AMC") return;
-      const desc=warrantyText(tag.partDesc);
-      if(desc&&!map.has(desc)) map.set(desc,0);
-      if(desc) map.set(desc,(map.get(desc)||0)+1);
-    });
-    return Array.from(map.entries()).sort((a,b)=>a[0].localeCompare(b[0]));
-  },[tags,repairFilter]);
+  const partOptions=useMemo(()=>{const map=new Map();tags.forEach(tag=>{const tagRepairType=getWarrantyRepairType(tag.claimType);if(repairFilter==="AMC"&&tagRepairType!=="AMC")return;if(repairFilter==="NON_AMC"&&tagRepairType!=="NON_AMC")return;const partNo=warrantyText(tag.partNo);if(!partNo)return;if(!map.has(partNo))map.set(partNo,{description:warrantyText(tag.partDesc),count:0});map.get(partNo).count+=1;});return Array.from(map.entries()).sort((a,b)=>a[0].localeCompare(b[0]));},[tags,repairFilter]);
 
-  const visibleTags=useMemo(()=>{
-    return tags.filter(tag=>{
-      const desc=warrantyText(tag.partDesc);
-      if(removedDescriptions.includes(desc)) return false;
-      const tagRepairType=getWarrantyRepairType(tag.claimType);
-      if(repairFilter==="AMC") return tagRepairType==="AMC";
-      if(repairFilter==="NON_AMC") return tagRepairType==="NON_AMC";
-      return true;
-    });
-  },[tags,removedDescriptions,repairFilter]);
-
-  const removeDescription=desc=>{
-    setRemovedDescriptions(prev=>prev.includes(desc)?prev:[...prev,desc]);
-  };
-  const restoreDescription=desc=>{
-    setRemovedDescriptions(prev=>prev.filter(x=>x!==desc));
-  };
+  const visibleTags=useMemo(()=>tags.filter(tag=>{const partNo=warrantyText(tag.partNo);if(removedPartNos.includes(partNo))return false;const tagRepairType=getWarrantyRepairType(tag.claimType);if(repairFilter==="AMC")return tagRepairType==="AMC";if(repairFilter==="NON_AMC")return tagRepairType==="NON_AMC";return true;}),[tags,removedPartNos,repairFilter]);
+  const removePartNo=partNo=>setRemovedPartNos(prev=>persistRemovedPartNos([...prev,partNo]));
+  const restorePartNo=partNo=>setRemovedPartNos(prev=>persistRemovedPartNos(prev.filter(x=>x!==partNo)));
+  const clearSavedPartNos=()=>setRemovedPartNos(persistRemovedPartNos([]));
 
   const printTags=()=>{
     if(!visibleTags.length) return;
@@ -4367,7 +4345,7 @@ function WarrantyTagPanel({user,onBack}){
 
   const clearAll=()=>{
     setClaimFile(null);setSummaryFile(null);setClaimDataset(null);setSummaryDataset(null);
-    setTags([]);setRemovedDescriptions([]);setRepairFilter("ALL");setPrintLayout("10");setError("");setMessage("");
+    setTags([]);setRepairFilter("ALL");setPrintLayout("10");setError("");setMessage("");
   };
 
   return <>
@@ -4419,17 +4397,7 @@ function WarrantyTagPanel({user,onBack}){
               <button className={repairFilter==="ALL"?"active":""} type="button" onClick={()=>setRepairFilter("ALL")}>ALL REPAIR TYPES</button>
             </div>
           </div>
-          <div className="warranty-tag-control-block">
-            <div className="warranty-tag-control-title">Part Descriptions in Current Format</div>
-            <div className="warranty-tag-part-list">
-              {descriptionOptions.map(([desc,count])=>{
-                const removed=removedDescriptions.includes(desc);
-                return <div className={"warranty-tag-part-item "+(removed?"removed":"")} key={desc}>
-                  <span>{desc}</span>
-                  {removed
-                    ? <button type="button" onClick={()=>restoreDescription(desc)}>Add</button>
-                    : <button type="button" onClick={()=>removeDescription(desc)}>Remove</button>}
-                </div>;
+          <div className="warranty-tag-control-block"><div className="warranty-tag-control-title">Part Numbers in Current Format</div><div className="warranty-tag-part-list">{partOptions.map(([partNo,item])=>{const removed=removedPartNos.includes(partNo);return <div className={"warranty-tag-part-item "+(removed?"removed":"")} key={partNo}><span><strong>{partNo}</strong>{item.description?" | "+item.description:""}{item.count>1?" ("+item.count+" tags)":""}</span>{removed?<button type="button" onClick={()=>restorePartNo(partNo)}>Add</button>:<button type="button" onClick={()=>removePartNo(partNo)}>Remove</button>}</div>;})}</div>{removedPartNos.length>0&&<button className="warranty-tag-reset-removals" type="button" onClick={clearSavedPartNos}>Reset Saved Removals ({removedPartNos.length})</button>}</div>;
               })}
             </div>
           </div>

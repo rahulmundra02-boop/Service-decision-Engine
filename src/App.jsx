@@ -4586,21 +4586,21 @@ function ProfileSection({ user, onOpenProfile, onOpenAdmin, onChangePassword, on
       </div>
       <div className="portal-profile-grid">
         <button type="button" className="portal-profile-card" onClick={onOpenProfile}>
-          <span className="portal-profile-card-icon">⚙</span><strong>Profile &amp; Settings</strong>
+          <span className="portal-profile-card-icon portal-icon-settings" aria-hidden="true"></span><strong>Profile &amp; Settings</strong>
           <small>Edit personal details, dashboard preferences and other settings.</small>
         </button>
         {user?.role === "admin" && (
           <button type="button" className="portal-profile-card" onClick={onOpenAdmin}>
-            <span className="portal-profile-card-icon">👤</span><strong>Admin</strong>
+            <span className="portal-profile-card-icon portal-icon-admin" aria-hidden="true"></span><strong>Admin</strong>
             <small>Manage users, campaigns, price master and admin controls.</small>
           </button>
         )}
         <button type="button" className="portal-profile-card" onClick={onChangePassword}>
-          <span className="portal-profile-card-icon">🔐</span><strong>Change Password</strong>
+          <span className="portal-profile-card-icon portal-icon-password" aria-hidden="true"></span><strong>Change Password</strong>
           <small>Update your account password securely.</small>
         </button>
         <button type="button" className="portal-profile-card logout" onClick={onLogout}>
-          <span className="portal-profile-card-icon">↪</span><strong>Logout</strong>
+          <span className="portal-profile-card-icon portal-icon-logout" aria-hidden="true"></span><strong>Logout</strong>
           <small>Sign out from this Service Decision Portal session.</small>
         </button>
       </div>

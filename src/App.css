@@ -362,7 +362,10 @@ tr:last-child td { border-bottom:0; }
 .portal-icon-logout::before{width:15px;height:18px;left:2px;top:3px;border:2px solid currentColor;border-right:0;border-radius:3px 0 0 3px}
 .portal-icon-logout::after{width:13px;height:2px;right:1px;top:11px;background:currentColor;box-shadow:4px -4px 0 -0.2px currentColor,4px 4px 0 -0.2px currentColor}
 @media (prefers-color-scheme: dark){
-  .portal-profile-card-icon{color:#dbeafe}
+  .portal-profile-card-icon{color:#f8fafc !important}
+  .portal-profile-card strong{color:#f8fafc}
+  .portal-profile-card small{color:#cbd5e1}
+  .portal-profile-card{background:#1f2937;border-color:#64748b}
 }
 .portal-profile-card strong{font-size:16px;color:#17324d}
 .portal-profile-card small{font-size:12px;line-height:1.45;color:#60758a}

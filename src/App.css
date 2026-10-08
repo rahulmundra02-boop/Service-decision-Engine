@@ -351,7 +351,19 @@ tr:last-child td { border-bottom:0; }
 .portal-profile-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px}
 .portal-profile-card{appearance:none;text-align:left;border:1px solid #cbd7e3;border-radius:10px;background:#fff;padding:18px;min-height:125px;cursor:pointer;display:flex;flex-direction:column;gap:7px;box-shadow:0 2px 8px rgba(20,45,70,.06)}
 .portal-profile-card:hover{border-color:#4472c4;box-shadow:0 5px 16px rgba(20,45,70,.1)}
-.portal-profile-card-icon{font-size:22px;line-height:1}
+.portal-profile-card-icon{width:24px;height:24px;display:inline-block;position:relative;color:#17324d}
+.portal-profile-card-icon::before,.portal-profile-card-icon::after{content:"";position:absolute;box-sizing:border-box}
+.portal-icon-settings::before{inset:3px;border:2px solid currentColor;border-radius:50%}
+.portal-icon-settings::after{inset:0;background:conic-gradient(from 0deg,transparent 0 8%,currentColor 8% 14%,transparent 14% 25%,currentColor 25% 31%,transparent 31% 42%,currentColor 42% 48%,transparent 48% 59%,currentColor 59% 65%,transparent 65% 76%,currentColor 76% 82%,transparent 82% 93%,currentColor 93% 99%,transparent 99%);border-radius:50%;mask:radial-gradient(circle,transparent 0 55%,#000 57% 72%,transparent 74%)}
+.portal-icon-admin::before{width:9px;height:9px;left:7.5px;top:2px;border:2px solid currentColor;border-radius:50%}
+.portal-icon-admin::after{width:18px;height:10px;left:3px;bottom:2px;border:2px solid currentColor;border-radius:10px 10px 5px 5px}
+.portal-icon-password::before{width:16px;height:13px;left:4px;bottom:2px;border:2px solid currentColor;border-radius:3px}
+.portal-icon-password::after{width:9px;height:10px;left:7.5px;top:2px;border:2px solid currentColor;border-bottom:0;border-radius:8px 8px 0 0}
+.portal-icon-logout::before{width:15px;height:18px;left:2px;top:3px;border:2px solid currentColor;border-right:0;border-radius:3px 0 0 3px}
+.portal-icon-logout::after{width:13px;height:2px;right:1px;top:11px;background:currentColor;box-shadow:4px -4px 0 -0.2px currentColor,4px 4px 0 -0.2px currentColor}
+@media (prefers-color-scheme: dark){
+  .portal-profile-card-icon{color:#dbeafe}
+}
 .portal-profile-card strong{font-size:16px;color:#17324d}
 .portal-profile-card small{font-size:12px;line-height:1.45;color:#60758a}
 .portal-profile-card.logout{border-color:#e0b4b7}

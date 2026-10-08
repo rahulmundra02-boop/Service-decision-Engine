@@ -4562,7 +4562,45 @@ function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResu
     </div>
   );
 }
-function ServiceDecisionApp({ user }) {
+function ProfileSection({ user, onOpenProfile, onOpenAdmin, onChangePassword, onLogout }) {
+  return (
+    <div className="portal-profile-section">
+      <div className="portal-profile-header">
+        <div>
+          <div className="portal-home-kicker">ACCOUNT &amp; SETTINGS</div>
+          <h2>Profile</h2>
+          <p>Manage your profile, account security and portal settings from one place.</p>
+        </div>
+      </div>
+      <div className="portal-profile-user-card">
+        <div><span>Name</span><strong>{user?.personName || "-"}</strong></div>
+        <div><span>Dealer</span><strong>{user?.dealerName || "-"}</strong></div>
+        <div><span>Account</span><strong>{user?.role === "admin" ? "Administrator" : "User"}</strong></div>
+      </div>
+      <div className="portal-profile-grid">
+        <button type="button" className="portal-profile-card" onClick={onOpenProfile}>
+          <span className="portal-profile-card-icon">⚙</span><strong>Profile &amp; Settings</strong>
+          <small>Edit personal details, dashboard preferences and other settings.</small>
+        </button>
+        {user?.role === "admin" && (
+          <button type="button" className="portal-profile-card" onClick={onOpenAdmin}>
+            <span className="portal-profile-card-icon">👤</span><strong>Admin</strong>
+            <small>Manage users, campaigns, price master and admin controls.</small>
+          </button>
+        )}
+        <button type="button" className="portal-profile-card" onClick={onChangePassword}>
+          <span className="portal-profile-card-icon">🔐</span><strong>Change Password</strong>
+          <small>Update your account password securely.</small>
+        </button>
+        <button type="button" className="portal-profile-card logout" onClick={onLogout}>
+          <span className="portal-profile-card-icon">↪</span><strong>Logout</strong>
+          <small>Sign out from this Service Decision Portal session.</small>
+        </button>
+      </div>
+    </div>
+  );
+}
+function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword, onLogout }) {
   const [excelData, setExcelData] = useState("");
   const [analysis, setAnalysis] = useState(null);
   const [error, setError] = useState("");
@@ -7963,9 +8001,9 @@ function ServiceDecisionApp({ user }) {
               <div className={"excel-tab " + (mode === "single" ? "active" : "")} onClick={() => { setEstimateOpen(false); setMode("single"); setError(""); setBulkResults([]); setBulkMeta(null); }}>Single Vehicle</div>
               <div className={`excel-tab ${mode === "bulk" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("bulk"); setError(""); setAnalysis(null); }}>Bulk Vehicle</div>
               <div className={`excel-tab ${estimateOpen ? "active" : ""}`} onClick={() => { setMode("estimate"); if (analysis) void openEstimate(); else openStandaloneEstimate(); }}>Prepare Estimate</div>
-              <div className={`excel-tab ${mode === "warranty-tags" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("warranty-tags"); setError(""); }}>Warranty Tag Print</div>
+              <div className={`excel-tab ${mode === "warranty-tags" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("warranty-tags"); setError(""); }}>Warranty Tag Print</div>\n              <div className={`excel-tab ${mode === "profile" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("profile"); setError(""); }}>Profile</div>
             </div>
-            {mode !== "warranty-tags" && (
+            {mode !== "warranty-tags" && mode !== "profile" && (
             <div className="excel-toolbar">
               {mode !== "home" && <>
                 <button className="excel-button green" onClick={() => document.getElementById("excel-file-input")?.click()} disabled={uploadBusy}>Upload Excel</button>
@@ -8037,7 +8075,7 @@ function ServiceDecisionApp({ user }) {
           <input id="excel-file-input" className="no-print" type="file" accept=".xlsx,.xls,.xlsm,.csv" multiple style={{display:"none"}} onChange={handleExcelUpload} disabled={uploadBusy} />
 
           <div className="mobile-work-actions no-print">
-            {mode !== "home" && mode !== "warranty-tags" && (
+            {mode !== "home" && mode !== "warranty-tags" && mode !== "profile" && (
               <>
                 <button className="mobile-work-action" onClick={() => document.getElementById("excel-file-input")?.click()} disabled={uploadBusy}>Upload Excel</button>
                 <button className="mobile-work-action" onClick={clear}>Clear</button>
@@ -8079,6 +8117,8 @@ function ServiceDecisionApp({ user }) {
               />
             ) : mode === "warranty-tags" ? (
               <WarrantyTagPanel user={user} onBack={() => setMode("home")} />
+            ) : mode === "profile" ? (
+              <ProfileSection user={user} onOpenProfile={onOpenProfile} onOpenAdmin={onOpenAdmin} onChangePassword={onChangePassword} onLogout={onLogout} />
             ) : mode === "single" ? (
               <>
                 {analysis ? (

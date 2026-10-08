@@ -4046,8 +4046,41 @@ function readWarrantyWorkbook(file,aliasGroups){
   });
 }
 
-function warrantyMissingHeaders(dataset,requiredKeys){
-  return requiredKeys.filter(key=>!warrantyText(dataset?.mapping?.[key]));
+function warrantyHasExactHeader(headers,aliases){
+  const actual=(headers||[]).map(normalizeWarrantyHeader);
+  return (aliases||[]).some(alias=>{
+    const wanted=normalizeWarrantyHeader(alias);
+    return !!wanted && actual.includes(wanted);
+  });
+}
+
+function warrantyMissingHeaders(dataset,requiredKeys,aliasGroups){
+  const headers=dataset?.headers||[];
+  return requiredKeys.filter(key=>!warrantyHasExactHeader(headers,aliasGroups?.[key]||[]));
+}
+
+const WARRANTY_CLAIM_REQUIRED_LABELS={
+  jobCard:"Job Card Number",
+  jobCardDate:"Job Card Date",
+  reg:"Registration Number",
+  chassis:"Chassis Number",
+  engine:"Engine Number",
+  partNo:"Part / Labour Code",
+  qty:"Quantity",
+  partDesc:"Part / Labour Desc",
+  claimNo:"OEM Claim Number",
+  claimDate:"Claim Creation Date"
+};
+
+const WARRANTY_SUMMARY_REQUIRED_LABELS={
+  jobCard:"Job Card No.",
+  reading:"KM Reading / HR Reading",
+  readingUnit:"KM/HR",
+  workshopName:"Servicing Company"
+};
+
+function warrantyMissingHeaderLabels(keys,labels){
+  return (keys||[]).map(key=>labels?.[key]||key);
 }
 
 function normalizeWarrantyJobCard(value){
@@ -4244,9 +4277,9 @@ function WarrantyTagPanel({user,onBack}){
     setBusy(true);setError("");setMessage("");
     try{
       const dataset=await readWarrantyWorkbook(file,WARRANTY_TAG_ALIASES);
-      const missing=warrantyMissingHeaders(dataset,WARRANTY_CLAIM_REQUIRED);
+      const missing=warrantyMissingHeaders(dataset,WARRANTY_CLAIM_REQUIRED,WARRANTY_TAG_ALIASES);
       if(!dataset.headers.length||!dataset.rows.length) throw new Error("No recognizable header row or data was found in the Billed JC Claim Statement.");
-      if(missing.length) throw new Error("Mandatory header(s) are missing from the Billed JC Claim Statement: "+missing.join(", ")+".");
+      if(missing.length) throw new Error("Required header(s) missing in Billed JC Claim Statement: "+warrantyMissingHeaderLabels(missing,WARRANTY_CLAIM_REQUIRED_LABELS).join(", ")+".");
       setClaimDataset(dataset);setTags([]);
       setMessage(dataset.rows.length.toLocaleString("en-IN")+" source rows detected from "+file.name+".");
     }catch(e){setClaimDataset(null);setError(e.message||"Unable to read Billed JC Claim Statement.");}
@@ -4257,9 +4290,9 @@ function WarrantyTagPanel({user,onBack}){
     setBusy(true);setError("");setMessage("");
     try{
       const dataset=await readWarrantyWorkbook(file,WARRANTY_SUMMARY_ALIASES);
-      const missing=warrantyMissingHeaders(dataset,WARRANTY_SUMMARY_REQUIRED);
+      const missing=warrantyMissingHeaders(dataset,WARRANTY_SUMMARY_REQUIRED,WARRANTY_SUMMARY_ALIASES);
       if(!dataset.headers.length||!dataset.rows.length) throw new Error("No recognizable header row or data was found in the Jobcard Summary.");
-      if(missing.length) throw new Error("Mandatory header(s) are missing from the Jobcard Summary: "+missing.join(", ")+".");
+      if(missing.length) throw new Error("Required header(s) missing in Jobcard Summary: "+warrantyMissingHeaderLabels(missing,WARRANTY_SUMMARY_REQUIRED_LABELS).join(", ")+".");
       setSummaryDataset(dataset);setTags([]);
       setMessage(dataset.rows.length.toLocaleString("en-IN")+" Job Card Summary rows detected from "+file.name+".");
     }catch(e){setSummaryDataset(null);setError(e.message||"Unable to read Jobcard Summary.");}
@@ -4270,6 +4303,19 @@ function WarrantyTagPanel({user,onBack}){
     setError("");setMessage("");
     if(!claimDataset){setError("Please upload the Billed JC Claim Statement Excel first.");return;}
     if(!summaryDataset){setError("Please upload the Jobcard Summary Excel first.");return;}
+
+    const claimMissing=warrantyMissingHeaders(claimDataset,WARRANTY_CLAIM_REQUIRED,WARRANTY_TAG_ALIASES);
+    if(claimMissing.length){
+      setTags([]);
+      setError("Required header(s) missing in Billed JC Claim Statement: "+warrantyMissingHeaderLabels(claimMissing,WARRANTY_CLAIM_REQUIRED_LABELS).join(", ")+".");
+      return;
+    }
+    const summaryMissing=warrantyMissingHeaders(summaryDataset,WARRANTY_SUMMARY_REQUIRED,WARRANTY_SUMMARY_ALIASES);
+    if(summaryMissing.length){
+      setTags([]);
+      setError("Required header(s) missing in Jobcard Summary: "+warrantyMissingHeaderLabels(summaryMissing,WARRANTY_SUMMARY_REQUIRED_LABELS).join(", ")+".");
+      return;
+    }
 
     const claimRows=parseWarrantyClaimRows(claimDataset);
     const summaryRows=parseWarrantySummaryRows(summaryDataset);

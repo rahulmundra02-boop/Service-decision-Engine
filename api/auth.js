@@ -1308,7 +1308,18 @@ export default async function handler(req, res) {
         return res.status(400).json({success:false,error:"You cannot deactivate your own admin account."});
       }
 
-      const updated = await client.query("UPDATE app_users SET status=$1 WHERE id=$2 RETURNING *",[status,userId]);
+      // Manual reactivation must also reset the inactivity clock. Otherwise
+      // autoDeactivateInactiveUsers() runs on the next API request and immediately
+      // marks this account inactive again using its old last_activity_at value.
+      const updated = status === "active"
+        ? await client.query(
+            "UPDATE app_users SET status='active',last_activity_at=NOW() WHERE id=$1 RETURNING *",
+            [userId]
+          )
+        : await client.query(
+            "UPDATE app_users SET status='inactive' WHERE id=$1 RETURNING *",
+            [userId]
+          );
       if (!updated.rows[0]) {
         await client.query("ROLLBACK");
         return res.status(404).json({success:false,error:"User not found."});

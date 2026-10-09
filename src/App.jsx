@@ -170,6 +170,7 @@ const PART_STANDARDIZATION = {
   'F1E02400': 'APDA Filter (Assy)',
   'F1E02500': 'APDA Filter (Assy)',
   'GB699991': 'Axle Oil',
+  'GB6A9991': 'Axle Oil',
   'R9999998': 'Axle Oil',
   'B4H04501': 'Big Sump',
   'FS0500': 'Body Building Checkup',
@@ -340,6 +341,7 @@ const PART_STANDARDIZATION = {
   'P5104720': 'Fuel Filter Kit',
   'P5105703': 'Fuel Filter Kit',
   'P7A00042': 'Fuel Filter Kit',
+  'GBA99991': 'Gear Oil',
   'G9999994': 'Gear Oil',
   'G9999995': 'Gear Oil',
   'G9999998': 'Gear Oil',
@@ -2974,8 +2976,8 @@ const ESTIMATE_STANDARD_PARTS = {
 
 const ESTIMATE_REFERENCE_PARTS = {
   engineOil: ["EN699991", "F7A01500"],
-  gearOil: ["G9999994"],
-  axleOil: ["GB699991"],
+  gearOil: ["GBA99991", "G9999994"],
+  axleOil: ["GB6A9991", "GB699991"],
   steeringOil: ["PSB99994", "PD600391"],
   clutchOil: ["CFD99991", "CLA99994", "U9999995", "U9999999", "U9999996"],
   defInline: ["XFM00800"],

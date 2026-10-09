@@ -1864,7 +1864,8 @@ function isTipperModel(model){
   return t.includes('TIP') || t.includes('RMC');
 }
 function getEffectiveDecisionBasis(vehicle, basis){
-  return String(basis||"").toUpperCase() === "HRS" ? "HRS" : "KM";
+  const normalized = String(basis||"").toUpperCase();
+  return normalized === "TIME_ONLY" ? "TIME_ONLY" : normalized === "HRS" ? "HRS" : "KM";
 }
 function isH4Model(model){ return ["1015","1115","1215","1315","1415","1615","1815","1915"].some(x=>String(model||'').toUpperCase().includes(x)); }
 function isA4Model(model){ return /\d{4}N/.test(String(model||'').toUpperCase()); }
@@ -2075,7 +2076,7 @@ function latestFuelFilter(records, vehicle = null) {
   return null;
 }
 function normalizeDecisionBase(base, decisionBasis, vehicle) {
-  if (!base || !decisionBasis || decisionBasis === "AUTO") return base;
+  if (!base || !decisionBasis || decisionBasis === "AUTO" || decisionBasis === "TIME_ONLY") return base;
   return {
     ...base,
     relevantReading: getRelevantReadingForBasis(base, decisionBasis),
@@ -2083,8 +2084,9 @@ function normalizeDecisionBase(base, decisionBasis, vehicle) {
 }
 
 function dueNormalWithSale(current, base, interval, months, analysisDate, sale, mode, vehicle) {
-  const baseKm = base ? (base.relevantReading ?? getRelevantReading(base, vehicle)) : 0;
   const baseDate = base ? base.date : sale;
+  if (mode === "TIME_ONLY") return analysisDate >= monthsAfter(baseDate, months - 1);
+  const baseKm = base ? (base.relevantReading ?? getRelevantReading(base, vehicle)) : 0;
   const kmDue = current >= baseKm + interval - 4000;
   return kmDue || analysisDate >= monthsAfter(baseDate, months - 1);
 }
@@ -2123,6 +2125,7 @@ function decideAggregate(records, vehicle, running, key, analysisDate, decisionB
       const kmRunning=deriveRunningReadingForBasis(records, vehicle, "KM");
       const baseKm=base ? getRelevantReadingForBasis(base, "KM") : 0;
       const baseDate=base ? base.date : sale;
+      if (decisionBasis === "TIME_ONLY") return analysisDate >= monthsAfter(baseDate,5);
       return kmRunning.current >= baseKm + 20000 || analysisDate >= monthsAfter(baseDate,6);
     }
     const base=serviceBase(records,['ENGINE OIL'],12,true,vehicle,'ENGINE OIL FILTER',true);
@@ -2139,10 +2142,11 @@ function decideAggregate(records, vehicle, running, key, analysisDate, decisionB
     const kmRunning=deriveRunningReadingForBasis(records, vehicle, "KM");
     const baseKm=base ? getRelevantReadingForBasis(base, "KM") : 0;
     const baseDate=base ? base.date : sale;
+    if (decisionBasis === "TIME_ONLY") return analysisDate >= monthsAfter(baseDate,5);
     return kmRunning.current >= baseKm + 40000 || analysisDate >= monthsAfter(baseDate,6);
   }
   if(key==='sparkPlug'){
-    if(!isCngModel(vehicle.model)) return false;
+    if(!isCngModel(vehicle.model) || decisionBasis === "TIME_ONLY") return false;
     const base=serviceBase(records,['SPARK PLUG'],1,false,vehicle);
     const kmRunning=deriveRunningReadingForBasis(records, vehicle, "KM");
     const baseKm=base ? getRelevantReadingForBasis(base, "KM") : 0;
@@ -2285,6 +2289,10 @@ function freeService(records,vehicle,running,analysisDate,decisionBasis = "AUTO"
     for(const [name,min,max,mn,mx,label] of checks){
       if(records.some(r=>String(r.standardizedPart||'').toUpperCase().includes(name))) continue;
       const ageMax=monthsAfter(vehicle.sale,mx), ageMin=monthsAfter(vehicle.sale,mn);
+      if (decisionBasis === "TIME_ONLY") {
+        if (analysisDate >= ageMin && analysisDate <= ageMax) return label;
+        continue;
+      }
       if(kmRunning.current>max || analysisDate>ageMax) continue;
       if(kmRunning.current>=min || analysisDate>=ageMin) return label;
     }
@@ -2304,6 +2312,10 @@ function freeService(records,vehicle,running,analysisDate,decisionBasis = "AUTO"
     for(const [name,min,max,mn,mx,label] of checks){
       if(records.some(r=>String(r.standardizedPart||'').toUpperCase().includes(name))) continue;
       const ageMax=monthsAfter(vehicle.sale,mx), ageMin=monthsAfter(vehicle.sale,mn);
+      if (decisionBasis === "TIME_ONLY") {
+        if (analysisDate >= ageMin && analysisDate <= ageMax) return label;
+        continue;
+      }
       if(running.current>max || analysisDate>ageMax) continue;
       if(running.current>=min || analysisDate>=ageMin) return label;
     }
@@ -2356,7 +2368,7 @@ function additionalServiceEligibility(records, vehicle, running, analysisDate, d
     return false;
   });
 
-  if(isWheelModel){
+  if(isWheelModel && decisionBasis !== "TIME_ONLY"){
     const tip=decisionBasis === "HRS" ? true : decisionBasis === "KM" ? false : isTipperModel(vehicle.model);
     const isRmc=String(vehicle.model||'').toUpperCase().includes('RMC');
     let wheelService='';
@@ -2402,7 +2414,10 @@ function additionalServiceEligibility(records, vehicle, running, analysisDate, d
     const bodyTimeEligible=isGB2822G50HCoModel(vehicle.model)
       ? (analysisDate>=bodyDateMin && analysisDate<=bodyDateMax)
       : analysisDate<=bodyDateMax;
-    if(km>=1 && km<=5000 && bodyTimeEligible){
+    const bodyTimeOnlyEligible = decisionBasis === "TIME_ONLY"
+      ? (analysisDate >= monthsAfter(vehicle.sale,2) && analysisDate <= bodyDateMax)
+      : (km>=1 && km<=5000 && bodyTimeEligible);
+    if(bodyTimeOnlyEligible){
       const historyDone=records.some(r=>{
         const t=serviceTextForRecord(r);
         return t.includes('BODY BUILDING CHECK UP') || t.includes('BODY BUILDING CHECKUP');
@@ -2454,7 +2469,7 @@ function getDueServiceNames(decision) {
   return names;
 }
 
-function buildBulkAnalysis(records) {
+function buildBulkAnalysis(records, considerKmVehicles = []) {
   // A later/earlier export may contain a valid textual name for the same
   // customer number. Build that lookup before separating records by VIN.
   const customerNameByNumber = new Map();
@@ -2479,16 +2494,18 @@ function buildBulkAnalysis(records) {
   }
 
   const results = [];
-  const ignoredVehicles = [];
+  const highRunningVehicles = [];
+  const considerKmVinSet = new Set((considerKmVehicles || []).map(vin => String(vin || "").trim().toUpperCase()));
   for (const [vinKey, vehicleRecords] of groups) {
     const vehicle = deriveVehicle(vehicleRecords);
     if (!vehicle.customerName && vehicle.customerNumber) {
       vehicle.customerName = customerNameByNumber.get(String(vehicle.customerNumber).trim()) || "";
     }
 
-    // Bulk-only reliability guard: exclude KM-based vehicles averaging over
-    // 400 km/day between sale date and their latest valid KM reading.
-    // HRS-based models are not assessed by a KM/day threshold.
+    // KM/day reliability guard: high-running vehicles remain in the results,
+    // but default to time-only decisions until KM is explicitly enabled per VIN.
+    let highRunning = false;
+    let averageKmPerDay = null;
     const targetUnit = getTargetUnit(vehicle);
     if (targetUnit === "KM" && vehicle.sale) {
       const datedKm = vehicleRecords
@@ -2499,20 +2516,24 @@ function buildBulkAnalysis(records) {
         .sort((a, b) => a.record.date - b.record.date);
       const lastKm = datedKm[datedKm.length - 1];
       const runningDays = lastKm ? Math.floor((lastKm.record.date - vehicle.sale) / 86400000) : 0;
-      const averageKmPerDay = runningDays > 0 ? lastKm.reading / runningDays : null;
+      averageKmPerDay = runningDays > 0 ? lastKm.reading / runningDays : null;
       if (averageKmPerDay !== null && averageKmPerDay > 400) {
-        ignoredVehicles.push({
+        highRunning = true;
+        highRunningVehicles.push({
           vin: vehicle.vin || vinKey,
           vehicle,
           averageKmPerDay: Math.round(averageKmPerDay),
+          considerKm: considerKmVinSet.has(String(vehicle.vin || vinKey).trim().toUpperCase()),
           reason: "Average daily KM running exceeds 400 km/day",
         });
-        continue;
       }
     }
 
     const running = deriveRunningReading(vehicleRecords, vehicle);
-    const decision = calculateDecisions(vehicleRecords, vehicle, running);
+    const vinKeyUpper = String(vehicle.vin || vinKey).trim().toUpperCase();
+    const useTimeOnly = highRunning && !considerKmVinSet.has(vinKeyUpper);
+    const decisionRunning = useTimeOnly ? { ...running, mode: "TIME_ONLY" } : running;
+    const decision = calculateDecisions(vehicleRecords, vehicle, decisionRunning, useTimeOnly ? "TIME_ONLY" : "AUTO");
     const services = getDueServiceNames(decision);
     results.push({
       vin: vehicle.vin || vinKey,
@@ -2526,9 +2547,8 @@ function buildBulkAnalysis(records) {
   }
 
   results.sort((a, b) => b.dueCount - a.dueCount || String(a.vehicle.customerName || a.vehicle.customerNumber || "").localeCompare(String(b.vehicle.customerName || b.vehicle.customerNumber || "")));
-  // Keep excluded vehicles available only for the information message, never in
-  // service results/customer groups/WhatsApp output.
-  results.ignoredVehicles = ignoredVehicles;
+  // High-running vehicles are included in service results and customer outputs.
+  results.highRunningVehicles = highRunningVehicles;
   return results;
 }
 
@@ -4649,6 +4669,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   const [mode, setMode] = useState("home");
   const [bulkResults, setBulkResults] = useState([]);
   const [bulkMeta, setBulkMeta] = useState(null);
+  const [bulkConsiderKm, setBulkConsiderKm] = useState([]);
   const [customerGroups, setCustomerGroups] = useState([]);
   const [selectedCustomers, setSelectedCustomers] = useState([]);
   const [mergedCustomerName, setMergedCustomerName] = useState("");
@@ -5604,7 +5625,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       // Single Vehicle button automatically switches to Bulk when the input
       // contains more than one VIN. No second upload/paste is required.
       if(uniqueVins.length > 1){
-        const results = buildBulkAnalysis(parsed.records);
+        const results = buildBulkAnalysis(parsed.records, bulkConsiderKm);
         const groups = buildCustomerGroups(results, user?.dealerName);
         setAnalysis(null);
         setOverrideReading("");
@@ -5632,7 +5653,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
           services: [],
         });
         setOpenBulkFilter(null);
-        setBulkMeta({ records: parsed.records.length, vehicles: results.length, customers: groups.length, ignoredVehicles: results.ignoredVehicles || [] });
+        setBulkMeta({ records: parsed.records.length, vehicles: results.length, customers: groups.length, highRunningVehicles: results.highRunningVehicles || [] });
         setMode("bulk");
         logUsage("Bulk Vehicle Analysis", {
           mode:"bulk",
@@ -5701,7 +5722,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     setError("");
     try {
       const parsed = getAnalysisRecords();
-      const results = buildBulkAnalysis(parsed.records);
+      const results = buildBulkAnalysis(parsed.records, bulkConsiderKm);
       setBulkResults(results);
       const groups = buildCustomerGroups(results, user?.dealerName);
       setCustomerGroups(groups);
@@ -5726,7 +5747,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         services: [],
       });
       setOpenBulkFilter(null);
-      setBulkMeta({ records: parsed.records.length, vehicles: results.length, customers: groups.length, ignoredVehicles: results.ignoredVehicles || [] });
+      setBulkMeta({ records: parsed.records.length, vehicles: results.length, customers: groups.length, highRunningVehicles: results.highRunningVehicles || [] });
       logUsage("Bulk Vehicle Analysis", {
         mode:"bulk",
         vehicleCount:results.length,
@@ -5998,6 +6019,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     setHistoryViewMode("schedule");
     setBulkResults([]);
     setBulkMeta(null);
+    setBulkConsiderKm([]);
     setCustomerGroups([]);
     setSelectedCustomers([]);
     setMergedCustomerName("");
@@ -8058,10 +8080,17 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
 
               </>}
               {mode === "bulk" && bulkMeta && <span className="status-pill green">{bulkMeta.vehicles} Vehicles · {bulkMeta.records} Rows</span>}
-              {mode === "bulk" && bulkMeta?.ignoredVehicles?.length > 0 && <div className="upload-warning no-print" style={{marginTop:8,padding:"10px 12px",border:"1px solid #f0b429",borderRadius:8,background:"rgba(240,180,41,.12)",color:"var(--text-color, #7c4a03)",fontSize:13}}>
-                <strong>Information: {bulkMeta.ignoredVehicles.length} vehicle(s) ignored from Bulk Service Check.</strong>
-                <div style={{marginTop:4}}>Average running is above 400 km/day, so these KM readings are treated as unreliable. No service decision or WhatsApp summary will be generated for these vehicles.</div>
-                <ul style={{margin:"6px 0 0",paddingLeft:22}}>{bulkMeta.ignoredVehicles.map((item,index)=><li key={String(item.vin||index)}>{String(item.vehicle?.reg||item.vin||item.vehicle?.vin||"Unknown vehicle")} · {String(item.vehicle?.model||"Model N/A")} · Average {item.averageKmPerDay} km/day</li>)}</ul>
+              {mode === "bulk" && bulkMeta?.highRunningVehicles?.length > 0 && <div className="upload-warning no-print" style={{marginTop:8,padding:"10px 12px",border:"1px solid #f0b429",borderRadius:8,background:"rgba(240,180,41,.12)",color:"var(--text-color, #7c4a03)",fontSize:13,flexBasis:"100%",width:"100%",boxSizing:"border-box"}}>
+                <strong>Information: {bulkMeta.highRunningVehicles.length} vehicle(s) have average running above 400 km/day.</strong>
+                <div style={{marginTop:4}}>For these vehicles, KM reading is ignored by default and service decision is time-only. If you trust the KM reading for a particular vehicle, select Consider KM below and then click Analyze All Vehicles to recalculate. Each vehicle setting is independent.</div>
+                <ul style={{margin:"6px 0 0",paddingLeft:22,listStyle:"none"}}>{bulkMeta.highRunningVehicles.map((item,index)=>{
+                  const vinKey = String(item.vin || item.vehicle?.vin || "").trim().toUpperCase();
+                  const selected = bulkConsiderKm.includes(vinKey);
+                  return <li key={vinKey || index} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",marginTop:6}}>
+                    <span>{String(item.vehicle?.reg||item.vin||item.vehicle?.vin||"Unknown vehicle")} · Average {item.averageKmPerDay} km/day</span>
+                    <button type="button" className={"excel-button " + (selected ? "green" : "")} aria-pressed={selected} onClick={()=>setBulkConsiderKm(previous=>selected?previous.filter(value=>value!==vinKey):[...previous,vinKey])} style={{whiteSpace:"nowrap",fontSize:12,padding:"5px 10px"}}>{selected ? "KM selected · Re-analyze" : "Consider KM"}</button>
+                  </li>;
+                })}</ul>
               </div>}
               {uploadedFiles.length > 0 && <span className="status-pill blue">{uploadedFiles.length} Excel file{uploadedFiles.length > 1 ? "s" : ""}</span>}
               {mode === "single" && analysis && (

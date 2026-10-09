@@ -11,10 +11,18 @@
   "prefer_related_applications": false,
   "icons": [
     {
-      "src": "/favicon.svg?v=20261008-1",
-      "sizes": "512x512",
+      "src": "/favicon.svg?v=20261009-1",
+      "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any maskable",
+      "media": "(prefers-color-scheme: light)"
+    },
+    {
+      "src": "/favicon.svg?v=20261009-1",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable",
+      "media": "(prefers-color-scheme: dark)"
     }
   ]
 }

@@ -2477,11 +2477,38 @@ function buildBulkAnalysis(records) {
   }
 
   const results = [];
+  const ignoredVehicles = [];
   for (const [vinKey, vehicleRecords] of groups) {
     const vehicle = deriveVehicle(vehicleRecords);
     if (!vehicle.customerName && vehicle.customerNumber) {
       vehicle.customerName = customerNameByNumber.get(String(vehicle.customerNumber).trim()) || "";
     }
+
+    // Bulk-only reliability guard: exclude KM-based vehicles averaging over
+    // 400 km/day between sale date and their latest valid KM reading.
+    // HRS-based models are not assessed by a KM/day threshold.
+    const targetUnit = getTargetUnit(vehicle);
+    if (targetUnit === "KM" && vehicle.sale) {
+      const datedKm = vehicleRecords
+        .filter(record => record?.date && isKmUnit(record?.cumulativeUnit) && Number(record?.cumulative) > 0
+          || record?.date && isKmUnit(record?.secondaryCumulativeUnit) && Number(record?.secondaryCumulativeReading) > 0)
+        .map(record => ({ record, reading: getRelevantReading(record, vehicle) }))
+        .filter(item => item.reading > 0)
+        .sort((a, b) => a.record.date - b.record.date);
+      const lastKm = datedKm[datedKm.length - 1];
+      const runningDays = lastKm ? Math.floor((lastKm.record.date - vehicle.sale) / 86400000) : 0;
+      const averageKmPerDay = runningDays > 0 ? lastKm.reading / runningDays : null;
+      if (averageKmPerDay !== null && averageKmPerDay > 400) {
+        ignoredVehicles.push({
+          vin: vehicle.vin || vinKey,
+          vehicle,
+          averageKmPerDay: Math.round(averageKmPerDay),
+          reason: "Average daily KM running exceeds 400 km/day",
+        });
+        continue;
+      }
+    }
+
     const running = deriveRunningReading(vehicleRecords, vehicle);
     const decision = calculateDecisions(vehicleRecords, vehicle, running);
     const services = getDueServiceNames(decision);
@@ -2497,6 +2524,9 @@ function buildBulkAnalysis(records) {
   }
 
   results.sort((a, b) => b.dueCount - a.dueCount || String(a.vehicle.customerName || a.vehicle.customerNumber || "").localeCompare(String(b.vehicle.customerName || b.vehicle.customerNumber || "")));
+  // Keep excluded vehicles available only for the information message, never in
+  // service results/customer groups/WhatsApp output.
+  results.ignoredVehicles = ignoredVehicles;
   return results;
 }
 
@@ -5600,7 +5630,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
           services: [],
         });
         setOpenBulkFilter(null);
-        setBulkMeta({ records: parsed.records.length, vehicles: results.length, customers: groups.length });
+        setBulkMeta({ records: parsed.records.length, vehicles: results.length, customers: groups.length, ignoredVehicles: results.ignoredVehicles || [] });
         setMode("bulk");
         logUsage("Bulk Vehicle Analysis", {
           mode:"bulk",
@@ -5694,7 +5724,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         services: [],
       });
       setOpenBulkFilter(null);
-      setBulkMeta({ records: parsed.records.length, vehicles: results.length, customers: groups.length });
+      setBulkMeta({ records: parsed.records.length, vehicles: results.length, customers: groups.length, ignoredVehicles: results.ignoredVehicles || [] });
       logUsage("Bulk Vehicle Analysis", {
         mode:"bulk",
         vehicleCount:results.length,
@@ -8026,6 +8056,11 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
 
               </>}
               {mode === "bulk" && bulkMeta && <span className="status-pill green">{bulkMeta.vehicles} Vehicles · {bulkMeta.records} Rows</span>}
+              {mode === "bulk" && bulkMeta?.ignoredVehicles?.length > 0 && <div className="upload-warning no-print" style={{marginTop:8,padding:"10px 12px",border:"1px solid #f0b429",borderRadius:8,background:"rgba(240,180,41,.12)",color:"var(--text-color, #7c4a03)",fontSize:13}}>
+                <strong>Information: {bulkMeta.ignoredVehicles.length} vehicle(s) ignored from Bulk Service Check.</strong>
+                <div style={{marginTop:4}}>Average running is above 400 km/day, so these KM readings are treated as unreliable. No service decision or WhatsApp summary will be generated for these vehicles.</div>
+                <ul style={{margin:"6px 0 0",paddingLeft:22}}>{bulkMeta.ignoredVehicles.map((item,index)=><li key={String(item.vin||index)}>{String(item.vehicle?.reg||item.vin||item.vehicle?.vin||"Unknown vehicle")} · {String(item.vehicle?.model||"Model N/A")} · Average {item.averageKmPerDay} km/day</li>)}</ul>
+              </div>}
               {uploadedFiles.length > 0 && <span className="status-pill blue">{uploadedFiles.length} Excel file{uploadedFiles.length > 1 ? "s" : ""}</span>}
               {mode === "single" && analysis && (
                 <div className="compact-override-control no-print">

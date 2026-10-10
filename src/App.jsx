@@ -4048,7 +4048,7 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
   // Complete known multi-part aggregates from one confirmed job-card group when
   // exact DB part numbers and a positive historical/master rate are available.
   // Hub Greasing is explicitly excluded and keeps its existing hardcoded logic.
-  items = estimateAddMissingGroupedParts(items, selectedKeys, vehicle, modelHistory, allModelRates);
+  items.push(...estimateAddMissingGroupedParts(items, selectedKeys, vehicle, modelHistory, allModelRates).slice(items.length));
 
   // Keep one estimate line per final reference part number within each
   // aggregate. If the same reference was sourced from VIN history, it remains

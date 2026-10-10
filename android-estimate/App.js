@@ -8,7 +8,7 @@ export default function App() {
     try {
       await Linking.openURL(WEBSITE_URL);
     } catch {
-      // Keep the discontinued notice visible if the browser cannot be opened.
+      // Keep the website address visible if opening the browser fails.
     }
   };
 
@@ -20,19 +20,26 @@ export default function App() {
           <Text style={styles.icon}>!</Text>
         </View>
         <Text style={styles.brand}>SERVICE DECISION ENGINE</Text>
-        <Text style={styles.heading}>Application Discontinued</Text>
+        <Text style={styles.heading}>Android App Discontinued</Text>
         <Text style={styles.message}>
-          This application has been officially discontinued by the administrator and can no longer be used.
+          This Android app is no longer available. Please use our official website for service estimates.
         </Text>
-        <Text style={styles.detail}>
-          To continue using Service Decision Engine, please visit our official website. The website provides faster performance, more features, and more accurate estimates.
-        </Text>
-        <Pressable accessibilityRole="button" onPress={openWebsite} style={styles.button}>
-          <Text style={styles.buttonText}>OPEN OFFICIAL WEBSITE</Text>
+        <View style={styles.benefits}>
+          <Text style={styles.benefit}>• Faster performance</Text>
+          <Text style={styles.benefit}>• Accurate service estimates</Text>
+          <Text style={styles.benefit}>• Reliable, up-to-date information</Text>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Open official Service Decision Engine website"
+          onPress={openWebsite}
+          style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
+        >
+          <Text style={styles.buttonText}>OPEN OFFICIAL WEBSITE ↗</Text>
         </Pressable>
         <Text style={styles.url}>service-decision-engine.vercel.app</Text>
       </View>
-      <Text style={styles.footer}>This application is no longer supported.</Text>
+      <Text style={styles.footer}>Thank you for using Service Decision Engine.</Text>
     </SafeAreaView>
   );
 }
@@ -57,43 +64,50 @@ const styles = StyleSheet.create({
     elevation: 3
   },
   iconWrap: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     backgroundColor: '#FEE2E2',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 20
+    marginBottom: 18
   },
-  icon: { color: '#B91C1C', fontSize: 36, fontWeight: '800', lineHeight: 42 },
+  icon: { color: '#B91C1C', fontSize: 34, fontWeight: '800', lineHeight: 40 },
   brand: {
     color: '#475569',
     fontSize: 11,
     fontWeight: '800',
-    letterSpacing: 1.4,
+    letterSpacing: 1.2,
     textAlign: 'center',
     marginBottom: 12
   },
   heading: {
     color: '#0F172A',
-    fontSize: 25,
+    fontSize: 24,
     fontWeight: '800',
-    textAlign: 'center',
-    marginBottom: 14
-  },
-  message: {
-    color: '#334155',
-    fontSize: 16,
-    lineHeight: 24,
     textAlign: 'center',
     marginBottom: 12
   },
-  detail: {
-    color: '#64748B',
-    fontSize: 14,
+  message: {
+    color: '#334155',
+    fontSize: 15,
     lineHeight: 22,
     textAlign: 'center',
-    marginBottom: 24
+    marginBottom: 16
+  },
+  benefits: {
+    alignSelf: 'stretch',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    marginBottom: 22
+  },
+  benefit: {
+    color: '#334155',
+    fontSize: 14,
+    lineHeight: 24,
+    fontWeight: '600'
   },
   button: {
     width: '100%',
@@ -104,7 +118,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 14
   },
-  buttonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800', letterSpacing: 0.3 },
+  buttonPressed: { opacity: 0.82 },
+  buttonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800', letterSpacing: 0.2 },
   url: { color: '#166534', fontSize: 12, fontWeight: '700', marginTop: 12, textAlign: 'center' },
-  footer: { color: '#94A3B8', fontSize: 12, marginTop: 22, textAlign: 'center' }
+  footer: { color: '#94A3B8', fontSize: 12, marginTop: 20, textAlign: 'center' }
 });

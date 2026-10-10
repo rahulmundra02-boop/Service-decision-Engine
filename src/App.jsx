@@ -5219,37 +5219,62 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   };
 
   const deleteEstimateCache = async cacheId => {
+    const ownerKey = estimateCacheOwner();
+    const matches = row =>
+      String(row?.id || "") === String(cacheId) ||
+      String(row?.cacheKey || "") === String(cacheId) ||
+      String(row?.estimate_no || "") === String(cacheId);
+
     try {
+      // Remove from IndexedDB when present.
       const db = await openEstimateCache();
       if (db) {
         await new Promise((resolve, reject) => {
           const tx = db.transaction(ESTIMATE_CACHE_STORE, "readwrite");
           const store = tx.objectStore(ESTIMATE_CACHE_STORE);
-          const request = store.index("ownerKey").getAll(estimateCacheOwner());
+          const request = store.index("ownerKey").getAll(ownerKey);
           request.onsuccess = () => {
-            const item = (request.result || []).find(row =>
-              String(row.id || "") === String(cacheId) ||
-              String(row.cacheKey || "") === String(cacheId)
-            );
-            if (item?.cacheKey) store.delete(item.cacheKey);
+            (request.result || []).filter(matches).forEach(item => {
+              if (item?.cacheKey) store.delete(item.cacheKey);
+            });
           };
           request.onerror = () => reject(request.error);
           tx.oncomplete = resolve;
           tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error || new Error("Estimate delete transaction aborted."));
         });
-      } else {
-        const list = await readEstimateCache();
-        localStorage.setItem(
-          ESTIMATE_CACHE_PREFIX + estimateCacheOwner(),
-          JSON.stringify(list.filter(item =>
-            String(item.id || "") !== String(cacheId) &&
-            String(item.cacheKey || "") !== String(cacheId)
-          ))
-        );
       }
+
+      // Also clear legacy/localStorage copies. Older estimates may have been
+      // saved there before IndexedDB became available on this browser.
+      const storageKey = ESTIMATE_CACHE_PREFIX + ownerKey;
+      const raw = localStorage.getItem(storageKey);
+      if (raw) {
+        const list = JSON.parse(raw);
+        if (Array.isArray(list)) {
+          localStorage.setItem(storageKey, JSON.stringify(list.filter(item => !matches(item))));
+        }
+      }
+
+      // Verify deletion across both stores so the UI cannot silently report success.
+      let remains = false;
+      if (db) {
+        remains = await new Promise((resolve, reject) => {
+          const tx = db.transaction(ESTIMATE_CACHE_STORE, "readonly");
+          const request = tx.objectStore(ESTIMATE_CACHE_STORE).index("ownerKey").getAll(ownerKey);
+          request.onsuccess = () => resolve((request.result || []).some(matches));
+          request.onerror = () => reject(request.error);
+        });
+      }
+      const rawAfter = localStorage.getItem(storageKey);
+      if (rawAfter) {
+        const listAfter = JSON.parse(rawAfter);
+        if (Array.isArray(listAfter) && listAfter.some(matches)) remains = true;
+      }
+      if (remains) throw new Error("Estimate still exists in local cache; deletion could not be verified.");
     } catch (error) {
       console.warn("Estimate cache delete failed:", error);
-      throw new Error("Unable to delete the local estimate.");
+      throw new Error(error?.message || "Unable to delete the local estimate.");
     }
   };
 

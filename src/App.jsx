@@ -6889,7 +6889,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     const margin = 10;
     const width = 190;
     // Keep clear of the pre-printed letterhead footer while reclaiming excess whitespace.
-    const bottomMargin = 22;
+    const bottomMargin = 19;
     const bottomSafeY = pageHeight - bottomMargin;
     const vehicle = estimateVehicle || analysis?.vehicle || {};
     const workshop = String(user?.dealerName || "Workshop").trim();
@@ -6910,8 +6910,8 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
 
     // Keep a clear printable area inside the letterhead. The same header and
     // vehicle details are repeated automatically on every A4 page.
-    const contentTop = letterheadImage ? 42 : 15;
-    const headerHeight = 43;
+    const contentTop = letterheadImage ? 36 : 12;
+    const headerHeight = 39;
     const tableTop = contentTop + headerHeight + 3;
 
     const drawPageHeader = () => {
@@ -6922,20 +6922,20 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       drawLetterheadBackground();
 
       pdf.setFont("helvetica","bold");
-      pdf.setFontSize(15);
+      pdf.setFontSize(14);
       pdf.text("SERVICE ESTIMATE",105,contentTop,{align:"center"});
-      pdf.setFontSize(9);
-      pdf.text(workshop,105,contentTop + 7,{align:"center"});
+      pdf.setFontSize(8.5);
+      pdf.text(workshop,105,contentTop + 6.5,{align:"center"});
       pdf.setFont("helvetica","normal");
-      pdf.setFontSize(7.5);
-      pdf.text("Estimate only - subject to actual inspection and applicable rates.",105,contentTop + 10,{align:"center"});
-      pdf.setFontSize(7.5);
-      pdf.text("Estimate No. (Session): " + (estimateNumber || "-"),margin,contentTop + 14);
-      pdf.text("Prepared: " + formatDate(new Date()),width + margin,contentTop + 14,{align:"right"});
+      pdf.setFontSize(7);
+      pdf.text("Estimate only - subject to actual inspection and applicable rates.",105,contentTop + 9.5,{align:"center"});
+      pdf.setFontSize(7);
+      pdf.text("Estimate No. (Session): " + (estimateNumber || "-"),margin,contentTop + 13);
+      pdf.text("Prepared: " + formatDate(new Date()),width + margin,contentTop + 13,{align:"right"});
 
       const colWidth = width / 3;
-      const rowHeight = 10.5;
-      const vehicleTop = contentTop + 18;
+      const rowHeight = 9.5;
+      const vehicleTop = contentTop + 17;
       const printModel = String(estimatePrintModel || vehicle.model || "").trim();
       const vehicleRows = estimateVehicleFromDb
         ? [
@@ -6946,7 +6946,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
             [["Customer", vehicle.customerName || "-"], ["Reg. No.", vehicle.reg || "-"], ["Model", printModel || "-"]]
           ];
 
-      pdf.setFontSize(6.8);
+      pdf.setFontSize(6.5);
       vehicleRows.forEach((row, rowIndex) => {
         row.forEach((field, colIndex) => {
           const x = margin + colIndex * colWidth;
@@ -6995,8 +6995,8 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       theme:"grid",
       styles:{
         font:"helvetica",
-        fontSize:7.7,
-        cellPadding:2.0,
+        fontSize:7.3,
+        cellPadding:1.6,
         fillColor:false,
         lineColor:[150,150,150],
         lineWidth:0.2,
@@ -7042,8 +7042,8 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       theme:"grid",
       styles:{
         font:"helvetica",
-        fontSize:7.7,
-        cellPadding:2.0,
+        fontSize:7.3,
+        cellPadding:1.6,
         fillColor:false,
         lineColor:[150,150,150],
         lineWidth:0.2,
@@ -7079,12 +7079,14 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     // Keep the four-line summary AND signature as one unit. Never leave
     // the summary on one page and push only the signature to another.
     const signatureW = Math.max(10, Math.min(90, pageWidth * Number(signaturePlacement.width || 20) / 100));
-    const signatureH = Math.min(24, Math.max(10, signatureW * 0.28));
-    const summaryReserve = 42 + signatureH + 12;
+    const signatureH = Math.min(20, Math.max(9, signatureW * 0.24));
+    // Reserve the actual four summary rows plus the signature block, rather
+    // than an oversized fixed buffer that strands the summary on page 2.
+    const summaryReserve = 34 + signatureH + 8;
     if (y + summaryReserve > bottomSafeY) {
       pdf.addPage();
       drawPageHeader();
-      y = tableTop + 7;
+      y = tableTop + 2;
     }
 
     autoTable(pdf,{
@@ -7095,8 +7097,8 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       theme:"grid",
       styles:{
         font:"helvetica",
-        fontSize:8.5,
-        cellPadding:3,
+        fontSize:8,
+        cellPadding:2,
         fillColor:false,
         lineColor:[150,150,150],
         lineWidth:0.2
@@ -7116,7 +7118,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       willDrawPage:tablePageHeader
     });
 
-    y=(pdf.lastAutoTable?.finalY||y+25)+10;
+    y=(pdf.lastAutoTable?.finalY||y+25)+5;
 
     // Place signature just below the summary instead of anchoring it at
     // the bottom of the page and leaving a large blank area.
@@ -7127,7 +7129,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         pageWidth * Number(signaturePlacement.x || 70) / 100
       )
     );
-    const signatureY = Math.min(y + 3, bottomSafeY - signatureH - 7);
+    const signatureY = y + 2;
 
     if(signatureImage){
       try {

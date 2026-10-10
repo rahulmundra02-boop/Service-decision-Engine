@@ -5237,11 +5237,17 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
           const store = tx.objectStore(ESTIMATE_CACHE_STORE);
           // Do not rely on the ownerKey index: older browser databases may
           // have been created without that index.
-          const request = store.getAll();
+          // Cursor gives the real primary key, even for estimates written
+          // by an older app version whose object-store keyPath was different.
+          const request = store.openCursor();
           request.onsuccess = () => {
-            (request.result || [])
-              .filter(row => String(row?.ownerKey || ownerKey) === ownerKey && matches(row))
-              .forEach(row => { if (row?.cacheKey) store.delete(row.cacheKey); });
+            const cursor = request.result;
+            if (!cursor) return;
+            const row = cursor.value;
+            if (String(row?.ownerKey || ownerKey) === ownerKey && matches(row)) {
+              cursor.delete();
+            }
+            cursor.continue();
           };
           request.onerror = () => reject(request.error);
           tx.oncomplete = resolve;

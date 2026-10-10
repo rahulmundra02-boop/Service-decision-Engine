@@ -115,8 +115,11 @@ export function validateEstimateAggregateSelection({ selectedServices = [], part
     }
 
     if (key === "fuelFilter") {
-      const kit = aggregateParts.some(item => hasText(item, ["FUEL FILTER KIT", "FUEL FILTER ELEMENT KIT"]) && qty(item) >= 1);
-      if (!kit && sumQty(aggregateParts.filter(item => hasText(item, ["FUEL FILTER", "FUELFILTER"]))) < 2) {
+      // Fuel-filter items can be part of the Engine Oil group in a complete
+      // job card, so validate the whole estimate rather than only one serviceKey.
+      const fuelItems = validParts.filter(item => hasText(item, ["FUEL FILTER", "FUELFILTER"]));
+      const kit = fuelItems.some(item => hasText(item, ["FUEL FILTER KIT", "FUEL FILTER ELEMENT KIT"]) && qty(item) >= 1);
+      if (!kit && sumQty(fuelItems) < 2) {
         add(key, "Fuel Filter grouping needs a compatible pair (total quantity 2 or more) or a confirmed kit.");
       }
     }

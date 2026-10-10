@@ -621,7 +621,9 @@ function isUsableCustomerNumber(value) {
 
 function normalizePartName(value = "") {
   return String(value || "").toUpperCase().replace(/[^A-Z0-9]+/g, " ").replace(/\s+/g, " ").trim();
-}\n\nfunction normalizePartCode(value) {
+}
+
+function normalizePartCode(value) {
   return String(value ?? "")
     .toUpperCase()
     .replace(/\([A-Z0-9]+\)$/g, "")
@@ -3974,7 +3976,8 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
   // Complete known multi-part aggregates from one confirmed job-card group when
   // exact DB part numbers and a positive historical/master rate are available.
   // Hub Greasing is explicitly excluded and keeps its existing hardcoded logic.
-  // Do not auto-append extra parts from a historical job card here. Each selected\n  // aggregate is resolved only through its own part grouping rules below.
+  // Do not auto-append extra parts from a historical job card here. Each selected
+  // aggregate is resolved only through its own part grouping rules below.
 
   // Keep one estimate line per final reference part number within each
   // aggregate. If the same reference was sourced from VIN history, it remains

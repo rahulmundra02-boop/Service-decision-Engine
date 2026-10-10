@@ -6884,8 +6884,8 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         : 21
     }));
     ws["!autofilter"] = { ref: "A" + (partsHeaderRow + 1) + ":F" + Math.max(partsEndRow + 1, partsHeaderRow + 1) };
-    ws["!freeze"] = { xSplit: 0, ySplit: partsHeaderRow + 1 };
     ws["!margins"] = { left: 0.25, right: 0.25, top: 0.35, bottom: 0.35, header: 0.15, footer: 0.15 };
+    ws["!fitToPage"] = true;
     ws["!pageSetup"] = { paperSize: 9, orientation: "portrait", fitToWidth: 1, fitToHeight: 0 };
     ws["!printOptions"] = { horizontalCentered: true, verticalCentered: false };
     ws["!printArea"] = "A1:F" + rows.length;

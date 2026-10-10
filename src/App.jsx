@@ -6635,36 +6635,35 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   const estimateGrandTotal = estimatePartsTotal+estimateLabourTotal;
   function downloadXlsxBlob(workbook, fileName) {
     const mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    let blob;
     try {
-      const arrayBuffer = XLSX.write(workbook, {
-        bookType: "xlsx",
-        type: "array",
-        compression: true,
-      });
-      const blob = new Blob([arrayBuffer], { type: mimeType });
-      if (typeof navigator !== "undefined" && typeof navigator.msSaveOrOpenBlob === "function") {
-        navigator.msSaveOrOpenBlob(blob, fileName);
-        return;
-      }
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = fileName;
-      link.style.display = "none";
-      link.setAttribute("rel", "noopener");
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+      // Build the XLSX once, then download it through a real, visible anchor click.
+      const bytes = XLSX.write(workbook, { bookType: "xlsx", type: "array", compression: true });
+      blob = new Blob([bytes], { type: mimeType });
     } catch (error) {
-      console.error("Estimate Excel blob download failed; trying SheetJS fallback:", error);
-      try {
-        XLSX.writeFile(workbook, fileName, { bookType: "xlsx", compression: true });
-      } catch (fallbackError) {
-        console.error("Estimate Excel fallback failed:", fallbackError);
-        window.alert("Excel file download nahi ho paya. Please browser downloads allow karke dobara try karein.");
-      }
+      console.error("Estimate Excel generation failed:", error);
+      window.alert("Excel file banate waqt error aaya. Console me error details available hain.");
+      return;
     }
+
+    if (typeof navigator !== "undefined" && typeof navigator.msSaveOrOpenBlob === "function") {
+      navigator.msSaveOrOpenBlob(blob, fileName);
+      return;
+    }
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    link.style.position = "fixed";
+    link.style.left = "-10000px";
+    link.style.top = "0";
+    link.setAttribute("download", fileName);
+    document.body.appendChild(link);
+    // Click in the same event turn as the user's Export Excel action.
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 300000);
   }
 
   function exportEstimateExcel() {
@@ -6806,7 +6805,6 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   }
 
   async function buildEstimatePdf(autoPrint = false, sharePdf = false) {
-    const printWindow = autoPrint && !sharePdf ? window.open("about:blank", "_blank") : null;
     const pdf = new jsPDF({ unit:"mm", format:"a4", orientation:"portrait", compress:true });
     const pageWidth = 210;
     const pageHeight = 297;
@@ -7120,25 +7118,44 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         }
       }
     } else if(autoPrint){
-      pdf.autoPrint();
-      const pdfBlob = pdf.output("blob");
-      const pdfUrl = URL.createObjectURL(pdfBlob);
-      if (printWindow && !printWindow.closed) {
-        printWindow.location.replace(pdfUrl);
-        window.setTimeout(() => URL.revokeObjectURL(pdfUrl), 120000);
-      } else {
-        try {
-          const fallbackUrl = pdf.output("bloburl");
-          const fallbackWindow = window.open(fallbackUrl, "_blank");
-          if (!fallbackWindow) {
-            URL.revokeObjectURL(pdfUrl);
-            window.alert("Print window block ho gaya. Please browser me pop-ups allow karke Print A4 dobara click karein.");
+      // Print inside a hidden iframe so the action does not depend on pop-ups.
+      let pdfUrl = "";
+      let printFrame = null;
+      try {
+        const pdfBlob = pdf.output("blob");
+        pdfUrl = URL.createObjectURL(pdfBlob);
+        printFrame = document.createElement("iframe");
+        printFrame.title = "Service Estimate A4 Print";
+        printFrame.style.position = "fixed";
+        printFrame.style.right = "0";
+        printFrame.style.bottom = "0";
+        printFrame.style.width = "1px";
+        printFrame.style.height = "1px";
+        printFrame.style.border = "0";
+        printFrame.style.opacity = "0";
+        printFrame.setAttribute("aria-hidden", "true");
+        printFrame.onload = () => {
+          try {
+            printFrame.contentWindow.focus();
+            printFrame.contentWindow.print();
+          } catch (printError) {
+            console.error("A4 iframe print failed:", printError);
+            window.alert("Print dialog open nahi hua. PDF ko Download PDF button se save karke print karein.");
           }
-        } catch (error) {
-          URL.revokeObjectURL(pdfUrl);
-          console.error("Estimate A4 print failed:", error);
-          window.alert("A4 print open nahi ho paya. Please dobara try karein.");
-        }
+        };
+        printFrame.src = pdfUrl;
+        document.body.appendChild(printFrame);
+        window.setTimeout(() => {
+          try { printFrame?.remove(); } catch {}
+          try { URL.revokeObjectURL(pdfUrl); } catch {}
+        }, 300000);
+      } catch (error) {
+        console.error("Estimate A4 print failed:", error);
+        try { printFrame?.remove(); } catch {}
+        if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+        // Reliable fallback: save the same A4 PDF instead of blocking the user.
+        pdf.save(fileNameBase + ".pdf");
+        window.alert("Direct print start nahi hua, isliye A4 PDF save kar di hai. Downloaded PDF kholkar Print karein.");
       }
     } else {
       pdf.save(fileNameBase + ".pdf");

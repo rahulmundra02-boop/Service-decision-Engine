@@ -3543,6 +3543,118 @@ function estimateRowsForCompleteService(rows = [], serviceKey = "") {
   );
 }
 
+function estimateAddMissingGroupedParts(items = [], selectedKeys = [], vehicleRows = [], modelRows = [], globalPartRates = []) {
+  // Only use an actual complete job-card group. Never infer a compatible part
+  // from a similar description alone, and never touch Hub Greasing.
+  const additions = [];
+  const existingCodes = new Set(items
+    .filter(item => item?.type === "part")
+    .map(item => normalizePartCode(item?.partNo))
+    .filter(Boolean));
+  const globalRateFor = partCode => {
+    const wanted = normalizePartCode(partCode);
+    const match = (globalPartRates || []).find(row =>
+      normalizePartCode(row?.part_code) === wanted && Number(row?.rate) > 0
+    );
+    return Number(match?.rate || 0);
+  };
+  const latestCompleteRows = (rows, groupKey) => {
+    const eligible = estimateEligibleJobCards(rows, groupKey);
+    if (!eligible.size) return [];
+    const bestKey = [...eligible].sort((a, b) => {
+      const aRank = Math.max(0, ...estimateRowsForJobCard(rows, a).map(row => estimateRowRank(row, 0)));
+      const bRank = Math.max(0, ...estimateRowsForJobCard(rows, b).map(row => estimateRowRank(row, 0)));
+      return bRank - aRank;
+    })[0];
+    return estimateRowsForJobCard(rows, bestKey).filter(row =>
+      estimateCategory(row) === "part" && Number(row?.quantity || 0) > 0
+    );
+  };
+  const addRows = (rows, serviceKey, predicate) => {
+    const candidates = rows.filter(predicate);
+    const byCode = new Map();
+    for (const row of candidates) {
+      const partCode = normalizePartCode(row?.part_code);
+      if (!partCode || existingCodes.has(partCode)) continue;
+      if (!byCode.has(partCode)) byCode.set(partCode, []);
+      byCode.get(partCode).push(row);
+    }
+    for (const [partCode, partRows] of byCode) {
+      const historyRate = estimateChooseBestRate(partRows);
+      const baseRate = Math.max(historyRate, globalRateFor(partCode));
+      // Auto-add only when DB-backed pricing is confirmed.
+      if (!(baseRate > 0)) continue;
+      const totalQty = partRows.reduce((sum, row) => sum + Math.max(0, Number(row?.quantity || 0)), 0);
+      if (!(totalQty > 0)) continue;
+      const item = estimateBuildHistoricalItem("part", serviceKey, partRows, partCode, totalQty, baseRate);
+      if (!item) continue;
+      item.partNo = partCode;
+      item.qty = totalQty;
+      item.baseRate = baseRate;
+      item.rate = Number((baseRate * 1.18).toFixed(2));
+      item.source = "Completed aggregate group from DB history (18% GST added)";
+      additions.push(item);
+      existingCodes.add(partCode);
+    }
+  };
+
+  const selected = new Set((selectedKeys || []).filter(key => key && key !== "hubGrease"));
+  const vehicleComplete = new Map();
+  const modelComplete = new Map();
+  for (const key of ["engineOil", "steeringOil", "defFilter"]) {
+    if (!selected.has(key) && !(key === "engineOil" && selected.has("fuelFilter"))) continue;
+    vehicleComplete.set(key, latestCompleteRows(vehicleRows, key));
+    modelComplete.set(key, latestCompleteRows(modelRows, key));
+  }
+  const groupedRows = key => {
+    const vehicle = vehicleComplete.get(key) || [];
+    return vehicle.length ? vehicle : (modelComplete.get(key) || []);
+  };
+
+  if (selected.has("engineOil") || selected.has("fuelFilter")) {
+    const rows = groupedRows("engineOil");
+    if (rows.length) {
+      const isFuelOrKit = row => {
+        const name = estimateStandardPartName(row);
+        return name.includes("FUEL FILTER") || name.includes("FUELFILTER");
+      };
+      if (selected.has("engineOil")) {
+        addRows(rows, "engineOil", row => {
+          const name = estimateStandardPartName(row);
+          return normalizePartCode(row?.part_code) === "EN699991" ||
+            normalizePartCode(row?.part_code) === "F7A01500" ||
+            (name.includes("ENGINE OIL") && !name.includes("FUEL FILTER")) ||
+            isFuelOrKit(row);
+        });
+      } else {
+        addRows(rows, "fuelFilter", isFuelOrKit);
+      }
+    }
+  }
+
+  if (selected.has("steeringOil")) {
+    const rows = groupedRows("steeringOil");
+    if (rows.length) addRows(rows, "steeringOil", row => {
+      const name = estimateStandardPartName(row);
+      return name.includes("STEERING OIL") || name.includes("POWER STEERING") ||
+        normalizePartCode(row?.part_code) === "PSB99994" ||
+        normalizePartCode(row?.part_code) === "PD600391";
+    });
+  }
+
+  if (selected.has("defFilter")) {
+    const rows = groupedRows("defFilter");
+    if (rows.length) addRows(rows, "defFilter", row => {
+      const name = estimateStandardPartName(row);
+      return (name.includes("DEF") && name.includes("FILTER") && !name.includes("INLINE")) ||
+        normalizePartCode(row?.part_code) === "XFM00500" ||
+        normalizePartCode(row?.part_code) === "PET00001";
+    });
+  }
+
+  return [...items, ...additions];
+}
+
 function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows = [], globalPartRates = [], vehicleModel = "") {
   const vehicle = Array.isArray(vehicleRows) ? vehicleRows : [];
   const modelHistory = Array.isArray(modelRows) ? modelRows : [];
@@ -3932,6 +4044,11 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
       }
     }
   }
+
+  // Complete known multi-part aggregates from one confirmed job-card group when
+  // exact DB part numbers and a positive historical/master rate are available.
+  // Hub Greasing is explicitly excluded and keeps its existing hardcoded logic.
+  items = estimateAddMissingGroupedParts(items, selectedKeys, vehicle, modelHistory, allModelRates);
 
   // Keep one estimate line per final reference part number within each
   // aggregate. If the same reference was sourced from VIN history, it remains

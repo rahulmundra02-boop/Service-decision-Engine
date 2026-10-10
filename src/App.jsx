@@ -3048,11 +3048,11 @@ const ESTIMATE_STANDARD_PARTS = {
   gearOil: ["GEAR OIL"],
   hubGrease: ["HUB GREASE"],
   axleOil: ["AXLE OIL"],
-  fuelFilter: ["FUEL FILTER", "FUEL FILTER KIT", "FUEL FILTER ELEMENT KIT", "ENGINE OIL FILTER & FUEL FILTER KIT"],
+  fuelFilter: ["FUEL FILTER", "FUEL FILTER KIT"],
   steeringOil: ["STEERING OIL"],
   airFilter: ["AIR FILTER", "AIR FILTER KIT"],
   clutchOil: ["CLUTCH OIL"],
-  defFilter: ["DEF FILTER", "DEF DOSING PUMP AIR FILTER", "DEF TANK SUCTION FILTER", "DEF FILTER AIR", "DEF FILTER SUCTION"],
+  defFilter: ["DEF FILTER KIT", "DEF DOSING PUMP AIR FILTER", "DEF TANK SUCTION FILTER", "DEF FILTER AIR", "DEF FILTER SUCTION"],
   defInline: ["DEF INLINE FILTER"],
   apdaFilter: ["APDA FILTER"],
 };
@@ -3089,7 +3089,7 @@ const ESTIMATE_REFERENCE_COMPONENTS = {
     PET00001: ["DEF TANK SUCTION FILTER", "DEF FILTER SUCTION"],
   },
   fuelFilter: {
-    P5105609: ["FUEL FILTER KIT", "FUEL FILTER ELEMENT KIT"],
+    P5105609: ["FUEL FILTER KIT"],
   },
 };
 
@@ -3317,11 +3317,6 @@ function estimatePartMatchesService(row = {}, serviceKey = "") {
   if (category === "labour") return false;
 
   const code = normalizePartCode(row.part_code);
-  const referenceCodes = (ESTIMATE_REFERENCE_PARTS[serviceKey] || []).map(normalizePartCode);
-
-  // User-provided reference part numbers are authoritative identifiers for
-  // the estimate. If the exact reference exists in DB, it is always included.
-  if (code && referenceCodes.includes(code)) return true;
 
   if (serviceKey === "hubGrease") {
     if (HUB_GREASE_STANDARD_CODES.has(code)) return true;
@@ -3658,9 +3653,7 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
   function buildAlternativeFilterItems(serviceKey) {
     const isFuel = serviceKey === "fuelFilter";
     const individualName = isFuel ? "FUEL FILTER" : "AIR FILTER";
-    const kitNames = isFuel
-      ? ["FUEL FILTER KIT", "FUEL FILTER ELEMENT KIT", "ENGINE OIL FILTER & FUEL FILTER KIT"]
-      : ["AIR FILTER KIT"];
+    const kitNames = isFuel ? ["FUEL FILTER KIT"] : ["AIR FILTER KIT"];
     const sourceGroups = [vehicle, modelHistory];
 
     for (const sourceRows of sourceGroups) {
@@ -3684,12 +3677,14 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
         }
         const choices = [...byCode.entries()].map(([code, rows]) => ({
           code,
-          rows,
+          rows: latestFirst(rows),
           available: rows.reduce((sum, row) => sum + Math.max(0, Number(row?.quantity || 0)), 0),
           latest: Math.max(...rows.map(row => estimateRowRank(row, 0)))
-        })).sort((a, b) => b.latest - a.latest);
-        if (choices.reduce((sum, choice) => sum + choice.available, 0) < 2) return null;
-        return { mode: "individual", choices };
+        })).filter(choice => choice.available >= 1)
+          .sort((a, b) => b.latest - a.latest);
+        // The rule explicitly requires TWO DIFFERENT part numbers, each qty 1.
+        if (choices.length < 2) return null;
+        return { mode: "individual", choices: choices.slice(0, 2) };
       });
 
       if (!complete) continue;
@@ -3699,20 +3694,16 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
       }
 
       const result = [];
-      let remaining = 2;
       for (const choice of complete.choices) {
-        if (remaining <= 0) break;
-        const take = Math.min(remaining, choice.available);
-        const rows = latestFirst(choice.rows);
-        const item = estimateBuildHistoricalItem("part", serviceKey, rows, choice.code, take);
+        const row = choice.rows[0];
+        const item = estimateBuildHistoricalItem("part", serviceKey, [row], choice.code, 1);
         if (!item) continue;
         item.partNo = choice.code;
-        item.qty = take;
+        item.qty = 1;
         item.description = individualName;
         result.push(applyGlobalPartRate(item));
-        remaining -= take;
       }
-      if (remaining === 0) return result;
+      if (result.length === 2 && new Set(result.map(item => normalizePartCode(item.partNo))).size === 2) return result;
     }
     // Do not invent a one-piece filter when neither a kit nor a valid pair is
     // present in VIN/model history. Aggregate validation will flag the gap.
@@ -3841,11 +3832,10 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
     // VIN has no clutch-oil history, use the latest matching same-model part.
     // This keeps the estimate to ONE Clutch Oil part line.
     if (serviceKey === "clutchOil") {
-      const clutchCodes = new Set(CLUTCH_OIL_PART_CODES.map(normalizePartCode));
       const pickLatest = rows => rows
         .filter(row =>
           estimateCategory(row) === "part" &&
-          clutchCodes.has(normalizePartCode(row?.part_code)) &&
+          estimatePartMatchesService(row, "clutchOil") &&
           Number(row?.quantity || 0) > 0
         )
         .sort((a,b) =>
@@ -3860,7 +3850,8 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
         "part",
         serviceKey,
         [selected],
-        normalizePartCode(selected.part_code)
+        normalizePartCode(selected.part_code),
+        0.5
       );
       if (!item) return [];
 
@@ -3913,8 +3904,12 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
         // the prescribed quantity rather than an old historical quantity.
         const qtyRule = ESTIMATE_MODEL_QTY_RULES[serviceKey];
         let forcedQty = null;
-        // DEF Inline Filter and APDA Filter are always one-piece selections.
+        // Filter components are individual items, not oil-volume quantities.
         if (serviceKey === "defInline" || serviceKey === "apdaFilter") {
+          forcedQty = 1;
+        } else if (serviceKey === "engineOil" && referenceCode === "F7A01500") {
+          forcedQty = 1;
+        } else if (serviceKey === "steeringOil" && referenceCode === "PD600391") {
           forcedQty = 1;
         } else if (qtyRule?.fixed !== undefined) {
           forcedQty = Number(qtyRule.fixed);

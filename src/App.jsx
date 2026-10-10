@@ -3048,9 +3048,9 @@ const ESTIMATE_STANDARD_PARTS = {
   gearOil: ["GEAR OIL"],
   hubGrease: ["HUB GREASE"],
   axleOil: ["AXLE OIL"],
-  fuelFilter: ["FUEL FILTER", "FUEL FILTER KIT", "FUEL FILTER ELEMENT KIT"],
+  fuelFilter: ["FUEL FILTER", "FUEL FILTER KIT", "FUEL FILTER ELEMENT KIT", "ENGINE OIL FILTER & FUEL FILTER KIT"],
   steeringOil: ["STEERING OIL"],
-  airFilter: ["AIR FILTER"],
+  airFilter: ["AIR FILTER", "AIR FILTER KIT"],
   clutchOil: ["CLUTCH OIL"],
   defFilter: ["DEF FILTER", "DEF DOSING PUMP AIR FILTER", "DEF TANK SUCTION FILTER", "DEF FILTER AIR", "DEF FILTER SUCTION"],
   defInline: ["DEF INLINE FILTER"],
@@ -3507,13 +3507,9 @@ function estimateEligibleJobCards(rows = [], serviceKey = "") {
         .filter(row => !estimateStandardPartName(row).includes("FILTER"))
         .reduce((sum, row) => sum + Math.max(0, Number(row?.quantity || 0)), 0);
       const oilFilter = estimateHasPart(jcRows, ["ENGINE OIL FILTER"], 1);
-      const fuelFilterPair = estimateHasPart(jcRows, ["FUEL FILTER"], 2);
-      const fuelFilterKit = estimateHasPart(
-        jcRows,
-        ["FUEL FILTER KIT", "FUEL FILTER & ENGINE OIL FILTER KIT"],
-        1
-      );
-      if (engineQty >= 12 && oilFilter && (fuelFilterPair || fuelFilterKit)) eligible.add(key);
+      // Engine Oil eligibility depends only on Engine Oil + Oil Filter.
+      // Fuel Filter is a separate aggregate and must never be required here.
+      if (engineQty >= 12 && oilFilter) eligible.add(key);
       continue;
     }
 
@@ -3616,6 +3612,145 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
     );
   }
 
+  function exactStandardRows(sourceRows, allowedNames) {
+    const allowed = new Set(allowedNames.map(normalizePartName));
+    return sourceRows.filter(row =>
+      estimateCategory(row) === "part" &&
+      normalizePartCode(row?.part_code) &&
+      Number(row?.quantity || 0) > 0 &&
+      allowed.has(normalizePartName(estimateStandardPartName(row)))
+    );
+  }
+
+  function latestFirst(rows) {
+    return rows.slice().sort((a, b) => estimateRowRank(b, 0) - estimateRowRank(a, 0));
+  }
+
+  function rowsInBestCompleteGroup(sourceRows, classifyGroup) {
+    const groups = new Map();
+    for (const row of sourceRows) {
+      const key = estimateJobCardKey(row);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(row);
+    }
+    const orderedGroups = [...groups.values()].sort((a, b) =>
+      Math.max(...b.map(row => estimateRowRank(row, 0))) -
+      Math.max(...a.map(row => estimateRowRank(row, 0)))
+    );
+    for (const group of orderedGroups) {
+      const match = classifyGroup(group);
+      if (match) return match;
+    }
+    return null;
+  }
+
+  function makeExactEstimatePart(serviceKey, row, code, forcedQty) {
+    const partNo = normalizePartCode(code || row?.part_code);
+    if (!partNo || !(Number(forcedQty) > 0)) return null;
+    const item = estimateBuildHistoricalItem("part", serviceKey, [row], partNo, forcedQty);
+    if (!item) return null;
+    item.partNo = partNo;
+    item.qty = Number(forcedQty);
+    item.description = estimateStandardPartName(row) || item.description || partNo;
+    return applyGlobalPartRate(item);
+  }
+
+  function buildAlternativeFilterItems(serviceKey) {
+    const isFuel = serviceKey === "fuelFilter";
+    const individualName = isFuel ? "FUEL FILTER" : "AIR FILTER";
+    const kitNames = isFuel
+      ? ["FUEL FILTER KIT", "FUEL FILTER ELEMENT KIT", "ENGINE OIL FILTER & FUEL FILTER KIT"]
+      : ["AIR FILTER KIT"];
+    const sourceGroups = [vehicle, modelHistory];
+
+    for (const sourceRows of sourceGroups) {
+      const candidates = exactStandardRows(sourceRows, [individualName, ...kitNames]);
+      const complete = rowsInBestCompleteGroup(candidates, group => {
+        const kit = latestFirst(group.filter(row =>
+          kitNames.includes(normalizePartName(estimateStandardPartName(row)))
+        ))[0];
+        // A kit and a two-filter set are alternatives. Prefer one valid kit
+        // from this job card; never append individual filters alongside it.
+        if (kit) return { mode: "kit", rows: [kit] };
+
+        const individualRows = latestFirst(group.filter(row =>
+          normalizePartName(estimateStandardPartName(row)) === normalizePartName(individualName)
+        ));
+        const byCode = new Map();
+        for (const row of individualRows) {
+          const code = normalizePartCode(row?.part_code);
+          if (!byCode.has(code)) byCode.set(code, []);
+          byCode.get(code).push(row);
+        }
+        const choices = [...byCode.entries()].map(([code, rows]) => ({
+          code,
+          rows,
+          available: rows.reduce((sum, row) => sum + Math.max(0, Number(row?.quantity || 0)), 0),
+          latest: Math.max(...rows.map(row => estimateRowRank(row, 0)))
+        })).sort((a, b) => b.latest - a.latest);
+        if (choices.reduce((sum, choice) => sum + choice.available, 0) < 2) return null;
+        return { mode: "individual", choices };
+      });
+
+      if (!complete) continue;
+      if (complete.mode === "kit") {
+        const row = complete.rows[0];
+        return [makeExactEstimatePart(serviceKey, row, row.part_code, 1)].filter(Boolean);
+      }
+
+      const result = [];
+      let remaining = 2;
+      for (const choice of complete.choices) {
+        if (remaining <= 0) break;
+        const take = Math.min(remaining, choice.available);
+        const rows = latestFirst(choice.rows);
+        const item = estimateBuildHistoricalItem("part", serviceKey, rows, choice.code, take);
+        if (!item) continue;
+        item.partNo = choice.code;
+        item.qty = take;
+        item.description = individualName;
+        result.push(applyGlobalPartRate(item));
+        remaining -= take;
+      }
+      if (remaining === 0) return result;
+    }
+    // Do not invent a one-piece filter when neither a kit nor a valid pair is
+    // present in VIN/model history. Aggregate validation will flag the gap.
+    return [];
+  }
+
+  function buildDefFilterItems() {
+    const kitNames = ["DEF FILTER KIT"];
+    const airNames = ["DEF DOSING PUMP AIR FILTER", "DEF FILTER AIR"];
+    const suctionNames = ["DEF TANK SUCTION FILTER", "DEF FILTER SUCTION"];
+    for (const sourceRows of [vehicle, modelHistory]) {
+      const relevant = exactStandardRows(sourceRows, [...kitNames, ...airNames, ...suctionNames]);
+      const complete = rowsInBestCompleteGroup(relevant, group => {
+        const kit = latestFirst(group.filter(row =>
+          kitNames.includes(normalizePartName(estimateStandardPartName(row)))
+        ))[0];
+        if (kit) return { mode: "kit", kit };
+        const air = latestFirst(group.filter(row =>
+          airNames.includes(normalizePartName(estimateStandardPartName(row)))
+        ))[0];
+        const suction = latestFirst(group.filter(row =>
+          suctionNames.includes(normalizePartName(estimateStandardPartName(row)))
+        ))[0];
+        return air && suction ? { mode: "components", air, suction } : null;
+      });
+      if (!complete) continue;
+      if (complete.mode === "kit") {
+        const item = makeExactEstimatePart("defFilter", complete.kit, complete.kit.part_code, 1);
+        return item ? [item] : [];
+      }
+      return [
+        makeExactEstimatePart("defFilter", complete.air, complete.air.part_code, 1),
+        makeExactEstimatePart("defFilter", complete.suction, complete.suction.part_code, 1)
+      ].filter(Boolean);
+    }
+    return [];
+  }
+
   function buildPartItemsForService(serviceKey) {
     // Hub Greasing is completely hardcoded for configured models.
     // DB/history is intentionally bypassed for BOTH part numbers and quantities.
@@ -3661,6 +3796,14 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
       }
 
       return result;
+    }
+
+    // Alternative filter groupings are resolved as one complete option only.
+    if (serviceKey === "fuelFilter" || serviceKey === "airFilter") {
+      return buildAlternativeFilterItems(serviceKey);
+    }
+    if (serviceKey === "defFilter") {
+      return buildDefFilterItems();
     }
 
     const baseReferences = ESTIMATE_REFERENCE_PARTS[serviceKey] || [];
@@ -3770,7 +3913,10 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
         // the prescribed quantity rather than an old historical quantity.
         const qtyRule = ESTIMATE_MODEL_QTY_RULES[serviceKey];
         let forcedQty = null;
-        if (qtyRule?.fixed !== undefined) {
+        // DEF Inline Filter and APDA Filter are always one-piece selections.
+        if (serviceKey === "defInline" || serviceKey === "apdaFilter") {
+          forcedQty = 1;
+        } else if (qtyRule?.fixed !== undefined) {
           forcedQty = Number(qtyRule.fixed);
         } else if (qtyRule?.min !== undefined) {
           const qualifying = candidates.filter(row => {

@@ -3933,8 +3933,8 @@ const WARRANTY_TAG_ALIASES = {
   qty:["quantity","qty"],
   partDesc:["part / labour desc","part/labour desc","part descp","part description","failed part description"],
   jobCard:["job card number","job card no","job card","jobcard"],
-  jobCardDate:["job card date","jobcard date","jc date"],
-  claimType:["job type","claim type"],
+  jobCardDate:["job card bill / gp date","job card bill date","gp date","bill date","job card date","jobcard date","jc date"],
+  claimType:["order type","job type","claim type"],
   activeClaimNo:["active claim no"],
 };
 
@@ -4029,7 +4029,7 @@ function formatWarrantyClaimNumber(value){
 
 function getWarrantyRepairType(claimType){
   const normalized=warrantyText(claimType).trim().toUpperCase();
-  return /^AMC(?:\s|$)/.test(normalized) ? "AMC" : "NON_AMC";
+  return /^(?:ZAMC|AMC)(?:\b|$)/.test(normalized) ? "AMC" : "NON_AMC";
 }
 
 function formatWarrantyClaimType(value){
@@ -4049,6 +4049,14 @@ function isWarrantyPrintEligiblePart(partNo){
   if(alphaNumeric.length<8) return false;
   if(alphaNumeric.includes("9999")) return false;
   return true;
+}
+
+function formatWarrantyListDate(value){
+  const text=warrantyText(value);
+  const match=text.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2}|\d{4})$/);
+  if(!match) return text;
+  const year=match[3].length===4?match[3].slice(-2):match[3];
+  return match[1].padStart(2,"0")+"-"+match[2].padStart(2,"0")+"-"+year;
 }
 
 function formatWarrantyReading(summary){
@@ -4419,6 +4427,47 @@ function WarrantyTagPanel({user,onBack}){
   const partOptions=useMemo(()=>{const map=new Map();tags.forEach(tag=>{const tagRepairType=getWarrantyRepairType(tag.claimType);if(repairFilter==="AMC"&&tagRepairType!=="AMC")return;if(repairFilter==="NON_AMC"&&tagRepairType!=="NON_AMC")return;const partNo=warrantyText(tag.partNo);if(!partNo)return;if(!map.has(partNo))map.set(partNo,{description:warrantyText(tag.partDesc),count:0});map.get(partNo).count+=1;});return Array.from(map.entries()).sort((a,b)=>a[0].localeCompare(b[0]));},[tags,repairFilter]);
 
   const visibleTags=useMemo(()=>tags.filter(tag=>{const partNo=warrantyText(tag.partNo);if(removedPartNos.includes(partNo))return false;const tagRepairType=getWarrantyRepairType(tag.claimType);if(repairFilter==="AMC")return tagRepairType==="AMC";if(repairFilter==="NON_AMC")return tagRepairType==="NON_AMC";return true;}),[tags,removedPartNos,repairFilter]);
+
+  const warrantyListHeaders=["Job Card Number","Job Card Bill / GP Date","Customer Name","Registration Number","Active Claim No","Part / Labour code","Part / Labour Desc","Quantity","Order Type"];
+  const warrantyListRows=useMemo(()=>visibleTags.map(tag=>[
+    warrantyText(tag.jobCard),formatWarrantyListDate(tag.jobCardDate),warrantyText(tag.customerName),warrantyText(tag.reg),warrantyText(tag.activeClaimNo),warrantyText(tag.partNo),warrantyText(tag.partDesc),warrantyText(tag.qty),warrantyText(tag.claimType)
+  ]),[visibleTags]);
+  const warrantyListTsv=useMemo(()=>[warrantyListHeaders.join("\t"),...warrantyListRows.map(row=>row.join("\t"))].join("\n"),[warrantyListRows]);
+  const exportWarrantyList=()=>{
+    if(!warrantyListRows.length) return;
+    const worksheet=XLSX.utils.aoa_to_sheet([warrantyListHeaders,...warrantyListRows]);
+    worksheet["!cols"]=[{wch:18},{wch:23},{wch:36},{wch:20},{wch:20},{wch:20},{wch:42},{wch:12},{wch:14}];
+    const workbook=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook,worksheet,"Warranty Tag List");
+    XLSX.writeFile(workbook,"Warranty_Tag_List.xlsx");
+    setMessage(warrantyListRows.length.toLocaleString("en-IN")+" rows exported to Excel.");
+  };
+  const copyWarrantyList=async()=>{
+    if(!warrantyListRows.length) return;
+    try{
+      await navigator.clipboard.writeText(warrantyListTsv);
+      setMessage(warrantyListRows.length.toLocaleString("en-IN")+" rows copied as plain text. Paste directly into Excel.");
+    }catch{
+      setError("Clipboard access was blocked. Select the table rows with the mouse and press Ctrl+C, then paste into Excel.");
+    }
+  };
+  const copySelectedWarrantyCells=event=>{
+    const selection=window.getSelection();
+    if(!selection||selection.isCollapsed||!event.clipboardData) return;
+    const range=selection.getRangeAt(0);
+    const table=event.currentTarget;
+    const selectedRows=Array.from(table.querySelectorAll("tr")).map(row=>{
+      const cells=Array.from(row.querySelectorAll("th,td"));
+      const selectedIndexes=cells.map((cell,index)=>{try{return range.intersectsNode(cell)?index:-1;}catch{return -1;}}).filter(index=>index>=0);
+      if(!selectedIndexes.length) return null;
+      const first=Math.min(...selectedIndexes),last=Math.max(...selectedIndexes);
+      return cells.slice(first,last+1).map(cell=>warrantyText(cell.innerText).replace(/\s+/g," ")).join("\t");
+    }).filter(row=>row!==null);
+    if(!selectedRows.length) return;
+    event.clipboardData.clearData("text/html");
+    event.clipboardData.setData("text/plain",selectedRows.join("\n"));
+    event.preventDefault();
+  };
   const removePartNo=partNo=>setRemovedPartNos(prev=>persistRemovedPartNos([...prev,partNo]));
   const restorePartNo=partNo=>setRemovedPartNos(prev=>persistRemovedPartNos(prev.filter(x=>x!==partNo)));
   const clearSavedPartNos=()=>setRemovedPartNos(persistRemovedPartNos([]));
@@ -4466,7 +4515,7 @@ function WarrantyTagPanel({user,onBack}){
       <div className="warranty-tag-info-grid">
         <div className="warranty-tag-info-card"><span>Workshop / Dealer</span><strong>{summaryDataset?.mapping?.workshopName||"-"}</strong></div>
         <div className="warranty-tag-info-card"><span>Barcode Source</span><strong>OEM Claim No.</strong></div>
-        <div className="warranty-tag-info-card"><span>A4 Layout</span><strong>{printLayout==="4"?"4 tags / page":"10 tags / page"}</strong></div>
+        <div className="warranty-tag-info-card"><span>Output Format</span><strong>{printLayout==="list"?"List View":printLayout==="4"?"4 tags / page · Big Tag":"10 tags / page · Small Tag"}</strong></div>
         <div className="warranty-tag-info-card"><span>Selected Output</span><strong>{visibleTags.length?visibleTags.length.toLocaleString("en-IN")+" tags":"Not generated"}</strong></div>
       </div>
 
@@ -4524,21 +4573,38 @@ function WarrantyTagPanel({user,onBack}){
             <span>Choose tag size for printing</span>
           </div>
           <div className="warranty-tag-layout-buttons">
-            <button type="button" className={printLayout==="10"?"active":""} onClick={()=>setPrintLayout("10")}>10 Tags / Page</button>
-            <button type="button" className={printLayout==="4"?"active":""} onClick={()=>setPrintLayout("4")}>4 Tags / Page · Large</button>
+            <button type="button" className={printLayout==="10"?"active":""} onClick={()=>setPrintLayout("10")}>Small Tag · 10 / Page</button>
+            <button type="button" className={printLayout==="4"?"active":""} onClick={()=>setPrintLayout("4")}>Big Tag · 4 / Page</button>
+            <button type="button" className={printLayout==="list"?"active":""} onClick={()=>setPrintLayout("list")}>List View</button>
           </div>
         </div>
 
-        <div className="warranty-tag-print-controls no-print">
+        {printLayout!=="list"&&<div className="warranty-tag-print-controls no-print">
           <strong>Tag Print Area</strong>
-          <span>{visibleTags.length.toLocaleString("en-IN")} tags selected · {Math.ceil(visibleTags.length/10)} A4 page(s)</span>
+          <span>{visibleTags.length.toLocaleString("en-IN")} tags selected · {Math.ceil(visibleTags.length/(printLayout==="4"?4:10))} A4 page(s)</span>
           <button className="excel-button green" type="button" disabled={!visibleTags.length} onClick={printTags}>Print Tags</button>
           <button className="excel-button" type="button" disabled={!visibleTags.length||pdfBusy} onClick={downloadPdf}>{pdfBusy?"Creating PDF...":"Download PDF"}</button>
-        </div>
+        </div>}
+        {printLayout==="list"&&<div className="warranty-tag-list-view no-print">
+          <div className="warranty-tag-list-toolbar">
+            <div><strong>Warranty Tag List</strong><span>{visibleTags.length.toLocaleString("en-IN")} rows · Removed parts excluded</span></div>
+            <div className="warranty-tag-list-actions">
+              <button className="excel-button green" type="button" disabled={!visibleTags.length} onClick={exportWarrantyList}>Export Excel</button>
+              <button className="excel-button" type="button" disabled={!visibleTags.length} onClick={()=>void copyWarrantyList()}>Copy All as Text</button>
+            </div>
+          </div>
+          <div className="warranty-tag-list-hint">Mouse se cells select karke Ctrl+C dabao. Excel mein values plain text / tab-separated format mein paste hongi.</div>
+          <div className="warranty-tag-list-scroll">
+            <table className="warranty-tag-list-table" onCopy={copySelectedWarrantyCells}>
+              <thead><tr>{warrantyListHeaders.map(header=><th key={header}>{header}</th>)}</tr></thead>
+              <tbody>{warrantyListRows.map((row,index)=><tr key={visibleTags[index]?.id||index}>{row.map((value,column)=><td key={column}>{value}</td>)}</tr>)}</tbody>
+            </table>
+          </div>
+        </div>}
       </>}
     </div>
 
-    {tags.length>0&&<div ref={printRootRef} className={"warranty-tag-print-root warranty-tag-layout-"+printLayout}>{Array.from({length:Math.ceil(visibleTags.length/(printLayout==="4"?4:10))},(_,pageIndex)=>{
+    {tags.length>0&&printLayout!=="list"&&<div ref={printRootRef} className={"warranty-tag-print-root warranty-tag-layout-"+printLayout}>{Array.from({length:Math.ceil(visibleTags.length/(printLayout==="4"?4:10))},(_,pageIndex)=>{
       const perPage=printLayout==="4"?4:10;
       const pageTags=visibleTags.slice(pageIndex*perPage,pageIndex*perPage+perPage);
       return <div className={printLayout==="4"?"warranty-tag-page warranty-tag-page-4up":"warranty-tag-page"} key={"warranty-page-"+pageIndex}>

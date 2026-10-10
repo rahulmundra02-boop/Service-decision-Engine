@@ -6678,15 +6678,6 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       ], "vehicle");
     }
 
-    addRow([""], "spacer");
-    addRow(["SELECTED AGGREGATE SERVICES"], "section");
-    const serviceRow = addRow([
-      estimateSelectedServices.length
-        ? BULK_SERVICE_LABELS.filter(([, key]) => estimateSelectedServices.includes(key)).map(([label]) => label).join(", ")
-        : "No aggregate service selected"
-    ], "service");
-    addRow([""], "spacer");
-
     addRow(["PARTS"], "section");
     const partsHeaderRow = addRow(["S.No.", "Part No.", "Description", "Qty", "Rate (Incl. GST)", "Amount"], "tableHeader");
     const partsStartRow = rows.length;
@@ -6793,7 +6784,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         setCell(r, c, {
           font: { name: "Aptos", sz: 10, bold: c % 2 === 0, color: { rgb: c % 2 === 0 ? navy : "222222" } },
           fill: { patternType: "solid", fgColor: { rgb: c % 2 === 0 ? lightGray : white } },
-          alignment: { vertical: "center", wrapText: true },
+          alignment: { horizontal: c % 2 === 0 ? "left" : "center", vertical: "center", wrapText: true },
           border: thinBorder
         });
       }
@@ -6802,13 +6793,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       merge(r, 5, 5);
     });
 
-    // Service list and table headings.
-    merge(serviceRow, 0, lastCol);
-    styleRow(serviceRow, {
-      font: { name: "Aptos", sz: 10, color: { rgb: "222222" } },
-      fill: { patternType: "solid", fgColor: { rgb: paleBlue } },
-      alignment: { vertical: "center", wrapText: true }
-    });
+    // Table headings.
     [partsHeaderRow, labourHeaderRow].forEach(r => styleRow(r, {
       font: { name: "Aptos", sz: 10, bold: true, color: { rgb: white } },
       fill: { patternType: "solid", fgColor: { rgb: navy } },
@@ -6823,9 +6808,9 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         alignment: { vertical: "center", wrapText: true }
       });
       setCell(r, 0, { alignment: { horizontal: "center", vertical: "center" } });
-      setCell(r, 3, { alignment: { horizontal: "right", vertical: "center" }, numFmt: "0.##" });
-      setCell(r, 4, { alignment: { horizontal: "right", vertical: "center" }, numFmt: '"₹" #,##0.00' });
-      setCell(r, 5, { alignment: { horizontal: "right", vertical: "center" }, numFmt: '"₹" #,##0.00', font: { name: "Aptos", sz: 10, bold: true } });
+      setCell(r, 3, { alignment: { horizontal: "center", vertical: "center" }, numFmt: "0.##" });
+      setCell(r, 4, { alignment: { horizontal: "right", vertical: "center" }, numFmt: '#,##0.00' });
+      setCell(r, 5, { alignment: { horizontal: "right", vertical: "center" }, numFmt: '#,##0.00', font: { name: "Aptos", sz: 10, bold: true } });
     }
     for (let r = labourStartRow; r <= labourEndRow; r++) {
       styleRow(r, {
@@ -6834,9 +6819,9 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         alignment: { vertical: "center", wrapText: true }
       });
       setCell(r, 0, { alignment: { horizontal: "center", vertical: "center" } });
-      setCell(r, 2, { alignment: { horizontal: "right", vertical: "center" }, numFmt: "0.##" });
-      setCell(r, 3, { alignment: { horizontal: "right", vertical: "center" }, numFmt: '"₹" #,##0.00' });
-      setCell(r, 4, { alignment: { horizontal: "right", vertical: "center" }, numFmt: '"₹" #,##0.00', font: { name: "Aptos", sz: 10, bold: true } });
+      setCell(r, 2, { alignment: { horizontal: "center", vertical: "center" }, numFmt: "0.##" });
+      setCell(r, 3, { alignment: { horizontal: "right", vertical: "center" }, numFmt: '#,##0.00' });
+      setCell(r, 4, { alignment: { horizontal: "right", vertical: "center" }, numFmt: '#,##0.00', font: { name: "Aptos", sz: 10, bold: true } });
     }
 
     for (let r = totalsStartRow; r <= grandTotalRow; r++) {
@@ -6850,7 +6835,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         font: { name: "Aptos", sz: r === grandTotalRow ? 13 : 10, bold: true, color: { rgb: r === grandTotalRow ? "1F5E2E" : navy } },
         fill: { patternType: "solid", fgColor: { rgb: r === grandTotalRow ? green : white } },
         alignment: { horizontal: "right", vertical: "center" },
-        numFmt: '"₹" #,##0.00',
+        numFmt: '#,##0.00',
         border: thinBorder
       });
     }
@@ -6870,7 +6855,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
 
     // Sensible widths, row heights and A4 print setup so users can print directly.
     ws["!cols"] = [
-      { wch: 8 }, { wch: 20 }, { wch: 36 }, { wch: 12 }, { wch: 18 }, { wch: 19 }
+      { wch: 6 }, { wch: 16 }, { wch: 29 }, { wch: 8 }, { wch: 14 }, { wch: 14 }
     ];
     ws["!rows"] = rows.map((row, r) => ({
       hpt: rowKinds[r] === "title" ? 34
@@ -6886,7 +6871,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     ws["!autofilter"] = { ref: "A" + (partsHeaderRow + 1) + ":F" + Math.max(partsEndRow + 1, partsHeaderRow + 1) };
     ws["!margins"] = { left: 0.25, right: 0.25, top: 0.35, bottom: 0.35, header: 0.15, footer: 0.15 };
     ws["!fitToPage"] = true;
-    ws["!pageSetup"] = { paperSize: 9, orientation: "portrait", fitToWidth: 1, fitToHeight: 0 };
+    ws["!pageSetup"] = { paperSize: 9, orientation: "landscape", fitToWidth: 1, fitToHeight: 0 };
     ws["!printOptions"] = { horizontalCentered: true, verticalCentered: false };
     ws["!printArea"] = "A1:F" + rows.length;
     ws["!sheetViews"] = [{ showGridLines: false }];

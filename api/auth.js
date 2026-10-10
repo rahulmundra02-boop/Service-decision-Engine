@@ -251,13 +251,17 @@ async function getUserByToken(client, token) {
     `SELECT u.id,u.person_name,u.dealer_name,u.email,u.mobile,u.role,u.status,
             u.email_verified,u.mobile_verified,u.created_at,u.last_login_at,u.last_activity_at,
             u.preferences,
-            s.last_seen_at
+            s.last_seen_at,s.device_name
        FROM auth_sessions s
        JOIN app_users u ON u.id=s.user_id
       WHERE s.token_hash=$1 AND s.expires_at>NOW() AND u.status='active'`,
     [tokenHash]
   );
   if (!result.rows[0]) return null;
+  if (/service estimate android/i.test(clean(result.rows[0].device_name))) {
+    await client.query("DELETE FROM auth_sessions WHERE token_hash=$1", [tokenHash]);
+    return null;
+  }
 
   const lastSeen = result.rows[0].last_seen_at ? new Date(result.rows[0].last_seen_at).getTime() : 0;
   if (!lastSeen || Date.now() - lastSeen > SESSION_INACTIVITY_HOURS * 60 * 60 * 1000) {
@@ -489,6 +493,14 @@ export default async function handler(req, res) {
       const requestIp = clean(String(req.headers["x-forwarded-for"] || req.headers["x-real-ip"] || req.socket?.remoteAddress || "").split(",")[0]);
       const requestUserAgent = clean(req.headers["user-agent"] || "");
       const requestDeviceName = clean(body.deviceName) || "Unknown device";
+      if (/service estimate android/i.test(requestDeviceName)) {
+        await client.query("ROLLBACK");
+        return res.status(410).json({
+          success:false,
+          discontinued:true,
+          error:"The Service Decision Engine Android application has been discontinued. Please use https://service-decision-engine.vercel.app/."
+        });
+      }
       const email = normalizeEmail(identifier);
       const mobile = normalizeMobile(identifier);
 

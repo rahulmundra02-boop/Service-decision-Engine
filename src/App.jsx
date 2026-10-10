@@ -4956,7 +4956,7 @@ function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResu
                     const ok = window.confirm("Delete estimate " + (item.estimate_no || "") + " from this device?");
                     if (!ok) return;
                     try {
-                      await deleteEstimateCache(item.id || item.cacheKey);
+                      await deleteEstimateCache(item.cacheKey || item.id, item.estimate_no || "");
                       if (String(estimateNumber || "") === String(item.estimate_no || "")) {
                         setEstimateSavedId(null);
                       }
@@ -5218,60 +5218,64 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     }
   };
 
-  const deleteEstimateCache = async cacheId => {
+  const deleteEstimateCache = async (cacheId, estimateNo = "") => {
     const ownerKey = estimateCacheOwner();
-    const matches = row =>
-      String(row?.id || "") === String(cacheId) ||
-      String(row?.cacheKey || "") === String(cacheId) ||
-      String(row?.estimate_no || "") === String(cacheId);
+    const matches = row => {
+      const ids = [cacheId, estimateNo].map(value => String(value || "")).filter(Boolean);
+      return ids.some(value =>
+        String(row?.id || "") === value ||
+        String(row?.cacheKey || "") === value ||
+        String(row?.estimate_no || "") === value
+      );
+    };
 
     try {
-      // Remove from IndexedDB when present.
       const db = await openEstimateCache();
       if (db) {
         await new Promise((resolve, reject) => {
           const tx = db.transaction(ESTIMATE_CACHE_STORE, "readwrite");
           const store = tx.objectStore(ESTIMATE_CACHE_STORE);
-          const request = store.index("ownerKey").getAll(ownerKey);
+          // Do not rely on the ownerKey index: older browser databases may
+          // have been created without that index.
+          const request = store.getAll();
           request.onsuccess = () => {
-            (request.result || []).filter(matches).forEach(item => {
-              if (item?.cacheKey) store.delete(item.cacheKey);
-            });
+            (request.result || [])
+              .filter(row => String(row?.ownerKey || ownerKey) === ownerKey && matches(row))
+              .forEach(row => { if (row?.cacheKey) store.delete(row.cacheKey); });
           };
           request.onerror = () => reject(request.error);
           tx.oncomplete = resolve;
-          tx.onerror = () => reject(tx.error);
+          tx.onerror = () => reject(tx.error || new Error("Estimate delete transaction failed."));
           tx.onabort = () => reject(tx.error || new Error("Estimate delete transaction aborted."));
         });
       }
 
-      // Also clear legacy/localStorage copies. Older estimates may have been
-      // saved there before IndexedDB became available on this browser.
       const storageKey = ESTIMATE_CACHE_PREFIX + ownerKey;
       const raw = localStorage.getItem(storageKey);
       if (raw) {
         const list = JSON.parse(raw);
-        if (Array.isArray(list)) {
-          localStorage.setItem(storageKey, JSON.stringify(list.filter(item => !matches(item))));
-        }
+        if (Array.isArray(list)) localStorage.setItem(storageKey, JSON.stringify(list.filter(row => !matches(row))));
       }
 
-      // Verify deletion across both stores so the UI cannot silently report success.
-      let remains = false;
+      // Verify using getAll(), independent of optional indexes.
       if (db) {
-        remains = await new Promise((resolve, reject) => {
+        const remains = await new Promise((resolve, reject) => {
           const tx = db.transaction(ESTIMATE_CACHE_STORE, "readonly");
-          const request = tx.objectStore(ESTIMATE_CACHE_STORE).index("ownerKey").getAll(ownerKey);
-          request.onsuccess = () => resolve((request.result || []).some(matches));
+          const request = tx.objectStore(ESTIMATE_CACHE_STORE).getAll();
+          request.onsuccess = () => resolve((request.result || []).some(row =>
+            String(row?.ownerKey || ownerKey) === ownerKey && matches(row)
+          ));
           request.onerror = () => reject(request.error);
         });
+        if (remains) throw new Error("Estimate still exists in browser cache; deletion could not be verified.");
       }
       const rawAfter = localStorage.getItem(storageKey);
       if (rawAfter) {
         const listAfter = JSON.parse(rawAfter);
-        if (Array.isArray(listAfter) && listAfter.some(matches)) remains = true;
+        if (Array.isArray(listAfter) && listAfter.some(matches)) {
+          throw new Error("Estimate still exists in localStorage; deletion could not be verified.");
+        }
       }
-      if (remains) throw new Error("Estimate still exists in local cache; deletion could not be verified.");
     } catch (error) {
       console.warn("Estimate cache delete failed:", error);
       throw new Error(error?.message || "Unable to delete the local estimate.");

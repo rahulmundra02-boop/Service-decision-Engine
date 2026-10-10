@@ -3443,7 +3443,7 @@ function estimateBuildHistoricalItem(type,serviceKey,rows,code="",forcedQty=null
   const e=q||{qty:type==="labour"?1:0,latestRow:rows[0]}; if(e.qty<=0)return null;
   const sourceRow=e.latestRow||rows[0],rate=rateOverride!==null?Number(rateOverride||0):estimateChooseBestRate(rows);
   const partNo=String(code||sourceRow?.part_code||"").trim(),description=String(sourceRow?.part_description||sourceRow?.standardized_part||"").trim();
-  return {id:type+"-"+serviceKey+"-"+partNo+"-"+Date.now()+"-"+Math.random().toString(36).slice(2,7),type,serviceKey,partNo,description,qty:e.qty,rate:type==="part"&&rate>0?Number((rate*1.18).toFixed(2)):Number(rate||0),baseRate:rate,source:type==="part"?"Historical DB (18% GST added)":"Historical DB (Paid Order rate)",latestRow:sourceRow};
+  return {id:type+"-"+serviceKey+"-"+partNo+"-"+Date.now()+"-"+Math.random().toString(36).slice(2,7),type,serviceKey,partNo,description,standardizedFamily:estimateStandardPartName(sourceRow),qty:e.qty,rate:type==="part"&&rate>0?Number((rate*1.18).toFixed(2)):Number(rate||0),baseRate:rate,source:type==="part"?"Historical DB (18% GST added)":"Historical DB (Paid Order rate)",latestRow:sourceRow};
 }
 function estimateJobCardKey(row = {}) {
   const jc = String(row?.job_card || row?.job_card_no || "").trim();

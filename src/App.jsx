@@ -3109,10 +3109,19 @@ const ESTIMATE_FALLBACK_PARTS = {
   apdaFilter: [{ code: "PD600968", name: "APDA FILTER", qty: 1 }],
   tippingOil: [{ code: "T9999998", name: "TIPPING OIL", qty: 30 }],
 };
-function estimateFallbackRow(serviceKey, code) {
-  const item = (ESTIMATE_FALLBACK_PARTS[serviceKey] || []).find(x => normalizePartCode(x.code) === normalizePartCode(code));
+function estimateFallbackRow(serviceKey, code, sourceRows = []) {
+  const normalizedCode = normalizePartCode(code);
+  const item = (ESTIMATE_FALLBACK_PARTS[serviceKey] || []).find(x => normalizePartCode(x.code) === normalizedCode);
   if (!item) return null;
-  return { part_code: item.code, part_description: item.name, standardized_part: item.name, quantity: item.qty, item_category: "P002", repair_type: "Fallback default" };
+  // Prefer the original detailed part description from vehicle/model history for
+  // the same part number (including DMS codes suffixed with (L)); use the part
+  // standardization/master label only when no detailed historical description exists.
+  const historyRow = (Array.isArray(sourceRows) ? sourceRows : []).find(row =>
+    normalizePartCode(row?.part_code ?? row?.partCode) === normalizedCode &&
+    String(row?.part_description ?? row?.description ?? "").trim()
+  );
+  const masterDescription = String(historyRow?.part_description ?? historyRow?.description ?? PART_STANDARDIZATION[normalizedCode] ?? item.name).trim();
+  return { part_code: item.code, part_description: masterDescription, standardized_part: PART_STANDARDIZATION[normalizedCode] || item.name, quantity: item.qty, item_category: "P002", repair_type: "Fallback default" };
 }
 function estimateFallbackItems(serviceKey) {
   return (ESTIMATE_FALLBACK_PARTS[serviceKey] || []).map(def => ({
@@ -3676,7 +3685,7 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
     if (!item) return null;
     item.partNo = partNo;
     item.qty = Number(forcedQty);
-    item.description = estimateStandardPartName(row) || item.description || partNo;
+    item.description = String(row?.part_description || row?.description || PART_STANDARDIZATION[normalizePartCode(partNo)] || estimateStandardPartName(row) || item.description || partNo).trim();
     return applyGlobalPartRate(item);
   }
 
@@ -3928,7 +3937,7 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
           candidates = vehicleFamily.length ? vehicleFamily : modelFamily;
         }
         if (!candidates.length) {
-          const fallbackRow = estimateFallbackRow(serviceKey, referenceCode);
+          const fallbackRow = estimateFallbackRow(serviceKey, referenceCode, [...vehicle, ...modelHistory]);
           if (fallbackRow) candidates = [fallbackRow];
         }
         if (!candidates.length) continue;

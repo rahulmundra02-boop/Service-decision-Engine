@@ -34,6 +34,7 @@ const positiveParts = parts => (parts || []).filter(item =>
   item?.type === "part" && partCode(item) && qty(item) > 0
 );
 const sumQty = items => items.reduce((sum, item) => sum + qty(item), 0);
+const textHasAny = (text, words) => words.some(word => text.includes(normalize(word)));
 
 function validateQty(key, items, issues) {
   const rule = QTY_RULES[key];
@@ -80,7 +81,7 @@ export function validateEstimateAggregateSelection({ selectedServices = [], part
         !description(item).includes("KIT") &&
         partCode(item) !== "F7A01500"
       );
-      const oilFilter = validParts.some(item =>
+      const oilFilter = aggregateParts.some(item =>
         hasText(item, ["ENGINE OIL FILTER", "F7A01500"])
       );
       if (!oil.length) add(key, "Engine Oil part is missing; the oil filter or a kit cannot substitute for engine oil.");
@@ -104,18 +105,60 @@ export function validateEstimateAggregateSelection({ selectedServices = [], part
       const air = aggregateParts.some(item => hasText(item, ["DEF DOSING PUMP AIR FILTER", "DEF FILTER AIR", "XFM00500"]));
       const suction = aggregateParts.some(item => hasText(item, ["DEF TANK SUCTION FILTER", "DEF FILTER SUCTION", "PET00001"]));
       if (!kit && !(air && suction)) {
-        add(key, "DEF Filter grouping is incomplete: include a confirmed DEF filter kit, or both DEF Air Filter and DEF Suction Filter.");
+        add(key, "DEF Filter grouping is incomplete: include one confirmed DEF filter kit, or both DEF Air Filter and DEF Suction Filter.");
+      } else if (kit && air && suction) {
+        add(key, "Choose one DEF Filter option only: the kit, or the Air + Suction Filter combination. Do not include both.");
       }
     }
 
     if (key === "fuelFilter") {
-      // Fuel-filter items can be part of the Engine Oil group in a complete
-      // job card, so validate the whole estimate rather than only one serviceKey.
-      const fuelItems = aggregateParts.filter(item => hasText(item, ["FUEL FILTER", "FUELFILTER"]));
-      const kit = fuelItems.some(item => hasText(item, ["FUEL FILTER KIT", "FUEL FILTER ELEMENT KIT"]) && qty(item) >= 1);
-      if (!kit && sumQty(fuelItems) < 2) {
-        add(key, "Fuel Filter grouping needs a compatible pair (total quantity 2 or more) or a confirmed kit.");
+      // Only standardized individual filters or a standardized kit qualify.
+      // ASSY, R&R, labour, and unrelated combination descriptions are not
+      // accepted merely because their text contains "FUEL FILTER".
+      const fuelItems = aggregateParts.filter(item => {
+        const text = description(item);
+        if (!text.includes("FUEL FILTER")) return false;
+        if (text.includes("ASSY") || text.includes("LABOUR") || text.includes("R AND R") || text.includes("R R")) return false;
+        return true;
+      });
+      const kit = fuelItems.filter(item =>
+        hasText(item, ["FUEL FILTER KIT", "FUEL FILTER ELEMENT KIT", "ENGINE OIL FILTER FUEL FILTER KIT"]) && qty(item) >= 1
+      );
+      const individual = fuelItems.filter(item => {
+        const text = description(item);
+        return !text.includes("KIT") && !text.includes("ASSY") && !text.includes("ENGINE OIL FILTER");
+      });
+      if (kit.length && individual.length) {
+        add(key, "Choose one Fuel Filter option only: one kit, or two individual filters. Do not include both.");
+      } else if (!kit.length && sumQty(individual) < 2) {
+        add(key, "Fuel Filter grouping needs either one confirmed kit or two individual Fuel Filters (total quantity 2).");
       }
+    }
+
+    if (key === "airFilter") {
+      const airItems = aggregateParts.filter(item => {
+        const text = description(item);
+        return text.includes("AIR FILTER") && !text.includes("ASSY") && !text.includes("LABOUR") && !text.includes("R AND R") && !text.includes("R R");
+      });
+      const kit = airItems.filter(item => textHasAny(description(item), ["AIR FILTER KIT"]) && qty(item) >= 1);
+      const individual = airItems.filter(item => !description(item).includes("KIT"));
+      if (kit.length && individual.length) {
+        add(key, "Choose one Air Filter option only: one kit, or two individual Air Filters. Do not include both.");
+      } else if (!kit.length && sumQty(individual) < 2) {
+        add(key, "Air Filter grouping needs either one confirmed kit or two individual Air Filters (total quantity 2).");
+      }
+    }
+
+    if (key === "coolant" && aggregateParts.length > 1) {
+      add(key, "Use one matching Coolant part number only; do not add every matching Coolant part from the DB.");
+    }
+
+    if (key === "defInline" && (aggregateParts.length !== 1 || Math.abs(qty(aggregateParts[0]) - 1) > 0.001)) {
+      add(key, "DEF Inline Filter selection must contain exactly one filter (quantity 1).");
+    }
+
+    if (key === "apdaFilter" && (aggregateParts.length !== 1 || Math.abs(qty(aggregateParts[0]) - 1) > 0.001)) {
+      add(key, "APDA Filter selection must contain exactly one piece (quantity 1).");
     }
 
     validateQty(key, aggregateParts, issues);

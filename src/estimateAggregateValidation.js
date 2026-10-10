@@ -77,83 +77,61 @@ export function validateEstimateAggregateSelection({ selectedServices = [], part
 
     if (key === "engineOil") {
       const oil = aggregateParts.filter(item =>
-        !description(item).includes("FILTER") &&
-        !description(item).includes("KIT") &&
-        partCode(item) !== "F7A01500"
+        description(item) === "ENGINE OIL" && partCode(item) !== "F7A01500"
       );
-      const oilFilter = aggregateParts.some(item =>
-        hasText(item, ["ENGINE OIL FILTER", "F7A01500"])
-      );
-      if (!oil.length) add(key, "Engine Oil part is missing; the oil filter or a kit cannot substitute for engine oil.");
-      if (!oilFilter) add(key, "Engine Oil Filter is missing from the estimate.");
+      const oilFilters = aggregateParts.filter(item => description(item) === "ENGINE OIL FILTER");
+      if (!oil.length) add(key, "Engine Oil part is missing; the oil filter cannot substitute for engine oil.");
+      if (oilFilters.length !== 1 || Math.abs(qty(oilFilters[0]) - 1) > 0.001) {
+        add(key, "Engine Oil Filter family must contain exactly one filter (quantity 1).");
+      }
     }
 
     if (key === "steeringOil") {
-      const oil = aggregateParts.some(item =>
-        !description(item).includes("FILTER") &&
-        (hasText(item, ["STEERING OIL", "POWER STEERING", "PSB99994"]))
-      );
-      const filter = aggregateParts.some(item =>
-        hasText(item, ["STEERING OIL FILTER", "PD600391"])
-      );
+      const oil = aggregateParts.some(item => description(item) === "STEERING OIL");
+      const filters = aggregateParts.filter(item => description(item) === "STEERING OIL FILTER");
       if (!oil) add(key, "Steering Oil part is missing.");
-      if (!filter) add(key, "Steering Oil Filter is missing from the estimate.");
+      if (filters.length !== 1 || Math.abs(qty(filters[0]) - 1) > 0.001) {
+        add(key, "Steering Oil Filter family must contain exactly one filter (quantity 1).");
+      }
     }
 
     if (key === "defFilter") {
-      const kit = aggregateParts.some(item => hasText(item, ["DEF FILTER KIT"]) && qty(item) >= 1);
-      const air = aggregateParts.some(item => hasText(item, ["DEF DOSING PUMP AIR FILTER", "DEF FILTER AIR", "XFM00500"]));
-      const suction = aggregateParts.some(item => hasText(item, ["DEF TANK SUCTION FILTER", "DEF FILTER SUCTION", "PET00001"]));
-      if (!kit && !(air && suction)) {
-        add(key, "DEF Filter grouping is incomplete: include one confirmed DEF filter kit, or both DEF Air Filter and DEF Suction Filter.");
-      } else if (kit && air && suction) {
-        add(key, "Choose one DEF Filter option only: the kit, or the Air + Suction Filter combination. Do not include both.");
+      const kit = aggregateParts.filter(item => description(item) === "DEF FILTER KIT");
+      const air = aggregateParts.filter(item => ["DEF DOSING PUMP AIR FILTER", "DEF FILTER AIR"].includes(description(item)));
+      const suction = aggregateParts.filter(item => ["DEF TANK SUCTION FILTER", "DEF FILTER SUCTION"].includes(description(item)));
+      const kitValid = kit.length === 1 && aggregateParts.length === 1 && Math.abs(qty(kit[0]) - 1) <= 0.001;
+      const componentsValid = air.length === 1 && suction.length === 1 && aggregateParts.length === 2 &&
+        Math.abs(qty(air[0]) - 1) <= 0.001 && Math.abs(qty(suction[0]) - 1) <= 0.001;
+      if (!kitValid && !componentsValid) {
+        add(key, "DEF Filter must be exactly one DEF Filter Kit (qty 1), or one DEF Air Filter + one DEF Suction Filter (qty 1 each).");
       }
     }
 
     if (key === "fuelFilter") {
-      // Only standardized individual filters or a standardized kit qualify.
-      // ASSY, R&R, labour, and unrelated combination descriptions are not
-      // accepted merely because their text contains "FUEL FILTER".
-      const fuelItems = aggregateParts.filter(item => {
-        const text = description(item);
-        if (!text.includes("FUEL FILTER")) return false;
-        if (text.includes("ASSY") || text.includes("LABOUR") || text.includes("R AND R") || text.includes("R R")) return false;
-        return true;
-      });
-      const kit = fuelItems.filter(item =>
-        hasText(item, ["FUEL FILTER KIT", "FUEL FILTER ELEMENT KIT", "ENGINE OIL FILTER FUEL FILTER KIT"]) && qty(item) >= 1
-      );
-      const individual = fuelItems.filter(item => {
-        const text = description(item);
-        return !text.includes("KIT") && !text.includes("ASSY") && !text.includes("ENGINE OIL FILTER");
-      });
-      if (kit.length && individual.length) {
-        add(key, "Choose one Fuel Filter option only: one kit, or two individual filters. Do not include both.");
-      } else if (kit.length > 1 || (kit.length === 1 && Math.abs(qty(kit[0]) - 1) > 0.001)) {
-        add(key, "Fuel Filter kit option must contain exactly one kit (quantity 1).");
-      } else if (!kit.length && Math.abs(sumQty(individual) - 2) > 0.001) {
-        add(key, "Fuel Filter grouping needs exactly two individual Fuel Filters, or one confirmed kit.");
+      const kits = aggregateParts.filter(item => description(item) === "FUEL FILTER KIT");
+      const individual = aggregateParts.filter(item => description(item) === "FUEL FILTER");
+      const distinctCodes = new Set(individual.map(partCode).filter(Boolean));
+      const kitValid = kits.length === 1 && aggregateParts.length === 1 && Math.abs(qty(kits[0]) - 1) <= 0.001;
+      const pairValid = individual.length === 2 && aggregateParts.length === 2 && distinctCodes.size === 2 &&
+        individual.every(item => Math.abs(qty(item) - 1) <= 0.001);
+      if (!kitValid && !pairValid) {
+        add(key, "Fuel Filter must be either one Fuel Filter Kit (qty 1), or two different Fuel Filter part numbers (qty 1 each).");
       }
     }
 
     if (key === "airFilter") {
-      const airItems = aggregateParts.filter(item => {
-        const text = description(item);
-        return text.includes("AIR FILTER") && !text.includes("ASSY") && !text.includes("LABOUR") && !text.includes("R AND R") && !text.includes("R R");
-      });
-      const kit = airItems.filter(item => textHasAny(description(item), ["AIR FILTER KIT"]) && qty(item) >= 1);
-      const individual = airItems.filter(item => !description(item).includes("KIT"));
-      if (kit.length && individual.length) {
-        add(key, "Choose one Air Filter option only: one kit, or two individual Air Filters. Do not include both.");
-      } else if (kit.length > 1 || (kit.length === 1 && Math.abs(qty(kit[0]) - 1) > 0.001)) {
-        add(key, "Air Filter kit option must contain exactly one kit (quantity 1).");
-      } else if (!kit.length && Math.abs(sumQty(individual) - 2) > 0.001) {
-        add(key, "Air Filter grouping needs exactly two individual Air Filters, or one confirmed kit.");
+      const kits = aggregateParts.filter(item => description(item) === "AIR FILTER KIT");
+      const individual = aggregateParts.filter(item => description(item) === "AIR FILTER");
+      const distinctCodes = new Set(individual.map(partCode).filter(Boolean));
+      const kitValid = kits.length === 1 && aggregateParts.length === 1 && Math.abs(qty(kits[0]) - 1) <= 0.001;
+      const pairValid = individual.length === 2 && aggregateParts.length === 2 && distinctCodes.size === 2 &&
+        individual.every(item => Math.abs(qty(item) - 1) <= 0.001);
+      if (!kitValid && !pairValid) {
+        add(key, "Air Filter must be either one Air Filter Kit (qty 1), or two different Air Filter part numbers (qty 1 each).");
       }
     }
 
-    if (key === "coolant" && aggregateParts.length > 1) {
+    if (key === "coolant" && aggregateParts.length !== 1) {
       add(key, "Use one matching Coolant part number only; do not add every matching Coolant part from the DB.");
     }
 

@@ -619,7 +619,7 @@ function isUsableCustomerNumber(value) {
   return /^\d{3,}$/.test(String(value ?? "").trim());
 }
 
-function normalizePartName(value = "") {\n  return String(value || "").toUpperCase().replace(/[^A-Z0-9]+/g, " ").replace(/\\s+/g, " ").trim();\n}\n\nfunction normalizePartCode(value) {
+function normalizePartName(value = "") {\n  return String(value || "").toUpperCase().replace(/[^A-Z0-9]+/g, " ").replace(/\s+/g, " ").trim();\n}\n\nfunction normalizePartCode(value) {
   return String(value ?? "")
     .toUpperCase()
     .replace(/\([A-Z0-9]+\)$/g, "")

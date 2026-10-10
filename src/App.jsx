@@ -4554,7 +4554,7 @@ function WarrantyTagPanel({user,onBack}){
           <div className="warranty-tag-control-block">
             <div className="warranty-tag-control-title">Part Numbers in Current Format</div>
             <div className="warranty-tag-part-list">
-              {partOptions.map(([partNo,item])=>{
+              {[...partOptions].sort((a,b)=>Number(removedPartNos.includes(a[0]))-Number(removedPartNos.includes(b[0]))).map(([partNo,item])=>{
                 const removed=removedPartNos.includes(partNo);
                 return <div className={"warranty-tag-part-item "+(removed?"removed":"")} key={partNo}>
                   <span><strong>{partNo}</strong>{item.description?" | "+item.description:""}{item.count>1?" ("+item.count+" tags)":""}</span>

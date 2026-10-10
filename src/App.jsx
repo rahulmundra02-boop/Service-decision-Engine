@@ -2698,7 +2698,7 @@ async function copyCustomerSummary(group, dealerName = "", preferences = {}) {
       if (!ok) throw new Error('The browser did not allow clipboard access.');
     }
 
-    window.alert('WhatsApp summary copied successfully. Ab Paste it into WhatsApp using Ctrl+V.');
+    window.alert('WhatsApp summary copied successfully. Paste it into WhatsApp using Ctrl+V.');
   } catch (err) {
     console.error('WhatsApp copy error:', err);
     window.alert(`The WhatsApp summary could not be copied:\n\n${err?.message || err}`);
@@ -6641,7 +6641,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     } catch (error) {
       console.error("Estimate Excel export failed:", error);
       const detail = String(error?.message || error || "Unknown error");
-      window.alert("Excel export fail hua: " + detail);
+      window.alert("Excel export failed: " + detail);
     }
   }
 
@@ -7213,7 +7213,8 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
             printFrame.contentWindow.print();
           } catch (printError) {
             console.error("A4 iframe print failed:", printError);
-            window.alert("Print dialog open nahi hua. PDF ko Download PDF button se save karke print karein.");
+            pdf.save(fileNameBase + ".pdf");
+            window.alert("Your browser could not open the print dialog. The estimate PDF has been downloaded. Open it and select Print.");
           }
         };
         printFrame.src = pdfUrl;
@@ -7228,7 +7229,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         if (pdfUrl) URL.revokeObjectURL(pdfUrl);
         // Reliable fallback: save the same A4 PDF instead of blocking the user.
         pdf.save(fileNameBase + ".pdf");
-        window.alert("Direct print start nahi hua, isliye A4 PDF save kar di hai. Downloaded PDF kholkar Print karein.");
+        window.alert("Your browser could not start printing. The A4 estimate PDF has been downloaded. Open it and select Print.");
       }
     } else {
       pdf.save(fileNameBase + ".pdf");

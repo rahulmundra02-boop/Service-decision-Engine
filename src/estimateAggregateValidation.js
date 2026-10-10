@@ -24,7 +24,7 @@ const LABELS = {
 const normalize = value => String(value || "").toUpperCase().replace(/[^A-Z0-9]+/g, " ").trim();
 const code = value => String(value || "").toUpperCase().replace(/\s+/g, "").trim();
 const qty = item => Number(item?.qty || 0);
-const description = item => normalize(item?.description);
+const description = item => normalize(item?.standardizedFamily || item?.description);
 const partCode = item => code(item?.partNo);
 const hasText = (item, words) => {
   const text = description(item) + " " + normalize(partCode(item));

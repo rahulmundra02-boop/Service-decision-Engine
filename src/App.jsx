@@ -3068,6 +3068,27 @@ const ESTIMATE_REFERENCE_PARTS = {
   apdaFilter: ["PD600968"],
 };
 
+// A reference may represent one component within a multi-part aggregate.
+// Fallback is restricted to that component's exact standardized name so the
+// same historical oil/filter row cannot be reused for multiple reference codes.
+const ESTIMATE_REFERENCE_COMPONENTS = {
+  engineOil: {
+    EN699991: ["ENGINE OIL"],
+    F7A01500: ["ENGINE OIL FILTER"],
+  },
+  steeringOil: {
+    PSB99994: ["STEERING OIL"],
+    PD600391: ["STEERING OIL FILTER"],
+  },
+  defFilter: {
+    XFM00500: ["DEF DOSING PUMP AIR FILTER", "DEF FILTER AIR"],
+    PET00001: ["DEF TANK SUCTION FILTER", "DEF FILTER SUCTION"],
+  },
+  fuelFilter: {
+    P5105609: ["FUEL FILTER KIT", "FUEL FILTER ELEMENT KIT"],
+  },
+};
+
 const HUB_GREASE_STANDARD_CODES = new Set([
   "S9999997",
   "FJ607400",
@@ -3651,12 +3672,21 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
       Number(row?.quantity || 0) > 0
     );
 
+    const isMultiComponentAggregate = ["engineOil", "steeringOil", "defFilter"].includes(serviceKey);
+    let selectedBaseReferences = baseReferences;
+    // Gear Oil / Axle Oil references are alternative part numbers for one
+    // service item, not separate parts. Choose the exact code found in history,
+    // otherwise use one preferred reference instead of duplicating the family.
+    if (!isMultiComponentAggregate && baseReferences.length > 1 && serviceKey !== "hubGrease") {
+      const historyCodes = new Set([...vehicle, ...modelHistory].map(row => normalizePartCode(row?.part_code)));
+      selectedBaseReferences = [baseReferences.find(code => historyCodes.has(normalizePartCode(code))) || baseReferences[0]];
+    }
     const references = serviceKey === "hubGrease"
       ? [
           ...baseReferences,
           ...(hasVehicleSpecificF1771900 ? ["F1771900"] : [])
         ]
-      : baseReferences;
+      : selectedBaseReferences;
 
     // Clutch Oil has multiple interchangeable historical part numbers.
     // They represent the same service item, not three separate estimate
@@ -3718,8 +3748,15 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
         // part from the same service family. This keeps estimate generation
         // useful across model/variant-specific part numbers.
         if (!candidates.length) {
-          const vehicleFamily = rowsByReferenceOrService(vehicle, serviceKey);
-          const modelFamily = rowsByReferenceOrService(modelHistory, serviceKey);
+          const componentNames = ESTIMATE_REFERENCE_COMPONENTS[serviceKey]?.[referenceCode];
+          const exactComponentRows = rows => {
+            const eligible = rowsByReferenceOrService(rows, serviceKey);
+            if (!componentNames?.length) return eligible;
+            const allowed = new Set(componentNames.map(normalizePartName));
+            return eligible.filter(row => allowed.has(normalizePartName(estimateStandardPartName(row))));
+          };
+          const vehicleFamily = exactComponentRows(vehicle);
+          const modelFamily = exactComponentRows(modelHistory);
           candidates = vehicleFamily.length ? vehicleFamily : modelFamily;
         }
         if (!candidates.length) continue;

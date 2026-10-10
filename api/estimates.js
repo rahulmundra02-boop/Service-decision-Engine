@@ -60,7 +60,7 @@ async function getCurrentUser(client, req) {
   if (!token) return null;
   const tokenHash = hashValue(token);
   const result = await client.query(
-    `SELECT u.id,u.status
+    `SELECT u.id,u.status,s.device_name
        FROM auth_sessions s
        JOIN app_users u ON u.id=s.user_id
       WHERE s.token_hash=$1
@@ -71,6 +71,10 @@ async function getCurrentUser(client, req) {
     [tokenHash]
   );
   if (!result.rows[0]) return null;
+  if (/service estimate android/i.test(clean(result.rows[0].device_name))) {
+    await client.query("DELETE FROM auth_sessions WHERE token_hash=$1", [tokenHash]);
+    return null;
+  }
 
   await client.query(
     "UPDATE auth_sessions SET last_seen_at=NOW() WHERE token_hash=$1",

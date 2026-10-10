@@ -974,7 +974,11 @@ function deduplicateAcrossFiles(fileRecordSets) {
   return { records: unique, duplicateCount };
 }
 
-async function parseExcelFiles(files) {
+async function parseExcelFiles(files, options = {}) {
+  const onProgress = options.onProgress || (() => {});
+  const isCancelled = options.isCancelled || (() => false);
+  const checkCancelled = () => { if (isCancelled()) { const error = new Error("Upload cancelled by user."); error.name = "AbortError"; throw error; } };
+  const yieldToBrowser = () => new Promise(resolve => setTimeout(resolve, 0));
   if (!files?.length) {
     throw new Error("Please select at least one Excel file.");
   }
@@ -983,7 +987,12 @@ async function parseExcelFiles(files) {
   const fileNames = [];
   const failedFiles = [];
 
-  for (const file of files) {
+  for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
+    checkCancelled();
+    const file = files[fileIndex];
+    onProgress({stage:"Parsing Excel files",current:fileIndex,total:files.length,detail:`Reading ${file.name}`});
+    await yieldToBrowser();
+    checkCancelled();
     let fileRecords = [];
     let fileFailed = false;
     let fileError = "";
@@ -996,7 +1005,9 @@ async function parseExcelFiles(files) {
         raw: false
       });
 
-      for (const sheetName of workbook.SheetNames) {
+      for (let sheetIndex = 0; sheetIndex < workbook.SheetNames.length; sheetIndex++) {
+        checkCancelled();
+        const sheetName = workbook.SheetNames[sheetIndex];
         const sheet = workbook.Sheets[sheetName];
         if (!sheet) continue;
 
@@ -1028,6 +1039,7 @@ async function parseExcelFiles(files) {
         try {
           const parsed = parseExcelPaste(tsv);
           fileRecords.push(...parsed.records);
+          onProgress({stage:"Parsing Excel files",current:fileIndex+1,total:files.length,detail:`${file.name} · ${fileRecords.length.toLocaleString()} rows read`});
         } catch (err) {
           const rowCount = tsv.trim().split(/\r?\n/).length;
 
@@ -1069,6 +1081,10 @@ async function parseExcelFiles(files) {
   // Do not abort the whole upload when every file is invalid.
   // Return the failed-file details so the UI can clearly tell the user which
   // file was ignored and which required headers were missing.
+  checkCancelled();
+  onProgress({stage:"Removing duplicate rows",current:0,total:1,detail:"Checking repeated job-card lines across selected files"});
+  await yieldToBrowser();
+  checkCancelled();
   const allRecords = fileRecordSets.flat();
   const deduped = deduplicateAcrossFiles(fileRecordSets);
 
@@ -1077,7 +1093,8 @@ async function parseExcelFiles(files) {
     files: fileNames,
     failedFiles,
     totalRowsBeforeDedup: allRecords.length,
-    duplicateRowsIgnored: deduped.duplicateCount
+    duplicateRowsIgnored: deduped.duplicateCount,
+    invalidRows: deduped.records.filter(r => !String(r?.vin||"").trim() || !normalizeJobCard(r?.jobCard)).map(r => ({rowNumber:r?.rowNumber||"?",reason:!String(r?.vin||"").trim()?"VIN missing; skipped in bulk analysis":"Job Card number missing; not eligible for database history save"}))
   };
 }
 
@@ -2575,6 +2592,24 @@ function buildBulkAnalysis(records, considerKmVehicles = []) {
   return results;
 }
 
+
+async function buildBulkAnalysisProgressive(records, considerKmVehicles = [], onProgress = () => {}, isCancelled = () => false) {
+  const names=new Map();
+  for(const r of records||[]){const n=String(r?.customerNumber||"").trim();if(n&&isUsableCustomerName(r?.customerName)&&!names.has(n))names.set(n,String(r.customerName).trim());}
+  const groups=new Map(),skippedVehicles=[],failedVehicles=[],allResults=[],highRunningVehicles=[];
+  for(const r of records||[]){const vin=String(r?.vin||"").trim().toUpperCase();if(!vin){skippedVehicles.push({vehicle:String(r?.reg||r?.customerName||"Unknown row"),reason:"VIN missing",rowNumber:r?.rowNumber||"?"});continue;}const n=String(r?.customerNumber||"").trim();const row=!isUsableCustomerName(r?.customerName)&&n&&names.has(n)?{...r,customerName:names.get(n)}:r;if(!groups.has(vin))groups.set(vin,[]);groups.get(vin).push(row);}
+  const entries=[...groups.entries()];
+  for(let i=0;i<entries.length;i++){
+    if(isCancelled()){const e=new Error("Analysis cancelled by user.");e.name="AbortError";throw e;}
+    const [vin,rows]=entries[i];onProgress({stage:"Calculating service decisions",current:i,total:entries.length,detail:`Vehicle ${i+1} of ${entries.length}: ${vin}`});
+    await new Promise(resolve=>setTimeout(resolve,0));
+    if(isCancelled()){const e=new Error("Analysis cancelled by user.");e.name="AbortError";throw e;}
+    try{const one=buildBulkAnalysis(rows,considerKmVehicles);allResults.push(...one);highRunningVehicles.push(...(one.highRunningVehicles||[]));}catch(e){failedVehicles.push({vin,reason:e?.message||"Decision calculation failed"});}
+    onProgress({stage:"Calculating service decisions",current:i+1,total:entries.length,detail:`Processed ${i+1} / ${entries.length} vehicles`});
+  }
+  allResults.sort((a,b)=>b.dueCount-a.dueCount||String(a.vehicle.customerName||a.vehicle.customerNumber||"").localeCompare(String(b.vehicle.customerName||b.vehicle.customerNumber||"")));
+  allResults.highRunningVehicles=highRunningVehicles;allResults.skippedVehicles=skippedVehicles;allResults.failedVehicles=failedVehicles;return allResults;
+}
 
 function buildCustomerGroups(results, dealerName = "") {
   const cleanDealerName = String(dealerName || "").trim();
@@ -4766,6 +4801,10 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadMeta, setUploadMeta] = useState(null);
   const [uploadParsedRecords, setUploadParsedRecords] = useState([]);
+  const [uploadProgress, setUploadProgress] = useState(null);
+  const [analysisBusy, setAnalysisBusy] = useState(false);
+  const cancelProcessingRef = useRef(false);
+  const seenUploadSignaturesRef = useRef(new Set());
   const [estimateOpen, setEstimateOpen] = useState(false);
 
   useEffect(() => {
@@ -5426,96 +5465,36 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   }
 
   const handleExcelUpload = async (event) => {
-    const files = Array.from(event.target.files || []);
-    if (!files.length) return;
-
-    setError("");
-    setUploadBusy(true);
-
-    try {
-      const result = await parseExcelFiles(files);
-      const parsedRows = result.records || [];
-
-      setExcelData("");
-      const acceptedFiles = files.filter(file => result.files.includes(file.name));
-      setUploadedFiles(acceptedFiles);
-      setUploadMeta({
-        files: result.files,
-        failedFiles: result.failedFiles || [],
-        rowsBefore: result.totalRowsBeforeDedup,
-        duplicates: result.duplicateRowsIgnored,
-        rowsAfter: parsedRows.length,
-      });
-
-      setAnalysis(null);
-      setBulkResults([]);
-      setBulkMeta(null);
-      setCustomerGroups([]);
-      setSelectedCustomers([]);
-      setUploadParsedRecords(parsedRows);
-      if (parsedRows.length) {
-        const uploadedVins = new Set(
-          parsedRows.map(r => String(r?.vin || "").trim().toUpperCase()).filter(Boolean)
-        );
-        setMode(uploadedVins.size > 1 ? "bulk" : "single");
-      }
-      if (parsedRows.length) {
-        logUsage("Excel Upload", {
-          fileCount: acceptedFiles.length,
-          vehicleCount: new Set(parsedRows.map(r=>String(r.vin||"").trim().toUpperCase()).filter(Boolean)).size,
-          details: { rows: parsedRows.length, files: acceptedFiles.map(f=>f.name) }
-        });
-      }
-
-      if (!parsedRows.length && result.failedFiles?.length) {
-        setError(
-          result.failedFiles
-            .map(item => `${item.name} — This file was ignored because required header was not found. ${item.reason}`)
-            .join(" | ")
-        );
-      } else {
-        // Service Decision always uses the complete parsed Excel data.
-        // Emergency cutoff affects only DB persistence.
-        if (parsedRows.length) {
-          const cutoff = await fetchEmergencyDbUploadCutoff();
-
-          if (cutoff.enabled) {
-            console.warn(
-              cutoff.statusAvailable
-                ? "Emergency DB Upload Cutoff is active. Skipping DB history persistence."
-                : "Emergency DB Upload Cutoff status unavailable. DB history persistence is paused for safety."
-            );
-          } else {
-            const allJobCards = parsedRows
-              .map(record => normalizeJobCard(record?.jobCard))
-              .filter(Boolean);
-
-            const newJobCards = await getHybridNewJobCards(
-              API_BASE_URL,
-              allJobCards,
-              (candidateJobCards) => checkNewJobCards(API_BASE_URL, candidateJobCards)
-            );
-
-            const recordsForBackend = parsedRows.filter(record => {
-              const jobCard = normalizeJobCard(record?.jobCard);
-              return !!jobCard && newJobCards.has(jobCard);
-            });
-
-            if (recordsForBackend.length) {
-              void saveHistoryInBackground(recordsForBackend);
-            }
-          }
+    const selectedFiles=Array.from(event.target.files||[]);event.target.value="";if(!selectedFiles.length)return;
+    const sig=f=>`${f.name}::${f.size}::${f.lastModified}`,batch=new Set(),duplicateFiles=[];
+    const files=selectedFiles.filter(f=>{const k=sig(f);if(seenUploadSignaturesRef.current.has(k)||batch.has(k)){duplicateFiles.push({name:f.name,reason:"Already uploaded in this session"});return false;}batch.add(k);return true;});
+    if(!files.length){setUploadMeta(p=>({...p,duplicateFiles,failedFiles:p?.failedFiles||[],invalidRows:p?.invalidRows||[],rowsAfter:p?.rowsAfter||0,duplicates:p?.duplicates||0}));setError("Same file already uploaded in this session. Existing data has been kept.");return;}
+    cancelProcessingRef.current=false;setError("");setUploadBusy(true);setUploadProgress({stage:"Preparing upload",current:0,total:files.length,detail:`${files.length} file(s) selected`});
+    try{
+      const result=await parseExcelFiles(files,{onProgress:setUploadProgress,isCancelled:()=>cancelProcessingRef.current});
+      if(cancelProcessingRef.current){const e=new Error("Upload cancelled.");e.name="AbortError";throw e;}
+      const parsedRows=result.records||[],accepted=files.filter(f=>result.files.includes(f.name));accepted.forEach(f=>seenUploadSignaturesRef.current.add(sig(f)));
+      setExcelData("");setUploadedFiles(accepted);setUploadMeta({files:result.files,failedFiles:result.failedFiles||[],duplicateFiles,rowsBefore:result.totalRowsBeforeDedup,duplicates:result.duplicateRowsIgnored,rowsAfter:parsedRows.length,invalidRows:result.invalidRows||[]});
+      setAnalysis(null);setBulkResults([]);setBulkMeta(null);setCustomerGroups([]);setSelectedCustomers([]);setUploadParsedRecords(parsedRows);
+      if(parsedRows.length){const vins=new Set(parsedRows.map(r=>String(r?.vin||"").trim().toUpperCase()).filter(Boolean));setMode(vins.size>1?"bulk":"single");logUsage("Excel Upload",{fileCount:accepted.length,vehicleCount:vins.size,details:{rows:parsedRows.length,files:accepted.map(f=>f.name)}});}
+      if(!parsedRows.length&&result.failedFiles?.length)setError(result.failedFiles.map(x=>`${x.name} — ${x.reason}`).join(" | "));
+      if(parsedRows.length){
+        setUploadProgress({stage:"Checking existing Job Cards",current:0,total:1,detail:"Checking local cache and database before history save"});await new Promise(resolve=>setTimeout(resolve,0));
+        if(cancelProcessingRef.current){const e=new Error("Upload cancelled.");e.name="AbortError";throw e;}
+        const cutoff=await fetchEmergencyDbUploadCutoff();
+        if(cancelProcessingRef.current){const e=new Error("Upload cancelled.");e.name="AbortError";throw e;}
+        if(cutoff.enabled)setUploadProgress({stage:"History lookup complete",current:1,total:1,detail:"History save paused by safety cutoff; parsed data remains available locally"});
+        else{
+          const cards=parsedRows.map(r=>normalizeJobCard(r?.jobCard)).filter(Boolean);
+          const fresh=await getHybridNewJobCards(API_BASE_URL,cards,candidates=>checkNewJobCards(API_BASE_URL,candidates));
+          if(cancelProcessingRef.current){const e=new Error("Upload cancelled.");e.name="AbortError";throw e;}
+          const records=parsedRows.filter(r=>{const jc=normalizeJobCard(r?.jobCard);return !!jc&&fresh.has(jc);});
+          setUploadProgress({stage:"Saving new history in background",current:1,total:1,detail:`${records.length.toLocaleString()} new service rows queued; duplicate Job Cards are not saved again`});if(records.length)void saveHistoryInBackground(records);
         }
       }
-    } catch (err) {
-      setUploadMeta(null);
-      setUploadedFiles([]);
-      setUploadParsedRecords([]);
-      setError(err?.message || "The Excel file could not be read.");
-    } finally {
-      setUploadBusy(false);
-      event.target.value = "";
-    }
+      setUploadProgress({stage:"Upload complete",current:files.length,total:files.length,detail:`${parsedRows.length.toLocaleString()} rows ready for analysis`});
+    }catch(e){if(e?.name==="AbortError")setError("Upload cancelled. No new background history save was started by this upload. Any current network lookup may finish in the background.");else{setUploadMeta(null);setUploadedFiles([]);setUploadParsedRecords([]);setError(e?.message||"The Excel file could not be read.");}}
+    finally{setUploadBusy(false);cancelProcessingRef.current=false;window.setTimeout(()=>setUploadProgress(null),1800);}
   };
 
   const getAnalysisRecords = () => {
@@ -5628,6 +5607,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         const visits = aggregateHistory(vehicleRecords);
         const decision = calculateDecisions(vehicleRecords, vehicle, running);
         setAnalysis({ ...parsed, vehicle, running, visits, decision });
+      setUploadProgress({stage:"Decision calculation complete",current:1,total:1,detail:"Vehicle decision is ready"});
         setOverrideReading("");
         setAppliedOverride(null);
         setDecisionBasis(running?.unit === "HRS" ? "HRS" : "KM");
@@ -5701,8 +5681,8 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       finish();
     };
   }, []);
-  const analyze = () => {
-    setError("");
+  const analyze = async () => {
+    setError("");cancelProcessingRef.current=false;setAnalysisBusy(true);setUploadProgress({stage:"Preparing decision calculation",current:0,total:1,detail:"Validating vehicle records"});
     try {
       const parsed = getAnalysisRecords();
       const uniqueVins = [...new Set(
@@ -5714,7 +5694,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       // Single Vehicle button automatically switches to Bulk when the input
       // contains more than one VIN. No second upload/paste is required.
       if(uniqueVins.length > 1){
-        const results = buildBulkAnalysis(parsed.records, bulkConsiderKm);
+        const results = await buildBulkAnalysisProgressive(parsed.records,bulkConsiderKm,setUploadProgress,()=>cancelProcessingRef.current);
         const groups = buildCustomerGroups(results, user?.dealerName);
         setAnalysis(null);
         setOverrideReading("");
@@ -5742,7 +5722,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
           services: [],
         });
         setOpenBulkFilter(null);
-        setBulkMeta({ records: parsed.records.length, vehicles: results.length, customers: groups.length, highRunningVehicles: results.highRunningVehicles || [] });
+        setBulkMeta({ records: parsed.records.length, vehicles: results.length, customers: groups.length, highRunningVehicles: results.highRunningVehicles || [], skippedVehicles: results.skippedVehicles || [], failedVehicles: results.failedVehicles || [] });
         setMode("bulk");
         logUsage("Bulk Vehicle Analysis", {
           mode:"bulk",
@@ -5750,10 +5730,12 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
           fileCount:uploadedFiles.length,
           details:{ rows:parsed.records.length, customers:groups.length, automatic:true }
         });
+        setUploadProgress({stage:"Decision calculation complete",current:results.length,total:results.length,detail:`${results.length} vehicles processed; ${(results.skippedVehicles||[]).length} skipped; ${(results.failedVehicles||[]).length} failed`});
         setError(`Multiple Vehicle Detected: ${uniqueVins.length} unique VINs found. Automatically switched to Bulk Service.`);
         return;
       }
 
+      setUploadProgress({stage:"Calculating service decision",current:0,total:1,detail:"Calculating service intervals and due status"});await new Promise(resolve=>setTimeout(resolve,0));if(cancelProcessingRef.current){const e=new Error("Analysis cancelled.");e.name="AbortError";throw e;}
       const vehicle = deriveVehicle(parsed.records);
       const running = deriveRunningReading(parsed.records, vehicle);
       const visits = aggregateHistory(parsed.records);
@@ -5802,16 +5784,15 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         details:{ serviceCount:(decision?.services || []).length }
       });
     } catch (e) {
-      setAnalysis(null);
-      setError(e.message || "The Excel data could not be read.");
-    }
+      setAnalysis(null);if(e?.name==="AbortError")setError("Decision calculation cancelled by user.");else setError(e.message||"The Excel data could not be read.");
+    } finally {setAnalysisBusy(false);cancelProcessingRef.current=false;window.setTimeout(()=>setUploadProgress(null),1800);}
   };
 
-  const analyzeBulk = () => {
-    setError("");
+  const analyzeBulk = async () => {
+    setError("");cancelProcessingRef.current=false;setAnalysisBusy(true);setUploadProgress({stage:"Preparing decision calculation",current:0,total:1,detail:"Grouping records by VIN"});
     try {
       const parsed = getAnalysisRecords();
-      const results = buildBulkAnalysis(parsed.records, bulkConsiderKm);
+      const results = await buildBulkAnalysisProgressive(parsed.records,bulkConsiderKm,setUploadProgress,()=>cancelProcessingRef.current);
       setBulkResults(results);
       const groups = buildCustomerGroups(results, user?.dealerName);
       setCustomerGroups(groups);
@@ -5836,7 +5817,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         services: [],
       });
       setOpenBulkFilter(null);
-      setBulkMeta({ records: parsed.records.length, vehicles: results.length, customers: groups.length, highRunningVehicles: results.highRunningVehicles || [] });
+      setBulkMeta({ records: parsed.records.length, vehicles: results.length, customers: groups.length, highRunningVehicles: results.highRunningVehicles || [], skippedVehicles: results.skippedVehicles || [], failedVehicles: results.failedVehicles || [] });
       logUsage("Bulk Vehicle Analysis", {
         mode:"bulk",
         vehicleCount:results.length,
@@ -5848,6 +5829,9 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       setBulkMeta(null);
       setError(e.message || "The bulk data could not be read.");
     }
+      setUploadProgress({stage:"Decision calculation complete",current:results.length,total:results.length,detail:`${results.length} vehicles processed; ${(results.skippedVehicles||[]).length} skipped; ${(results.failedVehicles||[]).length} failed`});
+    }catch(e){if(e?.name==="AbortError")setError("Decision calculation cancelled by user.");else setError(e.message||"Bulk analysis failed.");}
+    finally{setAnalysisBusy(false);cancelProcessingRef.current=false;window.setTimeout(()=>setUploadProgress(null),1800);}
   };
 
   const recalculateWithOverride = () => {
@@ -8135,15 +8119,11 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
 
 
 
-      {uploadBusy && (
-        <div className="excel-upload-processing-overlay" role="status" aria-live="polite" aria-busy="true">
-          <div className="excel-upload-processing-card">
-            <div className="excel-upload-spinner" aria-hidden="true"></div>
-            <div className="excel-upload-processing-title">Processing Excel...</div>
-            <div className="excel-upload-processing-text">Please wait while the Excel data is being uploaded and processed.</div>
-          </div>
-        </div>
-      )}
+      {(uploadBusy||analysisBusy)&&<div className="excel-upload-processing-overlay" role="status" aria-live="polite" aria-busy="true"><div className="excel-upload-processing-card">
+        <div className="excel-upload-spinner" aria-hidden="true"></div><div className="excel-upload-processing-title">{uploadProgress?.stage||"Processing Excel..."}</div><div className="excel-upload-processing-text">{uploadProgress?.detail||"Please wait while the data is processed."}</div>
+        {Number(uploadProgress?.total)>0&&<><div style={{marginTop:14,fontSize:12,fontWeight:800,textAlign:"left"}}>{Math.min(Number(uploadProgress?.current||0),Number(uploadProgress?.total||0)).toLocaleString()} / {Number(uploadProgress?.total||0).toLocaleString()} {String(uploadProgress?.stage||"").toLowerCase().includes("decision")?"vehicles":"steps/files"}</div><div style={{height:8,marginTop:6,background:"#e8edf3",borderRadius:99,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.max(0,Math.min(100,Number(uploadProgress?.current||0)/Number(uploadProgress?.total||1)*100))}%`,background:"#217346",transition:"width .15s ease"}}/></div></>}
+        <button type="button" className="excel-button" style={{marginTop:16}} onClick={()=>{cancelProcessingRef.current=true;setUploadProgress(p=>({...p,detail:"Cancellation requested; waiting for the next safe checkpoint…"}));}}>Cancel processing</button>
+      </div></div>}
 
       <div className={`excel-app theme-${dashboardPrefs.theme || "blue"}`}>
         <div className="excel-window">
@@ -8163,12 +8143,13 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
             {mode !== "warranty-tags" && mode !== "profile" && (
             <div className="excel-toolbar">
               {mode !== "home" && <>
-                <button className="excel-button green" onClick={() => document.getElementById("excel-file-input")?.click()} disabled={uploadBusy}>Upload Excel</button>
+                <button className="excel-button green" onClick={() => document.getElementById("excel-file-input")?.click()} disabled={uploadBusy||analysisBusy}>Upload Excel</button>
                 <button className="excel-button" onClick={clear}>Clear</button>
-                <button className="excel-button green" onClick={mode === "bulk" ? analyzeBulk : analyze} disabled={uploadBusy || (!excelData.trim() && !uploadParsedRecords.length)}>{mode === "bulk" ? "Analyze All Vehicles" : "Analyze Vehicle"}</button>
+                <button className="excel-button green" onClick={mode === "bulk" ? analyzeBulk : analyze} disabled={uploadBusy || analysisBusy || (!excelData.trim() && !uploadParsedRecords.length)}>{mode === "bulk" ? "Analyze All Vehicles" : "Analyze Vehicle"}</button>
 
               </>}
               {mode === "bulk" && bulkMeta && <span className="status-pill green">{bulkMeta.vehicles} Vehicles · {bulkMeta.records} Rows</span>}
+              {mode==="bulk"&&bulkMeta&&((bulkMeta.skippedVehicles||[]).length||(bulkMeta.failedVehicles||[]).length)>0&&<details className="no-print" style={{flexBasis:"100%",marginTop:6,padding:10,border:"1px solid #f0b429",borderRadius:8,background:"rgba(240,180,41,.10)",fontSize:12}}><summary style={{cursor:"pointer",fontWeight:800}}>Skipped / failed vehicles: {(bulkMeta.skippedVehicles||[]).length} skipped · {(bulkMeta.failedVehicles||[]).length} failed</summary><ul style={{margin:"6px 0 0",paddingLeft:20}}>{(bulkMeta.skippedVehicles||[]).slice(0,100).map((x,i)=><li key={"s"+i}>{x.vehicle} — {x.reason} (row {x.rowNumber})</li>)}{(bulkMeta.failedVehicles||[]).slice(0,100).map((x,i)=><li key={"f"+i}>{x.vin} — {x.reason}</li>)}</ul></details>}
               {mode === "bulk" && bulkMeta?.highRunningVehicles?.length > 0 && <div className="upload-warning no-print" style={{marginTop:8,padding:"10px 12px",border:"1px solid #f0b429",borderRadius:8,background:"rgba(240,180,41,.12)",color:"var(--text-color, #7c4a03)",fontSize:13,flexBasis:"100%",width:"100%",boxSizing:"border-box"}}>
                 <strong>Information: {bulkMeta.highRunningVehicles.length} vehicle(s) have average running above 400 km/day.</strong>
                 <div style={{marginTop:4}}>For these vehicles, KM reading is ignored by default and service decision is time-only. If you trust the KM reading for a particular vehicle, select Consider KM below and then click Analyze All Vehicles to recalculate. Each vehicle setting is independent.</div>
@@ -8223,6 +8204,12 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                   ))}
                 </div>
               )}
+              {uploadMeta&&<div className="no-print" style={{marginTop:10,padding:"10px 12px",border:"1px solid #d9e2ea",borderRadius:8,background:"var(--panel-bg, #f8fafc)",fontSize:12}}>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",fontWeight:800}}><span>Upload summary</span><span className="status-pill green">{Number(uploadMeta.rowsAfter||0).toLocaleString()} rows ready</span><span className="status-pill blue">{Number(uploadMeta.duplicates||0).toLocaleString()} duplicate rows ignored</span><span className="status-pill">{(uploadMeta.invalidRows||[]).length} invalid rows</span><span className="status-pill">{(uploadMeta.duplicateFiles||[]).length} repeated files skipped</span></div>
+                {(uploadMeta.duplicateFiles||[]).length>0&&<div style={{marginTop:7}}><b>Repeated files:</b> {uploadMeta.duplicateFiles.map(x=>x.name).join(", ")}</div>}
+                {(uploadMeta.invalidRows||[]).length>0&&<details style={{marginTop:7}}><summary style={{cursor:"pointer",fontWeight:700}}>Show invalid/skipped rows ({uploadMeta.invalidRows.length})</summary><ul style={{margin:"6px 0 0",paddingLeft:20}}>{uploadMeta.invalidRows.slice(0,100).map((x,i)=><li key={i}>Row {x.rowNumber}: {x.reason}</li>)}</ul>{uploadMeta.invalidRows.length>100&&<div>Showing first 100 rows.</div>}</details>}
+                {(uploadMeta.failedFiles||[]).length>0&&<div style={{marginTop:7}}><b>Failed files:</b> {uploadMeta.failedFiles.map(x=>x.name).join(", ")}</div>}
+              </div>}
               {mode === "single" && analysis && (
                 <div className="no-print" style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
                   <button

@@ -6544,20 +6544,34 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       // Reload source history when a saved estimate is reopened. Without this,
       // aggregate changes only update the checkboxes and cannot rebuild the lines.
       const savedSourceModel = String(saved.source_model || "").trim();
+      const vehicleModel = String(vehicle.model || "").trim();
       let restoredHistory = {vehicleRows:[],modelRows:[],globalPartRates:[]};
       let historyReloaded = false;
       try {
         if (String(vehicle.vin || "").trim()) {
           restoredHistory = await loadEstimateHistoryByVin(String(vehicle.vin).trim());
           historyReloaded = true;
-        } else if (savedSourceModel) {
-          const response = await fetch("/api/save-history?model=" + encodeURIComponent(savedSourceModel) + "&_ts=" + Date.now(), {cache:"no-store"});
+        }
+
+        // Older cached estimates may not contain source_model. Also, some VINs
+        // have no usable history rows. In either case, load same-model history
+        // so aggregate changes can rebuild the list instead of retaining stale
+        // parts/labour from the previously selected aggregate.
+        const hasVehicleHistory = restoredHistory.vehicleRows.length || restoredHistory.modelRows.length;
+        const modelToLoad = savedSourceModel || vehicleModel;
+        if (!hasVehicleHistory && modelToLoad) {
+          const response = await fetch("/api/save-history?model=" + encodeURIComponent(modelToLoad) + "&_ts=" + Date.now(), {cache:"no-store"});
           const data = await response.json().catch(() => ({}));
-          restoredHistory = {
-            vehicleRows:[],
-            modelRows:Array.isArray(data?.modelRows) ? data.modelRows : [],
-            globalPartRates:Array.isArray(data?.globalPartRates) ? data.globalPartRates : []
-          };
+          const modelRows = Array.isArray(data?.modelRows) ? data.modelRows : [];
+          const globalPartRates = Array.isArray(data?.globalPartRates) ? data.globalPartRates : [];
+          if (modelRows.length || globalPartRates.length) {
+            restoredHistory = {
+              vehicleRows:[],
+              modelRows,
+              globalPartRates
+            };
+            setEstimateSourceModel(modelToLoad);
+          }
           historyReloaded = true;
         }
       } catch (historyError) {

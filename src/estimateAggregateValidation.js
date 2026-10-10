@@ -83,14 +83,8 @@ export function validateEstimateAggregateSelection({ selectedServices = [], part
       const oilFilter = validParts.some(item =>
         hasText(item, ["ENGINE OIL FILTER", "F7A01500"])
       );
-      const fuelItems = validParts.filter(item => hasText(item, ["FUEL FILTER", "FUELFILTER", "P5105609"]));
-      const fuelPair = sumQty(fuelItems) >= 2;
-      const fuelKit = fuelItems.some(item =>
-        hasText(item, ["KIT"]) && qty(item) >= 1
-      );
       if (!oil.length) add(key, "Engine Oil part is missing; the oil filter or a kit cannot substitute for engine oil.");
       if (!oilFilter) add(key, "Engine Oil Filter is missing from the estimate.");
-      if (!fuelPair && !fuelKit) add(key, "Fuel Filter grouping is incomplete: include a compatible pair (total quantity 2 or more) or a confirmed kit. Do not add an unverified part number.");
     }
 
     if (key === "steeringOil") {
@@ -98,7 +92,7 @@ export function validateEstimateAggregateSelection({ selectedServices = [], part
         !description(item).includes("FILTER") &&
         (hasText(item, ["STEERING OIL", "POWER STEERING", "PSB99994"]))
       );
-      const filter = validParts.some(item =>
+      const filter = aggregateParts.some(item =>
         hasText(item, ["STEERING OIL FILTER", "PD600391"])
       );
       if (!oil) add(key, "Steering Oil part is missing.");
@@ -117,7 +111,7 @@ export function validateEstimateAggregateSelection({ selectedServices = [], part
     if (key === "fuelFilter") {
       // Fuel-filter items can be part of the Engine Oil group in a complete
       // job card, so validate the whole estimate rather than only one serviceKey.
-      const fuelItems = validParts.filter(item => hasText(item, ["FUEL FILTER", "FUELFILTER"]));
+      const fuelItems = aggregateParts.filter(item => hasText(item, ["FUEL FILTER", "FUELFILTER"]));
       const kit = fuelItems.some(item => hasText(item, ["FUEL FILTER KIT", "FUEL FILTER ELEMENT KIT"]) && qty(item) >= 1);
       if (!kit && sumQty(fuelItems) < 2) {
         add(key, "Fuel Filter grouping needs a compatible pair (total quantity 2 or more) or a confirmed kit.");

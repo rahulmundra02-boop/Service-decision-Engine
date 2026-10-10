@@ -3055,6 +3055,7 @@ const ESTIMATE_STANDARD_PARTS = {
   defFilter: ["DEF FILTER KIT", "DEF DOSING PUMP AIR FILTER", "DEF TANK SUCTION FILTER", "DEF FILTER AIR", "DEF FILTER SUCTION"],
   defInline: ["DEF INLINE FILTER"],
   apdaFilter: ["APDA FILTER"],
+  tippingOil: ["TIPPING OIL"],
 };
 
 const ESTIMATE_REFERENCE_PARTS = {
@@ -3070,6 +3071,7 @@ const ESTIMATE_REFERENCE_PARTS = {
   airFilter: ["P5105689"],
   defFilter: ["XFM00500", "PET00001"],
   apdaFilter: ["PD600968"],
+  tippingOil: ["T9999998"],
 };
 
 // A reference may represent one component within a multi-part aggregate.
@@ -3767,7 +3769,7 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
         makeExactEstimatePart("defFilter", complete.suction, complete.suction.part_code, 1)
       ].filter(Boolean);
     }
-    return [];
+    return estimateFallbackItems("defFilter");
   }
 
   function buildPartItemsForService(serviceKey) {
@@ -3872,7 +3874,7 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
         )[0];
 
       const selected = pickLatest(vehicle) || pickLatest(modelHistory);
-      if (!selected) return [];
+      if (!selected) return estimateFallbackItems("clutchOil");
 
       const item = estimateBuildHistoricalItem(
         "part",
@@ -3924,6 +3926,10 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
           const vehicleFamily = exactComponentRows(vehicle);
           const modelFamily = exactComponentRows(modelHistory);
           candidates = vehicleFamily.length ? vehicleFamily : modelFamily;
+        }
+        if (!candidates.length) {
+          const fallbackRow = estimateFallbackRow(serviceKey, referenceCode);
+          if (fallbackRow) candidates = [fallbackRow];
         }
         if (!candidates.length) continue;
 

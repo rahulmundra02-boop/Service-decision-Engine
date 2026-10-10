@@ -5773,6 +5773,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       setAppliedOverride(null);
       setDecisionBasis(running?.unit === "HRS" ? "HRS" : "KM");
       setAnalysis({ ...parsed, vehicle, running, visits, decision });
+      setUploadProgress({ stage: "Decision calculation complete", current: 1, total: 1, detail: "Vehicle decision is ready" });
       setRemark("");
       setCustomerVoice("");
       setHistoryViewMode("schedule");
@@ -5789,49 +5790,56 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   };
 
   const analyzeBulk = async () => {
-    setError("");cancelProcessingRef.current=false;setAnalysisBusy(true);setUploadProgress({stage:"Preparing decision calculation",current:0,total:1,detail:"Grouping records by VIN"});
+    setError("");
+    cancelProcessingRef.current = false;
+    setAnalysisBusy(true);
+    setUploadProgress({ stage: "Preparing decision calculation", current: 0, total: 1, detail: "Grouping records by VIN" });
     try {
       const parsed = getAnalysisRecords();
-      const results = await buildBulkAnalysisProgressive(parsed.records,bulkConsiderKm,setUploadProgress,()=>cancelProcessingRef.current);
+      const results = await buildBulkAnalysisProgressive(
+        parsed.records,
+        bulkConsiderKm,
+        setUploadProgress,
+        () => cancelProcessingRef.current
+      );
       setBulkResults(results);
       const groups = buildCustomerGroups(results, user?.dealerName);
       setCustomerGroups(groups);
       setSelectedCustomers([]);
       setBulkTableSort({ key: "dueCount", direction: "desc" });
-      setBulkTableFilters({
-        customerName: "",
-        vin: "",
-        reg: "",
-        saleDate: "",
-        model: "",
-        currentReading: "",
-        services: "",
-      });
-      setBulkFilterSelections({
-        customerName: [],
-        vin: [],
-        reg: [],
-        saleDate: [],
-        model: [],
-        currentReading: [],
-        services: [],
-      });
+      setBulkTableFilters({ customerName: "", vin: "", reg: "", saleDate: "", model: "", currentReading: "", services: "" });
+      setBulkFilterSelections({ customerName: [], vin: [], reg: [], saleDate: [], model: [], currentReading: [], services: [] });
       setOpenBulkFilter(null);
-      setBulkMeta({ records: parsed.records.length, vehicles: results.length, customers: groups.length, highRunningVehicles: results.highRunningVehicles || [], skippedVehicles: results.skippedVehicles || [], failedVehicles: results.failedVehicles || [] });
+      setBulkMeta({
+        records: parsed.records.length,
+        vehicles: results.length,
+        customers: groups.length,
+        highRunningVehicles: results.highRunningVehicles || [],
+        skippedVehicles: results.skippedVehicles || [],
+        failedVehicles: results.failedVehicles || [],
+      });
       logUsage("Bulk Vehicle Analysis", {
-        mode:"bulk",
-        vehicleCount:results.length,
-        fileCount:uploadedFiles.length,
-        details:{ rows:parsed.records.length, customers:groups.length }
+        mode: "bulk",
+        vehicleCount: results.length,
+        fileCount: uploadedFiles.length,
+        details: { rows: parsed.records.length, customers: groups.length }
+      });
+      setUploadProgress({
+        stage: "Decision calculation complete",
+        current: results.length,
+        total: results.length,
+        detail: `${results.length} vehicles processed; ${(results.skippedVehicles || []).length} skipped; ${(results.failedVehicles || []).length} failed`
       });
     } catch (e) {
       setBulkResults([]);
       setBulkMeta(null);
-      setError(e.message || "The bulk data could not be read.");
+      if (e?.name === "AbortError") setError("Decision calculation cancelled by user.");
+      else setError(e.message || "The bulk data could not be read.");
+    } finally {
+      setAnalysisBusy(false);
+      cancelProcessingRef.current = false;
+      window.setTimeout(() => setUploadProgress(null), 1800);
     }
-      setUploadProgress({stage:"Decision calculation complete",current:results.length,total:results.length,detail:`${results.length} vehicles processed; ${(results.skippedVehicles||[]).length} skipped; ${(results.failedVehicles||[]).length} failed`});
-    }catch(e){if(e?.name==="AbortError")setError("Decision calculation cancelled by user.");else setError(e.message||"Bulk analysis failed.");}
-    finally{setAnalysisBusy(false);cancelProcessingRef.current=false;window.setTimeout(()=>setUploadProgress(null),1800);}
   };
 
   const recalculateWithOverride = () => {

@@ -5,6 +5,12 @@ name: Android Estimate Beta APK
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - android-estimate-commit
+    paths:
+      - "android-estimate/**"
+      - ".github/workflows/android-estimate-apk.yml"
 
 concurrency:
   group: android-estimate-apk

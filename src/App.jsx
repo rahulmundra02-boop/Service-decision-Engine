@@ -6634,23 +6634,37 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   const estimateLabourTotal = estimateLabourBase+estimateLabourGst;
   const estimateGrandTotal = estimatePartsTotal+estimateLabourTotal;
   function downloadXlsxBlob(workbook, fileName) {
-    const arrayBuffer = XLSX.write(workbook, {
-      bookType: "xlsx",
-      type: "array",
-      compression: true,
-    });
-    const blob = new Blob([arrayBuffer], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = fileName;
-    link.rel = "noopener";
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    try {
+      const arrayBuffer = XLSX.write(workbook, {
+        bookType: "xlsx",
+        type: "array",
+        compression: true,
+      });
+      const blob = new Blob([arrayBuffer], { type: mimeType });
+      if (typeof navigator !== "undefined" && typeof navigator.msSaveOrOpenBlob === "function") {
+        navigator.msSaveOrOpenBlob(blob, fileName);
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      link.style.display = "none";
+      link.setAttribute("rel", "noopener");
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (error) {
+      console.error("Estimate Excel blob download failed; trying SheetJS fallback:", error);
+      try {
+        XLSX.writeFile(workbook, fileName, { bookType: "xlsx", compression: true });
+      } catch (fallbackError) {
+        console.error("Estimate Excel fallback failed:", fallbackError);
+        window.alert("Excel file download nahi ho paya. Please browser downloads allow karke dobara try karein.");
+      }
+    }
   }
 
   function exportEstimateExcel() {
@@ -6792,6 +6806,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   }
 
   async function buildEstimatePdf(autoPrint = false, sharePdf = false) {
+    const printWindow = autoPrint && !sharePdf ? window.open("about:blank", "_blank") : null;
     const pdf = new jsPDF({ unit:"mm", format:"a4", orientation:"portrait", compress:true });
     const pageWidth = 210;
     const pageHeight = 297;
@@ -7106,7 +7121,25 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       }
     } else if(autoPrint){
       pdf.autoPrint();
-      window.open(pdf.output("bloburl"),"_blank");
+      const pdfBlob = pdf.output("blob");
+      const pdfUrl = URL.createObjectURL(pdfBlob);
+      if (printWindow && !printWindow.closed) {
+        printWindow.location.replace(pdfUrl);
+        window.setTimeout(() => URL.revokeObjectURL(pdfUrl), 120000);
+      } else {
+        try {
+          const fallbackUrl = pdf.output("bloburl");
+          const fallbackWindow = window.open(fallbackUrl, "_blank");
+          if (!fallbackWindow) {
+            URL.revokeObjectURL(pdfUrl);
+            window.alert("Print window block ho gaya. Please browser me pop-ups allow karke Print A4 dobara click karein.");
+          }
+        } catch (error) {
+          URL.revokeObjectURL(pdfUrl);
+          console.error("Estimate A4 print failed:", error);
+          window.alert("A4 print open nahi ho paya. Please dobara try karein.");
+        }
+      }
     } else {
       pdf.save(fileNameBase + ".pdf");
     }

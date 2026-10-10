@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
 import JsBarcode from "jsbarcode";
 import html2pdf from "html2pdf.js";
 import html2canvas from "html2canvas";
@@ -6649,85 +6649,249 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     const vehicle = estimateVehicle || {};
     const printModel = String(estimatePrintModel || vehicle.model || "").trim();
     const wb = XLSX.utils.book_new();
-    const rows = [
-      ["SERVICE ESTIMATE"],
-      ["Estimate No.", estimateNumber || "-", "", "", "Prepared", formatDate(new Date()), "", ""],
-      [],
-    ];
+    const rows = [];
+    const rowKinds = {};
+    const addRow = (values, kind = "normal") => {
+      const index = rows.length;
+      rows.push(values);
+      if (kind !== "normal") rowKinds[index] = kind;
+      return index;
+    };
+    const lastCol = 5; // A:F only; no meaningless empty columns.
 
+    const titleRow = addRow(["SERVICE ESTIMATE"], "title");
+    addRow(["Estimate No.", estimateNumber || "-", "", "Prepared On", formatDate(new Date()), ""], "meta");
+    addRow([""], "spacer");
+
+    addRow(["CUSTOMER / VEHICLE DETAILS"], "section");
+    const vehicleRow1 = addRow([
+      "Customer Name", vehicle.customerName || "-",
+      "Registration No.", vehicle.reg || "-",
+      "Model", printModel || "-"
+    ], "vehicle");
+    let vehicleRow2 = -1;
     if (estimateVehicleFromDb) {
-      rows.push(
-        ["Customer Name", vehicle.customerName || "-", "", "Reg. No.", vehicle.reg || "-", "", "Model", printModel || "-"],
-        ["VIN", vehicle.vin || "-", "", "Engine No.", vehicle.engine || "-", "", "Sale Date", formatDate(vehicle.sale)]
-      );
-    } else {
-      rows.push(
-        ["Customer Name", vehicle.customerName || "-", "", "Reg. No.", vehicle.reg || "-", "", "Model", printModel || "-"]
-      );
+      vehicleRow2 = addRow([
+        "VIN", vehicle.vin || "-",
+        "Engine No.", vehicle.engine || "-",
+        "Sale Date", formatDate(vehicle.sale)
+      ], "vehicle");
     }
 
-    rows.push([]);
-    rows.push(["SELECTED AGGREGATE SERVICES"]);
-    rows.push([
+    addRow([""], "spacer");
+    addRow(["SELECTED AGGREGATE SERVICES"], "section");
+    const serviceRow = addRow([
       estimateSelectedServices.length
-        ? BULK_SERVICE_LABELS.filter(([,key])=>estimateSelectedServices.includes(key)).map(([label])=>label).join(", ")
+        ? BULK_SERVICE_LABELS.filter(([, key]) => estimateSelectedServices.includes(key)).map(([label]) => label).join(", ")
         : "No aggregate service selected"
-    ]);
-    rows.push([]);
-    rows.push(["PARTS"]);
-    rows.push(["S.No.", "Part No.", "Description", "Qty", "Rate (Incl. GST)", "Amount", "", ""]);
+    ], "service");
+    addRow([""], "spacer");
 
-    estimateParts.forEach((item,index) => {
-      rows.push([
+    addRow(["PARTS"], "section");
+    const partsHeaderRow = addRow(["S.No.", "Part No.", "Description", "Qty", "Rate (Incl. GST)", "Amount"], "tableHeader");
+    const partsStartRow = rows.length;
+    estimateParts.forEach((item, index) => {
+      addRow([
         index + 1,
         item.partNo || "",
         item.description || "",
         Number(item.qty || 0),
         Number(item.rate || 0),
-        Number(item.qty || 0) * Number(item.rate || 0),
-        "",
-        ""
-      ]);
+        Number(item.qty || 0) * Number(item.rate || 0)
+      ], "part");
     });
-    if (!estimateParts.length) rows.push(["", "", "No parts added", "", "", 0, "", ""]);
+    if (!estimateParts.length) addRow(["", "", "No parts added", "", "", 0], "empty");
+    const partsEndRow = rows.length - 1;
 
-    rows.push([]);
-    rows.push(["LABOUR"]);
-    rows.push(["S.No.", "Labour", "Qty", "Rate", "Amount", "", "", ""]);
-    estimateLabour.forEach((item,index) => {
-      rows.push([
+    addRow([""], "spacer");
+    addRow(["LABOUR"], "section");
+    const labourHeaderRow = addRow(["S.No.", "Description", "Qty", "Rate", "Amount", ""], "tableHeader");
+    const labourStartRow = rows.length;
+    estimateLabour.forEach((item, index) => {
+      addRow([
         index + 1,
         item.description || "",
         Number(item.qty || 1),
         Number(item.rate || 0),
         Number(item.qty || 1) * Number(item.rate || 0),
-        "",
-        "",
         ""
-      ]);
+      ], "labour");
     });
-    if (!estimateLabour.length) rows.push(["", "No labour added", "", "", 0, "", "", ""]);
+    if (!estimateLabour.length) addRow(["", "No labour added", "", "", 0, ""], "empty");
+    const labourEndRow = rows.length - 1;
 
-    rows.push([]);
-    rows.push(["TOTALS", "", "", "", "", "", "", ""]);
-    rows.push(["Parts Total (GST Incl.)", "", "", "", estimatePartsTotal, "", "", ""]);
-    rows.push(["Labour Subtotal", "", "", "", estimateLabourBase, "", "", ""]);
-    rows.push(["GST on Labour (18%)", "", "", "", estimateLabourGst, "", "", ""]);
-    rows.push(["Grand Total", "", "", "", estimateGrandTotal, "", "", ""]);
+    addRow([""], "spacer");
+    addRow(["ESTIMATE SUMMARY"], "section");
+    const totalsStartRow = rows.length;
+    addRow(["Parts Total (GST Included)", "", "", "", "", estimatePartsTotal], "total");
+    addRow(["Labour Subtotal", "", "", "", "", estimateLabourBase], "total");
+    addRow(["GST on Labour (18%)", "", "", "", "", estimateLabourGst], "total");
+    const grandTotalRow = addRow(["GRAND TOTAL", "", "", "", "", estimateGrandTotal], "grandTotal");
 
-    // Keep the export compatible with SheetJS Community Edition by using
-    // only supported worksheet data/column metadata (no Pro-only cell styles).
+    addRow([""], "spacer");
+    addRow(["Note: Estimate only. Final amount may vary after actual inspection and applicable taxes/rates."], "note");
+    addRow(["Generated by Service Decision Engine"], "footer");
+
     const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws["!cols"] = [
-      { wch: 7 }, { wch: 24 }, { wch: 34 }, { wch: 11 },
-      { wch: 17 }, { wch: 17 }, { wch: 14 }, { wch: 14 }
-    ];
-    XLSX.utils.book_append_sheet(wb, ws, "Service Estimate");
-
-    wb.Props = {
-      Title: "Service Estimate",
-      Subject: "Service Estimate"
+    const navy = "17365D";
+    const purple = "6842B8";
+    const paleBlue = "EAF1F8";
+    const lightGray = "F3F5F7";
+    const green = "E2F0D9";
+    const white = "FFFFFF";
+    const borderColor = "B8C4D1";
+    const thinBorder = {
+      top: { style: "thin", color: { rgb: borderColor } },
+      bottom: { style: "thin", color: { rgb: borderColor } },
+      left: { style: "thin", color: { rgb: borderColor } },
+      right: { style: "thin", color: { rgb: borderColor } }
     };
+    const setCell = (r, c, style) => {
+      const address = XLSX.utils.encode_cell({ r, c });
+      if (!ws[address]) ws[address] = { t: "s", v: "" };
+      ws[address].s = { ...(ws[address].s || {}), ...style };
+    };
+    const styleRow = (r, style, from = 0, to = lastCol) => {
+      for (let c = from; c <= to; c++) setCell(r, c, { ...style, border: thinBorder });
+    };
+    const merge = (r, c1, c2) => {
+      ws["!merges"] ||= [];
+      ws["!merges"].push({ s: { r, c: c1 }, e: { r, c: c2 } });
+    };
+
+    // Main title and compact estimate metadata.
+    merge(titleRow, 0, lastCol);
+    styleRow(titleRow, {
+      font: { name: "Aptos Display", sz: 20, bold: true, color: { rgb: white } },
+      fill: { patternType: "solid", fgColor: { rgb: navy } },
+      alignment: { horizontal: "center", vertical: "center" }
+    });
+    styleRow(1, {
+      font: { name: "Aptos", sz: 10, bold: true, color: { rgb: navy } },
+      fill: { patternType: "solid", fgColor: { rgb: paleBlue } },
+      alignment: { vertical: "center" }
+    });
+    merge(1, 1, 2);
+    merge(1, 4, 5);
+
+    // Section bars span the actual used columns only.
+    Object.keys(rowKinds).forEach(key => {
+      const r = Number(key);
+      if (rowKinds[r] === "section") {
+        merge(r, 0, lastCol);
+        styleRow(r, {
+          font: { name: "Aptos", sz: 11, bold: true, color: { rgb: white } },
+          fill: { patternType: "solid", fgColor: { rgb: purple } },
+          alignment: { vertical: "center" }
+        });
+      }
+    });
+
+    // Vehicle details: labels are bold and values are readable/merged only where needed.
+    [vehicleRow1, vehicleRow2].filter(r => r >= 0).forEach(r => {
+      for (let c = 0; c < 6; c++) {
+        setCell(r, c, {
+          font: { name: "Aptos", sz: 10, bold: c % 2 === 0, color: { rgb: c % 2 === 0 ? navy : "222222" } },
+          fill: { patternType: "solid", fgColor: { rgb: c % 2 === 0 ? lightGray : white } },
+          alignment: { vertical: "center", wrapText: true },
+          border: thinBorder
+        });
+      }
+      merge(r, 1, 1);
+      merge(r, 3, 3);
+      merge(r, 5, 5);
+    });
+
+    // Service list and table headings.
+    merge(serviceRow, 0, lastCol);
+    styleRow(serviceRow, {
+      font: { name: "Aptos", sz: 10, color: { rgb: "222222" } },
+      fill: { patternType: "solid", fgColor: { rgb: paleBlue } },
+      alignment: { vertical: "center", wrapText: true }
+    });
+    [partsHeaderRow, labourHeaderRow].forEach(r => styleRow(r, {
+      font: { name: "Aptos", sz: 10, bold: true, color: { rgb: white } },
+      fill: { patternType: "solid", fgColor: { rgb: navy } },
+      alignment: { horizontal: "center", vertical: "center", wrapText: true }
+    }));
+
+    // Body rows: subtle alternating fills, thin borders, aligned quantities and amounts.
+    for (let r = partsStartRow; r <= partsEndRow; r++) {
+      styleRow(r, {
+        font: { name: "Aptos", sz: 10, color: { rgb: "222222" } },
+        fill: { patternType: "solid", fgColor: { rgb: (r - partsStartRow) % 2 ? white : lightGray } },
+        alignment: { vertical: "center", wrapText: true }
+      });
+      setCell(r, 0, { alignment: { horizontal: "center", vertical: "center" } });
+      setCell(r, 3, { alignment: { horizontal: "right", vertical: "center" }, numFmt: "0.##" });
+      setCell(r, 4, { alignment: { horizontal: "right", vertical: "center" }, numFmt: '"₹" #,##0.00' });
+      setCell(r, 5, { alignment: { horizontal: "right", vertical: "center" }, numFmt: '"₹" #,##0.00', font: { name: "Aptos", sz: 10, bold: true } });
+    }
+    for (let r = labourStartRow; r <= labourEndRow; r++) {
+      styleRow(r, {
+        font: { name: "Aptos", sz: 10, color: { rgb: "222222" } },
+        fill: { patternType: "solid", fgColor: { rgb: (r - labourStartRow) % 2 ? white : lightGray } },
+        alignment: { vertical: "center", wrapText: true }
+      });
+      setCell(r, 0, { alignment: { horizontal: "center", vertical: "center" } });
+      setCell(r, 2, { alignment: { horizontal: "right", vertical: "center" }, numFmt: "0.##" });
+      setCell(r, 3, { alignment: { horizontal: "right", vertical: "center" }, numFmt: '"₹" #,##0.00' });
+      setCell(r, 4, { alignment: { horizontal: "right", vertical: "center" }, numFmt: '"₹" #,##0.00', font: { name: "Aptos", sz: 10, bold: true } });
+    }
+
+    for (let r = totalsStartRow; r <= grandTotalRow; r++) {
+      merge(r, 0, 4);
+      styleRow(r, {
+        font: { name: "Aptos", sz: 10, bold: true, color: { rgb: navy } },
+        fill: { patternType: "solid", fgColor: { rgb: r === grandTotalRow ? green : white } },
+        alignment: { vertical: "center" }
+      });
+      setCell(r, 5, {
+        font: { name: "Aptos", sz: r === grandTotalRow ? 13 : 10, bold: true, color: { rgb: r === grandTotalRow ? "1F5E2E" : navy } },
+        fill: { patternType: "solid", fgColor: { rgb: r === grandTotalRow ? green : white } },
+        alignment: { horizontal: "right", vertical: "center" },
+        numFmt: '"₹" #,##0.00',
+        border: thinBorder
+      });
+    }
+
+    const noteRow = rows.length - 2;
+    merge(noteRow, 0, lastCol);
+    styleRow(noteRow, {
+      font: { name: "Aptos", sz: 9, italic: true, color: { rgb: "666666" } },
+      alignment: { vertical: "center", wrapText: true }
+    });
+    const footerRow = rows.length - 1;
+    merge(footerRow, 0, lastCol);
+    styleRow(footerRow, {
+      font: { name: "Aptos", sz: 8, color: { rgb: "777777" } },
+      alignment: { horizontal: "right", vertical: "center" }
+    });
+
+    // Sensible widths, row heights and A4 print setup so users can print directly.
+    ws["!cols"] = [
+      { wch: 8 }, { wch: 20 }, { wch: 36 }, { wch: 12 }, { wch: 18 }, { wch: 19 }
+    ];
+    ws["!rows"] = rows.map((row, r) => ({
+      hpt: rowKinds[r] === "title" ? 34
+        : rowKinds[r] === "section" ? 23
+        : rowKinds[r] === "tableHeader" ? 28
+        : rowKinds[r] === "spacer" ? 7
+        : rowKinds[r] === "grandTotal" ? 28
+        : rowKinds[r] === "note" ? 28
+        : rowKinds[r] === "footer" ? 18
+        : rowKinds[r] === "vehicle" || rowKinds[r] === "service" ? 25
+        : 21
+    }));
+    ws["!autofilter"] = { ref: "A" + (partsHeaderRow + 1) + ":F" + Math.max(partsEndRow + 1, partsHeaderRow + 1) };
+    ws["!freeze"] = { xSplit: 0, ySplit: partsHeaderRow + 1 };
+    ws["!margins"] = { left: 0.25, right: 0.25, top: 0.35, bottom: 0.35, header: 0.15, footer: 0.15 };
+    ws["!pageSetup"] = { paperSize: 9, orientation: "portrait", fitToWidth: 1, fitToHeight: 0 };
+    ws["!printOptions"] = { horizontalCentered: true, verticalCentered: false };
+    ws["!printArea"] = "A1:F" + rows.length;
+    ws["!sheetViews"] = [{ showGridLines: false }];
+    wb.Props = { Title: "Service Estimate", Subject: "A4 Print-Ready Service Estimate", Author: user?.dealerName || "Service Decision Engine" };
+    XLSX.utils.book_append_sheet(wb, ws, "Service Estimate");
     const fileName = ("Service_Estimate_" + (vehicle.reg || vehicle.vin || "Vehicle"))
       .replace(/[^a-z0-9_.-]+/gi, "_") + ".xlsx";
     downloadXlsxBlob(wb, fileName);

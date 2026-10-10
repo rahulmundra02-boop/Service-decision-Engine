@@ -10,6 +10,21 @@ import "./App.css";
 import AuthGate from "./AuthGate.jsx";
 
 const PART_STANDARDIZATION = {
+  'T9999997': 'Tipping Oil',
+  'C9999998': 'Engine Oil',
+  'P0Z01604': 'Fuel Filter',
+  'P0Z01605': 'Fuel Filter',
+  'P7B00070': 'Air Filter',
+  'P0W00011': 'DEF Filter Air',
+  'P7A00044': 'DEF Filter Suction',
+  'P0Z01827': 'Air Filter',
+  'P5106676': 'Air Filter Kit',
+  'P5106677': 'Air Filter Kit',
+  'P5106678': 'Air Filter Kit',
+  'P5106679': 'Air Filter Kit',
+  'P0Z04932': 'Air Filter Kit',
+  'P0Z05992': 'Air Filter Kit',
+  'P0Z05993': 'Air Filter Kit',
   'FS0501': '1st Free service',
   'FS0502': '2nd Free Service',
   'FS0503': '3rd Free Service',
@@ -179,7 +194,7 @@ const PART_STANDARDIZATION = {
   'C9999991': 'Coolant',
   'C9999993': 'Coolant',
   'C9999996': 'Coolant',
-  'C9999998': 'Coolant',
+  // C9999998 is an engine-oil lubricant, not coolant.
   'CFD99991': 'Clutch Oil',
   'CLA99994': 'Clutch Oil',
   'U9999995': 'Clutch Oil',
@@ -2136,6 +2151,14 @@ function decideAggregate(records, vehicle, running, key, analysisDate, decisionB
     if(useHours){ let hrs=1500; if(isA4Model(vehicle.model)||isH4Model(vehicle.model)||isH6Model(vehicle.model)) hrs=1000; return dueByHours(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),hrs,18,analysisDate,sale,vehicle); }
     return dueNormalWithSale(running.current,base,interval,18,analysisDate,sale,running.mode,vehicle);
   }
+  if (key === 'tippingOil') {
+    // Tipping Oil applies only to tipper models and is time-only: every 12 months,
+    // with no KM or engine-hour cap. Tipper applicability follows the existing model guard.
+    if (!isTipperModel(vehicle.model) || !String(vehicle.model || '').toUpperCase().includes('TIP')) return false;
+    const base = serviceBase(records, ['TIPPING OIL'], 1, false, vehicle);
+    const baseDate = base ? base.date : sale;
+    return analysisDate >= monthsAfter(baseDate, 11);
+  }
   if(key==='cngFilter'){
     if(!isCngModel(vehicle.model)) return false;
     const base=serviceBase(records,['CNG FILTER'],1,false,vehicle);
@@ -2440,7 +2463,7 @@ function calculateDecisions(records,vehicle,running,decisionBasis = "AUTO"){
   const effectiveBasis = decisionBasis === "AUTO"
     ? (isTipperModel(vehicle?.model) ? "HRS" : "KM")
     : getEffectiveDecisionBasis(vehicle, decisionBasis);
-  const keys=['engineOil','coolant','gearOil','hubGrease','axleOil','fuelFilter','cngFilter','steeringOil','airFilter','clutchOil','defFilter','apdaFilter','sparkPlug'];
+  const keys=['engineOil','coolant','gearOil','hubGrease','axleOil','fuelFilter','cngFilter','steeringOil','airFilter','clutchOil','defFilter','apdaFilter','sparkPlug','tippingOil'];
   const result={};
   for(const k of keys) result[k]=decideAggregate(serviceRecords,vehicle,running,k,analysisDate,effectiveBasis);
   result.defInline=defInlineDecision(serviceRecords,vehicle,running,analysisDate,effectiveBasis);
@@ -2453,7 +2476,7 @@ const BULK_SERVICE_LABELS = [
   ["Engine Oil", "engineOil"], ["Spark Plug", "sparkPlug"], ["CNG Filter", "cngFilter"], ["Coolant", "coolant"], ["Gear Oil", "gearOil"],
   ["Hub Grease", "hubGrease"], ["Axle Oil", "axleOil"], ["Fuel Filter", "fuelFilter"],
   ["Steering Oil", "steeringOil"], ["Air Filter", "airFilter"], ["Clutch Oil", "clutchOil"],
-  ["DEF Filter", "defFilter"], ["DEF Inline Filter", "defInline"], ["APDA Filter", "apdaFilter"]
+  ["DEF Filter", "defFilter"], ["DEF Inline Filter", "defInline"], ["APDA Filter", "apdaFilter"], ["Tipping Oil", "tippingOil"]
 ];
 
 function getDueServiceNames(decision) {

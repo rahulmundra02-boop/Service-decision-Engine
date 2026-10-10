@@ -629,7 +629,9 @@ function normalizePartCode(value) {
     .replace(/\([A-Z0-9]+\)$/g, "")
     .replace(/\(L\)/g, "")
     .replace(/\s+/g, "")
-    .trim();
+    .trim()
+    // Legacy service-history records may still contain the old tipping-oil code.
+    .replace(/^T9999998$/, "T9999997");
 }
 
 function standardizePart(code, description) {
@@ -3071,7 +3073,7 @@ const ESTIMATE_REFERENCE_PARTS = {
   airFilter: ["P5105689"],
   defFilter: ["XFM00500", "PET00001"],
   apdaFilter: ["PD600968"],
-  tippingOil: ["T9999998"],
+  tippingOil: ["T9999997"],
 };
 
 // A reference may represent one component within a multi-part aggregate.
@@ -3107,7 +3109,7 @@ const ESTIMATE_FALLBACK_PARTS = {
   airFilter: [{ code: "P5105689", name: "AIR FILTER KIT", qty: 1 }],
   defFilter: [{ code: "XFM00500", name: "DEF FILTER AIR", qty: 1 }, { code: "PET00001", name: "DEF FILTER SUCTION", qty: 1 }],
   apdaFilter: [{ code: "PD600968", name: "APDA FILTER", qty: 1 }],
-  tippingOil: [{ code: "T9999998", name: "TIPPING OIL", qty: 30 }],
+  tippingOil: [{ code: "T9999997", name: "TIPPING OIL", qty: 30 }],
 };
 function estimateFallbackRow(serviceKey, code, sourceRows = []) {
   const normalizedCode = normalizePartCode(code);

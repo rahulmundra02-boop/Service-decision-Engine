@@ -130,8 +130,10 @@ export function validateEstimateAggregateSelection({ selectedServices = [], part
       });
       if (kit.length && individual.length) {
         add(key, "Choose one Fuel Filter option only: one kit, or two individual filters. Do not include both.");
-      } else if (!kit.length && sumQty(individual) < 2) {
-        add(key, "Fuel Filter grouping needs either one confirmed kit or two individual Fuel Filters (total quantity 2).");
+      } else if (kit.length > 1 || (kit.length === 1 && Math.abs(qty(kit[0]) - 1) > 0.001)) {
+        add(key, "Fuel Filter kit option must contain exactly one kit (quantity 1).");
+      } else if (!kit.length && Math.abs(sumQty(individual) - 2) > 0.001) {
+        add(key, "Fuel Filter grouping needs exactly two individual Fuel Filters, or one confirmed kit.");
       }
     }
 
@@ -144,8 +146,10 @@ export function validateEstimateAggregateSelection({ selectedServices = [], part
       const individual = airItems.filter(item => !description(item).includes("KIT"));
       if (kit.length && individual.length) {
         add(key, "Choose one Air Filter option only: one kit, or two individual Air Filters. Do not include both.");
-      } else if (!kit.length && sumQty(individual) < 2) {
-        add(key, "Air Filter grouping needs either one confirmed kit or two individual Air Filters (total quantity 2).");
+      } else if (kit.length > 1 || (kit.length === 1 && Math.abs(qty(kit[0]) - 1) > 0.001)) {
+        add(key, "Air Filter kit option must contain exactly one kit (quantity 1).");
+      } else if (!kit.length && Math.abs(sumQty(individual) - 2) > 0.001) {
+        add(key, "Air Filter grouping needs exactly two individual Air Filters, or one confirmed kit.");
       }
     }
 

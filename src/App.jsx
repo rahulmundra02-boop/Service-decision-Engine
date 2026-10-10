@@ -8,6 +8,7 @@ import { jsPDF } from "jspdf";
 import { autoTable } from "jspdf-autotable";
 import "./App.css";
 import AuthGate from "./AuthGate.jsx";
+import { validateEstimateAggregateSelection } from "./estimateAggregateValidation.js";
 
 const PART_STANDARDIZATION = {
   'T9999997': 'Tipping Oil',
@@ -6633,6 +6634,10 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   const estimateLabourGst = estimateLabourBase*0.18;
   const estimateLabourTotal = estimateLabourBase+estimateLabourGst;
   const estimateGrandTotal = estimatePartsTotal+estimateLabourTotal;
+  const estimateAggregateValidation = useMemo(
+    () => validateEstimateAggregateSelection({ selectedServices: estimateSelectedServices, parts: estimateParts }),
+    [estimateSelectedServices, estimateParts]
+  );
   function downloadXlsxBlob(workbook, fileName) {
     try {
       // Let SheetJS handle browser download directly. This avoids failures
@@ -8879,6 +8884,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                    </div>
                   <div style={{fontWeight:800,margin:"10px 0 6px"}}>Selected Aggregate Services</div>
                   <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>{BULK_SERVICE_LABELS.filter(([,key])=>estimateSelectedServices.includes(key)).map(([label])=><span key={label} style={{border:"1px solid #bbb",padding:"5px 8px",borderRadius:5,fontSize:12,background:"#f7f7f7"}}>{label}</span>)}</div>
+                  {estimateAggregateValidation.length > 0 && <div role="status" aria-live="polite" style={{margin:"8px 0 12px",padding:12,border:"1px solid #d97706",borderRadius:7,background:"#fff7ed",color:"#7c2d12"}}><div style={{fontWeight:800,marginBottom:6}}>Aggregate Validation — {estimateAggregateValidation.length} issue{estimateAggregateValidation.length===1?"":"s"}</div><div style={{fontSize:12,marginBottom:8}}>Please review before finalising. Hub Greasing is excluded and remains on its existing hardcoded model rules. Validation does not invent part numbers or rates.</div><ul style={{margin:"0 0 0 18px",padding:0}}>{estimateAggregateValidation.map(issue=><li key={issue.key} style={{marginBottom:4}}><strong>{issue.aggregate}:</strong> {issue.message}</li>)}</ul></div>}
                   <div style={{fontWeight:800,margin:"10px 0 6px"}}>Parts</div>
                   <table className="history-table estimate-parts-table"><thead><tr><th>Part No.</th><th>Description</th><th>Qty</th><th>Rate (Incl. GST)</th><th>Amount</th><th></th></tr></thead><tbody>{estimateParts.map(item=><tr key={item.id}><td data-label="Part No."><input ref={el=>{if(el) estimateFieldRefs.current.partNo[item.id]=el; else delete estimateFieldRefs.current.partNo[item.id];}} value={item.partNo} onChange={e=>updateEstimateItem("part",item.id,"partNo",e.target.value)} onBlur={e=>lookupManualEstimatePart(item.id,e.target.value)} onKeyDown={async e=>{if(e.key==="Enter"){e.preventDefault();await lookupManualEstimatePart(item.id,e.currentTarget.value);focusEstimateField("part",item.id,"partQty");}}} enterKeyHint="next" title="Enter Part No. and press Next to move directly to Qty"/></td><td data-label="Description"><input value={item.description} onChange={e=>updateEstimateItem("part",item.id,"description",e.target.value)}/></td><td data-label="Qty"><input ref={el=>{if(el) estimateFieldRefs.current.partQty[item.id]=el; else delete estimateFieldRefs.current.partQty[item.id];}} type="number" min="0" step="0.01" value={item.qty ?? ""} placeholder="Qty" onChange={e=>updateEstimateItem("part",item.id,"qty",e.target.value)} onKeyDown={e=>{if(e.key==="Enter") normalizeEstimateQuantities();}} enterKeyHint="next" style={{width:80}}/></td><td data-label="Rate (Incl. GST)"><input type="number" min="0" step="0.01" value={item.rate} onChange={e=>updateEstimateItem("part",item.id,"rate",e.target.value)} style={{width:110}}/></td><td data-label="Amount">{formatNumber(item.qty*item.rate)}</td><td data-label="Action"><button className="excel-button no-print" onClick={()=>removeEstimateItem("part",item.id)}>Delete</button></td></tr>)}{!estimateParts.length&&<tr><td colSpan="6">No historical part found. Add manually.</td></tr>}</tbody></table>
                   <div style={{margin:"8px 0"}}><button className="excel-button no-print" onClick={()=>addEstimateItem("part")}>+ Add Part</button></div>

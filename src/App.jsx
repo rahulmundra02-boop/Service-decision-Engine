@@ -6492,6 +6492,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
             : estimateVehicle?.sale || null,
         },
         selected_services: estimateSelectedServices,
+        source_model: estimateSourceModel || "",
         parts: estimateParts,
         labour: estimateLabour,
         created_at: old?.created_at || now,
@@ -6539,8 +6540,36 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       const refreshedSavedParts = await hydrateEstimatePriceMaster(savedParts);
       setEstimateParts(refreshedSavedParts);
       setEstimateLabour(savedLabour);
-      setEstimateHistory({vehicleRows:[],modelRows:[],globalPartRates:[]});
-      setEstimateNotice("Saved estimate loaded from this device/app cache. Current Price List Master MRP has been applied where the exact part number is available.");
+
+      // Reload source history when a saved estimate is reopened. Without this,
+      // aggregate changes only update the checkboxes and cannot rebuild the lines.
+      const savedSourceModel = String(saved.source_model || "").trim();
+      let restoredHistory = {vehicleRows:[],modelRows:[],globalPartRates:[]};
+      let historyReloaded = false;
+      try {
+        if (String(vehicle.vin || "").trim()) {
+          restoredHistory = await loadEstimateHistoryByVin(String(vehicle.vin).trim());
+          historyReloaded = true;
+        } else if (savedSourceModel) {
+          const response = await fetch("/api/save-history?model=" + encodeURIComponent(savedSourceModel) + "&_ts=" + Date.now(), {cache:"no-store"});
+          const data = await response.json().catch(() => ({}));
+          restoredHistory = {
+            vehicleRows:[],
+            modelRows:Array.isArray(data?.modelRows) ? data.modelRows : [],
+            globalPartRates:Array.isArray(data?.globalPartRates) ? data.globalPartRates : []
+          };
+          historyReloaded = true;
+        }
+      } catch (historyError) {
+        console.warn("Saved estimate source history reload failed:", historyError);
+      }
+      setEstimateHistory(restoredHistory);
+      setEstimateSourceModel(savedSourceModel);
+      setEstimateNotice(
+        historyReloaded && (restoredHistory.vehicleRows.length || restoredHistory.modelRows.length)
+          ? "Saved estimate loaded. Source history is ready; changing aggregate selection and pressing OK will rebuild the estimate lines."
+          : "Saved estimate loaded from this device/app cache. Source history could not be reloaded, so existing lines are retained until source history is available. Current Price List Master MRP has been applied where the exact part number is available."
+      );
       setEstimateStage("estimate");
     } catch (error) {
       setEstimateOpen(false);setMode("home");
@@ -6745,8 +6774,12 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         ? { vehicleRows: estimateHistory, modelRows: [] }
         : (estimateHistory || { vehicleRows: [], modelRows: [] });
 
-      if (estimateSavedId && !(history.vehicleRows?.length || history.modelRows?.length)) {
-        setEstimateNotice("Aggregate service selection updated. Your existing saved estimate lines are retained.");
+      if (!(history.vehicleRows?.length || history.modelRows?.length)) {
+        setEstimateNotice(
+          estimateSavedId
+            ? "Source history is unavailable. Aggregate selection was not used to rebuild the estimate, so existing lines are retained. Please retry when history is available."
+            : "No historical service data found. Please add the required items manually."
+        );
         setEstimateStage("estimate");
         return;
       }

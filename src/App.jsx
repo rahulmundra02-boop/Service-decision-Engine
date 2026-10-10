@@ -6634,36 +6634,15 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   const estimateLabourTotal = estimateLabourBase+estimateLabourGst;
   const estimateGrandTotal = estimatePartsTotal+estimateLabourTotal;
   function downloadXlsxBlob(workbook, fileName) {
-    const mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-    let blob;
     try {
-      // Build the XLSX once, then download it through a real, visible anchor click.
-      const bytes = XLSX.write(workbook, { bookType: "xlsx", type: "array", compression: true });
-      blob = new Blob([bytes], { type: mimeType });
+      // Let SheetJS handle browser download directly. This avoids failures
+      // during manual Blob/URL construction in some browser environments.
+      XLSX.writeFile(workbook, fileName, { bookType: "xlsx", compression: true });
     } catch (error) {
-      console.error("Estimate Excel generation failed:", error);
-      window.alert("Excel file banate waqt error aaya. Console me error details available hain.");
-      return;
+      console.error("Estimate Excel export failed:", error);
+      const detail = String(error?.message || error || "Unknown error");
+      window.alert("Excel export fail hua: " + detail);
     }
-
-    if (typeof navigator !== "undefined" && typeof navigator.msSaveOrOpenBlob === "function") {
-      navigator.msSaveOrOpenBlob(blob, fileName);
-      return;
-    }
-
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = fileName;
-    link.style.position = "fixed";
-    link.style.left = "-10000px";
-    link.style.top = "0";
-    link.setAttribute("download", fileName);
-    document.body.appendChild(link);
-    // Click in the same event turn as the user's Export Excel action.
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 300000);
   }
 
   function exportEstimateExcel() {
@@ -6736,71 +6715,21 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     rows.push(["GST on Labour (18%)", "", "", "", estimateLabourGst, "", "", ""]);
     rows.push(["Grand Total", "", "", "", estimateGrandTotal, "", "", ""]);
 
+    // Keep the export compatible with SheetJS Community Edition by using
+    // only supported worksheet data/column metadata (no Pro-only cell styles).
     const ws = XLSX.utils.aoa_to_sheet(rows);
     ws["!cols"] = [
-      {wch:7}, {wch:24}, {wch:34}, {wch:11},
-      {wch:17}, {wch:17}, {wch:14}, {wch:14}
+      { wch: 7 }, { wch: 24 }, { wch: 34 }, { wch: 11 },
+      { wch: 17 }, { wch: 17 }, { wch: 14 }, { wch: 14 }
     ];
-    ws["!rows"] = rows.map((row,index) => ({hpt:
-      index === 0 ? 24 :
-      ([5,9,15].includes(index) ? 20 : 18)
-    }));
+    XLSX.utils.book_append_sheet(wb, ws, "Service Estimate");
 
-    // Pre-merge the print layout so the exported sheet is ready for A4 printing.
-    ws["!merges"] = [
-      {s:{r:0,c:0},e:{r:0,c:7}},
-      {s:{r:1,c:1},e:{r:1,c:3}},
-      {s:{r:1,c:5},e:{r:1,c:7}}
-    ];
-    // Merge vehicle value blocks and section headings.
-    const merge = (r,c1,c2) => ws["!merges"].push({s:{r,c:c1},e:{r,c:c2}});
-    const vehicleRowsForExcel = estimateVehicleFromDb ? [3,4] : [3];
-    vehicleRowsForExcel.forEach(r => {
-      merge(r,1,2);
-      merge(r,4,5);
-    });
-    const sectionRows = rows.map((row,index)=>row[0] === "SELECTED AGGREGATE SERVICES" || row[0] === "PARTS" || row[0] === "LABOUR" || row[0] === "TOTALS" ? index : -1).filter(index=>index>=0);
-    sectionRows.forEach(r=>merge(r,0,7));
-    const serviceRow = rows.findIndex(row=>row[0] === "SELECTED AGGREGATE SERVICES") + 1;
-    if(serviceRow>0) merge(serviceRow,0,7);
-
-    // Freeze the title/vehicle section and set A4 portrait, fit-to-width print settings.
-    ws["!freeze"] = {xSplit:0,ySplit:5};
-    ws["!margins"] = {left:0.25,right:0.25,top:0.35,bottom:0.35,header:0.15,footer:0.15};
-    ws["!pageSetup"] = {paperSize:9,orientation:"portrait",fitToWidth:1,fitToHeight:0};
-    ws["!printOptions"] = {horizontalCentered:true,verticalCentered:false};
-    ws["!printArea"] = "A1:H" + rows.length;
-
-    // Best-effort cell styles. The data/layout itself remains compatible with standard XLSX.
-    const border = {style:"thin",color:{rgb:"808080"}};
-    const fillHeader = {fgColor:{rgb:"1F4E78"}};
-    const fillSection = {fgColor:{rgb:"D9EAF7"}};
-    const styleRange = (range, style) => {
-      const decoded = XLSX.utils.decode_range(range);
-      for(let rr=decoded.s.r;rr<=decoded.e.r;rr++){
-        for(let cc=decoded.s.c;cc<=decoded.e.c;cc++){
-          const addr=XLSX.utils.encode_cell({r:rr,c:cc});
-          if(!ws[addr]) ws[addr]={t:"s",v:""};
-          ws[addr].s = {...style,border:{top:border,bottom:border,left:border,right:border}};
-        }
-      }
+    wb.Props = {
+      Title: "Service Estimate",
+      Subject: "Service Estimate"
     };
-    styleRange("A1:H1",{font:{bold:true,sz:16,color:{rgb:"FFFFFF"}},fill:fillHeader,alignment:{horizontal:"center",vertical:"center"}});
-    sectionRows.forEach(r=>styleRange("A"+(r+1)+":H"+(r+1),{font:{bold:true,sz:11},fill:fillSection}));
-    const partsSectionRow = rows.findIndex(row=>row[0]==="PARTS");
-    const labourSectionRow = rows.findIndex(row=>row[0]==="LABOUR");
-    const totalsRow = rows.findIndex(row=>row[0]==="TOTALS");
-    if(partsSectionRow>=0) styleRange("A"+(partsSectionRow+2)+":F"+(labourSectionRow-1),{font:{bold:true}});
-    if(labourSectionRow>=0) styleRange("A"+(labourSectionRow+2)+":E"+(totalsRow-1),{font:{bold:true}});
-    if(totalsRow>=0) styleRange("A"+(totalsRow+1)+":E"+rows.length,{font:{bold:true}});
-    for(const addr of Object.keys(ws)){
-      if(/^E\d+$/.test(addr) || /^F\d+$/.test(addr)) {
-        if(ws[addr] && typeof ws[addr].v === "number") ws[addr].z = '#,##0.00';
-      }
-    }
-
-    wb.Props = {Title:"Service Estimate",Subject:"A4 Ready Service Estimate"};
-    const fileName = ("Service_Estimate_" + (vehicle.reg || vehicle.vin || "Vehicle")).replace(/[^a-z0-9_.-]+/gi,"_") + ".xlsx";
+    const fileName = ("Service_Estimate_" + (vehicle.reg || vehicle.vin || "Vehicle"))
+      .replace(/[^a-z0-9_.-]+/gi, "_") + ".xlsx";
     downloadXlsxBlob(wb, fileName);
   }
 

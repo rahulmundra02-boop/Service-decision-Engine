@@ -3067,7 +3067,7 @@ const ESTIMATE_REFERENCE_PARTS = {
   coolant: ["C9999993"],
   hubGrease: ["S9999997", "FJ607400", "F1721500", "H5001220"],
   fuelFilter: ["P5105609"],
-  airFilter: ["P5105688"],
+  airFilter: ["P5105689"],
   defFilter: ["XFM00500", "PET00001"],
   apdaFilter: ["PD600968"],
 };
@@ -3092,6 +3092,34 @@ const ESTIMATE_REFERENCE_COMPONENTS = {
     P5105609: ["FUEL FILTER KIT"],
   },
 };
+
+const ESTIMATE_FALLBACK_PARTS = {
+  engineOil: [{ code: "EN699991", name: "ENGINE OIL", qty: 18 }, { code: "F7A01500", name: "ENGINE OIL FILTER", qty: 1 }],
+  gearOil: [{ code: "G9999994", name: "GEAR OIL", qty: 8.5 }],
+  axleOil: [{ code: "GB699991", name: "AXLE OIL", qty: 16.5 }],
+  steeringOil: [{ code: "PSB99994", name: "STEERING OIL", qty: 3 }, { code: "PD600391", name: "STEERING OIL FILTER", qty: 1 }],
+  clutchOil: [{ code: "CFD99991", name: "CLUTCH OIL", qty: 0.5 }],
+  defInline: [{ code: "XFM00800", name: "DEF INLINE FILTER", qty: 1 }],
+  coolant: [{ code: "C9999993", name: "COOLANT", qty: 20 }],
+  fuelFilter: [{ code: "P5105609", name: "FUEL FILTER KIT", qty: 1 }],
+  airFilter: [{ code: "P5105689", name: "AIR FILTER KIT", qty: 1 }],
+  defFilter: [{ code: "XFM00500", name: "DEF FILTER AIR", qty: 1 }, { code: "PET00001", name: "DEF FILTER SUCTION", qty: 1 }],
+  apdaFilter: [{ code: "PD600968", name: "APDA FILTER", qty: 1 }],
+  tippingOil: [{ code: "T9999998", name: "TIPPING OIL", qty: 30 }],
+};
+function estimateFallbackRow(serviceKey, code) {
+  const item = (ESTIMATE_FALLBACK_PARTS[serviceKey] || []).find(x => normalizePartCode(x.code) === normalizePartCode(code));
+  if (!item) return null;
+  return { part_code: item.code, part_description: item.name, standardized_part: item.name, quantity: item.qty, item_category: "P002", repair_type: "Fallback default" };
+}
+function estimateFallbackItems(serviceKey) {
+  return (ESTIMATE_FALLBACK_PARTS[serviceKey] || []).map(def => ({
+    id: "fallback-" + serviceKey + "-" + def.code,
+    type: "part", serviceKey, partNo: def.code, description: def.name,
+    standardizedFamily: def.name, qty: def.qty, rate: 0, baseRate: 0,
+    source: "Default fallback (no matching DB part/rate)", latestRow: estimateFallbackRow(serviceKey, def.code)
+  }));
+}
 
 const HUB_GREASE_STANDARD_CODES = new Set([
   "S9999997",

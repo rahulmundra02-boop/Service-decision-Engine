@@ -195,6 +195,27 @@ const PART_STANDARDIZATION = {
   'C9999991': 'Coolant',
   'C9999993': 'Coolant',
   'C9999996': 'Coolant',
+  // Additional verified lubricant/service-part codes used by DMS history and estimates.
+  'CLA99995': 'Clutch Oil',
+  'CLA99996': 'Clutch Oil',
+  'COA99991': 'Coolant',
+  'COD99992': 'Coolant',
+  'ENA99991': 'Engine Oil',
+  'ENA99998': 'Engine Oil',
+  'ENC99998': 'Engine Oil',
+  'GBB99994': 'Gear Oil',
+  'GBC99994': 'Gear Oil',
+  'GBD99994': 'Gear Oil',
+  'GRA99991': 'Hub Grease',
+  'GRA99994': 'Hub Grease',
+  'N9999998': 'Gear Oil',
+  'PSA99994': 'Steering Oil',
+  'PSB99993': 'Steering Oil',
+  'R9999999': 'Axle Oil',
+  'RAA99994': 'Axle Oil',
+  'S9999998': 'Hub Grease',
+  'W9999908': 'Steering Oil',
+  'W9999999': 'Coolant',
   // C9999998 is an engine-oil lubricant, not coolant.
   'CFD99991': 'Clutch Oil',
   'CLA99994': 'Clutch Oil',
@@ -652,9 +673,25 @@ function isMappedServiceLine(record) {
   return !!code && Object.prototype.hasOwnProperty.call(PART_STANDARDIZATION, code);
 }
 
+// These DMS Hub Grease codes are visible in Service History and can be
+// standardized for estimates, but must not independently trigger normal
+// aggregate Service Decision calculations. Model-specific Hub Greasing
+// continues to use its existing dedicated logic.
+const HISTORY_ONLY_HUB_GREASE_CODES = new Set([
+  "GRA99991",
+  "GRA99994",
+  "S9999998",
+  "S9999999",
+]);
+
+function isServiceDecisionLine(record) {
+  const code = normalizePartCode(record?.partCode);
+  return isMappedServiceLine(record) && !HISTORY_ONLY_HUB_GREASE_CODES.has(code);
+}
+
 function getServiceDecisionRecords(records) {
   if (!Array.isArray(records) || !records.length) return [];
-  return records.filter(isMappedServiceLine);
+  return records.filter(isServiceDecisionLine);
 }
 
 

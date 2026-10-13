@@ -41,7 +41,7 @@ function autoCorners(image){
     if(!zone.length)return null;
     zone.sort((a,b)=>{
       const score=p=>i===0?(p.x+p.y):i===1?(p.x-p.y):i===2?-(p.x+p.y):(p.y-p.x);
-      return score(a)-score(b);
+      return i===1||i===3?score(b)-score(a):score(a)-score(b);
     });
     const pool=zone.slice(0,Math.max(1,Math.ceil(zone.length*.08)));
     let chosen=pool[0],best=-Infinity;

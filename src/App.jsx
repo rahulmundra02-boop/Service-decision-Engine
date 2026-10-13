@@ -8982,7 +8982,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
               <div className={`excel-tab ${mode === "document-scanner" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("document-scanner"); setError(""); }}>Document Scanner</div>
               <div className={`excel-tab ${mode === "profile" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("profile"); setError(""); }}>Profile</div>
             </div>
-            {mode !== "warranty-tags" && mode !== "profile" && (
+            {mode !== "warranty-tags" && mode !== "document-scanner" && mode !== "profile" && (
             <div className="excel-toolbar">
               {mode !== "home" && <>
                 <button className="excel-button green" onClick={() => document.getElementById("excel-file-input")?.click()} disabled={uploadBusy||analysisBusy}>Upload Excel</button>
@@ -9073,7 +9073,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
           <input id="excel-file-input" className="no-print" type="file" accept=".xlsx,.xls,.xlsm,.csv" multiple style={{display:"none"}} onChange={handleExcelUpload} disabled={uploadBusy} />
 
           <div className="mobile-work-actions no-print">
-            {mode !== "home" && mode !== "warranty-tags" && mode !== "profile" && (
+            {mode !== "home" && mode !== "warranty-tags" && mode !== "document-scanner" && mode !== "profile" && (
               <>
                 <button className="mobile-work-action" onClick={() => document.getElementById("excel-file-input")?.click()} disabled={uploadBusy}>Upload Excel</button>
                 <button className="mobile-work-action" onClick={clear}>Clear</button>

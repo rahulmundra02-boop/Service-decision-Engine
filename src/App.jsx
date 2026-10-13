@@ -5146,7 +5146,6 @@ function WarrantyTagPanel({user,onBack}){
   };
   const removePartNo=partNo=>setRemovedPartNos(prev=>persistRemovedPartNos([...prev,partNo]));
   const restorePartNo=partNo=>setRemovedPartNos(prev=>persistRemovedPartNos(prev.filter(x=>x!==partNo)));
-  const clearSavedPartNos=()=>setRemovedPartNos(persistRemovedPartNos([]));
 
   const printTags=()=>{
     if(!visibleTags.length) return;
@@ -5240,7 +5239,6 @@ function WarrantyTagPanel({user,onBack}){
                 </div>;
               })}
             </div>
-            {removedPartNos.length>0&&<button className="warranty-tag-reset-removals" type="button" onClick={clearSavedPartNos}>Reset Saved Removals ({removedPartNos.length})</button>}
           </div>
         </div>
         <div className="warranty-tag-layout-control no-print">

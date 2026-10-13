@@ -7,6 +7,7 @@ import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { autoTable } from "jspdf-autotable";
 import "./App.css";
+import DocumentScanner from "./DocumentScanner.jsx";
 import AuthGate from "./AuthGate.jsx";
 import { validateEstimateAggregateSelection } from "./estimateAggregateValidation.js";
 
@@ -5298,6 +5299,7 @@ function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResu
     { key:"bulk", icon:"📊", title:"Bulk Vehicle", text:"Analyse multiple vehicles and prepare customer-wise service due summaries." },
     { key:"estimate", icon:"🧾", title:"Prepare Estimate", text:"Open the existing Service Estimate module and prepare a vehicle estimate." },
     { key:"warranty-tags", icon:"🏷️", title:"Warranty Tag Print", text:"Generate and print warranty tags from Billed JC Claim Statement + Jobcard Summary." },
+    { key:"document-scanner", icon:"📄", title:"Document Scanner", text:"Scan photos, adjust document corners, apply scanner filters and export photos or grouped PDFs." },
   ];
   return (
     <div className="portal-home">
@@ -5452,6 +5454,11 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       }
       if (nextMode === "warranty-tags") {
         setMode("warranty-tags");
+        setError("");
+        return;
+      }
+      if (nextMode === "document-scanner") {
+        setMode("document-scanner");
         setError("");
         return;
       }
@@ -8972,6 +8979,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
               <div className={`excel-tab ${mode === "bulk" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("bulk"); setError(""); setAnalysis(null); }}>Bulk Vehicle</div>
               <div className={`excel-tab ${estimateOpen ? "active" : ""}`} onClick={() => { setMode("estimate"); if (analysis) void openEstimate(); else openStandaloneEstimate(); }}>Prepare Estimate</div>
               <div className={`excel-tab ${mode === "warranty-tags" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("warranty-tags"); setError(""); }}>Warranty Tag Print</div>
+              <div className={`excel-tab ${mode === "document-scanner" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("document-scanner"); setError(""); }}>Document Scanner</div>
               <div className={`excel-tab ${mode === "profile" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("profile"); setError(""); }}>Profile</div>
             </div>
             {mode !== "warranty-tags" && mode !== "profile" && (
@@ -9107,6 +9115,8 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
               />
             ) : mode === "warranty-tags" ? (
               <WarrantyTagPanel user={user} onBack={() => setMode("home")} />
+            ) : mode === "document-scanner" ? (
+              <DocumentScanner onBack={() => setMode("home")} />
             ) : mode === "profile" ? (
               <ProfileSection user={user} onOpenProfile={onOpenProfile} onOpenAdmin={onOpenAdmin} onChangePassword={onChangePassword} onLogout={onLogout} />
             ) : mode === "single" ? (

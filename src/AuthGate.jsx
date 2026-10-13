@@ -48,6 +48,7 @@ async function api(action, payload = {}, token = "") {
 export default function AuthGate({ children }) {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const sessionValidationRef = useRef(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -847,13 +848,47 @@ export default function AuthGate({ children }) {
               key={key}
               type="button"
               className="mobile-bottom-nav-item"
-              onClick={() => window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:key}}))}
+              onClick={() => {
+                setMobileMoreOpen(false);
+                window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:key}}));
+              }}
             >
               <span className="mobile-bottom-nav-icon">{icon}</span>
               <span>{label}</span>
             </button>
           ))}
-          <button type="button" className="mobile-bottom-nav-item profile" onClick={() => window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:"profile"}}))}>
+          <div className="mobile-bottom-nav-more-wrap">
+            {mobileMoreOpen && (
+              <div className="mobile-bottom-nav-more-menu" role="menu" aria-label="More tools">
+                <button
+                  type="button"
+                  className="mobile-bottom-nav-more-option"
+                  role="menuitem"
+                  onClick={() => {
+                    setMobileMoreOpen(false);
+                    window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:"document-scanner"}}));
+                  }}
+                >
+                  <span aria-hidden="true">📄</span>
+                  <span>Document Scanner</span>
+                </button>
+              </div>
+            )}
+            <button
+              type="button"
+              className={`mobile-bottom-nav-item mobile-bottom-nav-more ${mobileMoreOpen ? "active" : ""}`}
+              aria-expanded={mobileMoreOpen}
+              aria-haspopup="menu"
+              onClick={() => setMobileMoreOpen(open => !open)}
+            >
+              <span className="mobile-bottom-nav-icon">•••</span>
+              <span>More</span>
+            </button>
+          </div>
+          <button type="button" className="mobile-bottom-nav-item profile" onClick={() => {
+            setMobileMoreOpen(false);
+            window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:"profile"}}));
+          }}>
             <span className="mobile-bottom-nav-icon">●</span>
             <span>Profile</span>
           </button>

@@ -7971,6 +7971,11 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
 
       clone = source.cloneNode(true);
       clone.removeAttribute("id");
+      // Screenshot must retain the selected history radio controls even though
+      // their live UI container is excluded from ordinary print layouts.
+      clone.querySelectorAll(".single-history-toggle.no-print").forEach((element) => {
+        element.classList.remove("no-print");
+      });
 
       const themeRoot = source.closest(".excel-app");
       if (themeRoot) {
@@ -8886,6 +8891,93 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
           }
         }
 
+
+        /* Compact single-vehicle dashboard: keep information dense without hiding fields. */
+        .single-screenshot-area > .sheet-heading {
+          margin-top: 4px !important;
+          padding: 7px 10px !important;
+          min-height: 38px !important;
+        }
+        .single-screenshot-area .vehicle-output-layout {
+          margin-top: 6px !important;
+          gap: 8px !important;
+        }
+        .single-screenshot-area .section-title {
+          padding: 6px 9px !important;
+          min-height: 34px !important;
+          line-height: 1.25 !important;
+        }
+        .single-screenshot-area .sheet-grid .cell {
+          padding: 5px 7px !important;
+          line-height: 1.25 !important;
+        }
+        .single-screenshot-area .single-note-grid {
+          display: grid !important;
+          grid-template-columns: minmax(120px, 160px) minmax(0, 1fr) !important;
+          gap: 0 !important;
+          margin: 6px 0 !important;
+        }
+        .single-screenshot-area .single-note-grid-no-campaign .single-note-card-full,
+        .single-screenshot-area .single-note-grid-campaign-loading .single-note-card-full {
+          grid-column: 1 / -1;
+          display: grid;
+          grid-template-columns: minmax(120px, 160px) minmax(0, 1fr);
+          align-items: stretch;
+        }
+        .single-screenshot-area .single-note-title {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 6px 8px !important;
+          min-height: 42px;
+        }
+        .single-screenshot-area .single-customer-voice,
+        .single-screenshot-area .single-customer-voice-compact {
+          min-height: 42px !important;
+          height: 42px !important;
+          padding: 7px 10px !important;
+          text-align: left !important;
+          resize: vertical;
+        }
+        .single-screenshot-area .service-summary-title {
+          margin-top: 6px !important;
+          min-height: 38px !important;
+          padding: 6px 320px 6px 10px !important;
+        }
+        .single-screenshot-area .single-history-toggle {
+          gap: 8px !important;
+          padding: 4px 7px !important;
+          font-size: 11px !important;
+        }
+        .single-screenshot-area .history-table th,
+        .single-screenshot-area .history-table td {
+          padding: 6px 7px !important;
+        }
+        .single-screenshot-area .due-box,
+        .single-screenshot-area .no-due {
+          padding: 6px !important;
+        }
+        @media (max-width: 800px) {
+          .single-screenshot-area .single-note-grid,
+          .single-screenshot-area .single-note-grid-no-campaign .single-note-card-full,
+          .single-screenshot-area .single-note-grid-campaign-loading .single-note-card-full {
+            grid-template-columns: 1fr !important;
+          }
+          .single-screenshot-area .single-note-title {
+            min-height: 30px;
+          }
+          .single-screenshot-area .service-summary-title {
+            padding: 6px 8px !important;
+            flex-direction: column;
+          }
+          .single-screenshot-area .single-history-toggle {
+            position: static !important;
+            transform: none !important;
+            width: 100%;
+            justify-content: center;
+            flex-wrap: wrap;
+          }
+        }
 
         @page { size: A4 portrait; margin: 0; }
 

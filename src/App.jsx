@@ -8798,9 +8798,9 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
           grid-column: 1 / -1;
         }
         .single-customer-voice-compact {
-          min-height: 42px;
-          height: 42px;
-          padding: 7px 10px;
+          min-height: 36px;
+          height: auto;
+          padding: 6px 10px;
         }
         .single-note-card {
           border: 1px solid #5c748d;
@@ -8829,20 +8829,39 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         .single-customer-voice {
           display: block;
           width: 100%;
-          min-height: 64px;
-          resize: vertical;
+          min-height: 36px;
+          height: auto;
+          resize: none;
           box-sizing: border-box;
           border: 0;
           outline: 0;
-          padding: 12px;
+          padding: 6px 10px;
           font: inherit;
           line-height: 1.35;
-          text-align: center;
+          text-align: left;
           white-space: pre-wrap;
           overflow-wrap: anywhere;
           overflow: hidden;
           color: #111827;
           background: #fff;
+        }
+        .single-note-card:has(> .single-note-title + .single-customer-voice) {
+          display: grid;
+          grid-template-columns: 132px minmax(0, 1fr);
+          align-items: stretch;
+          gap: 0;
+        }
+        .single-note-card:has(> .single-note-title + .single-customer-voice) .single-note-title {
+          display: flex;
+          align-items: center;
+          justify-content: flex-start;
+          text-align: left;
+          padding: 6px 10px;
+          line-height: 1.2;
+        }
+        .single-note-card:has(> .single-note-title + .single-customer-voice) .single-customer-voice {
+          min-width: 0;
+          align-self: start;
         }
         .single-history-toggle {
           margin-left: auto;

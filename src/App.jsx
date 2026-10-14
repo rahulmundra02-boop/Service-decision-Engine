@@ -8847,7 +8847,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         }
         .single-note-card:has(> .single-note-title + .single-customer-voice) {
           display: grid;
-          grid-template-columns: 132px minmax(0, 1fr);
+          grid-template-columns: 190px minmax(0, 1fr);
           align-items: stretch;
           gap: 0;
         }

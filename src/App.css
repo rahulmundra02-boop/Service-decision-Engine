@@ -406,3 +406,55 @@ tr:last-child td { border-bottom:0; }
 .warranty-tag-list-table th:nth-child(9),.warranty-tag-list-table td:nth-child(9){width:8%}
 @media(max-width:700px){.warranty-tag-list-scroll{overflow-x:auto}.warranty-tag-list-table{min-width:900px}}
 @media(max-width:700px){.warranty-tag-list-toolbar{align-items:flex-start}.warranty-tag-list-actions{width:100%}.warranty-tag-list-actions button{flex:1}}
+
+
+/* Single-service dashboard: compact notes, with Customer Voice growing only to fit its text. */
+.single-note-grid,
+.single-note-grid-campaign-loading,
+.single-note-grid-no-campaign,
+.single-note-grid-with-campaign {
+  align-items: start !important;
+  gap: 8px !important;
+}
+.single-note-card {
+  min-width: 0;
+  min-height: 0 !important;
+  height: auto !important;
+  align-self: start !important;
+  padding: 8px 10px !important;
+  gap: 5px !important;
+}
+.single-note-title {
+  margin: 0 0 3px !important;
+  line-height: 1.2 !important;
+}
+.single-customer-voice {
+  display: block;
+  width: 100%;
+  min-height: 36px !important;
+  height: auto;
+  max-height: none !important;
+  align-self: start;
+  box-sizing: border-box;
+  padding: 7px 9px !important;
+  line-height: 1.35 !important;
+  resize: vertical;
+  overflow-y: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.single-customer-voice-compact {
+  min-height: 36px !important;
+}
+.screenshot-customer-voice {
+  min-height: 36px !important;
+  height: auto !important;
+  max-height: none !important;
+  white-space: pre-wrap !important;
+  overflow-wrap: anywhere !important;
+}
+.single-history-toggle {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}

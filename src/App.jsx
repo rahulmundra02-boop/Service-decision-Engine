@@ -2280,7 +2280,8 @@ function isCngModel(model){
 }
 function isCE282039RmcKmModel(model){
   const t=String(model||'').toUpperCase().replace(/\s+/g,' ').trim();
-  return /CE2820\s*\/\s*39\s+R\s+RMC/.test(t);
+  // These RMC variants must always use KM-based service decisions.
+  return /(?:CE|UE)2820\s*\/\s*39\s+R\s+RMC/.test(t);
 }
 function isTipperModel(model){
   // UE2820/57 H CC is a service-hours based model even without TIP/RMC wording.
@@ -2290,7 +2291,10 @@ function isTipperModel(model){
 }
 function getEffectiveDecisionBasis(vehicle, basis){
   const normalized = String(basis||"").toUpperCase();
-  return normalized === "TIME_ONLY" ? "TIME_ONLY" : normalized === "HRS" ? "HRS" : "KM";
+  if (normalized === "TIME_ONLY") return "TIME_ONLY";
+  // Keep the CE/UE2820/39 R RMC exception KM-based even if HRS is selected.
+  if (isCE282039RmcKmModel(vehicle?.model)) return "KM";
+  return normalized === "HRS" ? "HRS" : "KM";
 }
 function isH4Model(model){ return ["1015","1115","1215","1315","1415","1615","1815","1915"].some(x=>String(model||'').toUpperCase().includes(x)); }
 function isA4Model(model){ return /\d{4}N/.test(String(model||'').toUpperCase()); }

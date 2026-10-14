@@ -8048,6 +8048,40 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         }
       });
 
+      // html2canvas can omit native radio controls in the rendered canvas.
+      // Replace just the cloned history-view radios with drawn circles so both
+      // options and the currently selected mode are always visible in screenshots.
+      clone.querySelectorAll(".single-history-toggle label").forEach((label) => {
+        const radio = label.querySelector('input[type="radio"]');
+        if (!radio) return;
+
+        const visualRadio = document.createElement("span");
+        visualRadio.setAttribute("aria-hidden", "true");
+        visualRadio.style.width = "14px";
+        visualRadio.style.height = "14px";
+        visualRadio.style.minWidth = "14px";
+        visualRadio.style.border = "2px solid #cbd5e1";
+        visualRadio.style.borderRadius = "50%";
+        visualRadio.style.display = "inline-flex";
+        visualRadio.style.alignItems = "center";
+        visualRadio.style.justifyContent = "center";
+        visualRadio.style.boxSizing = "border-box";
+        visualRadio.style.background = "#ffffff";
+
+        if (radio.checked) {
+          const dot = document.createElement("span");
+          dot.style.width = "6px";
+          dot.style.height = "6px";
+          dot.style.borderRadius = "50%";
+          dot.style.background = "#2f9e44";
+          dot.style.display = "block";
+          visualRadio.appendChild(dot);
+          visualRadio.style.borderColor = "#2f9e44";
+        }
+
+        radio.replaceWith(visualRadio);
+      });
+
       document.body.appendChild(clone);
       await new Promise((resolve) =>
         requestAnimationFrame(() => requestAnimationFrame(resolve))

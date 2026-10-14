@@ -451,7 +451,7 @@ tr:last-child td { border-bottom:0; }
 }
 .single-note-card:has(> .single-note-title + .single-customer-voice) {
   display: grid !important;
-  grid-template-columns: 132px minmax(0, 1fr) !important;
+  grid-template-columns: 190px minmax(0, 1fr) !important;
   align-items: stretch !important;
   gap: 0 !important;
 }
@@ -482,6 +482,6 @@ tr:last-child td { border-bottom:0; }
 
 @media (max-width: 600px) {
   .single-note-card:has(> .single-note-title + .single-customer-voice) {
-    grid-template-columns: 104px minmax(0, 1fr) !important;
+    grid-template-columns: 160px minmax(0, 1fr) !important;
   }
 }

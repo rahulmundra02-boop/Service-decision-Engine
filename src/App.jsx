@@ -7962,6 +7962,10 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
 
       clone = source.cloneNode(true);
       clone.removeAttribute("id");
+      // Keep the selected service-history radio controls visible in the screenshot.
+      clone.querySelectorAll(".single-history-toggle.no-print").forEach((element) => {
+        element.classList.remove("no-print");
+      });
 
       const themeRoot = source.closest(".excel-app");
       if (themeRoot) {

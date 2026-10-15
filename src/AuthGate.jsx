@@ -1654,25 +1654,10 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
 
         {view === "overview" && (
           <>
-            <div className="admin-section-title">Usage Overview</div>
+            <div className="admin-section-title">Vehicle Productivity Overview</div>
             <div className="admin-dashboard-grid">
               <div className="admin-panel-card">
-                <div className="admin-panel-card-title">Daily Activity</div>
-                <div className="admin-panel-card-sub">Last {analyticsRange} days</div>
-                <div className="admin-bar-chart">
-                  {periods.map(p=>{
-                    const v=Number(p.activities||0);
-                    const h=Math.max(4,Math.round(v/maxActivities*100));
-                    return <div className="admin-bar-col" key={String(p.activity_date)} title={`${p.activity_date}: ${v} activities`}>
-                      <div className="admin-bar-value">{v||""}</div>
-                      <div className="admin-bar" style={{height:`${h}%`}} />
-                      <div className="admin-bar-label">{new Date(p.activity_date).toLocaleDateString(undefined,{day:"2-digit",month:"short"})}</div>
-                    </div>;
-                  })}
-                </div>
-              </div>
-              <div className="admin-panel-card">
-                <div className="admin-panel-card-title">Vehicle Analysis Trend</div>
+                <div className="admin-panel-card-title">Vehicles Checked Per Day</div>
                 <div className="admin-panel-card-sub">Vehicles analysed per day</div>
                 <div className="admin-bar-chart">
                   {periods.map(p=>{
@@ -1736,15 +1721,6 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
             </div>
             <div className="admin-dashboard-grid">
               <div className="admin-panel-card">
-                <div className="admin-panel-card-title">User Activity Distribution</div>
-                <div className="admin-horizontal-bars">
-                  {topActiveUsers.slice(0,8).map(u=>{
-                    const pct=Math.round((u.totalActivities||0)/Math.max(1,topActiveUsers[0]?.totalActivities||1)*100);
-                    return <div className="admin-hbar-row" key={u.id}><span>{u.personName}</span><div><i style={{width:`${pct}%`}} /></div><b>{u.totalActivities||0}</b></div>;
-                  })}
-                </div>
-              </div>
-              <div className="admin-panel-card">
                 <div className="admin-panel-card-title">Recently Registered</div>
                 <div className="admin-mini-list">
                   {recentUsers.map(u=><button key={u.id} onClick={()=>onAnalytics(Number(u.id),analyticsRange)}>
@@ -1772,11 +1748,11 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
                 </div>
               </div>
               <div className="admin-panel-card">
-                <div className="admin-panel-card-title">Activity Summary</div>
+                <div className="admin-panel-card-title">Vehicle Checks Summary</div>
                 <div className="admin-kpi-grid compact">
-                  {metricCard("Activities", periods.reduce((n,p)=>n+Number(p.activities||0),0))}
-                  {metricCard("Logins", periods.reduce((n,p)=>n+Number(p.logins||0),0))}
-                  {metricCard("Vehicles", periods.reduce((n,p)=>n+Number(p.vehicles||0),0))}
+                  {metricCard("Vehicles Checked", periods.reduce((n,p)=>n+Number(p.vehicles||0),0))}
+                  
+                  
                   {metricCard("Files", periods.reduce((n,p)=>n+Number(p.files||0),0))}
                 </div>
               </div>

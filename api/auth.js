@@ -148,6 +148,7 @@ async function ensureSchema(client) {
 
     CREATE INDEX IF NOT EXISTS idx_user_activity_user_time ON user_activity(user_id, activity_time DESC);
     CREATE INDEX IF NOT EXISTS idx_user_activity_type ON user_activity(activity_type);
+    CREATE INDEX IF NOT EXISTS idx_user_activity_time ON user_activity(activity_time);
 
     CREATE TABLE IF NOT EXISTS campaign_records (
       id BIGSERIAL PRIMARY KEY,
@@ -588,6 +589,25 @@ export default async function handler(req, res) {
       return res.json({ success:true });
     }
 
+    if (action === "log-activity-batch") {
+      const currentUser = await getUserByToken(client, authToken(req));
+      if (!currentUser) {
+        await client.query("ROLLBACK");
+        return res.status(401).json({success:false,error:"Session expired."});
+      }
+      const events = Array.isArray(body.events) ? body.events.slice(0, 100) : [];
+      for (const event of events) {
+        const label = clean(event?.details?.label).slice(0, 180);
+        const tag = clean(event?.details?.tag).slice(0, 32);
+        if (!label || !tag) continue;
+        await logActivity(client, currentUser.id, "UI Interaction", {
+          details: {label,tag,page:clean(event?.details?.page).slice(0,120)}
+        });
+      }
+      await client.query("COMMIT");
+      return res.json({success:true,recorded:events.length});
+    }
+
     if (action === "log-activity") {
       const currentUser = await getUserByToken(client, authToken(req));
       if (!currentUser) {
@@ -635,7 +655,9 @@ export default async function handler(req, res) {
     }
 
 
+    // Lazy retention cleanup: removes expired interaction logs on admin access.
     if (action === "admin-analytics") {
+      await client.query("DELETE FROM user_activity WHERE activity_time < NOW() - INTERVAL '7 days'");
       const admin = await requireAdmin(client, req);
       if (admin.error) {
         await client.query("ROLLBACK");

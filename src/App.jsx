@@ -9619,6 +9619,11 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                 </>
               ) : (
                 <>
+                  {(!user?.preferences?.letterhead?.image || !user?.preferences?.signature?.image) && (
+                    <div className="no-print" role="note" style={{marginBottom:10,padding:"10px 12px",border:"1px solid #93c5fd",borderRadius:8,background:"#eff6ff",color:"#1e40af",fontSize:13,lineHeight:1.45}}>
+                      <strong>Tip:</strong> For a more professional estimate, you can add your company letterhead and authorized signature in Profile Settings.
+                    </div>
+                  )}
                   <div className="estimate-header">
                     <div className="estimate-title">SERVICE ESTIMATE</div>
                     <div className="estimate-meta">Estimate No. (Session): <b>{estimateNumber || "-"}</b> <span className="estimate-date-separator">·</span> Date: <b>{formatDate(new Date())}</b></div>

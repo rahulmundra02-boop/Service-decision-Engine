@@ -581,3 +581,15 @@
 
 /* Beta: account actions are now inside the Profile tab. */
 .auth-userbar{display:none!important}
+
+/* Admin activity table: allow vertical scrolling on phones in portrait mode. */
+@media (max-width: 700px) {
+  .admin-table-wrap.admin-activity-wrap {
+    max-height: 55vh !important;
+    overflow-x: auto !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    touch-action: pan-x pan-y;
+  }
+}

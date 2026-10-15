@@ -107,13 +107,12 @@ export default function AuthGate({ children }) {
 
     const handleClick = (event) => {
       const target = getClickTarget(event.target);
-      if (!target) return;
+      if (!target || target.matches('input[type="password"],input[type="file"],input[type="hidden"]')) return;
       const textValue = String(
         target.getAttribute("data-activity") ||
         target.getAttribute("aria-label") ||
         target.getAttribute("title") ||
         target.innerText ||
-        target.value ||
         target.name ||
         target.id ||
         target.tagName

@@ -595,6 +595,8 @@ export default async function handler(req, res) {
         await client.query("ROLLBACK");
         return res.status(401).json({success:false,error:"Session expired."});
       }
+      // Rolling retention cleanup runs whenever a batch is received.
+      await client.query("DELETE FROM user_activity WHERE activity_time < NOW() - INTERVAL '7 days'");
       const events = Array.isArray(body.events) ? body.events.slice(0, 100) : [];
       for (const event of events) {
         const label = clean(event?.details?.label).slice(0, 180);

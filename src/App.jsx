@@ -5016,10 +5016,12 @@ function WarrantyTagPanel({user,onBack}){
   const [pdfBusy,setPdfBusy]=useState(false);
   const [error,setError]=useState("");
   const [message,setMessage]=useState("");
+  const [claimFileError,setClaimFileError]=useState("");
+  const [summaryFileError,setSummaryFileError]=useState("");
   const printRootRef=useRef(null);
 
   const processClaimFile=async file=>{
-    setBusy(true);setError("");setMessage("");
+    setBusy(true);setError("");setMessage("");setClaimFileError("");setClaimDataset(null);
     try{
       const dataset=await readWarrantyWorkbook(file,WARRANTY_TAG_ALIASES);
       const missing=warrantyMissingHeaders(dataset,WARRANTY_CLAIM_REQUIRED,WARRANTY_TAG_ALIASES);
@@ -5027,12 +5029,12 @@ function WarrantyTagPanel({user,onBack}){
       if(missing.length) throw new Error("Required header(s) missing in Billed JC Claim Statement: "+warrantyMissingHeaderLabels(missing,WARRANTY_CLAIM_REQUIRED_LABELS).join(", ")+".");
       setClaimDataset(dataset);setTags([]);
       setMessage(dataset.rows.length.toLocaleString("en-IN")+" source rows detected from "+file.name+".");
-    }catch(e){setClaimDataset(null);setError(e.message||"Unable to read Billed JC Claim Statement.");}
+    }catch(e){setClaimDataset(null);setClaimFileError(e.message||"Unable to read Billed JC Claim Statement.");}
     finally{setBusy(false);}
   };
 
   const processSummaryFile=async file=>{
-    setBusy(true);setError("");setMessage("");
+    setBusy(true);setError("");setMessage("");setSummaryFileError("");setSummaryDataset(null);
     try{
       const dataset=await readWarrantyWorkbook(file,WARRANTY_SUMMARY_ALIASES);
       const missing=warrantyMissingHeaders(dataset,WARRANTY_SUMMARY_REQUIRED,WARRANTY_SUMMARY_ALIASES);
@@ -5040,7 +5042,7 @@ function WarrantyTagPanel({user,onBack}){
       if(missing.length) throw new Error("Required header(s) missing in Jobcard Summary: "+warrantyMissingHeaderLabels(missing,WARRANTY_SUMMARY_REQUIRED_LABELS).join(", ")+".");
       setSummaryDataset(dataset);setTags([]);
       setMessage(dataset.rows.length.toLocaleString("en-IN")+" Job Card Summary rows detected from "+file.name+".");
-    }catch(e){setSummaryDataset(null);setError(e.message||"Unable to read Jobcard Summary.");}
+    }catch(e){setSummaryDataset(null);setSummaryFileError(e.message||"Unable to read Jobcard Summary.");}
     finally{setBusy(false);}
   };
 
@@ -5201,13 +5203,13 @@ function WarrantyTagPanel({user,onBack}){
           <div className="warranty-tag-upload-title">1. Billed JC Claim Statement</div>
           <div className="warranty-tag-upload-text">Mandatory: Job Card Number, Job Card Date, Registration Number, Chassis Number, Engine Number, Part / Labour code, Quantity, Part / Labour Desc, OEM Claim Number and Claim Creation Date.</div>
           <label className="warranty-tag-file-button"><input type="file" accept=".xlsx,.xls,.xlsm,.csv" disabled={busy} onChange={event=>{const file=event.target.files?.[0]||null;event.target.value="";setClaimFile(file);if(file) void processClaimFile(file);}} />{claimFile?"Replace Claim Statement":"Select Excel File"}</label>
-          {claimFile&&<div className="warranty-tag-file-name">{claimFile.name}</div>}
+          {claimFile&&<div className="warranty-tag-file-name">{claimFile.name}{claimDataset?" · Validated":" · Not ready"}</div>}{claimFileError&&<div className="warranty-tag-message error">{claimFileError}</div>}
         </div>
         <div className="warranty-tag-upload-card">
           <div className="warranty-tag-upload-title">2. Jobcard Summary</div>
           <div className="warranty-tag-upload-text">Mandatory: Job Card No., KM Reading / HR Reading, km/hr and Servicing Company.</div>
           <label className="warranty-tag-file-button"><input type="file" accept=".xlsx,.xls,.xlsm,.csv" disabled={busy} onChange={event=>{const file=event.target.files?.[0]||null;event.target.value="";setSummaryFile(file);if(file) void processSummaryFile(file);}} />{summaryFile?"Replace Jobcard Summary":"Select Excel File"}</label>
-          {summaryFile&&<div className="warranty-tag-file-name">{summaryFile.name}</div>}
+          {summaryFile&&<div className="warranty-tag-file-name">{summaryFile.name}{summaryDataset?" · Validated":" · Not ready"}</div>}{summaryFileError&&<div className="warranty-tag-message error">{summaryFileError}</div>}
         </div>
       </div>
 

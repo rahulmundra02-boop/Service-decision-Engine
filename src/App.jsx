@@ -4682,17 +4682,17 @@ function warrantyText(value){
 }
 
 function formatWarrantyDate(value){
+  // Excel serial dates are calendar dates, not timestamps. Read Date values in
+  // UTC so the browser timezone cannot shift a date to the previous day.
   if(value instanceof Date && !Number.isNaN(value.getTime())){
-    const dd=String(value.getDate()).padStart(2,"0");
-    const mm=String(value.getMonth()+1).padStart(2,"0");
-    return dd+"/"+mm+"/"+value.getFullYear();
+    const dd=String(value.getUTCDate()).padStart(2,"0");
+    const mm=String(value.getUTCMonth()+1).padStart(2,"0");
+    return dd+"/"+mm+"/"+value.getUTCFullYear();
   }
   const text=warrantyText(value);
   if(!text) return "";
-  if(/^\\d{4}-\\d{2}-\\d{2}/.test(text)){
-    const d=new Date(text);
-    if(!Number.isNaN(d.getTime())) return String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0")+"/"+d.getFullYear();
-  }
+  const iso=text.match(/^(\\d{4})-(\\d{2})-(\\d{2})/);
+  if(iso) return iso[3]+"/"+iso[2]+"/"+iso[1];
   return text;
 }
 

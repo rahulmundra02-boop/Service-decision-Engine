@@ -4679,8 +4679,12 @@ function warrantyText(value){
 }
 
 function formatWarrantyDate(value){
-  // Excel serial dates are calendar dates, not timestamps. Read Date values in
-  // UTC so the browser timezone cannot shift a date to the previous day.
+  // Keep Excel dates as serial numbers while parsing. Converting them to JS
+  // Date objects first can shift midnight dates by one day in some timezones.
+  if(typeof value==="number" && Number.isFinite(value) && value>20000 && value<80000){
+    const date=new Date(Date.UTC(1899,11,30)+Math.floor(value)*86400000);
+    return String(date.getUTCDate()).padStart(2,"0")+"/"+String(date.getUTCMonth()+1).padStart(2,"0")+"/"+date.getUTCFullYear();
+  }
   if(value instanceof Date && !Number.isNaN(value.getTime())){
     const dd=String(value.getUTCDate()).padStart(2,"0");
     const mm=String(value.getUTCMonth()+1).padStart(2,"0");
@@ -4755,7 +4759,7 @@ function formatWarrantyReading(summary){
 
 function readWarrantyWorkbook(file,aliasGroups){
   return file.arrayBuffer().then(buffer=>{
-    const workbook=XLSX.read(buffer,{type:"array",cellDates:true,raw:true});
+    const workbook=XLSX.read(buffer,{type:"array",cellDates:false,raw:true});
     const output=[];
     const mapping={};
     let selectedSheet="";

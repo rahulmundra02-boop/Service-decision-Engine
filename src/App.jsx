@@ -1799,19 +1799,7 @@ function parseExcelPaste(text) {
       model: cell(col.model),
       repairTypeLine: cell(col.repairTypeLine),
       checkInDate: parseDate(cell(col.checkInDate)),
-      // Some DMS exports contain truncated/duplicate VIN headers. If the
-      // preferred header resolves to an empty cell, search all VIN-named columns
-      // for the actual row value before classifying the row as missing VIN.
-      vin: (() => {
-        const primary = String(cell(col.vin) ?? "").trim();
-        if (primary) return primary;
-        const fallbackIndex = headers.findIndex((header, index) =>
-          index !== col.vin &&
-          normalizeHeader(header).startsWith("vehicleidentificationnumber") &&
-          String(cell(index) ?? "").trim()
-        );
-        return fallbackIndex >= 0 ? String(cell(fallbackIndex) ?? "").trim() : primary;
-      })(),
+      vin: cell(col.vin),
 
       driverName: cell(col.driverName),
       driverPhone: cell(col.driverPhone),

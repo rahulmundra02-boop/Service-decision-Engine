@@ -3091,8 +3091,9 @@ function applySavedCustomerMerges(groups, saved=readSavedCustomerMerges()){
     const keys=new Set((rule.customerKeys||[]).map(String));
     if(keys.size<2) continue;
     const selected=result.filter(group=>(group.customerKeys||[]).some(key=>keys.has(String(key))));
-    const matchedKeys=new Set(selected.flatMap(group=>group.customerKeys||[]).map(String));
-    if(selected.length<2 || [...keys].some(key=>!matchedKeys.has(key))) continue;
+    // Apply a saved merge whenever at least two of its customers are present.
+    // Keep the full saved rule intact so missing customers can join automatically when they appear later.
+    if(selected.length<2) continue;
     result=result.filter(group=>!selected.includes(group));
     result.push({id:[...keys].sort().join("||"),name:rule.name||selected.map(g=>g.name).join(", "),customerKeys:[...new Set(selected.flatMap(g=>g.customerKeys||[]))],vehicles:selected.flatMap(g=>g.vehicles||[]),dealerName:selected.find(g=>g.dealerName)?.dealerName||""});
   }

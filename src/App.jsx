@@ -880,8 +880,16 @@ function splitDelimitedLine(line, delimiter) {
       if (quoted && line[i + 1] === '"') {
         current += '"';
         i++;
+      } else if (quoted) {
+        quoted = false;
+      } else if (current.length === 0) {
+        // Only treat a quote at the beginning of a field as a CSV quote.
+        // DMS TSV rows can contain literal quotes inside descriptions (e.g. 6"),
+        // which must not cause subsequent tab-separated columns to shift.
+        quoted = true;
       } else {
-        quoted = !quoted;
+        // A quote inside an unquoted field is literal text, not a delimiter.
+        current += '"';
       }
       continue;
     }

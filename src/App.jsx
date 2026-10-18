@@ -3045,6 +3045,41 @@ function mergeCustomerGroups(groups, selectedIds, mergedName) {
   return [...others, merged].sort((a,b) => a.name.localeCompare(b.name));
 }
 
+const CUSTOMER_MERGE_STORAGE_KEY = "serviceDecisionCustomerMergesV1";
+function readSavedCustomerMerges(){
+  try { const value=JSON.parse(localStorage.getItem(CUSTOMER_MERGE_STORAGE_KEY)||"[]"); return Array.isArray(value)?value:[]; }
+  catch { return []; }
+}
+function applySavedCustomerMerges(groups, saved=readSavedCustomerMerges()){
+  let result=[...groups];
+  for(const rule of saved){
+    const keys=new Set((rule.customerKeys||[]).map(String));
+    if(keys.size<2) continue;
+    const selected=result.filter(group=>(group.customerKeys||[]).some(key=>keys.has(String(key))));
+    const matchedKeys=new Set(selected.flatMap(group=>group.customerKeys||[]).map(String));
+    if(selected.length<2 || [...keys].some(key=>!matchedKeys.has(key))) continue;
+    result=result.filter(group=>!selected.includes(group));
+    result.push({id:[...keys].sort().join("||"),name:rule.name||selected.map(g=>g.name).join(", "),customerKeys:[...new Set(selected.flatMap(g=>g.customerKeys||[]))],vehicles:selected.flatMap(g=>g.vehicles||[]),dealerName:selected.find(g=>g.dealerName)?.dealerName||""});
+  }
+  return result.sort((a,b)=>a.name.localeCompare(b.name));
+}
+function saveCustomerMergeRule(group){
+  const saved=readSavedCustomerMerges();
+  const keys=[...new Set((group.customerKeys||[]).map(String))];
+  if(keys.length<2) return;
+  const next=saved.filter(rule=>!rule.customerKeys?.some(key=>keys.includes(String(key))));
+  next.push({customerKeys:keys,name:group.name});
+  localStorage.setItem(CUSTOMER_MERGE_STORAGE_KEY,JSON.stringify(next));
+}
+function removeCustomerMergeKey(group, keyToRemove){
+  const keys=(group.customerKeys||[]).map(String);
+  const remaining=keys.filter(key=>key!==String(keyToRemove));
+  const saved=readSavedCustomerMerges().flatMap(rule=>{
+    if(!rule.customerKeys?.some(key=>keys.includes(String(key)))) return [rule];
+    return remaining.length>1?[{customerKeys:remaining,name:group.name}]:[];
+  });
+  localStorage.setItem(CUSTOMER_MERGE_STORAGE_KEY,JSON.stringify(saved));
+}
 function escapeHtml(value) {
   return String(value ?? '')
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
@@ -6363,12 +6398,12 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       // contains more than one VIN. No second upload/paste is required.
       if(uniqueVins.length > 1){
         const results = await buildBulkAnalysisProgressive(parsed.records,bulkConsiderKm,setUploadProgress,()=>cancelProcessingRef.current);
-        const groups = buildCustomerGroups(results, user?.dealerName);
+        const groups = applySavedCustomerMerges(buildCustomerGroups(results, user?.dealerName));
         setAnalysis(null);
         setOverrideReading("");
         setAppliedOverride(null);
         setBulkResults(results);
-        setCustomerGroups(groups);
+        setCustomerGroups(applySavedCustomerMerges(groups));
         setSelectedCustomers([]);
         setBulkTableSort({ key: "dueCount", direction: "desc" });
         setBulkTableFilters({
@@ -9475,7 +9510,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                     <table className="history-table" style={{minWidth:500}}><thead><tr><th><label style={{display:"inline-flex",alignItems:"center",gap:6,cursor:"pointer"}}><input type="checkbox" checked={customerGroups.length>0 && selectedCustomers.length===customerGroups.length} onChange={(event)=>setSelectedCustomers(event.target.checked ? customerGroups.map(group=>group.id) : [])}/> <span>Select All</span></label></th><th>Customer Group</th><th>Vehicles</th></tr></thead><tbody>
                       {customerGroups.map(group=><tr key={group.id}><td><input type="checkbox" checked={selectedCustomers.includes(group.id)} onChange={()=>setSelectedCustomers(prev=>prev.includes(group.id)?prev.filter(x=>x!==group.id):[...prev,group.id])}/></td><td><strong>{group.name}</strong>{group.customerKeys.length>1&&<div className="small-note">Merged group</div>}</td><td>{group.vehicles.length}</td></tr>)}
                     </tbody></table>
-                    <div className="action-row" style={{marginTop:8}}><input className="excel-input" style={{maxWidth:280}} value={mergedCustomerName} onChange={(event)=>setMergedCustomerName(event.target.value)} placeholder="Optional merged customer name" /><button className="excel-button" disabled={selectedCustomers.length<2} onClick={()=>{setCustomerGroups(prev=>mergeCustomerGroups(prev,selectedCustomers,mergedCustomerName));setSelectedCustomers([]);setMergedCustomerName("")}}>Merge Selected Customers</button><button className="excel-button" onClick={()=>{const fresh=buildCustomerGroups(bulkResults,user?.dealerName);setCustomerGroups(fresh);setSelectedCustomers([]);setMergedCustomerName("")}}>Reset Grouping</button></div>
+                    <div className="action-row" style={{marginTop:8}}><input className="excel-input" style={{maxWidth:280}} value={mergedCustomerName} onChange={(event)=>setMergedCustomerName(event.target.value)} placeholder="Optional merged customer name" /><button className="excel-button" disabled={selectedCustomers.length<2} onClick={()=>{const merged=mergeCustomerGroups(customerGroups,selectedCustomers,mergedCustomerName);const newGroup=merged.find(group=>group.customerKeys?.length>1 && selectedCustomers.every(id=>group.id===id || group.customerKeys.some(key=>customerGroups.find(g=>g.id===id)?.customerKeys.includes(key))));if(newGroup)saveCustomerMergeRule(newGroup);setCustomerGroups(merged);setSelectedCustomers([]);setMergedCustomerName("")}}>Merge Selected Customers</button></div>
                   </div></div>
 
                   <div className="section-title">Customer-wise Output</div>

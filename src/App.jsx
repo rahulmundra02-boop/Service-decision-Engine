@@ -6169,15 +6169,13 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
 
   const handleExcelUpload = async (event) => {
     const selectedFiles=Array.from(event.target.files||[]);event.target.value="";if(!selectedFiles.length)return;
-    const sig=f=>`${f.name}::${f.size}::${f.lastModified}`,batch=new Set(),duplicateFiles=[];
-    const files=selectedFiles.filter(f=>{const k=sig(f);if(seenUploadSignaturesRef.current.has(k)||batch.has(k)){duplicateFiles.push({name:f.name,reason:"Already uploaded in this session"});return false;}batch.add(k);return true;});
-    if(!files.length){setUploadMeta(p=>({...p,duplicateFiles,failedFiles:p?.failedFiles||[],invalidRows:p?.invalidRows||[],rowsAfter:p?.rowsAfter||0,duplicates:p?.duplicates||0}));setError("Same file already uploaded in this session. Existing data has been kept.");return;}
+    const files=selectedFiles;
     cancelProcessingRef.current=false;setError("");setUploadBusy(true);setUploadProgress({stage:"Preparing upload",current:0,total:files.length,detail:`${files.length} file(s) selected`});
     try{
       const result=await parseExcelFiles(files,{onProgress:setUploadProgress,isCancelled:()=>cancelProcessingRef.current});
       if(cancelProcessingRef.current){const e=new Error("Upload cancelled.");e.name="AbortError";throw e;}
-      const parsedRows=result.records||[],accepted=files.filter(f=>result.files.includes(f.name));accepted.forEach(f=>seenUploadSignaturesRef.current.add(sig(f)));
-      setExcelData("");setUploadedFiles(accepted);setUploadMeta({files:result.files,failedFiles:result.failedFiles||[],duplicateFiles,rowsBefore:result.totalRowsBeforeDedup,duplicates:result.duplicateRowsIgnored,rowsAfter:parsedRows.length,invalidRows:result.invalidRows||[]});
+      const parsedRows=result.records||[],accepted=files.filter(f=>result.files.includes(f.name));
+      setExcelData("");setUploadedFiles(accepted);setUploadMeta({files:result.files,failedFiles:result.failedFiles||[],rowsBefore:result.totalRowsBeforeDedup,duplicates:result.duplicateRowsIgnored,rowsAfter:parsedRows.length,invalidRows:result.invalidRows||[]});
       setAnalysis(null);setBulkResults([]);setBulkMeta(null);setCustomerGroups([]);setSelectedCustomers([]);setUploadParsedRecords(parsedRows);
       if(parsedRows.length){const vins=new Set(parsedRows.map(r=>String(r?.vin||"").trim().toUpperCase()).filter(Boolean));setMode(vins.size>1?"bulk":"single");logUsage("Excel Upload",{fileCount:accepted.length,vehicleCount:vins.size,details:{rows:parsedRows.length,files:accepted.map(f=>f.name)}});}
       if(!parsedRows.length&&result.failedFiles?.length)setError(result.failedFiles.map(x=>`${x.name} — ${x.reason}`).join(" | "));
@@ -6506,7 +6504,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         () => cancelProcessingRef.current
       );
       setBulkResults(results);
-      const groups = buildCustomerGroups(results, user?.dealerName);
+      const groups = applySavedCustomerMerges(buildCustomerGroups(results, user?.dealerName));
       setCustomerGroups(groups);
       setSelectedCustomers([]);
       setBulkTableSort({ key: "dueCount", direction: "desc" });
@@ -9238,7 +9236,6 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
               )}
               {uploadMeta&&<div className="no-print" style={{marginTop:10,padding:"10px 12px",border:"1px solid #d9e2ea",borderRadius:8,background:"var(--panel-bg, #f8fafc)",fontSize:12}}>
                 <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",fontWeight:800}}><span>Upload summary</span><span className="status-pill green">{Number(uploadMeta.rowsAfter||0).toLocaleString()} rows ready</span><span className="status-pill blue">{Number(uploadMeta.duplicates||0).toLocaleString()} duplicate rows ignored</span><span className="status-pill">{(uploadMeta.invalidRows||[]).length} invalid rows</span><span className="status-pill">{(uploadMeta.duplicateFiles||[]).length} repeated files skipped</span></div>
-                {(uploadMeta.duplicateFiles||[]).length>0&&<div style={{marginTop:7}}><b>Repeated files:</b> {uploadMeta.duplicateFiles.map(x=>x.name).join(", ")}</div>}
                 {(uploadMeta.invalidRows||[]).length>0&&<details style={{marginTop:7}}><summary style={{cursor:"pointer",fontWeight:700}}>Show invalid/skipped rows ({uploadMeta.invalidRows.length})</summary><ul style={{margin:"6px 0 0",paddingLeft:20}}>{uploadMeta.invalidRows.slice(0,100).map((x,i)=><li key={i}>Row {x.rowNumber}: {x.reason}</li>)}</ul>{uploadMeta.invalidRows.length>100&&<div>Showing first 100 rows.</div>}</details>}
                 {(uploadMeta.failedFiles||[]).length>0&&<div style={{marginTop:7}}><b>Failed files:</b> {uploadMeta.failedFiles.map(x=>x.name).join(", ")}</div>}
               </div>}

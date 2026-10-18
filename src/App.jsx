@@ -3062,6 +3062,19 @@ function buildCustomerGroups(results, dealerName = "") {
   );
 }
 
+function getCurrentCustomerNames(group) {
+  const names = (group?.vehicles || []).map(item => {
+    const actualName = isUsableCustomerName(item?.vehicle?.customerName)
+      ? String(item.vehicle.customerName).trim()
+      : "";
+    const customerNumber = String(item?.vehicle?.customerNumber || "").trim();
+    return actualName || (customerNumber
+      ? `Customer Name Unavailable (ID: ${customerNumber})`
+      : "Customer Name Unavailable");
+  }).filter(Boolean);
+  return [...new Set(names)].join(", ");
+}
+
 function mergeCustomerGroups(groups, selectedIds, mergedName) {
   const selected = new Set(selectedIds);
   if (selected.size < 2) return groups;
@@ -9541,7 +9554,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                   <div className="section-title">Customer Grouping</div>
                   <div className="bulk-card"><div className="bulk-card-head">Customer groups — {customerGroups.length}</div><div className="bulk-card-body">
                     <table className="history-table" style={{minWidth:500}}><thead><tr><th><label style={{display:"inline-flex",alignItems:"center",gap:6,cursor:"pointer"}}><input type="checkbox" checked={customerGroups.length>0 && selectedCustomers.length===customerGroups.length} onChange={(event)=>setSelectedCustomers(event.target.checked ? customerGroups.map(group=>group.id) : [])}/> <span>Select All</span></label></th><th>Customer Group</th><th>Vehicles</th></tr></thead><tbody>
-                      {customerGroups.map(group=><tr key={group.id}><td><input type="checkbox" checked={selectedCustomers.includes(group.id)} onChange={()=>setSelectedCustomers(prev=>prev.includes(group.id)?prev.filter(x=>x!==group.id):[...prev,group.id])}/></td><td><strong>{group.name}</strong>{group.customerKeys.length>1&&<div className="small-note">Merged group <button type="button" className="excel-button" style={{marginLeft:6,padding:"3px 7px"}} onClick={()=>{const keys=new Set(group.customerKeys.map(String));const saved=readSavedCustomerMerges().filter(rule=>!rule.customerKeys?.some(key=>keys.has(String(key))));localStorage.setItem(CUSTOMER_MERGE_STORAGE_KEY,JSON.stringify(saved));setCustomerGroups(applySavedCustomerMerges(buildCustomerGroups(bulkResults,user?.dealerName),saved));setSelectedCustomers([])}}>Unmerge</button></div>}</td><td>{group.vehicles.length}</td></tr>)}
+                      {customerGroups.map(group=><tr key={group.id}><td><input type="checkbox" checked={selectedCustomers.includes(group.id)} onChange={()=>setSelectedCustomers(prev=>prev.includes(group.id)?prev.filter(x=>x!==group.id):[...prev,group.id])}/></td><td><strong>{group.name}</strong>{group.customerKeys.length>1&&<span className="small-note" style={{marginLeft:6}}>({getCurrentCustomerNames(group)})</span>}{group.customerKeys.length>1&&<div className="small-note">Merged group <button type="button" className="excel-button" style={{marginLeft:6,padding:"3px 7px"}} onClick={()=>{const keys=new Set(group.customerKeys.map(String));const saved=readSavedCustomerMerges().filter(rule=>!rule.customerKeys?.some(key=>keys.has(String(key))));localStorage.setItem(CUSTOMER_MERGE_STORAGE_KEY,JSON.stringify(saved));setCustomerGroups(applySavedCustomerMerges(buildCustomerGroups(bulkResults,user?.dealerName),saved));setSelectedCustomers([])}}>Unmerge</button></div>}</td><td>{group.vehicles.length}</td></tr>)}
                     </tbody></table>
                     <div className="action-row" style={{marginTop:8}}><input className="excel-input" style={{maxWidth:280}} value={mergedCustomerName} onChange={(event)=>setMergedCustomerName(event.target.value)} placeholder="Optional merged customer name" /><button className="excel-button" disabled={selectedCustomers.length<2} onClick={()=>{const merged=mergeCustomerGroups(customerGroups,selectedCustomers,mergedCustomerName);const newGroup=merged.find(group=>group.customerKeys?.length>1 && selectedCustomers.every(id=>group.id===id || group.customerKeys.some(key=>customerGroups.find(g=>g.id===id)?.customerKeys.includes(key))));if(newGroup)saveCustomerMergeRule(newGroup);setCustomerGroups(merged);setSelectedCustomers([]);setMergedCustomerName("")}}>Merge Selected Customers</button></div>
                   </div></div>

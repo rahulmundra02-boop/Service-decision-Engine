@@ -1584,9 +1584,18 @@ function parseExcelPaste(text) {
     checkInDate: headerIndex(headers,
       ["check-in date"], ["check-in date"]),
 
-    vin: headerIndex(headers,
-      ["vehicle identification number (vehicle identification number)", "vehicle identification number"],
-      ["vehicle identification number"]),
+    // Prefer the detailed DMS chassis/VIN header over a generic duplicate
+    // "Vehicle Identification Number" column if both exist in the export.
+    vin: (() => {
+      const normalized = headers.map(normalizeHeader);
+      const candidates = normalized.map((header, index) => ({header, index}))
+        .filter(x => x.header.startsWith("vehicle identification number"));
+      const detailed = candidates.find(x => x.header.includes("(") && x.header.length > "vehicle identification number".length);
+      if (detailed) return detailed.index;
+      return headerIndex(headers,
+        ["vehicle identification number (vehicle identification number)", "vehicle identification number"],
+        ["vehicle identification number"]);
+    })(),
 
     customerNumber: headerIndex(headers,
       ["customer number"], ["customer number"]),

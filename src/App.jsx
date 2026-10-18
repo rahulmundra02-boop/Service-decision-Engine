@@ -1588,9 +1588,15 @@ function parseExcelPaste(text) {
     // "Vehicle Identification Number" column if both exist in the export.
     vin: (() => {
       const normalized = headers.map(normalizeHeader);
-      const candidates = normalized.map((header, index) => ({header, index}))
+      const candidates = normalized.map((header, index) => ({header, index, original: String(headers[index] ?? "")}))
         .filter(x => x.header.startsWith("vehicle identification number"));
-      const detailed = candidates.find(x => x.header.includes("(") && x.header.length > "vehicle identification number".length);
+      // Check the ORIGINAL header for parentheses: normalizeHeader removes punctuation,
+      // so checking x.header for "(" can never reliably find the detailed DMS VIN column.
+      // Prefer the detailed "Vehicle Identification Number (...)" column over a generic duplicate.
+      const detailed = candidates.find(x =>
+        x.original.includes("(") &&
+        x.header.length > "vehicle identification number".length
+      );
       if (detailed) return detailed.index;
       return headerIndex(headers,
         ["vehicle identification number (vehicle identification number)", "vehicle identification number"],

@@ -2186,10 +2186,10 @@ function isCalculationEligibleLine(record, visit, vehicle, decision) {
   }
 
   if (text.includes("STEERING OIL") && !text.includes("FILTER")) {
-    return qty >= 1 && sameJob.some(r => String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase().includes("STEERING OIL FILTER"));
+    return qty >= 1 && visit.some(r => String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase().includes("STEERING OIL FILTER") && Number(r?.qty || 0) > 0);
   }
   if (text.includes("STEERING OIL FILTER")) {
-    return sameJob.some(r => {
+    return visit.some(r => {
       const t = String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase();
       return t.includes("STEERING OIL") && !t.includes("FILTER") && Number(r?.qty || 0) >= 1;
     });
@@ -2205,18 +2205,20 @@ function isCalculationEligibleLine(record, visit, vehicle, decision) {
 
   if (text.includes("AIR FILTER")) {
     if (text.includes("KIT")) return qty >= 1;
-    return sameDate.filter(r => {
+    const partNos = new Set(visit.filter(r => {
       const t = String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase();
-      return t.includes("AIR FILTER") && !t.includes("KIT");
-    }).reduce((sum, r) => sum + Number(r?.qty || 0), 0) >= 2;
+      return t.includes("AIR FILTER") && !t.includes("KIT") && Number(r?.qty || 0) > 0 && String(r?.partCode || "").trim();
+    }).map(r => normalizePartCode(r.partCode).toUpperCase()).filter(Boolean));
+    return partNos.size >= 2;
   }
 
   if (text.includes("FUEL FILTER")) {
     if (text.includes("KIT")) return qty >= 1;
-    return sameJob.filter(r => {
+    const partNos = new Set(visit.filter(r => {
       const t = String(r?.standardizedPart || r?.partDescription || r?.part || "").toUpperCase();
-      return t.includes("FUEL FILTER") && !t.includes("KIT");
-    }).reduce((sum, r) => sum + Number(r?.qty || 0), 0) >= 2;
+      return t.includes("FUEL FILTER") && !t.includes("KIT") && Number(r?.qty || 0) > 0 && String(r?.partCode || "").trim();
+    }).map(r => normalizePartCode(r.partCode).toUpperCase()).filter(Boolean));
+    return partNos.size >= 2;
   }
 
   if (text.includes("DEF FILTER")) {
@@ -2405,136 +2407,68 @@ function serviceBase(records, names, minQty = 0, requireOilFilter = false, vehic
   return null;
 }
 function latestFilter(records, filterName, kitName, vehicle = null) {
-  const sorted = [...records].sort((a, b) => (b.date || 0) - (a.date || 0));
-  for (const r of sorted) {
-    const p = String(r.standardizedPart || '').toUpperCase();
-    if (p === kitName.toUpperCase() || (p.includes(filterName) && p.includes('KIT'))) {
-      if ((r.qty || 0) >= 1) return { ...r, relevantReading: vehicle ? getRelevantReading(r, vehicle) : (r.reading || 0) };
-    }
-    if (p.includes(filterName) && !p.includes('KIT')) {
-      const key = formatDate(r.date);
-      const qty = records
-        .filter(x => formatDate(x.date) === key && String(x.standardizedPart || '').toUpperCase().includes(filterName))
-        .filter(x => !String(x.standardizedPart || '').toUpperCase().includes('KIT'))
-        .reduce((a, x) => a + (x.qty || 0), 0);
-      if (qty >= 2) return { ...r, relevantReading: vehicle ? getRelevantReading(r, vehicle) : (r.reading || 0) };
-    }
+  const upper = value => String(value || '').trim().toUpperCase();
+  const isKit = record => {
+    const p = upper(record?.standardizedPart);
+    return p === upper(kitName) || (p.includes(filterName.toUpperCase()) && p.includes('KIT'));
+  };
+  const usable = records.filter(r => r?.date && Number(r?.qty || 0) > 0);
+  const kits = usable.filter(isKit).sort((a,b) => b.date - a.date);
+  const individuals = usable.filter(r => {
+    const p = upper(r?.standardizedPart);
+    return p.includes(filterName.toUpperCase()) && !p.includes('KIT') && String(r?.partCode || '').trim();
+  });
+
+  // A repeated part number is the same physical filter identity, even when
+  // recorded on different dates or job cards. Keep its latest dated record.
+  const byPartNo = new Map();
+  for (const r of individuals) {
+    const partNo = upper(normalizePartCode(r?.partCode));
+    if (!partNo) continue;
+    const existing = byPartNo.get(partNo);
+    if (!existing || r.date > existing.date) byPartNo.set(partNo, r);
   }
-  return null;
+  const distinct = [...byPartNo.values()].sort((a,b) => b.date - a.date);
+  // Two different part numbers make a pair. Use the older of the latest
+  // record for each distinct part number as the service-decision base.
+  const pairBase = distinct.length >= 2
+    ? [...distinct].sort((a,b) => a.date - b.date)[0]
+    : null;
+  const kit = kits[0] || null;
+  let selected = pairBase;
+  if (kit && (!selected || kit.date >= selected.date)) selected = kit;
+  return selected ? { ...selected, relevantReading: vehicle ? getRelevantReading(selected, vehicle) : (selected.reading || 0) } : null;
 }
-
 function latestFuelFilter(records, vehicle = null) {
-  // Fuel Filter has two physical filters.
-  // Rule:
-  // 1) A Fuel Filter Kit qty >= 1 = complete replacement.
-  // 2) Individual Fuel Filter qty >= 2 within the SAME job card = complete pair.
-  // 3) If the two filters are recorded in SEPARATE job cards, use the OLDER
-  //    filter as the service base.
-  // 4) If only one individual filter record exists, use that record as the base.
-  // Same-file duplicate rows are NOT removed by this function.
-
-  const upper = (value) => String(value || '').trim().toUpperCase();
-  const isKit = (record) => {
-    const p = upper(record?.standardizedPart);
+  const upper = value => String(value || '').trim().toUpperCase();
+  const usable = records.filter(r => r?.date && Number(r?.qty || 0) > 0);
+  const kits = usable.filter(r => {
+    const p = upper(r?.standardizedPart);
     return p === 'FUEL FILTER KIT' || (p.includes('FUEL FILTER') && p.includes('KIT'));
-  };
-  const isIndividual = (record) => {
-    const p = upper(record?.standardizedPart);
-    return p.includes('FUEL FILTER') && !p.includes('KIT');
-  };
+  }).sort((a,b) => b.date - a.date);
+  const individuals = usable.filter(r => {
+    const p = upper(r?.standardizedPart);
+    return p.includes('FUEL FILTER') && !p.includes('KIT') && String(r?.partCode || '').trim();
+  });
 
-  const usable = records.filter(r =>
-    r?.date &&
-    Number(r?.qty || 0) > 0
-  );
-
-  // A kit and a same-job-card pair are both complete replacements. Select the
-  // latest of either type; an older kit must never override a newer pair.
-  const kits = usable
-    .filter(isKit)
-    .sort((a, b) => b.date - a.date);
-  const individual = usable.filter(isIndividual);
-
-  // Priority 2: two or more individual filters in the SAME job card.
-  const byJobCard = new Map();
-
-  for (const r of individual) {
-    const jc = upper(r.jobCard);
-
-    // Missing job card cannot be safely combined with another row.
-    if (!jc) continue;
-
-    if (!byJobCard.has(jc)) byJobCard.set(jc, []);
-    byJobCard.get(jc).push(r);
+  // Same part number remains one filter across all job cards and dates.
+  const byPartNo = new Map();
+  for (const r of individuals) {
+    const partNo = upper(normalizePartCode(r?.partCode));
+    if (!partNo) continue;
+    const existing = byPartNo.get(partNo);
+    if (!existing || r.date > existing.date) byPartNo.set(partNo, r);
   }
-
-  const completePairs = [...byJobCard.entries()]
-    .map(([jobCard, rows]) => ({
-      jobCard,
-      rows,
-      qty: rows.reduce((sum, r) => sum + Number(r.qty || 0), 0),
-      latestDate: Math.max(...rows.map(r => r.date?.getTime?.() || 0))
-    }))
-    .filter(group => group.qty >= 2)
-    .sort((a, b) => b.latestDate - a.latestDate);
-
-  const latestKit = kits[0] || null;
-  const latestPair = completePairs[0] || null;
-
-  if (latestKit || latestPair) {
-    const pairIsLatest = latestPair && (!latestKit || latestPair.latestDate > latestKit.date.getTime());
-    const r = pairIsLatest
-      ? [...latestPair.rows].sort((a, b) => b.date - a.date)[0]
-      : latestKit;
-
-    return {
-      ...r,
-      serviceQty: pairIsLatest ? latestPair.qty : Number(r.qty || 1),
-      relevantReading: vehicle
-        ? getRelevantReading(r, vehicle)
-        : (r.reading || 0)
-    };
-  }
-
-  if (!individual.length) return null;
-
-  // Priority 3: individual filters in separate job cards.
-  // The OLDER filter is deliberately used as the service base.
-  const separateJobRows = [...byJobCard.values()]
-    .flat()
-    .sort((a, b) => a.date - b.date);
-
-  if (separateJobRows.length) {
-    const older = separateJobRows[0];
-
-    return {
-      ...older,
-      serviceQty: Number(older.qty || 1),
-      relevantReading: vehicle
-        ? getRelevantReading(older, vehicle)
-        : (older.reading || 0)
-    };
-  }
-
-  // Priority 4: no job-card information available.
-  // Do not manufacture a pair; use the oldest individual filter record.
-  const noJobCardRows = individual
-    .filter(r => !upper(r.jobCard))
-    .sort((a, b) => a.date - b.date);
-
-  if (noJobCardRows.length) {
-    const older = noJobCardRows[0];
-
-    return {
-      ...older,
-      serviceQty: Number(older.qty || 1),
-      relevantReading: vehicle
-        ? getRelevantReading(older, vehicle)
-        : (older.reading || 0)
-    };
-  }
-
-  return null;
+  const distinct = [...byPartNo.values()];
+  // Pair requires two distinct part numbers; use the older of their latest
+  // recorded dates/readings as the service base.
+  const pairBase = distinct.length >= 2
+    ? [...distinct].sort((a,b) => a.date - b.date)[0]
+    : null;
+  const kit = kits[0] || null;
+  let selected = pairBase;
+  if (kit && (!selected || kit.date >= selected.date)) selected = kit;
+  return selected ? { ...selected, relevantReading: vehicle ? getRelevantReading(selected, vehicle) : (selected.reading || 0) } : null;
 }
 function normalizeDecisionBase(base, decisionBasis, vehicle) {
   if (!base || !decisionBasis || decisionBasis === "AUTO" || decisionBasis === "TIME_ONLY") return base;
@@ -2569,6 +2503,21 @@ function isBSVIApplicable(vehicle){
   // This acts as the fallback when the model text does not contain the emission norm.
   const sale = vehicle?.sale;
   return !!(sale && sale > new Date(2020, 2, 31));
+}
+function steeringOilServiceBase(records, vehicle = null) {
+  const dated = records.filter(r => r?.date && Number(r?.qty || 0) > 0);
+  const oil = dated
+    .filter(r => {
+      const p = String(r?.standardizedPart || '').toUpperCase();
+      return p.includes('STEERING OIL') && !p.includes('FILTER');
+    })
+    .sort((a,b) => b.date - a.date)[0] || null;
+  const filter = dated
+    .filter(r => String(r?.standardizedPart || '').toUpperCase().includes('STEERING OIL FILTER'))
+    .sort((a,b) => b.date - a.date)[0] || null;
+  if (!oil || !filter) return null;
+  const older = oil.date <= filter.date ? oil : filter;
+  return { ...older, relevantReading: vehicle ? getRelevantReading(older, vehicle) : (older.reading || 0) };
 }
 function decideAggregate(records, vehicle, running, key, analysisDate, decisionBasis = "AUTO"){
   // CNG models use CNG Filter instead of Fuel Filter.
@@ -2625,7 +2574,7 @@ function decideAggregate(records, vehicle, running, key, analysisDate, decisionB
     // Steering Oil is a valid replacement only when its dedicated filter is
     // recorded on the same job card. Entries from separate job cards must not
     // be paired together.
-    const base=serviceBase(records,['STEERING OIL'],1,true,vehicle,'STEERING OIL FILTER',true);
+    const base=steeringOilServiceBase(records, vehicle);
     return useHours ? dueByHours(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),4000,24,analysisDate,sale) : dueNormalWithSale(running.current,base,160000,24,analysisDate,sale,running.mode,vehicle);
   }
   if (key === 'clutchOil') {

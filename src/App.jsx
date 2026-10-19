@@ -2779,7 +2779,7 @@ function additionalServiceEligibility(records, vehicle, running, analysisDate, d
   // This tolerates prefixes/suffixes (e.g. NA2820/39, 5525N/39, 3525 Tipper)
   // without accidentally matching a code inside a longer number (e.g. 12820).
   // Keep existing codes and add the approved multi-axle model families.
-  const modelText=String(vehicle.model||'').toUpperCase().replace(/\\s+/g,' ').trim();
+  const modelText=String(vehicle.model||'').toUpperCase().replace(/\s+/g,' ').trim();
   const wheelModels=['2820','3120','3520','4220','4225','4525','4625','4825','4925','4828','3525','5525'];
   const wheelModelPattern=new RegExp('(?:^|[^0-9])(?:'+wheelModels.join('|')+')(?![0-9])');
   const isWheelModel=wheelModelPattern.test(modelText);

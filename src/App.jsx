@@ -2783,10 +2783,11 @@ function additionalServiceEligibility(records, vehicle, running, analysisDate, d
   const wheelModels=['2820','3120','3520','4220','4225','4525','4625','4825','4925','4828','3525'];
   const wheelModelPattern=new RegExp('(?:^|[^0-9])(?:'+wheelModels.join('|')+')(?![0-9])');
   // 5525 is variant-sensitive: allow only the confirmed /39 variant here.
-  // Do not broadly match 5525 or 5525N, because those names can represent
+  // Do not broadly match 5525 or 5525N, because other names can represent
   // different axle configurations; 4x2 tractor units must remain excluded.
   const is5525_39=/\b5525\s*\/\s*39\b/.test(modelText);
-  const isWheelModel=wheelModelPattern.test(modelText) || is5525_39;
+  const is5525N_39=/\b5525N\s*\/\s*39\b/.test(modelText);
+  const isWheelModel=wheelModelPattern.test(modelText) || is5525_39 || is5525N_39;
 
   if(isWheelModel && decisionBasis !== "TIME_ONLY"){
     const tip=decisionBasis === "HRS" ? true : decisionBasis === "KM" ? false : isTipperModel(vehicle.model);

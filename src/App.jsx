@@ -869,6 +869,15 @@ function customerNameFromRow(headers, cells, preferredIndex) {
 }
 
 function splitDelimitedLine(line, delimiter) {
+  // Excel worksheet data is converted to TAB-separated text from individual
+  // cell values. In TSV, double quotes are ordinary cell characters, not CSV
+  // field wrappers. Parsing them as CSV quotes can swallow a quote inside a
+  // part description (or a description that starts with a quote) and shift all
+  // following columns, making a valid chassis/VIN appear blank.
+  if (delimiter === "\t") {
+    return String(line ?? "").split("\t").map(value => value.trim());
+  }
+
   const cells = [];
   let current = "";
   let quoted = false;

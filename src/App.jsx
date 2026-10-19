@@ -2432,7 +2432,7 @@ function latestFilter(records, filterName, kitName, vehicle = null) {
   // Two different part numbers make a pair. Use the older of the latest
   // record for each distinct part number as the service-decision base.
   const pairBase = distinct.length >= 2
-    ? [...distinct].sort((a,b) => a.date - b.date)[0]
+    ? [...distinct].sort((a,b) => b.date - a.date)[1]
     : null;
   const kit = kits[0] || null;
   let selected = pairBase;
@@ -2463,7 +2463,7 @@ function latestFuelFilter(records, vehicle = null) {
   // Pair requires two distinct part numbers; use the older of their latest
   // recorded dates/readings as the service base.
   const pairBase = distinct.length >= 2
-    ? [...distinct].sort((a,b) => a.date - b.date)[0]
+    ? [...distinct].sort((a,b) => b.date - a.date)[1]
     : null;
   const kit = kits[0] || null;
   let selected = pairBase;

@@ -2780,7 +2780,7 @@ function additionalServiceEligibility(records, vehicle, running, analysisDate, d
   // without accidentally matching a code inside a longer number (e.g. 12820).
   // Keep existing codes and add the approved multi-axle model families.
   const modelText=String(vehicle.model||'').toUpperCase().replace(/\s+/g,' ').trim();
-  const wheelModels=['2820','3120','3520','4220','4225','4525','4625','4825','4925','4828','3525'];
+  const wheelModels=['2620','2820','2825','3120','3520','4120','4220','4225','4525','4625','4825','4925','4828','3525'];
   const wheelModelPattern=new RegExp('(?:^|[^0-9])(?:'+wheelModels.join('|')+')(?![0-9])');
   // 5525 is variant-sensitive: allow only the confirmed /39 variant here.
   // Do not broadly match 5525 or 5525N, because other names can represent

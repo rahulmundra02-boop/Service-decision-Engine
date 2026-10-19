@@ -2775,16 +2775,14 @@ function hasFreeServiceHistory(records, serviceName){
 function additionalServiceEligibility(records, vehicle, running, analysisDate, decisionBasis = "AUTO"){
   const services=[];
 
-  // Wheel Alignment: preserve the existing 4-digit model eligibility list.
-  // Tipper models are now included; the old non-tipper exclusion is removed.
-  const modelText=String(vehicle.model||'').toUpperCase().trim();
-  const wheelModels=['3520','4220','4225','4825','4925','4828','3525'];
-  const isWheelModel=wheelModels.some(code => {
-    for(let i=0;i<=modelText.length-4;i++){
-      if(/^\d{4}$/.test(modelText.slice(i,i+4)) && modelText.slice(i,i+4)===code) return true;
-    }
-    return false;
-  });
+  // Wheel Alignment eligibility: match approved model codes as complete numeric tokens.
+  // This tolerates prefixes/suffixes (e.g. NA2820/39, 5525N/39, 3525 Tipper)
+  // without accidentally matching a code inside a longer number (e.g. 12820).
+  // Keep existing codes and add the approved multi-axle model families.
+  const modelText=String(vehicle.model||'').toUpperCase().replace(/\\s+/g,' ').trim();
+  const wheelModels=['2820','3120','3520','4220','4225','4525','4625','4825','4925','4828','3525','5525'];
+  const wheelModelPattern=new RegExp('(?:^|[^0-9])(?:'+wheelModels.join('|')+')(?![0-9])');
+  const isWheelModel=wheelModelPattern.test(modelText);
 
   if(isWheelModel && decisionBasis !== "TIME_ONLY"){
     const tip=decisionBasis === "HRS" ? true : decisionBasis === "KM" ? false : isTipperModel(vehicle.model);

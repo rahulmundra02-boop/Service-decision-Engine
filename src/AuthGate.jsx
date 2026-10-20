@@ -1453,9 +1453,7 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading, onChang
       </div>
     </div>
     <div className="mobile-profile-account-actions">
-      {isAdmin && <button type="button" className="mobile-profile-action admin" onClick={onAdmin}>Admin Dashboard</button>}
-      <button type="button" className="mobile-profile-action" onClick={onChangePassword}>Change Password</button>
-      <button type="button" className="mobile-profile-action logout" onClick={onLogout}>Logout</button>
+      {/* Admin Dashboard, Change Password and Logout are available on the outer Profile page. */}
     </div>
     <div className="auth-modal-actions"><button className="auth-secondary" onClick={onClose}>Cancel</button><button className="auth-primary" onClick={onSave} disabled={loading}>Save Profile & Settings</button></div>
   </div></div>

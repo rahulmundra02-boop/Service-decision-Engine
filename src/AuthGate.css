@@ -595,3 +595,18 @@
 }
 
 .auth-account-help label{display:block;margin:10px 0 5px}.auth-account-help input{display:block;margin-bottom:7px}.auth-referral-panel{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 14px;background:#edf7f1;border-bottom:1px solid #bad9c5;color:#17452d;font-size:13px}.auth-referral-panel button{border:0;border-radius:5px;padding:6px 10px;background:#1f8f55;color:#fff;font-weight:700;cursor:pointer}.pending-request-dot{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:#f59e0b;color:#fff;font-size:11px;margin-left:6px}
+
+
+/* Account request status colors (Beta only) */
+.auth-request-status-result {
+  font-weight: 800 !important;
+}
+.auth-request-status-result.status-inactive {
+  color: #c62828 !important;
+}
+.auth-request-status-result.status-active {
+  color: #16803c !important;
+}
+.auth-request-status-result.status-pending {
+  color: #a66a00 !important;
+}

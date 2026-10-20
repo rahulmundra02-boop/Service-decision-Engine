@@ -839,7 +839,7 @@ export default function AuthGate({ children }) {
   return (
     <div className="app-auth-shell">
       <div className="auth-userbar" aria-hidden="true"></div>
-      {user && user.role !== "admin" && <div className="auth-referral-panel"><strong>Refer a Workshop</strong><span>Your referral code: <b>{referralStats.referralCode || "—"}</b></span><span>Successful referrals: <b>{referralStats.referralCount}</b></span><button type="button" onClick={()=>navigator.clipboard?.writeText(referralStats.referralCode)}>Copy Code</button></div>
+      {user && user.role !== "admin" && <div className="auth-referral-panel"><strong>Refer a Workshop</strong><span>Your referral code: <b>{referralStats.referralCode || "—"}</b></span><span>Successful referrals: <b>{referralStats.referralCount}</b></span><button type="button" onClick={()=>navigator.clipboard?.writeText(referralStats.referralCode)}>Copy Code</button></div>}
 
       {error && <div className="auth-inline-error">{error}</div>}
       {message && <div className="auth-inline-message">{message}</div>}

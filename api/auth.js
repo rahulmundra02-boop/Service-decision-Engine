@@ -117,6 +117,28 @@ async function ensureSchema(client) {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS account_requests (
+      id BIGSERIAL PRIMARY KEY,
+      person_name TEXT NOT NULL,
+      dealer_name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      mobile TEXT,
+      referral_code TEXT,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+      reviewed_by BIGINT REFERENCES app_users(id) ON DELETE SET NULL,
+      reviewed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_account_requests_status_created
+      ON account_requests(status, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS user_referrals (
+      id BIGSERIAL PRIMARY KEY,
+      referrer_user_id BIGINT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+      referred_user_id BIGINT NOT NULL UNIQUE REFERENCES app_users(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
     CREATE TABLE IF NOT EXISTS auth_sessions (
       id BIGSERIAL PRIMARY KEY,
       user_id BIGINT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
@@ -577,6 +599,18 @@ export default async function handler(req, res) {
       }
       await client.query("COMMIT");
       return res.json({ success:true, user:userPayload(user) });
+    }
+
+    if (action === "my-referrals") {
+      const currentUser = await getUserByToken(client, authToken(req));
+      if (!currentUser) { await client.query("ROLLBACK"); return res.status(401).json({success:false,error:"Session expired."}); }
+      const referrals = await client.query(
+        "SELECT COUNT(*)::int AS total FROM user_referrals WHERE referrer_user_id=$1",
+        [currentUser.id]
+      );
+      const code = String(currentUser.email || "").split("@")[0].toUpperCase();
+      await client.query("COMMIT");
+      return res.json({success:true,referralCode:code,referralCount:Number(referrals.rows[0]?.total || 0)});
     }
 
     if (action === "logout") {
@@ -1270,6 +1304,321 @@ export default async function handler(req, res) {
           );
       await client.query("COMMIT");
       return res.json({success:true,user:userPayload(updated.rows[0]),message:"Profile and preferences saved."});
+    }
+
+    if (action === "request-account") {
+      const personName = clean(body.personName);
+      const dealerName = clean(body.dealerName);
+      const email = normalizeEmail(body.email);
+      const mobile = normalizeMobile(body.mobile);
+      const referralCode = clean(body.referralCode).toUpperCase();
+      if (!personName || !dealerName || !email || !/^\S+@\S+\.\S+$/.test(email)) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({success:false,error:"Name, dealer name and a valid email are required."});
+      }
+      const existing = await client.query("SELECT id FROM app_users WHERE email=$1 OR ($2 <> '' AND mobile=$2)",[email,mobile]);
+      if (existing.rows[0]) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({success:false,error:"An account already exists with this email or mobile number."});
+      }
+      const duplicate = await client.query("SELECT id FROM account_requests WHERE lower(email)=lower($1) AND status='pending' LIMIT 1",[email]);
+      if (duplicate.rows[0]) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({success:false,error:"A request for this email is already pending."});
+      }
+      let referrerId = null;
+      if (referralCode) {
+        const ref = await client.query("SELECT id FROM app_users WHERE upper(regexp_replace(email,'@.*
+      const admin = await requireAdmin(client, req);
+      if (admin.error) {
+        await client.query("ROLLBACK");
+        return res.status(admin.status).json({success:false,error:admin.error});
+      }
+
+      const users = await client.query(
+        `SELECT id,person_name,dealer_name,email,mobile,role,status,created_at,last_login_at,last_activity_at
+           FROM app_users ORDER BY role DESC, created_at DESC`
+      );
+      await client.query("COMMIT");
+      return res.json({success:true,users:users.rows.map(userPayload)});
+    }
+
+    if (action === "admin-create-user") {
+      const admin = await requireAdmin(client, req);
+      if (admin.error) {
+        await client.query("ROLLBACK");
+        return res.status(admin.status).json({success:false,error:admin.error});
+      }
+
+      const user = await createOrUpdateUser(client, body);
+      await logActivity(client, admin.user.id, "Admin User Saved", { details: { targetUserId: user.id, targetEmail: user.email } });
+      await client.query("COMMIT");
+      return res.json({success:true,user:userPayload(user),message:"User account created/updated successfully."});
+    }
+
+    if (action === "admin-reset-password") {
+      const admin = await requireAdmin(client, req);
+      if (admin.error) {
+        await client.query("ROLLBACK");
+        return res.status(admin.status).json({success:false,error:admin.error});
+      }
+
+      const userId = Number(body.userId);
+      const newPassword = body.newPassword;
+      if (!Number.isInteger(userId) || !validPassword(newPassword)) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({success:false,error:"Valid user and password (minimum 8 characters) are required."});
+      }
+
+      const passwordHash = await hashPassword(newPassword);
+      const updated = await client.query(
+        "UPDATE app_users SET password_hash=$1,email_verified=TRUE,mobile_verified=TRUE WHERE id=$2 RETURNING *",
+        [passwordHash,userId]
+      );
+      if (!updated.rows[0]) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({success:false,error:"User not found."});
+      }
+
+      await client.query("DELETE FROM auth_sessions WHERE user_id=$1",[userId]);
+      await logActivity(client, admin.user.id, "Admin Password Reset", { details: { targetUserId: userId } });
+      await client.query("COMMIT");
+      return res.json({success:true,message:"Password reset successfully."});
+    }
+
+    if (action === "admin-set-status") {
+      const admin = await requireAdmin(client, req);
+      if (admin.error) {
+        await client.query("ROLLBACK");
+        return res.status(admin.status).json({success:false,error:admin.error});
+      }
+
+      const userId = Number(body.userId);
+      const status = body.status === "inactive" ? "inactive" : "active";
+      if (userId === Number(admin.user.id)) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({success:false,error:"You cannot deactivate your own admin account."});
+      }
+
+      // Manual reactivation must also reset the inactivity clock. Otherwise
+      // autoDeactivateInactiveUsers() runs on the next API request and immediately
+      // marks this account inactive again using its old last_activity_at value.
+      const updated = status === "active"
+        ? await client.query(
+            "UPDATE app_users SET status='active',last_activity_at=NOW() WHERE id=$1 RETURNING *",
+            [userId]
+          )
+        : await client.query(
+            "UPDATE app_users SET status='inactive' WHERE id=$1 RETURNING *",
+            [userId]
+          );
+      if (!updated.rows[0]) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({success:false,error:"User not found."});
+      }
+
+      if (status === "inactive") await client.query("DELETE FROM auth_sessions WHERE user_id=$1",[userId]);
+      await logActivity(client, admin.user.id, "Admin Status Changed", { details: { targetUserId: userId, status } });
+      await client.query("COMMIT");
+      return res.json({success:true,user:userPayload(updated.rows[0])});
+    }
+
+    if (action === "register" || action === "verify-registration" || action === "resend-registration" || action === "request-reset" || action === "reset-password") {
+      await client.query("ROLLBACK");
+      return res.status(410).json({
+        success:false,
+        error:"Self-service registration and OTP password recovery are disabled. Please contact the Service Decision administrator."
+      });
+    }
+
+    await client.query("ROLLBACK");
+    return res.status(400).json({success:false,error:"Unknown auth action."});
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    console.error("Auth Error:",error);
+    return res.status(500).json({success:false,error:error?.message || "Authentication service failed."});
+  } finally {
+    client.release();
+  }
+}
+,''))=$1 AND role <> 'admin' LIMIT 1",[referralCode]);
+        if (ref.rows[0]) referrerId = Number(ref.rows[0].id);
+      }
+      const inserted = await client.query(
+        "INSERT INTO account_requests(person_name,dealer_name,email,mobile,referral_code) VALUES($1,$2,$3,$4,$5) RETURNING id,created_at",
+        [personName,dealerName,email,mobile || null,referralCode || null]
+      );
+      await client.query("COMMIT");
+      return res.json({success:true,requestId:inserted.rows[0].id,createdAt:inserted.rows[0].created_at,message:"Account request submitted. Save your request ID to check its status."});
+    }
+
+    if (action === "check-account-request") {
+      const requestId = Number(body.requestId);
+      const email = normalizeEmail(body.email);
+      if (!Number.isInteger(requestId) || requestId < 1 || !email) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({success:false,error:"Request ID and the same email used in the request are required."});
+      }
+      const result = await client.query("SELECT id,status,created_at,reviewed_at FROM account_requests WHERE id=$1 AND lower(email)=lower($2) LIMIT 1",[requestId,email]);
+      await client.query("COMMIT");
+      if (!result.rows[0]) return res.status(404).json({success:false,error:"No request found with that ID and email."});
+      return res.json({success:true,request:result.rows[0]});
+    }
+
+    if (action === "admin-list-account-requests") {
+      const admin = await requireAdmin(client, req);
+      if (admin.error) { await client.query("ROLLBACK"); return res.status(admin.status).json({success:false,error:admin.error}); }
+      const requests = await client.query("SELECT id,person_name,dealer_name,email,mobile,referral_code,status,created_at,reviewed_at FROM account_requests ORDER BY CASE WHEN status='pending' THEN 0 ELSE 1 END,created_at DESC");
+      await client.query("COMMIT");
+      return res.json({success:true,requests:requests.rows});
+    }
+
+    if (action === "admin-review-account-request") {
+      const admin = await requireAdmin(client, req);
+      if (admin.error) { await client.query("ROLLBACK"); return res.status(admin.status).json({success:false,error:admin.error}); }
+      const requestId = Number(body.requestId);
+      const decision = body.decision === "approve" ? "approved" : body.decision === "reject" ? "rejected" : "";
+      const password = body.password;
+      if (!Number.isInteger(requestId) || !decision || (decision === "approved" && !validPassword(password))) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({success:false,error:"Choose approve/reject. Approval requires a password of at least 8 characters."});
+      }
+      const request = await client.query("SELECT * FROM account_requests WHERE id=$1 FOR UPDATE",[requestId]);
+      if (!request.rows[0]) { await client.query("ROLLBACK"); return res.status(404).json({success:false,error:"Account request not found."}); }
+      const r = request.rows[0];
+      if (r.status !== "pending") { await client.query("ROLLBACK"); return res.status(409).json({success:false,error:"This request has already been reviewed."}); }
+      if (decision === "approved") {
+        const dupe = await client.query("SELECT id FROM app_users WHERE lower(email)=lower($1) OR ($2 IS NOT NULL AND mobile=$2) LIMIT 1",[r.email,r.mobile]);
+        if (dupe.rows[0]) { await client.query("ROLLBACK"); return res.status(409).json({success:false,error:"A user already exists with this email/mobile. Review the user list first."}); }
+        const passwordHash = await hashPassword(password);
+        const created = await client.query(
+          "INSERT INTO app_users(person_name,dealer_name,email,mobile,password_hash,role,status,email_verified,mobile_verified) VALUES($1,$2,$3,$4,$5,'standard','active',TRUE,TRUE) RETURNING id",
+          [r.person_name,r.dealer_name,r.email,r.mobile,passwordHash]
+        );
+        if (r.referral_code) {
+          const ref = await client.query("SELECT id FROM app_users WHERE upper(regexp_replace(email,'@.*
+      const admin = await requireAdmin(client, req);
+      if (admin.error) {
+        await client.query("ROLLBACK");
+        return res.status(admin.status).json({success:false,error:admin.error});
+      }
+
+      const users = await client.query(
+        `SELECT id,person_name,dealer_name,email,mobile,role,status,created_at,last_login_at,last_activity_at
+           FROM app_users ORDER BY role DESC, created_at DESC`
+      );
+      await client.query("COMMIT");
+      return res.json({success:true,users:users.rows.map(userPayload)});
+    }
+
+    if (action === "admin-create-user") {
+      const admin = await requireAdmin(client, req);
+      if (admin.error) {
+        await client.query("ROLLBACK");
+        return res.status(admin.status).json({success:false,error:admin.error});
+      }
+
+      const user = await createOrUpdateUser(client, body);
+      await logActivity(client, admin.user.id, "Admin User Saved", { details: { targetUserId: user.id, targetEmail: user.email } });
+      await client.query("COMMIT");
+      return res.json({success:true,user:userPayload(user),message:"User account created/updated successfully."});
+    }
+
+    if (action === "admin-reset-password") {
+      const admin = await requireAdmin(client, req);
+      if (admin.error) {
+        await client.query("ROLLBACK");
+        return res.status(admin.status).json({success:false,error:admin.error});
+      }
+
+      const userId = Number(body.userId);
+      const newPassword = body.newPassword;
+      if (!Number.isInteger(userId) || !validPassword(newPassword)) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({success:false,error:"Valid user and password (minimum 8 characters) are required."});
+      }
+
+      const passwordHash = await hashPassword(newPassword);
+      const updated = await client.query(
+        "UPDATE app_users SET password_hash=$1,email_verified=TRUE,mobile_verified=TRUE WHERE id=$2 RETURNING *",
+        [passwordHash,userId]
+      );
+      if (!updated.rows[0]) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({success:false,error:"User not found."});
+      }
+
+      await client.query("DELETE FROM auth_sessions WHERE user_id=$1",[userId]);
+      await logActivity(client, admin.user.id, "Admin Password Reset", { details: { targetUserId: userId } });
+      await client.query("COMMIT");
+      return res.json({success:true,message:"Password reset successfully."});
+    }
+
+    if (action === "admin-set-status") {
+      const admin = await requireAdmin(client, req);
+      if (admin.error) {
+        await client.query("ROLLBACK");
+        return res.status(admin.status).json({success:false,error:admin.error});
+      }
+
+      const userId = Number(body.userId);
+      const status = body.status === "inactive" ? "inactive" : "active";
+      if (userId === Number(admin.user.id)) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({success:false,error:"You cannot deactivate your own admin account."});
+      }
+
+      // Manual reactivation must also reset the inactivity clock. Otherwise
+      // autoDeactivateInactiveUsers() runs on the next API request and immediately
+      // marks this account inactive again using its old last_activity_at value.
+      const updated = status === "active"
+        ? await client.query(
+            "UPDATE app_users SET status='active',last_activity_at=NOW() WHERE id=$1 RETURNING *",
+            [userId]
+          )
+        : await client.query(
+            "UPDATE app_users SET status='inactive' WHERE id=$1 RETURNING *",
+            [userId]
+          );
+      if (!updated.rows[0]) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({success:false,error:"User not found."});
+      }
+
+      if (status === "inactive") await client.query("DELETE FROM auth_sessions WHERE user_id=$1",[userId]);
+      await logActivity(client, admin.user.id, "Admin Status Changed", { details: { targetUserId: userId, status } });
+      await client.query("COMMIT");
+      return res.json({success:true,user:userPayload(updated.rows[0])});
+    }
+
+    if (action === "register" || action === "verify-registration" || action === "resend-registration" || action === "request-reset" || action === "reset-password") {
+      await client.query("ROLLBACK");
+      return res.status(410).json({
+        success:false,
+        error:"Self-service registration and OTP password recovery are disabled. Please contact the Service Decision administrator."
+      });
+    }
+
+    await client.query("ROLLBACK");
+    return res.status(400).json({success:false,error:"Unknown auth action."});
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    console.error("Auth Error:",error);
+    return res.status(500).json({success:false,error:error?.message || "Authentication service failed."});
+  } finally {
+    client.release();
+  }
+}
+,''))=$1 AND role <> 'admin' LIMIT 1",[r.referral_code.toUpperCase()]);
+          if (ref.rows[0] && Number(ref.rows[0].id) !== Number(created.rows[0].id)) {
+            await client.query("INSERT INTO user_referrals(referrer_user_id,referred_user_id) VALUES($1,$2) ON CONFLICT(referred_user_id) DO NOTHING",[ref.rows[0].id,created.rows[0].id]);
+          }
+        }
+      }
+      await client.query("UPDATE account_requests SET status=$1,reviewed_by=$2,reviewed_at=NOW() WHERE id=$3",[decision,admin.user.id,requestId]);
+      await logActivity(client,admin.user.id,decision === "approved" ? "Admin Account Approved" : "Admin Account Rejected",{details:{requestId,email:r.email}});
+      await client.query("COMMIT");
+      return res.json({success:true,message:decision === "approved" ? "Account approved and created." : "Account request rejected."});
     }
 
     if (action === "admin-list-users") {

@@ -1314,7 +1314,7 @@ export default async function handler(req, res) {
       const referralCode = clean(body.referralCode).toUpperCase();
       if (!personName || !dealerName || !email || !/^\S+@\S+\.\S+$/.test(email)) {
         await client.query("ROLLBACK");
-        return res.status(400).json({success:false,error:"Name, dealer name and a valid email are required."});
+        return res.status(400).json({success:false,error:"Name, dealer name, valid email and mobile number are required."});
       }
       const existing = await client.query("SELECT id FROM app_users WHERE email=$1 OR ($2 <> '' AND mobile=$2)",[email,mobile]);
       if (existing.rows[0]) {

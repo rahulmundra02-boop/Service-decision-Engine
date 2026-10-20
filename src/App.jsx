@@ -5456,6 +5456,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   const [registrationSearchBusy, setRegistrationSearchBusy] = useState(false);
   const [registrationSearchError, setRegistrationSearchError] = useState("");
   const [registrationSearchResult, setRegistrationSearchResult] = useState(null);
+  const [registrationHistoryMode, setRegistrationHistoryMode] = useState("schedule");
   const navigationPopRef = useRef(false);
   const [bulkResults, setBulkResults] = useState([]);
   const [bulkMeta, setBulkMeta] = useState(null);
@@ -9421,8 +9422,24 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                       </div>
                     </div>
                     <div className="customer-output-panel" style={{marginTop:12}}>
-                      <div className="section-title">Service History from Database</div>
-                      {rows.length ? <div className="history-wrap"><table className="history-table"><thead><tr><th>Job Card No.</th><th>Job Date</th><th>KM / Reading</th><th>Part Code</th><th>Service / Part Description</th><th>Qty</th></tr></thead><tbody>{rows.map((row,index) => <tr key={row.service_history_id || row.job_card_id || ((row.job_card_no || "row") + "-" + index)}><td>{row.job_card_no || ""}</td><td>{row.job_date ? formatDate(row.job_date) : ""}</td><td>{[row.cumulative_reading,row.cumulative_unit].filter(Boolean).join(" ")}</td><td>{row.part_code || ""}</td><td>{row.standardized_part || row.part_description || ""}</td><td>{row.quantity ?? ""}</td></tr>)}</tbody></table></div> : <div className="small-note">Vehicle is available in the database, but no service history rows were found.</div>}
+                      <div className="section-title">Customer Output — Service To Be Completed</div>
+                      <div className="due-box"><div className="small-note">Registration Search displays saved database history. To calculate services due at the current reading, use Single Vehicle with the DMS Excel file and Analyze; this lookup does not independently calculate service due.</div></div>
+                    </div>
+                    <div className="customer-output-panel" style={{marginTop:12}}>
+                      <div className="section-title registration-history-heading">
+                        <span>Service Summary — Complete Vehicle History</span>
+                        <div className="single-history-toggle no-print" role="group" aria-label="Service history view">
+                          <label><input type="radio" name="registration-history-view" value="schedule" checked={registrationHistoryMode === "schedule"} onChange={() => setRegistrationHistoryMode("schedule")} />Only Schedule Service History</label>
+                          <label><input type="radio" name="registration-history-view" value="full" checked={registrationHistoryMode === "full"} onChange={() => setRegistrationHistoryMode("full")} />Full History</label>
+                        </div>
+                      </div>
+                      {(() => {
+                        const visibleRows = registrationHistoryMode === "full" ? rows : rows.filter(row => {
+                          const code = normalizePartCode(row.part_code || "");
+                          return !!row.standardized_part || !!PART_STANDARDIZATION[code];
+                        });
+                        return visibleRows.length ? <div className="history-wrap single-history-wrap registration-history-table-wrap"><table className="history-table single-service-summary"><thead><tr><th>Job Date</th><th>Job Card No.</th><th>KM / Reading</th><th>Part Code</th><th>Service / Part Description</th><th>Qty</th></tr></thead><tbody>{visibleRows.map((row,index) => <tr key={row.service_history_id || row.job_card_id || ((row.job_card_no || "row") + "-" + index)}><td>{row.job_date ? formatDate(row.job_date) : ""}</td><td>{row.job_card_no || ""}</td><td>{[row.cumulative_reading,row.cumulative_unit].filter(Boolean).join(" ")}</td><td>{row.part_code || ""}</td><td>{row.standardized_part || row.part_description || ""}</td><td>{row.quantity ?? ""}</td></tr>)}</tbody></table></div> : <div className="small-note" style={{padding:12}}>No matching history rows found for this vehicle.</div>;
+                      })()}
                     </div>
                   </div>;
                 })()}

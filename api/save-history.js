@@ -457,7 +457,7 @@ export default async function handler(req, res) {
           "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
           "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
           "jc.secondary_cumulative_reading, jc.secondary_cumulative_unit, jc.driver_phone, jc.service_contact_person_phone, " +
-          "sh.item_category, sh.service_type, sh.line_of_business, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
+          "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
           "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
           "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
           "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +
@@ -605,7 +605,7 @@ export default async function handler(req, res) {
           "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
           "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
           "jc.secondary_cumulative_reading, jc.secondary_cumulative_unit, jc.driver_phone, jc.service_contact_person_phone, " +
-          "sh.item_category, sh.service_type, sh.line_of_business, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
+          "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
           "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
           "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
           "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +
@@ -681,7 +681,7 @@ export default async function handler(req, res) {
           "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, " +
           "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
           "jc.secondary_cumulative_reading, jc.secondary_cumulative_unit, jc.driver_phone, jc.service_contact_person_phone, " +
-          "sh.item_category, sh.service_type, sh.line_of_business, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
+          "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
           "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
           "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
           "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +
@@ -852,7 +852,7 @@ export default async function handler(req, res) {
           "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
           "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
           "jc.secondary_cumulative_reading, jc.secondary_cumulative_unit, jc.driver_phone, jc.service_contact_person_phone, " +
-          "sh.item_category, sh.service_type, sh.line_of_business, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
+          "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
           "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
           "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
           "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +
@@ -987,7 +987,7 @@ export default async function handler(req, res) {
           "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
           "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
           "jc.secondary_cumulative_reading, jc.secondary_cumulative_unit, jc.driver_phone, jc.service_contact_person_phone, " +
-          "sh.item_category, sh.service_type, sh.line_of_business, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
+          "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
           "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
           "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
           "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +

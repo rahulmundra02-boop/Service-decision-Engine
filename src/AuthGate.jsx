@@ -62,6 +62,7 @@ export default function AuthGate({ children }) {
   const [showPassword, setShowPassword] = useState(false);
   const [passwordForm, setPasswordForm] = useState({ currentPassword:"", newPassword:"", confirmPassword:"" });
   const [adminOpen, setAdminOpen] = useState(false);
+  const adminOpenedFromProfileRef = useRef(false);
   const [adminUsers, setAdminUsers] = useState([]);
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminForm, setAdminForm] = useState({ userId:null, personName:"", dealerName:"", email:"", mobile:"", password:"" });
@@ -908,7 +909,7 @@ export default function AuthGate({ children }) {
           onChangePassword={()=>{ setProfileOpen(false); setShowPassword(true); setError(""); setMessage(""); }}
           onLogout={logout}
           isAdmin={user.role === "admin"}
-          onAdmin={()=>{ try { window.history.pushState({ ...(window.history.state || {}), serviceDecisionOverlay: "admin" }, "", window.location.href); } catch {} setAdminOpen(true); setError(""); setMessage(""); }}
+          onAdmin={()=>{ adminOpenedFromProfileRef.current = true; try { window.history.pushState({ ...(window.history.state || {}), serviceDecisionOverlay: "admin" }, "", window.location.href); } catch {} setAdminOpen(true); setError(""); setMessage(""); }}
         />
       )}
 
@@ -961,7 +962,7 @@ export default function AuthGate({ children }) {
           onRefresh={loadAdminUsers}
           onReset={resetUserPassword}
           onToggleStatus={toggleUserStatus}
-          onBack={()=>{setAdminOpen(false);setProfileOpen(true);setError("");setMessage("");}}
+          onBack={()=>{setAdminOpen(false);setProfileOpen(adminOpenedFromProfileRef.current);setError("");setMessage("");}}
           analytics={adminAnalytics}
           analyticsUserId={analyticsUserId}
           analyticsRange={analyticsRange}
@@ -987,7 +988,7 @@ export default function AuthGate({ children }) {
       ) : cloneElement(children, {
         user,
         onOpenProfile: openProfile,
-        onOpenAdmin: () => { try { window.history.pushState({ ...(window.history.state || {}), serviceDecisionOverlay: "admin" }, "", window.location.href); } catch {} setAdminOpen(true); setError(""); setMessage(""); },
+        onOpenAdmin: () => { adminOpenedFromProfileRef.current = false; try { window.history.pushState({ ...(window.history.state || {}), serviceDecisionOverlay: "admin" }, "", window.location.href); } catch {} setAdminOpen(true); setError(""); setMessage(""); },
         onChangePassword: () => { setShowPassword(true); setError(""); setMessage(""); },
         onLogout: logout,
       })}

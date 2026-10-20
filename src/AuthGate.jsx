@@ -618,13 +618,15 @@ export default function AuthGate({ children }) {
   };
 
   useEffect(() => {
-    if (user?.role === "admin" && adminOpen) {
-      loadAdminUsers();
-      loadAccountRequests();
-      loadJobCardCacheSettings();
-      loadEmergencyDbUploadCutoff();
-      loadCampaignMeta();
-      loadPriceMasterMeta();
+    if (user?.role === "admin") {
+      void loadAccountRequests();
+      if (adminOpen) {
+        loadAdminUsers();
+        loadJobCardCacheSettings();
+        loadEmergencyDbUploadCutoff();
+        loadCampaignMeta();
+        loadPriceMasterMeta();
+      }
     }
   }, [user?.role, adminOpen, analyticsIncludeAdmins]);
 
@@ -939,12 +941,13 @@ export default function AuthGate({ children }) {
               <span>More</span>
             </button>
           </div>
-          <button type="button" className="mobile-bottom-nav-item profile" onClick={() => {
+          <button type="button" className="mobile-bottom-nav-item profile profile-button-with-dot" onClick={() => {
             setMobileMoreOpen(false);
             window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:"profile"}}));
           }}>
             <span className="mobile-bottom-nav-icon">●</span>
             <span>Profile</span>
+            {user?.role === "admin" && accountRequests.some(r=>r.status === "pending") && <span className="profile-alert-dot" aria-label="Pending account requests" title="Pending account requests" />}
           </button>
         </div>
       )}

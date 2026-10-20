@@ -7185,7 +7185,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       const records = (Array.isArray(data.rows) ? data.rows : []).map((row, index) => ({
         rowNumber: index + 1, jobCard: String(row.job_card_no || ""), date: parseDate(row.job_date), reading: 0, unit: "",
         cumulative: parseNumber(row.cumulative_reading), cumulativeUnit: String(row.cumulative_unit || ""),
-        secondaryReading: 0, secondaryUnit: "", secondaryCumulativeReading: parseNumber(row.secondary_cumulative_reading), secondaryCumulativeUnit: String(row.secondary_cumulative_unit || ""),
+        secondaryReading: parseNumber(row.secondary_cumulative_reading), secondaryUnit: String(row.secondary_cumulative_unit || ""), secondaryCumulativeReading: parseNumber(row.secondary_cumulative_reading), secondaryCumulativeUnit: String(row.secondary_cumulative_unit || ""), plantName: String(row.plant_name || ""), plantCode: String(row.plant_code || ""),
         serviceType: String(row.service_type || ""), itemCategory: String(row.item_category || ""), partCode: String(row.part_code || ""),
         part: String(row.part_description || ""), standardizedPart: String(row.standardized_part || standardizePart(row.part_code || "", row.part_description || "")),
         qty: parseNumber(row.quantity), netValue: null, inward: null, reg: String(row.registration || data.vehicle.registration || registration),

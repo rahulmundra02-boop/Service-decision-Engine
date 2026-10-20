@@ -1272,6 +1272,21 @@ export default async function handler(req, res) {
       return res.json({success:true,user:userPayload(updated.rows[0]),message:"Profile and preferences saved."});
     }
 
+    if (action === "check-account-request") {
+      const mobile = normalizeMobile(body.mobile);
+      if (!mobile || mobile.replace(/\D/g, "").length < 10) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({success:false,error:"Enter the registered mobile number."});
+      }
+      const found = await client.query(
+        "SELECT status,created_at FROM app_users WHERE regexp_replace(COALESCE(mobile,''),'[^0-9]','','g')=regexp_replace($1,'[^0-9]','','g') ORDER BY created_at DESC LIMIT 1",
+        [mobile]
+      );
+      await client.query("COMMIT");
+      if (!found.rows[0]) return res.status(404).json({success:false,error:"No registered account found for this mobile number."});
+      return res.json({success:true,request:{status:found.rows[0].status === "active" ? "approved" : found.rows[0].status,alreadyRegistered:true}});
+    }
+
     if (action === "admin-list-users") {
       const admin = await requireAdmin(client, req);
       if (admin.error) {

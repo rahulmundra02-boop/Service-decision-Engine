@@ -1453,15 +1453,17 @@ export default async function handler(req, res) {
     }
 
     if (action === "check-account-request") {
-      const requestId = Number(body.requestId);
-      const email = normalizeEmail(body.email);
-      if (!Number.isInteger(requestId) || requestId < 1 || !email) {
+      const mobile = normalizeMobile(body.mobile);
+      if (!mobile || mobile.replace(/\D/g, "").length < 10) {
         await client.query("ROLLBACK");
-        return res.status(400).json({success:false,error:"Request ID and the same email used in the request are required."});
+        return res.status(400).json({success:false,error:"Enter the mobile number used in the account request."});
       }
-      const result = await client.query("SELECT id,status,created_at,reviewed_at FROM account_requests WHERE id=$1 AND lower(email)=lower($2) LIMIT 1",[requestId,email]);
+      const result = await client.query(
+        "SELECT id,status,created_at,reviewed_at FROM account_requests WHERE regexp_replace(COALESCE(mobile,''),'[^0-9]','','g')=regexp_replace($1,'[^0-9]','','g') ORDER BY created_at DESC LIMIT 1",
+        [mobile]
+      );
       await client.query("COMMIT");
-      if (!result.rows[0]) return res.status(404).json({success:false,error:"No request found with that ID and email."});
+      if (!result.rows[0]) return res.status(404).json({success:false,error:"No account request found for this mobile number."});
       return res.json({success:true,request:result.rows[0]});
     }
 

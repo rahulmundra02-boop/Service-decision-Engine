@@ -952,6 +952,9 @@ export default function AuthGate({ children }) {
       {adminOpen && user.role === "admin" ? (
         <AdminPanel
           users={adminUsers}
+          accountRequests={accountRequests}
+          onReviewAccountRequest={reviewAccountRequest}
+          onRefreshAccountRequests={loadAccountRequests}
           form={adminForm}
           setForm={setAdminForm}
           loading={adminLoading || loading}
@@ -1460,7 +1463,7 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading, onChang
   {signatureOpen && <SignaturePad initialValue={form.signature} onUse={v=>{setForm({...form,signature:v});setSignatureOpen(false);}} onClose={()=>setSignatureOpen(false)}/>}
   </div>;
 }
-function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel, priceMasterMeta, priceMasterUploadBusy, priceMasterUploadMessage, priceMasterUploadError, onUploadPriceMasterExcel }) {
+function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRefreshAccountRequests, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel, priceMasterMeta, priceMasterUploadBusy, priceMasterUploadMessage, priceMasterUploadError, onUploadPriceMasterExcel }) {
   const analyticsDetailRef = useRef(null);
   const [view, setView] = useState("overview");
 
@@ -1849,7 +1852,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, form,
               <div className="admin-users-card">
                 <div className="admin-users-header">
                   <h3>Pending Account Requests {accountRequests.filter(r=>r.status==="pending").length > 0 && <span className="pending-request-dot" title="Pending requests">{accountRequests.filter(r=>r.status==="pending").length}</span>}</h3>
-                  <button className="auth-secondary admin-refresh" onClick={()=>void onRefresh()} disabled={loading}>Refresh</button>
+                  <button className="auth-secondary admin-refresh" onClick={()=>void onRefreshAccountRequests()} disabled={loading}>Refresh</button>
                 </div>
                 <div className="admin-table-wrap">
                   <table className="admin-table">

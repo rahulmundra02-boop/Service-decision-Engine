@@ -806,7 +806,7 @@ export default function AuthGate({ children }) {
                 <label>Your Name</label><input value={requestForm.personName} onChange={e=>setRequestForm(v=>({...v,personName:e.target.value}))} />
                 <label>Dealer / Workshop Name</label><input value={requestForm.dealerName} onChange={e=>setRequestForm(v=>({...v,dealerName:e.target.value}))} />
                 <label>Email</label><input type="email" value={requestForm.email} onChange={e=>setRequestForm(v=>({...v,email:e.target.value}))} />
-                <label>Mobile (optional)</label><input value={requestForm.mobile} onChange={e=>setRequestForm(v=>({...v,mobile:e.target.value}))} />
+                <label>Mobile Number</label><input type="tel" inputMode="tel" value={requestForm.mobile} onChange={e=>setRequestForm(v=>({...v,mobile:e.target.value}))} />
                 <label>Referral Code (optional)</label><input value={requestForm.referralCode} onChange={e=>setRequestForm(v=>({...v,referralCode:e.target.value.toUpperCase()}))} />
                 <button className="auth-primary" onClick={submitAccountRequest} disabled={loading}>Submit Account Request</button>
                 <div className="auth-help-title" style={{marginTop:18}}>Check Request Status</div>

@@ -9142,7 +9142,44 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         .excel-upload-spinner { width: 42px; height: 42px; margin: 0 auto 14px; border: 4px solid #d9e2f3; border-top-color: #4472c4; border-radius: 50%; animation: excelUploadSpin .8s linear infinite; }
         .excel-upload-processing-title { font-size: 18px; font-weight: 800; color: #1f1f1f; }
         .excel-upload-processing-text { margin-top: 6px; font-size: 13px; color: #666; line-height: 1.4; }
-        @keyframes excelUploadSpin { to { transform: rotate(360deg); } }      `}</style>
+        @keyframes excelUploadSpin { to { transform: rotate(360deg); } }      `}
+        /* Desktop left navigation: presentation only */
+        @media (min-width: 901px) {
+          .excel-window { position: relative; overflow: visible; }
+          .excel-tabs {
+            position: absolute; top: 34px; left: 0; bottom: 0; width: 224px; height: auto;
+            box-sizing: border-box; display: flex; flex-direction: column; align-items: stretch;
+            justify-content: flex-start; gap: 6px; padding: 18px 12px; overflow: visible;
+            border: 0; border-right: 1px solid #244767; background: #10243b; z-index: 20;
+          }
+          .excel-tab {
+            display: flex; align-items: center; gap: 12px; width: 100%; min-height: 42px;
+            box-sizing: border-box; padding: 10px 12px; border: 1px solid transparent;
+            border-radius: 8px; color: #e5eef8; font-size: 13px; font-weight: 700;
+            white-space: normal; line-height: 1.25; cursor: pointer;
+          }
+          .excel-tab::before {
+            display: inline-flex; align-items: center; justify-content: center; flex: 0 0 22px;
+            width: 22px; height: 22px; border-radius: 6px; background: rgba(255,255,255,.09);
+            color: #a3e635; font-size: 15px; font-weight: 900;
+          }
+          .excel-tab:nth-child(1)::before { content: "⌂"; }
+          .excel-tab:nth-child(2)::before { content: "▣"; }
+          .excel-tab:nth-child(3)::before { content: "▤"; }
+          .excel-tab:nth-child(4)::before { content: "₹"; }
+          .excel-tab:nth-child(5)::before { content: "◆"; }
+          .excel-tab:nth-child(6)::before { content: "●"; }
+          .excel-tab:hover { background: #1b3855; border-color: #315779; color: #fff; }
+          .excel-tab.active {
+            background: #a3e635; border-color: #a3e635; color: #10243b;
+            box-shadow: 0 3px 10px rgba(0,0,0,.16);
+          }
+          .excel-tab.active::before { background: #10243b; color: #a3e635; }
+          .excel-toolbar { margin-left: 224px; }
+          .excel-sheet { margin-left: 224px; }
+        }
+
+      </style>
 
 
 

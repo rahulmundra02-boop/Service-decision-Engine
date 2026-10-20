@@ -349,7 +349,7 @@ export default async function handler(req, res) {
           "WITH filtered AS (" +
           "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
           "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
-          "jc.driver_phone, jc.service_contact_person_phone, " +
+          "jc.secondary_cumulative_reading, jc.secondary_cumulative_unit, jc.driver_phone, jc.service_contact_person_phone, " +
           "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
           "sh.repair_line_item_type, sh.complaint_code, sh.repair_type, sh.id AS service_history_id, jc.id AS job_card_id, " +
           "UPPER(REPLACE(TRIM(COALESCE(sh.part_code,'')), ' ', '')) AS normalized_code " +
@@ -456,7 +456,7 @@ export default async function handler(req, res) {
         const modelResult = await client.query(
           "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
           "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
-          "jc.driver_phone, jc.service_contact_person_phone, " +
+          "jc.secondary_cumulative_reading, jc.secondary_cumulative_unit, jc.driver_phone, jc.service_contact_person_phone, " +
           "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
           "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
           "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
@@ -604,7 +604,7 @@ export default async function handler(req, res) {
         const historyResult = await client.query(
           "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
           "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
-          "jc.driver_phone, jc.service_contact_person_phone, " +
+          "jc.secondary_cumulative_reading, jc.secondary_cumulative_unit, jc.driver_phone, jc.service_contact_person_phone, " +
           "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
           "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
           "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
@@ -680,7 +680,7 @@ export default async function handler(req, res) {
         const modelResult = await client.query(
           "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, " +
           "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
-          "jc.driver_phone, jc.service_contact_person_phone, " +
+          "jc.secondary_cumulative_reading, jc.secondary_cumulative_unit, jc.driver_phone, jc.service_contact_person_phone, " +
           "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
           "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
           "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
@@ -851,7 +851,7 @@ export default async function handler(req, res) {
         const modelResult = await client.query(
           "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
           "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
-          "jc.driver_phone, jc.service_contact_person_phone, " +
+          "jc.secondary_cumulative_reading, jc.secondary_cumulative_unit, jc.driver_phone, jc.service_contact_person_phone, " +
           "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
           "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
           "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
@@ -986,7 +986,7 @@ export default async function handler(req, res) {
         const modelResult = await client.query(
           "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
           "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
-          "jc.driver_phone, jc.service_contact_person_phone, " +
+          "jc.secondary_cumulative_reading, jc.secondary_cumulative_unit, jc.driver_phone, jc.service_contact_person_phone, " +
           "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
           "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
           "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +

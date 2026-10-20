@@ -9142,7 +9142,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         .excel-upload-spinner { width: 42px; height: 42px; margin: 0 auto 14px; border: 4px solid #d9e2f3; border-top-color: #4472c4; border-radius: 50%; animation: excelUploadSpin .8s linear infinite; }
         .excel-upload-processing-title { font-size: 18px; font-weight: 800; color: #1f1f1f; }
         .excel-upload-processing-text { margin-top: 6px; font-size: 13px; color: #666; line-height: 1.4; }
-        @keyframes excelUploadSpin { to { transform: rotate(360deg); } }      `}
+        @keyframes excelUploadSpin { to { transform: rotate(360deg); } }
         /* Desktop left navigation: presentation only */
         @media (min-width: 901px) {
           .excel-window { position: relative; overflow: visible; }
@@ -9178,7 +9178,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
           .excel-toolbar { margin-left: 224px; }
           .excel-sheet { margin-left: 224px; }
         }
-
+      `}
       </style>
 
 

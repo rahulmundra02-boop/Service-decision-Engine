@@ -9416,7 +9416,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
             ) : mode === "registration-search" ? (
               <section className="registration-search-view">
                 <div className="sheet-heading">VEHICLE SERVICE HISTORY BY REGISTRATION</div>
-                <div className="registration-search-form">
+                {!registrationSearchResult && (<div className="registration-search-form">
                   <label htmlFor="registration-search-input">Vehicle Registration Number</label>
                   <div className="registration-search-row">
                     <input id="registration-search-input" className="excel-input" value={registrationSearchInput} onChange={e => setRegistrationSearchInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter") void searchVehicleByRegistration(); }} placeholder="e.g. GJ12CV0462" autoComplete="off" />
@@ -9424,7 +9424,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                   </div>
                   <div className="registration-search-warning">Only vehicles available in the database can be displayed.</div>
                   {registrationSearchError && <div className="registration-search-error" role="alert">{registrationSearchError}</div>}
-                </div>
+                </div>)}
                 {registrationSearchResult && (() => {
                   const vehicle = registrationSearchResult.vehicle || {};
                   const rows = Array.isArray(registrationSearchResult.rows) ? registrationSearchResult.rows : [];

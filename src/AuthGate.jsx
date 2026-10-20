@@ -962,7 +962,7 @@ export default function AuthGate({ children }) {
           onRefresh={loadAdminUsers}
           onReset={resetUserPassword}
           onToggleStatus={toggleUserStatus}
-          onBack={()=>{setAdminOpen(false);setProfileOpen(adminOpenedFromProfileRef.current);setError("");setMessage("");}}
+          onBack={()=>{setAdminOpen(false);setProfileOpen(false);adminOpenedFromProfileRef.current=false;setError("");setMessage("");}}
           analytics={adminAnalytics}
           analyticsUserId={analyticsUserId}
           analyticsRange={analyticsRange}

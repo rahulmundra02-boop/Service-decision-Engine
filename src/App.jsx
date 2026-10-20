@@ -5528,6 +5528,9 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
 
   useEffect(() => {
     const handlePopState = (event) => {
+      // AuthGate owns profile/admin overlay history. Do not reset the underlying
+      // application mode when Back only moves between those overlays.
+      if (event?.state?.serviceDecisionOverlay) return;
       navigationPopRef.current = true;
       const previousMode = event?.state?.serviceDecisionMode || "home";
       setEstimateOpen(false);

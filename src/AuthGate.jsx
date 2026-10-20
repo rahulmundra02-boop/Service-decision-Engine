@@ -886,7 +886,7 @@ export default function AuthGate({ children }) {
           onChangePassword={()=>{ setProfileOpen(false); setShowPassword(true); setError(""); setMessage(""); }}
           onLogout={logout}
           isAdmin={user.role === "admin"}
-          onAdmin={()=>{ setProfileOpen(false); setAdminOpen(true); setError(""); setMessage(""); }}
+          onAdmin={()=>{ setAdminOpen(true); setError(""); setMessage(""); }}
         />
       )}
 
@@ -939,7 +939,7 @@ export default function AuthGate({ children }) {
           onRefresh={loadAdminUsers}
           onReset={resetUserPassword}
           onToggleStatus={toggleUserStatus}
-          onBack={()=>{setAdminOpen(false);setError("");setMessage("");}}
+          onBack={()=>{setAdminOpen(false);setProfileOpen(true);setError("");setMessage("");}}
           analytics={adminAnalytics}
           analyticsUserId={analyticsUserId}
           analyticsRange={analyticsRange}

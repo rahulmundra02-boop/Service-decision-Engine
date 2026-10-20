@@ -680,7 +680,29 @@ export default function AuthGate({ children }) {
     setMessage("Profile and dashboard preferences saved.");
   });
 
+  useEffect(() => {
+    const handleOverlayPopState = (event) => {
+      const overlay = event?.state?.serviceDecisionOverlay || "";
+      if (overlay === "admin") {
+        setAdminOpen(true);
+        setProfileOpen(true);
+        setShowPassword(false);
+      } else if (overlay === "profile") {
+        setAdminOpen(false);
+        setProfileOpen(true);
+        setShowPassword(false);
+      } else {
+        setAdminOpen(false);
+        setProfileOpen(false);
+        setShowPassword(false);
+      }
+    };
+    window.addEventListener("popstate", handleOverlayPopState);
+    return () => window.removeEventListener("popstate", handleOverlayPopState);
+  }, []);
+
   const openProfile = () => {
+    try { window.history.pushState({ ...(window.history.state || {}), serviceDecisionOverlay: "profile" }, "", window.location.href); } catch {}
     const p = user?.preferences || {};
     setProfileForm({
       personName:user?.personName || "",
@@ -886,7 +908,7 @@ export default function AuthGate({ children }) {
           onChangePassword={()=>{ setProfileOpen(false); setShowPassword(true); setError(""); setMessage(""); }}
           onLogout={logout}
           isAdmin={user.role === "admin"}
-          onAdmin={()=>{ setAdminOpen(true); setError(""); setMessage(""); }}
+          onAdmin={()=>{ try { window.history.pushState({ ...(window.history.state || {}), serviceDecisionOverlay: "admin" }, "", window.location.href); } catch {} setAdminOpen(true); setError(""); setMessage(""); }}
         />
       )}
 
@@ -965,7 +987,7 @@ export default function AuthGate({ children }) {
       ) : cloneElement(children, {
         user,
         onOpenProfile: openProfile,
-        onOpenAdmin: () => { setAdminOpen(true); setError(""); setMessage(""); },
+        onOpenAdmin: () => { try { window.history.pushState({ ...(window.history.state || {}), serviceDecisionOverlay: "admin" }, "", window.location.href); } catch {} setAdminOpen(true); setError(""); setMessage(""); },
         onChangePassword: () => { setShowPassword(true); setError(""); setMessage(""); },
         onLogout: logout,
       })}

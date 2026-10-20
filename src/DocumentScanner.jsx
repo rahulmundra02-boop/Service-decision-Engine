@@ -39,12 +39,11 @@ function autoCorners(image){
       while(head<tail){
         const p=queue[head++],x=p%sw,y=(p/sw)|0;count++;
         if(x<minX)minX=x;if(x>maxX)maxX=x;if(y<minY)minY=y;if(y>maxY)maxY=y;
-        const neighbours=[p-1,p+1,p-sw,p+sw];
-        for(const n of neighbours){
-          if(n<0||n>=total||visited[n]||!mask[n])continue;
-          const nx=n%sw,ny=(n/sw)|0;if(Math.abs(nx-x)+Math.abs(ny-y)!==1)continue;
-          visited[n]=1;queue[tail++]=n;
-        }
+        let n;
+        if(x>0){n=p-1;if(!visited[n]&&mask[n]){visited[n]=1;queue[tail++]=n;}}
+        if(x+1<sw){n=p+1;if(!visited[n]&&mask[n]){visited[n]=1;queue[tail++]=n;}}
+        if(y>0){n=p-sw;if(!visited[n]&&mask[n]){visited[n]=1;queue[tail++]=n;}}
+        if(y+1<sh){n=p+sw;if(!visited[n]&&mask[n]){visited[n]=1;queue[tail++]=n;}}
       }
       if(count>bestCount){bestCount=count;best={minX,minY,maxX,maxY,count};}
     }

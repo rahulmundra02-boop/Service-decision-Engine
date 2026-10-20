@@ -54,7 +54,7 @@ export default function AuthGate({ children }) {
   const [message, setMessage] = useState("");
   const [showAccountHelp, setShowAccountHelp] = useState(false);
   const [requestForm, setRequestForm] = useState({personName:"",dealerName:"",email:"",mobile:"",referralCode:""});
-  const [requestStatusForm, setRequestStatusForm] = useState({requestId:"",email:""});
+  const [requestStatusForm, setRequestStatusForm] = useState({mobile:""});
   const [requestStatusResult, setRequestStatusResult] = useState("");
   const [accountRequests, setAccountRequests] = useState([]);
   const [referralStats, setReferralStats] = useState({referralCode:"",referralCount:0});
@@ -810,8 +810,7 @@ export default function AuthGate({ children }) {
                 <label>Referral Code (optional)</label><input value={requestForm.referralCode} onChange={e=>setRequestForm(v=>({...v,referralCode:e.target.value.toUpperCase()}))} />
                 <button className="auth-primary" onClick={submitAccountRequest} disabled={loading}>Submit Account Request</button>
                 <div className="auth-help-title" style={{marginTop:18}}>Check Request Status</div>
-                <label>Request ID</label><input value={requestStatusForm.requestId} onChange={e=>setRequestStatusForm(v=>({...v,requestId:e.target.value}))} />
-                <label>Same Email</label><input type="email" value={requestStatusForm.email} onChange={e=>setRequestStatusForm(v=>({...v,email:e.target.value}))} />
+                <label>Mobile Number</label><input type="tel" inputMode="tel" placeholder="Enter registered mobile number" value={requestStatusForm.mobile} onChange={e=>setRequestStatusForm(v=>({...v,mobile:e.target.value}))} />
                 <button className="auth-secondary" onClick={checkAccountRequest} disabled={loading}>Check Status</button>
                 {requestStatusResult && <div className="auth-contact-row">{requestStatusResult}</div>}
               </div>

@@ -596,6 +596,7 @@ export default function AuthGate({ children }) {
     try {
       const data = await api("admin-list-users", {}, localStorage.getItem(TOKEN_KEY));
       setAdminUsers(data.users || []);
+      await loadAccountRequests();
       await loadAdminAnalytics(analyticsUserId, analyticsRange);
     } catch (e) {
       setError(e.message || "Unable to load users.");
@@ -607,6 +608,7 @@ export default function AuthGate({ children }) {
   useEffect(() => {
     if (user?.role === "admin" && adminOpen) {
       loadAdminUsers();
+      loadAccountRequests();
       loadJobCardCacheSettings();
       loadEmergencyDbUploadCutoff();
       loadCampaignMeta();

@@ -7182,7 +7182,31 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       const data = await response.json().catch(() => ({}));
       if (!response.ok || data?.success === false) throw new Error(data?.error || "Unable to search the database right now.");
       if (!data?.vehicle) { setRegistrationSearchError("Vehicle not found. The registration number may be incorrect, or the vehicle may not be available in the database."); return; }
+      const records = (Array.isArray(data.rows) ? data.rows : []).map((row, index) => ({
+        rowNumber: index + 1, jobCard: String(row.job_card_no || ""), date: parseDate(row.job_date), reading: 0, unit: "",
+        cumulative: parseNumber(row.cumulative_reading), cumulativeUnit: String(row.cumulative_unit || ""),
+        secondaryReading: 0, secondaryUnit: "", secondaryCumulativeReading: parseNumber(row.secondary_cumulative_reading), secondaryCumulativeUnit: String(row.secondary_cumulative_unit || ""),
+        serviceType: String(row.service_type || ""), itemCategory: String(row.item_category || ""), partCode: String(row.part_code || ""),
+        part: String(row.part_description || ""), standardizedPart: String(row.standardized_part || standardizePart(row.part_code || "", row.part_description || "")),
+        qty: parseNumber(row.quantity), netValue: null, inward: null, reg: String(row.registration || data.vehicle.registration || registration),
+        customerNumber: "", customerName: String(row.customer_name || data.vehicle.customer_name || ""), customerVoice: "", codifiedCustomerVoice: "",
+        complaintCode: String(row.complaint_code || ""), lineOfBusiness: String(row.line_of_business || ""), engine: String(row.engine || data.vehicle.engine || ""),
+        sale: parseDate(row.sale_date || data.vehicle.sale_date), model: String(row.model || data.vehicle.model || ""), repairTypeLine: String(row.repair_line_item_type || ""),
+        checkInDate: null, vin: String(row.vin || data.vehicle.vin || ""), driverPhone: String(row.driver_phone || ""),
+        serviceContactPhone: String(row.service_contact_person_phone || ""), repairType: String(row.repair_type || ""), source: "Database Registration Search"
+      }));
+      if (!records.length) { setRegistrationSearchError("Vehicle exists in the database, but no service history records are available to calculate a decision."); return; }
+      const vehicle = deriveVehicle(records);
+      const running = deriveRunningReading(records, vehicle);
+      if (!running?.last || !(running.current > 0)) { setRegistrationSearchError("Vehicle history was found, but a usable cumulative KM/HRS reading is missing. The Decision Engine cannot safely determine services due."); return; }
+      const visits = aggregateHistory(records);
+      const decision = calculateDecisions(records, vehicle, running);
+      setDecisionBasis(running?.unit === "HRS" ? "HRS" : "KM");
+      setOverrideReading(""); setAppliedOverride(null); setHistoryViewMode("schedule"); setRemark(""); setCustomerVoice(""); setCampaigns([]); setCampaignLoading(false);
+      setAnalysis({ headers: [], records, headerMap: {}, vehicle, running, visits, decision });
       setRegistrationSearchResult({ ...data, searchedRegistration: registration });
+      setMode("single");
+      logUsage("Registration Database Service Analysis", { mode: "single", vehicleCount: 1, vin: String(vehicle?.vin || "").trim().toUpperCase(), details: { source: "database", rows: records.length, serviceCount: (decision?.services || []).length } });
     } catch (error) { setRegistrationSearchError(error?.message || "Unable to load vehicle service history. Please try again."); }
     finally { setRegistrationSearchBusy(false); }
   }
@@ -9449,6 +9473,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                 {analysis ? (
                 <div id="single-screenshot-area" className="single-screenshot-area">
                 <div className="sheet-heading" style={{marginTop:10}}>VEHICLE SCHEDULE SERVICE HISTORY AS ON DATE - {todayDisplay}</div>
+                {registrationSearchResult?.vehicle && <div className="registration-update-note">As per the last database update{registrationSearchResult.vehicle.last_refreshed_at ? " on " + new Date(registrationSearchResult.vehicle.last_refreshed_at).toLocaleDateString("en-IN") + " at " + new Date(registrationSearchResult.vehicle.last_refreshed_at).toLocaleTimeString("en-IN", {hour:"2-digit",minute:"2-digit"}) : ", update date/time is not available in the database record"}.</div>}
 
                 <div className="vehicle-output-layout" style={{marginTop:10}}>
                   <div className="vehicle-profile-panel">

@@ -485,3 +485,21 @@ tr:last-child td { border-bottom:0; }
     grid-template-columns: 160px minmax(0, 1fr) !important;
   }
 }
+
+
+/* Registration lookup and full-page estimate workspace */
+.registration-search-view{padding:14px;min-width:0}
+.registration-search-form{margin:12px 0;padding:14px;border:1px solid #cbd5e1;border-radius:10px;background:var(--panel-bg,#fff)}
+.registration-search-form>label{display:block;font-weight:800;margin-bottom:8px}
+.registration-search-row{display:flex;gap:8px;align-items:stretch}
+.registration-search-row .excel-input{flex:1;min-width:0}
+.registration-search-warning{margin-top:8px;color:#c62828;font-size:13px;font-weight:800}
+.registration-search-error{margin-top:10px;padding:10px 12px;border:1px solid #dc6262;border-radius:8px;color:#b42318;background:#fff1f1;font-weight:700;font-size:13px}
+.registration-update-note{margin:8px 0;padding:10px 12px;background:#eef6ff;border-left:4px solid #2563eb;border-radius:4px;font-size:13px;font-weight:700;color:#1e3a5f}
+.registration-history-result{min-width:0}
+.registration-history-result .history-wrap{overflow:auto;max-width:100%}
+/* Estimate is rendered in the main document flow, not as a popup. */
+.excel-window:has(.estimate-modal-overlay) .excel-sheet{display:none!important}
+.excel-window .estimate-modal-overlay{position:static!important;inset:auto!important;z-index:auto!important;display:block!important;background:transparent!important;padding:14px!important;overflow:visible!important;min-height:60vh}
+.excel-window .estimate-workspace{width:100%!important;max-width:none!important;max-height:none!important;overflow:visible!important;margin:0!important;border-radius:10px!important;padding:16px!important;box-shadow:none!important}
+@media(max-width:600px){.registration-search-view{padding:8px}.registration-search-form{padding:10px}.registration-search-row{flex-direction:column}.registration-search-row .excel-button{width:100%;min-height:40px}.registration-search-result .sheet-grid{grid-template-columns:100px minmax(0,1fr)}.excel-window .estimate-modal-overlay{padding:8px!important}.excel-window .estimate-workspace{padding:10px!important}}

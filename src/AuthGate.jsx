@@ -571,7 +571,7 @@ export default function AuthGate({ children }) {
 
   const checkAccountRequest = () => run(async () => {
     const data = await api("check-account-request", requestStatusForm);
-    setRequestStatusResult("Request #" + data.request.id + " status: " + data.request.status.toUpperCase());
+    setRequestStatusResult(data.request.alreadyRegistered ? ("Account already registered. Status: " + data.request.status.toUpperCase()) : ("Request status: " + data.request.status.toUpperCase()));
   });
 
   const loadAccountRequests = async () => {

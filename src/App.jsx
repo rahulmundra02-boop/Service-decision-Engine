@@ -5531,14 +5531,16 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       const previousMode = event?.state?.serviceDecisionMode || "home";
       setEstimateOpen(false);
       setMode(previousMode);
-      navigationPopRef.current = false;
     };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
   useEffect(() => {
-    if (navigationPopRef.current) return;
+    if (navigationPopRef.current) {
+      navigationPopRef.current = false;
+      return;
+    }
     try { window.history.pushState({ ...(window.history.state || {}), serviceDecisionMode: mode }, "", window.location.href); } catch {}
   }, [mode]);
   const [estimateStage, setEstimateStage] = useState("select");

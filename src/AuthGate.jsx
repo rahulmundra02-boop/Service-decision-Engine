@@ -962,7 +962,7 @@ export default function AuthGate({ children }) {
           onRefresh={loadAdminUsers}
           onReset={resetUserPassword}
           onToggleStatus={toggleUserStatus}
-          onBack={()=>{setAdminOpen(false);setProfileOpen(false);adminOpenedFromProfileRef.current=false;setError("");setMessage("");window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:"profile"}}));}}
+          onBack={()=>{setAdminOpen(false);setProfileOpen(false);adminOpenedFromProfileRef.current=false;setError("");setMessage("");Promise.resolve().then(()=>window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:"profile"}})));}}
           analytics={adminAnalytics}
           analyticsUserId={analyticsUserId}
           analyticsRange={analyticsRange}

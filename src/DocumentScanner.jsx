@@ -6,52 +6,86 @@ const defaultCorners=(w,h)=>[{x:w*.035,y:h*.035},{x:w*.965,y:h*.035},{x:w*.965,y
 
 function autoCorners(image){
   const w=image.naturalWidth||image.width,h=image.naturalHeight||image.height;
-  const scale=Math.min(1,1000/Math.max(w,h)),sw=Math.max(1,Math.round(w*scale)),sh=Math.max(1,Math.round(h*scale));
-  const c=document.createElement("canvas");c.width=sw;c.height=sh;
-  const ctx=c.getContext("2d",{willReadFrequently:true});ctx.drawImage(image,0,0,sw,sh);
-  const data=ctx.getImageData(0,0,sw,sh).data, edge=[];
-  const sx=Math.max(1,Math.floor(sw/100)),sy=Math.max(1,Math.floor(sh/100));
-  const lum=(x,y)=>{const i=(y*sw+x)*4;return .299*data[i]+.587*data[i+1]+.114*data[i+2];};
-  for(let x=0;x<sw;x+=sx){edge.push(lum(x,0),lum(x,sh-1),lum(x,Math.min(2,sh-1)),lum(x,Math.max(0,sh-3)));}
-  for(let y=0;y<sh;y+=sy){edge.push(lum(0,y),lum(sw-1,y),lum(Math.min(2,sw-1),y),lum(Math.max(0,sw-3),y));}
-  edge.sort((a,b)=>a-b);
-  const bg=edge[Math.floor(edge.length/2)]||245;
-  const threshold=Math.max(18,Math.min(52,(edge[edge.length-1]-edge[0])*.12));
-  const step=Math.max(1,Math.floor(Math.min(sw,sh)/420));
-  let minX=sw,minY=sh,maxX=0,maxY=0,count=0;
-  const candidates=[];
-  for(let y=1;y<sh-1;y+=step)for(let x=1;x<sw-1;x+=step){
-    const center=lum(x,y),gx=Math.abs(lum(Math.min(sw-1,x+step),y)-lum(Math.max(0,x-step),y)),gy=Math.abs(lum(x,Math.min(sh-1,y+step))-lum(x,Math.max(0,y-step)));
-    const contrast=Math.abs(center-bg),edgeStrength=gx+gy;
-    if(contrast>threshold || edgeStrength>30){
-      minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);count++;
-      candidates.push({x,y,score:contrast+edgeStrength*.35});
+  const scale=Math.min(1,700/Math.max(w,h)),sw=Math.max(1,Math.round(w*scale)),sh=Math.max(1,Math.round(h*scale));
+  const canvas=document.createElement("canvas");canvas.width=sw;canvas.height=sh;
+  const ctx=canvas.getContext("2d",{willReadFrequently:true});if(!ctx)return defaultCorners(w,h);
+  ctx.drawImage(image,0,0,sw,sh);
+  const data=ctx.getImageData(0,0,sw,sh).data;
+  const pixel=(x,y)=>{const i=(clamp(y,0,sh-1)*sw+clamp(x,0,sw-1))*4;return [data[i],data[i+1],data[i+2]];};
+  const border=[];
+  const stride=Math.max(1,Math.floor(Math.min(sw,sh)/160));
+  for(let x=0;x<sw;x+=stride){border.push(pixel(x,0),pixel(x,Math.min(sh-1,2)),pixel(x,sh-1),pixel(x,Math.max(0,sh-3)));}
+  for(let y=0;y<sh;y+=stride){border.push(pixel(0,y),pixel(Math.min(sw-1,2),y),pixel(sw-1,y),pixel(Math.max(0,sw-3),y));}
+  const median=arr=>{arr.sort((a,b)=>a-b);return arr[Math.floor(arr.length/2)]||0;};
+  const bg=[0,1,2].map(k=>median(border.map(p=>p[k])));
+  const distances=border.map(p=>Math.sqrt((p[0]-bg[0])**2+(p[1]-bg[1])**2+(p[2]-bg[2])**2));
+  const noise=median(distances),threshold=clamp(noise*2.8+15,22,62);
+  const total=sw*sh,mask=new Uint8Array(total),visited=new Uint8Array(total);
+  let foreground=0;
+  for(let y=1;y<sh-1;y++)for(let x=1;x<sw-1;x++){
+    const i=(y*sw+x)*4,dr=data[i]-bg[0],dg=data[i+1]-bg[1],db=data[i+2]-bg[2];
+    const distance=Math.sqrt(dr*dr+dg*dg+db*db);
+    if(distance>threshold){mask[y*sw+x]=1;foreground++;}
+  }
+  // Find the largest connected foreground object. This avoids selecting text,
+  // shadows or isolated background texture as document corners.
+  let best=null,bestCount=0;
+  if(foreground>total*.025){
+    const queue=new Int32Array(total);
+    for(let idx=0;idx<total;idx++){
+      if(!mask[idx]||visited[idx])continue;
+      let head=0,tail=0,minX=sw,minY=sh,maxX=0,maxY=0,count=0;
+      queue[tail++]=idx;visited[idx]=1;
+      while(head<tail){
+        const p=queue[head++],x=p%sw,y=(p/sw)|0;count++;
+        if(x<minX)minX=x;if(x>maxX)maxX=x;if(y<minY)minY=y;if(y>maxY)maxY=y;
+        const neighbours=[p-1,p+1,p-sw,p+sw];
+        for(const n of neighbours){
+          if(n<0||n>=total||visited[n]||!mask[n])continue;
+          const nx=n%sw,ny=(n/sw)|0;if(Math.abs(nx-x)+Math.abs(ny-y)!==1)continue;
+          visited[n]=1;queue[tail++]=n;
+        }
+      }
+      if(count>bestCount){bestCount=count;best={minX,minY,maxX,maxY,count};}
     }
   }
-  if(count<sw*sh*.004||maxX-minX<sw*.22||maxY-minY<sh*.22)return defaultCorners(w,h);
-  const cx=(minX+maxX)/2,cy=(minY+maxY)/2;
-  const zones=[[],[],[],[]];
-  for(const p of candidates){
-    if(p.x<cx&&p.y<cy)zones[0].push(p);
-    if(p.x>=cx&&p.y<cy)zones[1].push(p);
-    if(p.x>=cx&&p.y>=cy)zones[2].push(p);
-    if(p.x<cx&&p.y>=cy)zones[3].push(p);
+  if(best&&best.count>total*.035&&(best.maxX-best.minX)>sw*.22&&(best.maxY-best.minY)>sh*.22){
+    // Use the component's diagonal extremes for a perspective-aware four-corner estimate.
+    let tl=null,tr=null,br=null,bl=null,tlScore=Infinity,trScore=-Infinity,brScore=-Infinity,blScore=Infinity;
+    for(let y=best.minY;y<=best.maxY;y++)for(let x=best.minX;x<=best.maxX;x++){
+      if(!mask[y*sw+x])continue;
+      const sum=x+y,diff=x-y;
+      if(sum<tlScore){tlScore=sum;tl={x,y};}
+      if(diff>trScore){trScore=diff;tr={x,y};}
+      if(sum>brScore){brScore=sum;br={x,y};}
+      if(diff<blScore){blScore=diff;bl={x,y};}
+    }
+    const points=[tl,tr,br,bl];
+    if(points.every(Boolean)){
+      const corners=points.map(p=>({x:clamp(p.x/scale,0,w),y:clamp(p.y/scale,0,h)}));
+      const area=Math.abs((corners[1].x-corners[0].x)*(corners[3].y-corners[0].y)-(corners[3].x-corners[0].x)*(corners[1].y-corners[0].y));
+      if(area>w*h*.04)return corners;
+    }
   }
-  const corners=zones.map((zone,i)=>{
-    if(!zone.length)return null;
-    zone.sort((a,b)=>{
-      const score=p=>i===0?(p.x+p.y):i===1?(p.x-p.y):i===2?-(p.x+p.y):(p.y-p.x);
-      return i===1||i===3?score(b)-score(a):score(a)-score(b);
-    });
-    const pool=zone.slice(0,Math.max(1,Math.ceil(zone.length*.08)));
-    let chosen=pool[0],best=-Infinity;
-    for(const p of pool){const score=p.score-Math.abs(p.x-(i===0||i===3?minX:maxX))*.015-Math.abs(p.y-(i<2?minY:maxY))*.015;if(score>best){best=score;chosen=p;}}
-    return {x:clamp(chosen.x/scale,0,w),y:clamp(chosen.y/scale,0,h)};
-  });
-  if(corners.some(p=>!p))return defaultCorners(w,h);
-  return corners;
+  // Fallback for documents whose colour is too close to the surrounding surface.
+  const lum=(x,y)=>{const i=(clamp(y,0,sh-1)*sw+clamp(x,0,sw-1))*4;return .299*data[i]+.587*data[i+1]+.114*data[i+2];};
+  const step=Math.max(1,Math.floor(Math.min(sw,sh)/500)),points=[];
+  for(let y=2;y<sh-2;y+=step)for(let x=2;x<sw-2;x+=step){
+    const gx=Math.abs(lum(x+step,y)-lum(x-step,y)),gy=Math.abs(lum(x,y+step)-lum(x,y-step));
+    if(gx+gy>34)points.push({x,y,score:gx+gy});
+  }
+  if(points.length<20)return defaultCorners(w,h);
+  const cx=points.reduce((s,p)=>s+p.x,0)/points.length,cy=points.reduce((s,p)=>s+p.y,0)/points.length;
+  const pick=(scoreFn)=>{let chosen=null,score=-Infinity;for(const p of points){const v=scoreFn(p);if(v>score){score=v;chosen=p;}}return chosen;};
+  const fallback=[
+    pick(p=>-(p.x+p.y)-Math.hypot(p.x-cx,p.y-cy)*.08),
+    pick(p=>(p.x-p.y)-Math.hypot(p.x-cx,p.y-cy)*.08),
+    pick(p=>(p.x+p.y)-Math.hypot(p.x-cx,p.y-cy)*.08),
+    pick(p=>(p.y-p.x)-Math.hypot(p.x-cx,p.y-cy)*.08)
+  ];
+  if(fallback.some(p=>!p))return defaultCorners(w,h);
+  return fallback.map(p=>({x:clamp(p.x/scale,0,w),y:clamp(p.y/scale,0,h)}));
 }
-
 function solve(a,b){const n=b.length,m=a.map((r,i)=>r.concat(b[i]));for(let c=0;c<n;c++){let p=c;for(let r=c+1;r<n;r++)if(Math.abs(m[r][c])>Math.abs(m[p][c]))p=r;if(Math.abs(m[p][c])<1e-10)return null;[m[c],m[p]]=[m[p],m[c]];let v=m[c][c];for(let j=c;j<=n;j++)m[c][j]/=v;for(let r=0;r<n;r++)if(r!==c){v=m[r][c];for(let j=c;j<=n;j++)m[r][j]-=v*m[c][j];}}return m.map(r=>r[n]);}
 async function scanImage(file,corners,filter,sizeScale=1){
   const sourceUrl=URL.createObjectURL(file),img=new Image();
@@ -123,7 +157,7 @@ export default function DocumentScanner({onBack}){
       </>}</section>
       <section className="ds-card"><h3 style={{marginTop:0}}>All photos &amp; order</h3><p className="ds-muted">Use the controls below each photo to crop, remove, or reorder pages.</p><div className="ds-pages">{pages.map((p,i)=><div key={p.id} className={"ds-page "+(current?.id===p.id?"active":"")} onClick={()=>{setActive(p.id);setLens(null);}}><img src={p.doneUrl||p.url} alt="Photo thumbnail"/><div className="ds-page-name">{i+1}. {p.name}<small>{p.cropped?"Cropped / processed ✓":"Not cropped yet"} · PDF group {p.group}</small></div><div className="ds-tools"><button className="ds-btn" disabled={busy||i===0} onClick={e=>{e.stopPropagation();move(i,-1);}}>↑ Move up</button><button className="ds-btn" disabled={busy||i===pages.length-1} onClick={e=>{e.stopPropagation();move(i,1);}}>↓ Move down</button><button className="ds-btn" disabled={busy} onClick={e=>{e.stopPropagation();cropOne(p);}}>Crop</button><button className="ds-btn" disabled={busy} onClick={e=>{e.stopPropagation();remove(p.id);}}>Remove</button></div><div className="ds-group" style={{gridColumn:"1/-1"}}><label>Include in PDF group</label><select value={p.group} onClick={e=>e.stopPropagation()} onChange={e=>patch(p.id,{group:Number(e.target.value)})}>{Array.from({length:Math.max(groupCount,p.group)},(_,j)=><option key={j+1} value={j+1}>PDF {j+1}</option>)}</select></div></div>)}</div><div className="ds-field"><label>Number of PDF groups</label><input type="number" min="1" max="20" value={groupCount} onChange={e=>{const n=clamp(Number(e.target.value)||1,1,20);setGroupCount(n);setPages(old=>old.map(p=>p.group>n?{...p,group:1}:p));}}/></div><p className="ds-muted">Pages assigned to the same PDF group are combined into one PDF, in the order shown above.</p></section>
     </div>}
-    <section className="ds-card"><h3 style={{marginTop:0}}>Global filter</h3><p className="ds-muted">Choose a filter and apply it to every photo at once.</p><div className="ds-field"><label>Apply one filter to all photos</label><select value={filter} onChange={e=>setFilter(e.target.value)}><option value="magic">Magic Color (recommended)</option><option value="bright">Bright Scan</option><option value="original">Original colour</option></select></div><button className="ds-btn ds-primary" disabled={busy||!pages.length} onClick={()=>processAll(filter)}>{busy?"Processing photos…":"Apply filter to all photos"}</button></section>
+    <section className="ds-card"><h3 style={{marginTop:0}}>Global filter</h3><p className="ds-muted">Choose a filter and apply it to every photo at once.</p><div className="ds-field"><label>Apply one filter to all photos</label><select value={filter} onChange={e=>setFilter(e.target.value)}><option value="magic">Magic Color (recommended)</option><option value="bright">Bright Scan</option><option value="soft">Clean Grayscale</option><option value="original">Original colour</option></select></div><button className="ds-btn ds-primary" disabled={busy||!pages.length} onClick={()=>processAll(filter)}>{busy?"Processing photos…":"Apply filter to all photos"}</button></section>
     <section className="ds-card"><h3 style={{marginTop:0}}>Export &amp; session</h3><p className="ds-muted">One photo or PDF downloads directly. Multiple photos or PDF groups download as a ZIP.</p><div className="ds-bottom-actions"><button className="ds-btn ds-primary" disabled={busy||!ready} onClick={exportPdfs}>Download PDFs (PDF / ZIP)</button><button className="ds-btn ds-primary" disabled={busy||!ready} onClick={exportPhotos}>Download photos (JPG / ZIP)</button><button className="ds-btn" disabled={busy||!pages.length} onClick={()=>{pages.forEach(p=>{URL.revokeObjectURL(p.url);if(p.doneUrl)URL.revokeObjectURL(p.doneUrl);});setPages([]);setActive(null);setLens(null);setMessage("Session cleared. No files were saved to a server.");setError("");}}>Clear session</button></div><div className="ds-status">Export ready: {pages.filter(p=>p.blob).length} / {pages.length} photos processed. No DB, no server upload, no auto-save.</div>{message&&<div className="ds-note">{message}</div>}{error&&<div className="ds-note ds-error">{error}</div>}</section>
     {!pages.length&&<section className="ds-card" style={{textAlign:"center"}}><h3>Ready to scan</h3><p className="ds-muted">Add photos to detect corners, crop and filter images, then export them here.</p>{message&&<div className="ds-note">{message}</div>}{error&&<div className="ds-note ds-error">{error}</div>}</section>}
   </div>;

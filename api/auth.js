@@ -117,6 +117,25 @@ async function ensureSchema(client) {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS account_requests (
+      id BIGSERIAL PRIMARY KEY,
+      person_name TEXT NOT NULL,
+      dealer_name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      mobile TEXT NOT NULL,
+      referral_code TEXT,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+      reviewed_by BIGINT REFERENCES app_users(id) ON DELETE SET NULL,
+      reviewed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_account_requests_mobile_created ON account_requests(mobile, created_at DESC);
+    CREATE TABLE IF NOT EXISTS user_referrals (
+      id BIGSERIAL PRIMARY KEY,
+      referrer_user_id BIGINT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+      referred_user_id BIGINT NOT NULL UNIQUE REFERENCES app_users(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
     CREATE TABLE IF NOT EXISTS auth_sessions (
       id BIGSERIAL PRIMARY KEY,
       user_id BIGINT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
@@ -1285,6 +1304,79 @@ export default async function handler(req, res) {
       await client.query("COMMIT");
       if (!found.rows[0]) return res.status(404).json({success:false,error:"No registered account found for this mobile number."});
       return res.json({success:true,request:{status:found.rows[0].status === "active" ? "approved" : found.rows[0].status,alreadyRegistered:true}});
+    }
+
+    if (action === "request-account") {
+      const personName = clean(body.personName);
+      const dealerName = clean(body.dealerName);
+      const email = normalizeEmail(body.email);
+      const mobile = normalizeMobile(body.mobile);
+      const referralCode = clean(body.referralCode).toUpperCase();
+      if (!personName || !dealerName || !/^\S+@\S+\.\S+$/.test(email) || mobile.replace(/\D/g, "").length < 10) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({success:false,error:"Name, dealer/workshop, valid email and mobile number are required."});
+      }
+      const existing = await client.query("SELECT id FROM app_users WHERE lower(email)=lower($1) OR regexp_replace(COALESCE(mobile,''),'[^0-9]','','g')=regexp_replace($2,'[^0-9]','','g') LIMIT 1",[email,mobile]);
+      if (existing.rows[0]) { await client.query("ROLLBACK"); return res.status(409).json({success:false,error:"An account already exists with this email or mobile number."}); }
+      const duplicate = await client.query("SELECT id FROM account_requests WHERE (lower(email)=lower($1) OR regexp_replace(mobile,'[^0-9]','','g')=regexp_replace($2,'[^0-9]','','g')) AND status='pending' LIMIT 1",[email,mobile]);
+      if (duplicate.rows[0]) { await client.query("ROLLBACK"); return res.status(409).json({success:false,error:"An account request for this email or mobile is already pending."}); }
+      const result = await client.query("INSERT INTO account_requests(person_name,dealer_name,email,mobile,referral_code) VALUES($1,$2,$3,$4,$5) RETURNING id,created_at",[personName,dealerName,email,mobile,referralCode || null]);
+      await client.query("COMMIT");
+      return res.json({success:true,requestId:result.rows[0].id,createdAt:result.rows[0].created_at,message:"Account request submitted successfully. Use your mobile number to check status."});
+    }
+
+    if (action === "check-account-request") {
+      const mobile = normalizeMobile(body.mobile);
+      if (!mobile || mobile.replace(/\D/g, "").length < 10) { await client.query("ROLLBACK"); return res.status(400).json({success:false,error:"Enter the mobile number used for the request or account."}); }
+      const request = await client.query("SELECT id,status,created_at FROM account_requests WHERE regexp_replace(COALESCE(mobile,''),'[^0-9]','','g')=regexp_replace($1,'[^0-9]','','g') ORDER BY created_at DESC LIMIT 1",[mobile]);
+      if (request.rows[0]) { await client.query("COMMIT"); return res.json({success:true,request:request.rows[0]}); }
+      const user = await client.query("SELECT status,created_at FROM app_users WHERE regexp_replace(COALESCE(mobile,''),'[^0-9]','','g')=regexp_replace($1,'[^0-9]','','g') ORDER BY created_at DESC LIMIT 1",[mobile]);
+      await client.query("COMMIT");
+      if (user.rows[0]) return res.json({success:true,request:{status:user.rows[0].status === "active" ? "approved" : user.rows[0].status,alreadyRegistered:true}});
+      return res.status(404).json({success:false,error:"No account request or registered account found for this mobile number."});
+    }
+
+    if (action === "admin-list-account-requests") {
+      const admin = await requireAdmin(client, req);
+      if (admin.error) { await client.query("ROLLBACK"); return res.status(admin.status).json({success:false,error:admin.error}); }
+      const result = await client.query("SELECT id,person_name,dealer_name,email,mobile,referral_code,status,created_at,reviewed_at FROM account_requests ORDER BY CASE WHEN status='pending' THEN 0 ELSE 1 END,created_at DESC");
+      await client.query("COMMIT");
+      return res.json({success:true,requests:result.rows});
+    }
+
+    if (action === "admin-review-account-request") {
+      const admin = await requireAdmin(client, req);
+      if (admin.error) { await client.query("ROLLBACK"); return res.status(admin.status).json({success:false,error:admin.error}); }
+      const requestId = Number(body.requestId);
+      const decision = body.decision === "approve" ? "approved" : body.decision === "reject" ? "rejected" : "";
+      const password = body.password;
+      if (!Number.isInteger(requestId) || !decision || (decision === "approved" && !validPassword(password))) { await client.query("ROLLBACK"); return res.status(400).json({success:false,error:"Approval requires a password of at least 8 characters."}); }
+      const found = await client.query("SELECT * FROM account_requests WHERE id=$1 FOR UPDATE",[requestId]);
+      if (!found.rows[0]) { await client.query("ROLLBACK"); return res.status(404).json({success:false,error:"Account request not found."}); }
+      const r = found.rows[0];
+      if (r.status !== "pending") { await client.query("ROLLBACK"); return res.status(409).json({success:false,error:"This request has already been reviewed."}); }
+      if (decision === "approved") {
+        const duplicate = await client.query("SELECT id FROM app_users WHERE lower(email)=lower($1) OR regexp_replace(COALESCE(mobile,''),'[^0-9]','','g')=regexp_replace($2,'[^0-9]','','g') LIMIT 1",[r.email,r.mobile]);
+        if (duplicate.rows[0]) { await client.query("ROLLBACK"); return res.status(409).json({success:false,error:"A user already exists with this email/mobile. Review users first."}); }
+        const passwordHash = await hashPassword(password);
+        const created = await client.query("INSERT INTO app_users(person_name,dealer_name,email,mobile,password_hash,role,status,email_verified,mobile_verified) VALUES($1,$2,$3,$4,$5,'standard','active',TRUE,TRUE) RETURNING id",[r.person_name,r.dealer_name,r.email,r.mobile,passwordHash]);
+        if (r.referral_code) {
+          const ref = await client.query("SELECT id FROM app_users WHERE upper(split_part(email,'@',1))=$1 AND role <> 'admin' LIMIT 1",[r.referral_code]);
+          if (ref.rows[0]) await client.query("INSERT INTO user_referrals(referrer_user_id,referred_user_id) VALUES($1,$2) ON CONFLICT(referred_user_id) DO NOTHING",[ref.rows[0].id,created.rows[0].id]);
+        }
+      }
+      await client.query("UPDATE account_requests SET status=$1,reviewed_by=$2,reviewed_at=NOW() WHERE id=$3",[decision,admin.user.id,requestId]);
+      await logActivity(client,admin.user.id,decision === "approved" ? "Admin Account Approved" : "Admin Account Rejected",{details:{requestId,email:r.email}});
+      await client.query("COMMIT");
+      return res.json({success:true,message:decision === "approved" ? "Account approved and created." : "Account request rejected."});
+    }
+
+    if (action === "my-referrals") {
+      const user = await getUserByToken(client, authToken(req));
+      if (!user) { await client.query("ROLLBACK"); return res.status(401).json({success:false,error:"Session expired."}); }
+      const result = await client.query("SELECT COUNT(*)::int AS total FROM user_referrals WHERE referrer_user_id=$1",[user.id]);
+      await client.query("COMMIT");
+      return res.json({success:true,referralCode:String(user.email || "").split("@")[0].toUpperCase(),referralCount:Number(result.rows[0]?.total || 0)});
     }
 
     if (action === "admin-list-users") {

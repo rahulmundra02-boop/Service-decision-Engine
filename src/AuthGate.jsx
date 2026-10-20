@@ -896,8 +896,8 @@ export default function AuthGate({ children }) {
           {[
             ["home","⌂","Home"],
             ["estimate","₹","Estimate"],
-            ["warranty-tags","▦","Warranty"],
             ["registration-search","🔎","Reg. Search"],
+            ["document-scanner","▧","Document Scanner"],
           ].map(([key,icon,label]) => (
             <button key={key} type="button" className="mobile-bottom-nav-item" onClick={() => {
               setMobileMoreOpen(false);
@@ -909,9 +909,9 @@ export default function AuthGate({ children }) {
           <div className="mobile-bottom-nav-more-wrap">
             {mobileMoreOpen && (
               <div className="mobile-bottom-nav-more-menu" role="menu" aria-label="More tools">
-                <button type="button" className="mobile-bottom-nav-more-option" role="menuitem" onClick={() => { setMobileMoreOpen(false); window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:"document-scanner"}})); }}><span aria-hidden="true">📄</span><span>Document Scanner</span></button>
                 <button type="button" className="mobile-bottom-nav-more-option" role="menuitem" onClick={() => { setMobileMoreOpen(false); window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:"single"}})); }}><span aria-hidden="true">▣</span><span>Single Vehicle Service</span></button>
                 <button type="button" className="mobile-bottom-nav-more-option" role="menuitem" onClick={() => { setMobileMoreOpen(false); window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:"bulk"}})); }}><span aria-hidden="true">▤</span><span>Bulk Vehicle Service</span></button>
+                <button type="button" className="mobile-bottom-nav-more-option" role="menuitem" onClick={() => { setMobileMoreOpen(false); window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:"warranty-tags"}})); }}><span aria-hidden="true">▦</span><span>Warranty Tag</span></button>
               </div>
             )}
             <button type="button" className={`mobile-bottom-nav-item mobile-bottom-nav-more ${mobileMoreOpen ? "active" : ""}`} aria-expanded={mobileMoreOpen} aria-haspopup="menu" onClick={() => setMobileMoreOpen(open => !open)}>

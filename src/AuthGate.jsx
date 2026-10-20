@@ -53,6 +53,11 @@ export default function AuthGate({ children }) {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [showAccountHelp, setShowAccountHelp] = useState(false);
+  const [requestForm, setRequestForm] = useState({personName:"",dealerName:"",email:"",mobile:"",referralCode:""});
+  const [requestStatusForm, setRequestStatusForm] = useState({requestId:"",email:""});
+  const [requestStatusResult, setRequestStatusResult] = useState("");
+  const [accountRequests, setAccountRequests] = useState([]);
+  const [referralStats, setReferralStats] = useState({referralCode:"",referralCount:0});
   const [showForgotHelp, setShowForgotHelp] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [passwordForm, setPasswordForm] = useState({ currentPassword:"", newPassword:"", confirmPassword:"" });
@@ -558,6 +563,34 @@ export default function AuthGate({ children }) {
     }
   };
 
+  const submitAccountRequest = () => run(async () => {
+    const data = await api("request-account", requestForm);
+    setMessage(data.message + " Request ID: " + data.requestId);
+    setRequestForm({personName:"",dealerName:"",email:"",mobile:"",referralCode:""});
+  });
+
+  const checkAccountRequest = () => run(async () => {
+    const data = await api("check-account-request", requestStatusForm);
+    setRequestStatusResult("Request #" + data.request.id + " status: " + data.request.status.toUpperCase());
+  });
+
+  const loadAccountRequests = async () => {
+    const data = await api("admin-list-account-requests", {}, localStorage.getItem(TOKEN_KEY));
+    setAccountRequests(data.requests || []);
+  };
+
+  const reviewAccountRequest = (request, decision) => run(async () => {
+    let password = "";
+    if (decision === "approve") {
+      password = window.prompt("Set initial password for " + request.email + " (minimum 8 characters):") || "";
+      if (password.length < 8) throw new Error("Approval cancelled or password is shorter than 8 characters.");
+    } else if (!window.confirm("Reject account request from " + request.email + "?")) return;
+    const data = await api("admin-review-account-request", {requestId:request.id,decision,password}, localStorage.getItem(TOKEN_KEY));
+    setMessage(data.message || "Request updated.");
+    await loadAccountRequests();
+    await loadAdminUsers();
+  });
+
   const loadAdminUsers = async () => {
     setAdminLoading(true);
     try {
@@ -767,10 +800,18 @@ export default function AuthGate({ children }) {
 
             {showAccountHelp && (
               <div className="auth-account-help">
-                <div className="auth-help-title">Account Creation</div>
-                <div className="auth-help-text">Need a Service Decision account? Contact the administrator. Account creation is free and quick.</div>
-                <div className="auth-contact-row"><strong>Email:</strong> {ADMIN_CONTACT_EMAIL}</div>
-                <div className="auth-contact-row"><strong>Contact:</strong> {ADMIN_CONTACT_MOBILE}</div>
+                <div className="auth-help-title">Request an Account (No OTP)</div>
+                <label>Your Name</label><input value={requestForm.personName} onChange={e=>setRequestForm(v=>({...v,personName:e.target.value}))} />
+                <label>Dealer / Workshop Name</label><input value={requestForm.dealerName} onChange={e=>setRequestForm(v=>({...v,dealerName:e.target.value}))} />
+                <label>Email</label><input type="email" value={requestForm.email} onChange={e=>setRequestForm(v=>({...v,email:e.target.value}))} />
+                <label>Mobile (optional)</label><input value={requestForm.mobile} onChange={e=>setRequestForm(v=>({...v,mobile:e.target.value}))} />
+                <label>Referral Code (optional)</label><input value={requestForm.referralCode} onChange={e=>setRequestForm(v=>({...v,referralCode:e.target.value.toUpperCase()}))} />
+                <button className="auth-primary" onClick={submitAccountRequest} disabled={loading}>Submit Account Request</button>
+                <div className="auth-help-title" style={{marginTop:18}}>Check Request Status</div>
+                <label>Request ID</label><input value={requestStatusForm.requestId} onChange={e=>setRequestStatusForm(v=>({...v,requestId:e.target.value}))} />
+                <label>Same Email</label><input type="email" value={requestStatusForm.email} onChange={e=>setRequestStatusForm(v=>({...v,email:e.target.value}))} />
+                <button className="auth-secondary" onClick={checkAccountRequest} disabled={loading}>Check Status</button>
+                {requestStatusResult && <div className="auth-contact-row">{requestStatusResult}</div>}
               </div>
             )}
 
@@ -796,6 +837,7 @@ export default function AuthGate({ children }) {
   return (
     <div className="app-auth-shell">
       <div className="auth-userbar" aria-hidden="true"></div>
+      {user && user.role !== "admin" && <div className="auth-referral-panel"><strong>Refer a Workshop</strong><span>Your referral code: <b>{referralStats.referralCode || "—"}</b></span><span>Successful referrals: <b>{referralStats.referralCount}</b></span><button type="button" onClick={()=>navigator.clipboard?.writeText(referralStats.referralCode)}>Copy Code</button></div>
 
       {error && <div className="auth-inline-error">{error}</div>}
       {message && <div className="auth-inline-message">{message}</div>}
@@ -1405,7 +1447,7 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading, onChang
   {signatureOpen && <SignaturePad initialValue={form.signature} onUse={v=>{setForm({...form,signature:v});setSignatureOpen(false);}} onClose={()=>setSignatureOpen(false)}/>}
   </div>;
 }
-function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel, priceMasterMeta, priceMasterUploadBusy, priceMasterUploadMessage, priceMasterUploadError, onUploadPriceMasterExcel }) {
+function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel, priceMasterMeta, priceMasterUploadBusy, priceMasterUploadMessage, priceMasterUploadError, onUploadPriceMasterExcel }) {
   const analyticsDetailRef = useRef(null);
   const [view, setView] = useState("overview");
 
@@ -1789,6 +1831,19 @@ function AdminPanel({ users, form, setForm, loading, onCreate, onEdit, onRefresh
                 <input type="password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder={form.userId ? "Leave blank to keep current password" : "Minimum 8 characters"} />
                 <button className="auth-primary" onClick={onCreate} disabled={loading}>{form.userId ? "Save User Changes" : "Create User"}</button>
                 {form.userId && <button className="auth-secondary" onClick={()=>setForm({userId:null,personName:"",dealerName:"",email:"",mobile:"",password:""})}>Cancel Edit</button>}
+              </div>
+
+              <div className="admin-users-card">
+                <div className="admin-users-header">
+                  <h3>Pending Account Requests {accountRequests.filter(r=>r.status==="pending").length > 0 && <span className="pending-request-dot" title="Pending requests">{accountRequests.filter(r=>r.status==="pending").length}</span>}</h3>
+                  <button className="auth-secondary admin-refresh" onClick={()=>void onRefresh()} disabled={loading}>Refresh</button>
+                </div>
+                <div className="admin-table-wrap">
+                  <table className="admin-table">
+                    <thead><tr><th>ID</th><th>Name</th><th>Dealer</th><th>Email</th><th>Mobile</th><th>Referral</th><th>Requested</th><th>Action</th></tr></thead>
+                    <tbody>{accountRequests.map(r=><tr key={r.id}><td>{r.id}</td><td>{r.person_name}</td><td>{r.dealer_name}</td><td>{r.email}</td><td>{r.mobile || "—"}</td><td>{r.referral_code || "—"}</td><td>{r.created_at ? new Date(r.created_at).toLocaleString() : "—"}</td><td>{r.status==="pending" ? <div className="admin-row-actions"><button onClick={()=>onReviewAccountRequest(r,"approve")}>Approve</button><button onClick={()=>onReviewAccountRequest(r,"reject")}>Reject</button></div> : r.status}</td></tr>)}{!accountRequests.length && <tr><td colSpan="8" className="admin-empty">No account requests found.</td></tr>}</tbody>
+                  </table>
+                </div>
               </div>
 
               <div className="admin-users-card">

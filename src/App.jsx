@@ -7170,7 +7170,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   }
 
   async function searchVehicleByRegistration() {
-    const registration = String(registrationSearchInput || "").replace(/\\s+/g, "").trim().toUpperCase();
+    const registration = String(registrationSearchInput || "").replace(/\s+/g, "").trim().toUpperCase();
     setRegistrationSearchInput(registration);
     setRegistrationSearchError("");
     setRegistrationSearchResult(null);

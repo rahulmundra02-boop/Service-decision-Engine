@@ -1173,8 +1173,8 @@ export default async function handler(req, res) {
             clean(first.secondaryCumulativeUnit),
             clean(first.driverPhone),
             clean(first.serviceContactPhone),
-            clean(first.plantName),
-            clean(first.plantCode || first.workshopCode),
+            clean(first.plantName || first.plant || first.workshopName || first.dealerName),
+            clean(first.plantCode || first.workshopCode || first.dealerCode),
             existingJobCard.id
           ]
         );
@@ -1184,9 +1184,9 @@ export default async function handler(req, res) {
           vehicleId, jobCardNo,
           clean(first.date),
           clean(first.cumulative), clean(first.cumulativeUnit),
-          clean(first.secondaryCumulative), clean(first.secondaryCumulativeUnit),
+          clean(first.secondaryCumulative ?? first.secondaryCumulativeReading), clean(first.secondaryCumulativeUnit ?? first.secondaryCumulativeReadingUnit),
           clean(first.driverPhone), clean(first.serviceContactPhone),
-          clean(first.plantName), clean(first.plantCode || first.workshopCode)
+          clean(first.plantName || first.plant || first.workshopName || first.dealerName), clean(first.plantCode || first.workshopCode || first.dealerCode)
         ]);
       }
     }

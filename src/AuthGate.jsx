@@ -584,7 +584,8 @@ export default function AuthGate({ children }) {
 
   const checkAccountRequest = () => run(async () => {
     const data = await api("check-account-request", requestStatusForm);
-    setRequestStatusResult(data.request.alreadyRegistered ? ("Account already registered. Status: " + data.request.status.toUpperCase()) : ("Request status: " + data.request.status.toUpperCase()));
+    const status = String(data.request.status || "").trim().toUpperCase();
+    setRequestStatusResult({ text: data.request.alreadyRegistered ? ("Account already registered. Status: " + status) : ("Request status: " + status), status });
   });
 
   const loadAccountRequests = async () => {
@@ -849,7 +850,7 @@ export default function AuthGate({ children }) {
                 <div className="auth-help-title" style={{marginTop:18}}>Check Request Status</div>
                 <label>Mobile Number</label><input type="tel" inputMode="tel" placeholder="Enter registered mobile number" value={requestStatusForm.mobile} onChange={e=>setRequestStatusForm(v=>({...v,mobile:e.target.value}))} />
                 <button className="auth-secondary" onClick={checkAccountRequest} disabled={loading}>Check Status</button>
-                {requestStatusResult && <div className="auth-contact-row">{requestStatusResult}</div>}
+                {requestStatusResult && <div className={`auth-contact-row auth-request-status-result ${requestStatusResult.status === "INACTIVE" || requestStatusResult.status === "REJECTED" ? "status-inactive" : requestStatusResult.status === "ACTIVE" || requestStatusResult.status === "APPROVED" ? "status-active" : requestStatusResult.status.includes("PENDING") ? "status-pending" : ""}`} role="status">{requestStatusResult.text}</div>}
               </div>
             )}
 

@@ -9273,6 +9273,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
               <div className={`excel-tab ${mode === "bulk" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("bulk"); setError(""); setAnalysis(null); }}>Bulk Vehicle</div>
               <div className={`excel-tab ${estimateOpen ? "active" : ""}`} onClick={() => { setMode("estimate"); if (analysis) void openEstimate(); else openStandaloneEstimate(); }}>Prepare Estimate</div>
               <div className={`excel-tab ${mode === "warranty-tags" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("warranty-tags"); setError(""); }}>Warranty Tag Print</div>
+              <div className={`excel-tab ${mode === "registration-search" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("registration-search"); setRegistrationSearchError(""); }}>Search by Registration</div>
               <div className={`excel-tab ${mode === "document-scanner" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("document-scanner"); setError(""); }}>Document Scanner</div>
               <div className={`excel-tab ${mode === "profile" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("profile"); setError(""); }}>Profile</div>
             </div>

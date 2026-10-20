@@ -207,17 +207,28 @@ export default function AuthGate({ children }) {
     }
   });
 
-  const logout = async () => {
+  const logoutInProgressRef = useRef(false);
+  const logout = () => {
+    if (logoutInProgressRef.current) return;
+    logoutInProgressRef.current = true;
+    // End the local session immediately; network cleanup is best-effort.
     const token = localStorage.getItem(TOKEN_KEY);
     const pendingClicks = clickQueueRef.current.splice(0, 100);
-    if (token && pendingClicks.length) {
-      try { await api("log-activity-batch", { events: pendingClicks }, token); } catch {}
-    }
-    try { await api("logout", {}, token); } catch {}
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(ACTIVITY_KEY);
     setUser(null);
     setAdminOpen(false);
+    setProfileOpen(false);
+    setMessage("Logged out successfully.");
+    if (token) {
+      void (async () => {
+        try {
+          if (pendingClicks.length) await api("log-activity-batch", { events: pendingClicks }, token);
+        } catch {}
+        try { await api("logout", {}, token); } catch {}
+      })();
+    }
+    window.setTimeout(() => { logoutInProgressRef.current = false; }, 800);
   };
 
   useEffect(() => {
@@ -244,7 +255,8 @@ export default function AuthGate({ children }) {
       }
     };
 
-    const handleClick = () => {
+    const handleClick = (event) => {
+      if (event.target?.closest?.(".mobile-profile-action.logout")) return;
       void validateSession();
     };
 

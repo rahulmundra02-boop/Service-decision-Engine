@@ -1462,9 +1462,20 @@ export default async function handler(req, res) {
         "SELECT id,status,created_at,reviewed_at FROM account_requests WHERE regexp_replace(COALESCE(mobile,''),'[^0-9]','','g')=regexp_replace($1,'[^0-9]','','g') ORDER BY created_at DESC LIMIT 1",
         [mobile]
       );
+      if (result.rows[0]) {
+        await client.query("COMMIT");
+        return res.json({success:true,request:result.rows[0]});
+      }
+      const existingUser = await client.query(
+        "SELECT id,status,created_at FROM app_users WHERE regexp_replace(COALESCE(mobile,''),'[^0-9]','','g')=regexp_replace($1,'[^0-9]','','g') ORDER BY created_at DESC LIMIT 1",
+        [mobile]
+      );
       await client.query("COMMIT");
-      if (!result.rows[0]) return res.status(404).json({success:false,error:"No account request found for this mobile number."});
-      return res.json({success:true,request:result.rows[0]});
+      if (existingUser.rows[0]) {
+        const u = existingUser.rows[0];
+        return res.json({success:true,request:{id:null,status:u.status === "active" ? "approved" : u.status,created_at:u.created_at,reviewed_at:null,alreadyRegistered:true}});
+      }
+      return res.status(404).json({success:false,error:"No account request or registered account found for this mobile number."});
     }
 
     if (action === "admin-list-account-requests") {

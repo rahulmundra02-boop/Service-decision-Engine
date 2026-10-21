@@ -694,7 +694,7 @@ export default async function handler(req, res) {
       const rangeParams = [startDate, endDate];
       const rangeFilter = "created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Kolkata') AND created_at < (($2::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata')";
 
-      const [vehicleCount, lineCount, vehicles, lines] = await Promise.all([
+      const [vehicleCount, lineCount, vehicles] = await Promise.all([
         client.query(
           "SELECT COUNT(*)::int AS count FROM vehicles WHERE " + rangeFilter,
           rangeParams
@@ -707,14 +707,6 @@ export default async function handler(req, res) {
           "SELECT vin,registration,customer_name,model,created_at FROM vehicles WHERE " + rangeFilter +
           " ORDER BY created_at DESC LIMIT 200",
           rangeParams
-        ),
-        client.query(
-          "SELECT v.vin,v.registration,j.job_card_no,s.item_category,s.part_code,s.part_description,s.standardized_part,s.quantity,s.repair_line_item_type,s.created_at " +
-          "FROM service_history s JOIN job_cards j ON j.id=s.job_card_id JOIN vehicles v ON v.id=j.vehicle_id " +
-          "WHERE s.created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Kolkata') " +
-          "AND s.created_at < (($2::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata') " +
-          "ORDER BY s.created_at DESC LIMIT 200",
-          rangeParams
         )
       ]);
 
@@ -726,9 +718,7 @@ export default async function handler(req, res) {
         vehicleCount:vehicleCount.rows[0]?.count || 0,
         lineItemCount:lineCount.rows[0]?.count || 0,
         vehicles:vehicles.rows,
-        lineItems:lines.rows,
-        vehicleRowsLimited:vehicles.rowCount >= 200,
-        lineItemRowsLimited:lines.rowCount >= 200
+        vehicleRowsLimited:vehicles.rowCount >= 200
       });
     }
 

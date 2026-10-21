@@ -9510,7 +9510,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                 {analysis ? (
                 <div id="single-screenshot-area" className="single-screenshot-area">
                 <div className="sheet-heading" style={{marginTop:10}}>VEHICLE SCHEDULE SERVICE HISTORY AS ON DATE - {todayDisplay}</div>
-                {registrationSearchResult && (() => { const updated = registrationSearchResult.vehicle?.last_refreshed_at ? new Date(registrationSearchResult.vehicle.last_refreshed_at) : null; const valid = updated && !Number.isNaN(updated.getTime()); const updateText = valid ? updated.toLocaleDateString("en-IN") + " at " + updated.toLocaleTimeString("en-IN", {hour:"2-digit",minute:"2-digit"}) : "date/time not available"; return <div className="registration-update-note" role="note">Informational only: this vehicle’s service history was last updated in the database on {updateText}. Services performed after this update may not be included, so verify before relying on the service decision.</div>; })()}
+                {registrationSearchResult && (() => { const updated = registrationSearchResult.vehicle?.last_refreshed_at ? new Date(registrationSearchResult.vehicle.last_refreshed_at) : null; const valid = updated && !Number.isNaN(updated.getTime()); const updateText = valid ? updated.toLocaleDateString("en-IN") + " at " + updated.toLocaleTimeString("en-IN", {hour:"2-digit",minute:"2-digit"}) : "date/time not available"; return <div className="registration-update-note" role="note">Decision provided as per latest database update: {updateText}.</div>; })()}
 
 
                 <div className="vehicle-output-layout" style={{marginTop:10}}>

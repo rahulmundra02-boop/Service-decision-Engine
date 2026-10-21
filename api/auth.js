@@ -677,6 +677,62 @@ export default async function handler(req, res) {
 
 
     // Lazy retention cleanup: removes expired interaction logs on admin access.
+    if (action === "admin-database-view") {
+      const admin = await requireAdmin(client, req);
+      if (admin.error) {
+        await client.query("ROLLBACK");
+        return res.status(admin.status).json({success:false,error:admin.error});
+      }
+
+      const datePattern = /^\\d{4}-\\d{2}-\\d{2}$/;
+      const startDate = clean(body.startDate);
+      const endDate = clean(body.endDate);
+      if (!datePattern.test(startDate) || !datePattern.test(endDate) || startDate > endDate) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({success:false,error:"Please select a valid date range."});
+      }
+
+      const rangeParams = [startDate, endDate];
+      const rangeFilter = "created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Kolkata') AND created_at < (($2::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata')";
+
+      const [vehicleCount, lineCount, vehicles, lines] = await Promise.all([
+        client.query(
+          "SELECT COUNT(*)::int AS count FROM vehicles WHERE " + rangeFilter,
+          rangeParams
+        ),
+        client.query(
+          "SELECT COUNT(*)::int AS count FROM service_history WHERE " + rangeFilter,
+          rangeParams
+        ),
+        client.query(
+          "SELECT vin,registration,customer_name,model,created_at FROM vehicles WHERE " + rangeFilter +
+          " ORDER BY created_at DESC LIMIT 200",
+          rangeParams
+        ),
+        client.query(
+          "SELECT v.vin,v.registration,j.job_card_no,s.item_category,s.part_code,s.part_description,s.standardized_part,s.quantity,s.repair_line_item_type,s.created_at " +
+          "FROM service_history s JOIN job_cards j ON j.id=s.job_card_id JOIN vehicles v ON v.id=j.vehicle_id " +
+          "WHERE s.created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Kolkata') " +
+          "AND s.created_at < (($2::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata') " +
+          "ORDER BY s.created_at DESC LIMIT 200",
+          rangeParams
+        )
+      ]);
+
+      await client.query("COMMIT");
+      return res.status(200).json({
+        success:true,
+        startDate,
+        endDate,
+        vehicleCount:vehicleCount.rows[0]?.count || 0,
+        lineItemCount:lineCount.rows[0]?.count || 0,
+        vehicles:vehicles.rows,
+        lineItems:lines.rows,
+        vehicleRowsLimited:vehicles.rowCount >= 200,
+        lineItemRowsLimited:lines.rowCount >= 200
+      });
+    }
+
     if (action === "admin-analytics") {
       await client.query("DELETE FROM user_activity WHERE activity_time < NOW() - INTERVAL '7 days'");
       const admin = await requireAdmin(client, req);

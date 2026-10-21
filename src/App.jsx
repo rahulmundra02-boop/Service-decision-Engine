@@ -1297,12 +1297,19 @@ async function getHybridNewJobCards(apiBaseUrl, jobCards, checkNewJobCardsFn) {
     const cached = state.jobCards || new Set();
     const candidates = uniqueJobCards.filter(jobCard => !cached.has(jobCard));
 
-    if (!candidates.length) return new Set();
+    // If the browser cache says every card is already known, verify with Neon.
+    // Earlier uploads could have cached a Job Card before its background save
+    // completed, which otherwise makes a failed save impossible to retry.
+    if (!candidates.length) {
+      return checkNewJobCardsFn(uniqueJobCards);
+    }
 
     const confirmedNewJobCards = await checkNewJobCardsFn(candidates);
 
-    // Server confirmation lets us safely add both existing and new candidates.
-    await addJobCardsToBrowserIndex(candidates);
+    // Cache only cards confirmed to already exist in Neon. Newly identified
+    // cards are added after their database save succeeds.
+    const confirmedExisting = candidates.filter(jobCard => !confirmedNewJobCards.has(jobCard));
+    if (confirmedExisting.length) await addJobCardsToBrowserIndex(confirmedExisting);
     return confirmedNewJobCards;
   } catch (error) {
     console.warn("Hybrid Job Card cache unavailable; using central check:", error);
@@ -6226,8 +6233,11 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         try {
           const vehicle = deriveVehicle(vehicleRecords);
           await saveHistoryToBackend({ records: vehicleRecords, vehicle });
+          const savedJobCards = [...new Set(vehicleRecords.map(record => normalizeJobCard(record?.jobCard)).filter(Boolean))];
+          if (savedJobCards.length) await addJobCardsToBrowserIndex(savedJobCards);
         } catch (error) {
           console.error("Background history save failed:", error);
+          setError(`Database history save failed for vehicle ${vehicleRecords[0]?.reg || vehicleRecords[0]?.vin || ""}: ${error?.message || "unknown error"}. Please retry the Excel upload.`);
         }
       }
     }

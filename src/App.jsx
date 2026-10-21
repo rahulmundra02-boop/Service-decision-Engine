@@ -9308,6 +9308,27 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
           .sidebar-collapsed .sidebar-toggle{align-self:center}
         }
       `}
+
+        /* Restore the original top navigation on Beta; keep requested order and colourful icons. */
+        @media (min-width: 901px) {
+          .excel-tabs {
+            position: static !important; top:auto !important; left:auto !important; bottom:auto !important;
+            width:auto !important; height:auto !important; min-height:44px; box-sizing:border-box;
+            display:flex !important; flex-direction:row !important; flex-wrap:wrap; align-items:center !important;
+            justify-content:flex-start !important; gap:4px !important; padding:6px 10px !important;
+            overflow:visible !important; border:0 !important; border-bottom:1px solid #c8c8c8 !important;
+            background:#f3f3f3 !important;
+          }
+          .excel-tab {
+            display:flex !important; flex:0 0 auto; align-items:center !important; justify-content:flex-start !important;
+            gap:8px !important; width:auto !important; min-height:38px; padding:8px 10px !important;
+            font-size:13px !important; white-space:nowrap !important; overflow:visible !important;
+          }
+          .excel-toolbar,.excel-sheet { margin-left:0 !important; width:auto !important; max-width:100%; }
+          .excel-sheet { box-sizing:border-box; }
+          .excel-tabs .excel-tab::before { display:none !important; content:none !important; }
+          .excel-tabs .excel-tab .nav-icon { display:inline-flex !important; flex:0 0 22px; width:22px; height:22px; font-size:16px !important; }
+        }
       </style>
 
 
@@ -9326,7 +9347,6 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
 
           <div className="excel-ribbon no-print">
             <div className="excel-tabs">
-              <button type="button" className="sidebar-toggle" onClick={() => setSidebarCollapsed(value => !value)} title={sidebarCollapsed ? "Expand navigation" : "Minimize navigation"} aria-label={sidebarCollapsed ? "Expand navigation" : "Minimize navigation"}><span className="sidebar-hamburger" aria-hidden="true"><i></i><i></i><i></i></span></button>
               <div className={"excel-tab " + (mode === "home" ? "active" : "")} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("home"); }}> <span className="nav-icon">🏠</span>Home</div>
               <div className={`excel-tab ${mode === "registration-search" ? "active" : ""}`} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setAnalysis(null); setRegistrationSearchResult(null); setEstimateOpen(false); setMode("registration-search"); setRegistrationSearchError(""); }}> <span className="nav-icon">🚛</span>Search by Registration No.</div>
               <div className={"excel-tab " + (mode === "single" ? "active" : "")} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("single"); setError(""); setBulkResults([]); setBulkMeta(null); }}> <span className="nav-icon">🚚</span>Single Vehicle</div>

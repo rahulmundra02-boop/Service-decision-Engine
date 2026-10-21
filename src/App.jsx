@@ -9507,41 +9507,6 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
             )}
           </div>
 
-          {uploadDiagnostic && mode !== "home" && mode !== "warranty-tags" && mode !== "document-scanner" && mode !== "profile" && (
-            <section className="no-print" style={{margin:"10px 0 16px",padding:16,border:"1px solid var(--border-color, #d8dee8)",borderRadius:12,background:"var(--card-background, #fff)",color:"var(--text-color, #1f2937)"}}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
-                <strong style={{fontSize:16}}>Temporary Upload Diagnostic Report</strong>
-                <span style={{fontSize:12,fontWeight:800,color:uploadDiagnostic.status==="completed"?"#16803c":uploadDiagnostic.status==="completed-with-errors"?"#b42318":"#946200"}}>{uploadDiagnostic.status==="completed"?"Completed":uploadDiagnostic.status==="completed-with-errors"?"Completed with errors":uploadDiagnostic.status==="paused"?"Paused by safety cutoff": "Processing"}</span>
-              </div>
-              <div style={{fontSize:12,opacity:.8,marginTop:4}}>Excel rows and database results are reported separately. This panel is temporary and Beta-only.</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(135px,1fr))",gap:8,marginTop:12}}>
-                {[
-                  ["Rows before dedup",uploadDiagnostic.rowsBeforeDedup],
-                  ["Duplicate Excel rows ignored",uploadDiagnostic.duplicateRowsIgnored],
-                  ["Rows parsed",uploadDiagnostic.parsedRows],
-                  ["Vehicles found",uploadDiagnostic.vehicleCount],
-                  ["Vehicle master updated",uploadDiagnostic.vehiclesUpserted],
-                  ["Unique Job Cards",uploadDiagnostic.uniqueJobCards],
-                  ["Already in DB / ignored",uploadDiagnostic.jobCardsAlreadyInDb],
-                  ["New Job Cards checked for save",uploadDiagnostic.jobCardsSubmitted],
-                  ["Job Cards newly inserted",uploadDiagnostic.jobCardsSaved],
-                  ["Service lines newly inserted",uploadDiagnostic.serviceLinesSaved]
-                ].map(([label,value])=><div key={label} style={{padding:"10px 11px",border:"1px solid var(--border-color, #e5e7eb)",borderRadius:9}}>
-                  <div style={{fontSize:11,opacity:.75,lineHeight:1.35}}>{label}</div><div style={{fontSize:21,fontWeight:800,marginTop:4}}>{Number(value||0).toLocaleString("en-IN")}</div>
-                </div>)}
-              </div>
-              {uploadDiagnostic.cutoff && <div style={{marginTop:10,padding:10,borderRadius:8,background:"#fff7e6",color:"#8a5200",fontSize:13}}>Database history saving was paused by the emergency safety cutoff. The Excel data remains available locally.</div>}
-              {uploadDiagnostic.vehicleMasterError && <div style={{marginTop:10,padding:10,borderRadius:8,background:"#fff1f0",color:"#b42318",fontSize:13}}><strong>Vehicle master DB error:</strong> {uploadDiagnostic.vehicleMasterError}</div>}
-              {(uploadDiagnostic.filesFailed||[]).length>0 && <details style={{marginTop:10}}><summary style={{cursor:"pointer",fontWeight:700}}>Files not read ({uploadDiagnostic.filesFailed.length})</summary><ul>{uploadDiagnostic.filesFailed.map((item,i)=><li key={i}>{item.name}: {item.reason}</li>)}</ul></details>}
-              {(uploadDiagnostic.invalidRows||[]).length>0 && <details style={{marginTop:10}}><summary style={{cursor:"pointer",fontWeight:700}}>Invalid / skipped rows ({uploadDiagnostic.invalidRows.length})</summary><ul>{uploadDiagnostic.invalidRows.slice(0,200).map((item,i)=><li key={i}>{typeof item==="string"?item:JSON.stringify(item)}</li>)}</ul></details>}
-              {(uploadDiagnostic.outcomes||[]).length>0 && <details open={uploadDiagnostic.status==="completed-with-errors"} style={{marginTop:10}}>
-                <summary style={{cursor:"pointer",fontWeight:700}}>Vehicle-wise database result ({uploadDiagnostic.outcomes.length})</summary>
-                <div style={{overflowX:"auto",marginTop:8}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:650}}><thead><tr>{["Registration / VIN","Input rows","Unique JCs","New JCs saved","Service lines saved","Status / reason"].map(h=><th key={h} style={{textAlign:"left",padding:8,borderBottom:"1px solid var(--border-color, #ddd)"}}>{h}</th>)}</tr></thead><tbody>{uploadDiagnostic.outcomes.map((item,i)=><tr key={item.vin||i}><td style={{padding:8,borderBottom:"1px solid var(--border-color, #eee)"}}>{item.registration||item.vin}<div style={{opacity:.65}}>{item.vin}</div></td><td style={{padding:8}}>{item.inputRows}</td><td style={{padding:8}}>{item.uniqueJobCards}</td><td style={{padding:8}}>{item.newJobCardsSaved}</td><td style={{padding:8}}>{item.newServiceLines}</td><td style={{padding:8,color:item.status==="failed"?"#b42318":"#16803c"}}>{item.status==="failed"?item.message:"Saved API transaction successfully"}</td></tr>)}</tbody></table></div>
-              </details>}
-              {uploadDiagnostic.status==="completed" && uploadDiagnostic.jobCardsSubmitted>uploadDiagnostic.jobCardsSaved && <div style={{marginTop:10,fontSize:12,color:"#946200"}}>Note: “submitted” means Job Cards identified as new before saving. “Newly inserted” is the confirmed insert count; a difference can occur if another upload inserts the same Job Card concurrently.</div>}
-              <div style={{display:"flex",justifyContent:"flex-end",marginTop:12}}><button className="excel-button" onClick={()=>setUploadDiagnostic(null)}>Hide diagnostic report</button></div>
-            </section>
-          )}
           <input id="excel-file-input" className="no-print" type="file" accept=".xlsx,.xls,.xlsm,.csv" multiple style={{display:"none"}} onChange={handleExcelUpload} disabled={uploadBusy} />
 
           <div className="mobile-work-actions no-print">

@@ -9326,7 +9326,11 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
           .excel-toolbar,.excel-sheet { margin-left:0 !important; width:auto !important; max-width:100%; }
           .excel-sheet { box-sizing:border-box; }
           .excel-tabs .excel-tab::before { display:none !important; content:none !important; }
-          .excel-tabs .excel-tab .nav-icon { display:inline-flex !important; flex:0 0 22px; width:22px; height:22px; font-size:16px !important; }
+          .excel-tabs .excel-tab .nav-icon { display:inline-flex !important; flex:0 0 22px; width:22px; height:22px; font-size:16px !important; opacity:1 !important; visibility:visible !important; }
+          .excel-tabs .excel-tab, .excel-tabs .excel-tab.active { color:#172b4d !important; opacity:1 !important; visibility:visible !important; text-shadow:none !important; }
+          .excel-tabs .excel-tab:not(.active) { background:transparent !important; }
+          .excel-tabs .excel-tab.active { background:#a3e635 !important; color:#172b4d !important; }
+          .excel-tabs .excel-tab:hover { color:#10243b !important; background:#e8f5d0 !important; }
         }
       `}
       </style>

@@ -9307,7 +9307,6 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
           .sidebar-collapsed .excel-toolbar,.sidebar-collapsed .excel-sheet{margin-left:72px}
           .sidebar-collapsed .sidebar-toggle{align-self:center}
         }
-      `}
 
         /* Restore the original top navigation on Beta; keep requested order and colourful icons. */
         @media (min-width: 901px) {
@@ -9329,6 +9328,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
           .excel-tabs .excel-tab::before { display:none !important; content:none !important; }
           .excel-tabs .excel-tab .nav-icon { display:inline-flex !important; flex:0 0 22px; width:22px; height:22px; font-size:16px !important; }
         }
+      `}
       </style>
 
 

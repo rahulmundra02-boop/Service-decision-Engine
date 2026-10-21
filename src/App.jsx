@@ -9292,8 +9292,9 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
           .excel-tab.active::before { background: #10243b; color: #a3e635; }
           .excel-toolbar { margin-left: 224px; }
           .excel-sheet { margin-left: 224px; }
-          .sidebar-toggle{align-self:flex-start;width:34px;height:28px;margin:0 0 4px 2px;padding:0;border:0;border-radius:6px;background:transparent;color:#e5eef8;font-size:24px;font-weight:900;line-height:1;cursor:pointer}
-          .sidebar-toggle:hover{background:#1b3855}
+          .sidebar-toggle{display:flex!important;align-items:center;justify-content:center;align-self:flex-start;flex:0 0 36px;width:36px;min-width:36px;height:30px;margin:0 0 4px 2px;padding:0;border:1px solid #d9f99d;border-radius:6px;background:#a3e635;color:#10243b;font-size:24px;font-weight:900;line-height:1;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.22)}
+          .sidebar-toggle:hover{background:#bef264;border-color:#ecfccb}
+          .sidebar-toggle:focus-visible{outline:2px solid #fff;outline-offset:2px}
           .sidebar-hamburger{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:4px;width:18px;height:18px;margin:auto}
           .sidebar-hamburger i{display:block;width:17px;height:2px;border-radius:2px;background:currentColor}
           .sidebar-collapsed .excel-tabs{width:72px;padding:18px 8px;align-items:center}

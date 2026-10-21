@@ -5485,6 +5485,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   const [uploadMeta, setUploadMeta] = useState(null);
   const [uploadParsedRecords, setUploadParsedRecords] = useState([]);
   const [uploadProgress, setUploadProgress] = useState(null);
+  const [uploadDiagnostic, setUploadDiagnostic] = useState(null);
   const [analysisBusy, setAnalysisBusy] = useState(false);
   const cancelProcessingRef = useRef(false);
   const seenUploadSignaturesRef = useRef(new Set());
@@ -6221,7 +6222,8 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     }
 
     const jobs = [...groups.entries()];
-    if (!jobs.length) return;
+    const outcomes = [];
+    if (!jobs.length) return outcomes;
 
     const concurrency = Math.min(4, jobs.length);
     let nextIndex = 0;
@@ -6229,28 +6231,44 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     async function worker() {
       while (nextIndex < jobs.length) {
         const index = nextIndex++;
-        const [, vehicleRecords] = jobs[index];
+        const [vin, vehicleRecords] = jobs[index];
+        const vehicle = deriveVehicle(vehicleRecords);
+        const jobCards = [...new Set(vehicleRecords.map(record => normalizeJobCard(record?.jobCard)).filter(Boolean))];
         try {
-          const vehicle = deriveVehicle(vehicleRecords);
-          await saveHistoryToBackend({ records: vehicleRecords, vehicle });
-          const savedJobCards = [...new Set(vehicleRecords.map(record => normalizeJobCard(record?.jobCard)).filter(Boolean))];
-          if (savedJobCards.length) await addJobCardsToBrowserIndex(savedJobCards);
+          const payload = await saveHistoryToBackend({ records: vehicleRecords, vehicle });
+          if (Array.isArray(payload.insertedJobCardNumbers) && payload.insertedJobCardNumbers.length) {
+            await addJobCardsToBrowserIndex(payload.insertedJobCardNumbers);
+          }
+          outcomes.push({
+            vin, registration: vehicleRecords[0]?.reg || vehicleRecords[0]?.registration || "",
+            inputRows: vehicleRecords.length, uniqueJobCards: jobCards.length,
+            newJobCardsSaved: Number(payload.newJobCards || 0),
+            duplicateJobCards: Number(payload.duplicateJobCards || 0),
+            newServiceLines: Number(payload.newServiceLines || 0),
+            status: "success", message: ""
+          });
         } catch (error) {
           console.error("Background history save failed:", error);
-          setError(`Database history save failed for vehicle ${vehicleRecords[0]?.reg || vehicleRecords[0]?.vin || ""}: ${error?.message || "unknown error"}. Please retry the Excel upload.`);
+          const message = error?.message || "Unknown database error";
+          outcomes.push({
+            vin, registration: vehicleRecords[0]?.reg || vehicleRecords[0]?.registration || "",
+            inputRows: vehicleRecords.length, uniqueJobCards: jobCards.length,
+            newJobCardsSaved: 0, duplicateJobCards: 0, newServiceLines: 0,
+            status: "failed", message
+          });
+          setError(`Database history save failed for vehicle ${vehicleRecords[0]?.reg || vin}: ${message}. See Upload Diagnostic Report for details.`);
         }
       }
     }
 
-    await Promise.all(
-      Array.from({ length: concurrency }, () => worker())
-    );
+    await Promise.all(Array.from({ length: concurrency }, () => worker()));
+    return outcomes.sort((a,b) => a.vin.localeCompare(b.vin));
   }
 
   const handleExcelUpload = async (event) => {
     const selectedFiles=Array.from(event.target.files||[]);event.target.value="";if(!selectedFiles.length)return;
     const files=selectedFiles;
-    cancelProcessingRef.current=false;setError("");setUploadBusy(true);setUploadProgress({stage:"Preparing upload",current:0,total:files.length,detail:`${files.length} file(s) selected`});
+    cancelProcessingRef.current=false;setError("");setUploadDiagnostic(null);setUploadBusy(true);setUploadProgress({stage:"Preparing upload",current:0,total:files.length,detail:`${files.length} file(s) selected`});
     try{
       const result=await parseExcelFiles(files,{onProgress:setUploadProgress,isCancelled:()=>cancelProcessingRef.current});
       if(cancelProcessingRef.current){const e=new Error("Upload cancelled.");e.name="AbortError";throw e;}
@@ -6258,6 +6276,8 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       setExcelData("");setUploadedFiles(accepted);setRegistrationSearchResult(null);setUploadMeta({files:result.files,failedFiles:result.failedFiles||[],rowsBefore:result.totalRowsBeforeDedup,duplicates:result.duplicateRowsIgnored,rowsAfter:parsedRows.length,invalidRows:result.invalidRows||[]});
       setAnalysis(null);setBulkResults([]);setBulkMeta(null);setCustomerGroups([]);setSelectedCustomers([]);setUploadParsedRecords(parsedRows);
       if(parsedRows.length){const vins=new Set(parsedRows.map(r=>String(r?.vin||"").trim().toUpperCase()).filter(Boolean));setMode(vins.size>1?"bulk":"single");logUsage("Excel Upload",{fileCount:accepted.length,vehicleCount:vins.size,details:{rows:parsedRows.length,files:accepted.map(f=>f.name)}});}
+      const diag = { filesSelected: files.length, filesRead: accepted.length, filesFailed: result.failedFiles || [], rowsBeforeDedup: Number(result.totalRowsBeforeDedup || 0), duplicateRowsIgnored: Number(result.duplicateRowsIgnored || 0), parsedRows: parsedRows.length, invalidRows: result.invalidRows || [], uniqueJobCards: 0, jobCardsAlreadyInDb: 0, jobCardsSubmitted: 0, jobCardsSaved: 0, serviceLinesSaved: 0, vehicleCount: 0, vehiclesUpserted: 0, vehicleMasterError: "", cutoff: false, outcomes: [], status: "processing", startedAt: new Date().toISOString() };
+      setUploadDiagnostic(diag);
       if(!parsedRows.length&&result.failedFiles?.length)setError(result.failedFiles.map(x=>`${x.name} — ${x.reason}`).join(" | "));
       if(parsedRows.length){
         setUploadProgress({stage:"Checking existing Job Cards",current:0,total:1,detail:"Checking local cache and database before history save"});await new Promise(resolve=>setTimeout(resolve,0));
@@ -6265,6 +6285,8 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         const cutoff=await fetchEmergencyDbUploadCutoff();
         if(cancelProcessingRef.current){const e=new Error("Upload cancelled.");e.name="AbortError";throw e;}
         const uploadedVins=[...new Set(parsedRows.map(r=>String(r?.vin||"").trim().toUpperCase()).filter(Boolean))];
+        const allJobCards=[...new Set(parsedRows.map(r=>normalizeJobCard(r?.jobCard)).filter(Boolean))];
+        diag.vehicleCount=uploadedVins.length;diag.uniqueJobCards=allJobCards.length;diag.cutoff=Boolean(cutoff.enabled);
         // Ensure every uploaded vehicle master exists in Neon independently of
         // Job Card cache/deduplication. This also refreshes its timestamp.
         try {
@@ -6273,23 +6295,36 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
             return deriveVehicle(rows);
           });
           const masterResult = await upsertVehicleMaster(vehicleMasterRecords);
+          diag.vehiclesUpserted=Number(masterResult.upsertedVehicles||0);
           if(masterResult.upsertedVehicles < uploadedVins.length) {
             console.warn("Some vehicle master records were not upserted", {requested:uploadedVins.length,upserted:masterResult.upsertedVehicles});
           }
         } catch (refreshError) {
           console.error("Vehicle master upsert failed after Excel upload:", refreshError);
-          setError("Excel is ready for analysis, but vehicle details could not be updated in the database. Please retry the upload or contact the administrator.");
+          diag.vehicleMasterError=refreshError?.message||"Vehicle master upsert failed";
+          setError("Excel is ready for analysis, but vehicle details could not be updated in the database. See Upload Diagnostic Report.");
         }
-        if(cutoff.enabled)setUploadProgress({stage:"History lookup complete",current:1,total:1,detail:"History save paused by safety cutoff; parsed data remains available locally"});
+        if(cutoff.enabled){diag.status="paused";setUploadProgress({stage:"History lookup complete",current:1,total:1,detail:"History save paused by safety cutoff; parsed data remains available locally"});}
+        else setUploadProgress({stage:"Checking Job Cards in database",current:1,total:1,detail:`Checking ${allJobCards.length.toLocaleString()} unique Job Cards`});
+        if(!cutoff.enabled){
         else{
           const cards=parsedRows.map(r=>normalizeJobCard(r?.jobCard)).filter(Boolean);
           const fresh=await getHybridNewJobCards(API_BASE_URL,cards,candidates=>checkNewJobCards(API_BASE_URL,candidates));
           if(cancelProcessingRef.current){const e=new Error("Upload cancelled.");e.name="AbortError";throw e;}
+          diag.jobCardsSubmitted=fresh.size;
+          diag.jobCardsAlreadyInDb=Math.max(0,allJobCards.length-fresh.size);
           const records=parsedRows.filter(r=>{const jc=normalizeJobCard(r?.jobCard);return !!jc&&fresh.has(jc);});
-          setUploadProgress({stage:"Saving new history in background",current:1,total:1,detail:`${records.length.toLocaleString()} new service rows queued; duplicate Job Cards are not saved again`});if(records.length)void saveHistoryInBackground(records);
+          setUploadProgress({stage:"Saving history to database",current:1,total:1,detail:`Saving ${records.length.toLocaleString()} service rows across ${fresh.size.toLocaleString()} new Job Cards`});
+          const outcomes=records.length?await saveHistoryInBackground(records):[];
+          diag.outcomes=outcomes;
+          diag.jobCardsSaved=outcomes.reduce((sum,item)=>sum+item.newJobCardsSaved,0);
+          diag.serviceLinesSaved=outcomes.reduce((sum,item)=>sum+item.newServiceLines,0);
+          diag.status=outcomes.some(item=>item.status==="failed")||diag.vehicleMasterError?"completed-with-errors":"completed";
         }
       }
-      setUploadProgress({stage:"Upload complete",current:files.length,total:files.length,detail:`${parsedRows.length.toLocaleString()} rows ready for analysis`});
+      diag.finishedAt=new Date().toISOString();
+      setUploadDiagnostic({...diag});
+      setUploadProgress({stage:diag.status==="completed-with-errors"?"Upload completed with errors":"Upload complete",current:files.length,total:files.length,detail:`${parsedRows.length.toLocaleString()} rows parsed; ${diag.jobCardsSaved.toLocaleString()} Job Cards confirmed inserted into DB`});
     }catch(e){if(e?.name==="AbortError")setError("Upload cancelled. No new background history save was started by this upload. Any current network lookup may finish in the background.");else{setUploadMeta(null);setUploadedFiles([]);setUploadParsedRecords([]);setError(e?.message||"The Excel file could not be read.");}}
     finally{setUploadBusy(false);cancelProcessingRef.current=false;window.setTimeout(()=>setUploadProgress(null),1800);}
   };

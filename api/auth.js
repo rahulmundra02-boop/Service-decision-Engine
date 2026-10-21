@@ -676,7 +676,6 @@ export default async function handler(req, res) {
     }
 
 
-    // Lazy retention cleanup: removes expired interaction logs on admin access.
     if (action === "admin-database-view") {
       const admin = await requireAdmin(client, req);
       if (admin.error) {
@@ -684,7 +683,7 @@ export default async function handler(req, res) {
         return res.status(admin.status).json({success:false,error:admin.error});
       }
 
-      const datePattern = /^\\d{4}-\\d{2}-\\d{2}$/;
+      const datePattern = /^\d{4}-\d{2}-\d{2}$/;
       const startDate = clean(body.startDate);
       const endDate = clean(body.endDate);
       if (!datePattern.test(startDate) || !datePattern.test(endDate) || startDate > endDate) {
@@ -733,6 +732,7 @@ export default async function handler(req, res) {
       });
     }
 
+    // Lazy retention cleanup: removes expired interaction logs on admin access.
     if (action === "admin-analytics") {
       await client.query("DELETE FROM user_activity WHERE activity_time < NOW() - INTERVAL '7 days'");
       const admin = await requireAdmin(client, req);

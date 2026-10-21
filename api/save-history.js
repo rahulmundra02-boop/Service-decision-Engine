@@ -8,6 +8,10 @@ const pool = new Pool({
   max: 4,
 });
 
+function normalizeJobCard(value) {
+  return String(value ?? "").trim().toUpperCase().replace(/\\s+/g, " ");
+}
+
 function clean(value) {
   if (value === undefined || value === null || String(value).trim() === "") return null;
   return value;

@@ -9294,6 +9294,8 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
           .excel-sheet { margin-left: 224px; }
           .sidebar-toggle{align-self:flex-start;width:34px;height:28px;margin:0 0 4px 2px;padding:0;border:0;border-radius:6px;background:transparent;color:#e5eef8;font-size:24px;font-weight:900;line-height:1;cursor:pointer}
           .sidebar-toggle:hover{background:#1b3855}
+          .sidebar-hamburger{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:4px;width:18px;height:18px;margin:auto}
+          .sidebar-hamburger i{display:block;width:17px;height:2px;border-radius:2px;background:currentColor}
           .sidebar-collapsed .excel-tabs{width:72px;padding:18px 8px;align-items:center}
           .sidebar-collapsed .excel-tab{justify-content:center;gap:0;padding:10px 4px;font-size:0;white-space:nowrap;overflow:hidden}
           .sidebar-collapsed .excel-tab .nav-icon{font-size:16px;flex:0 0 22px}

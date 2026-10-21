@@ -694,7 +694,20 @@ export default async function handler(req, res) {
       const rangeParams = [startDate, endDate];
       const rangeFilter = "created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Kolkata') AND created_at < (($2::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata')";
 
-      const [vehicleCount, lineCount, vehicles] = await Promise.all([
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS vehicle_upload_events (
+          id BIGSERIAL PRIMARY KEY,
+          vin TEXT NOT NULL,
+          vehicle_existed_before BOOLEAN NOT NULL DEFAULT FALSE,
+          new_job_cards INTEGER NOT NULL DEFAULT 0,
+          event_type TEXT NOT NULL DEFAULT 'refresh',
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await client.query("CREATE INDEX IF NOT EXISTS idx_vehicle_upload_events_created_at ON vehicle_upload_events(created_at)");
+      await client.query("CREATE INDEX IF NOT EXISTS idx_vehicle_upload_events_vin_created_at ON vehicle_upload_events(vin,created_at)");
+
+      const [vehicleCount, lineCount, vehicles, modifiedVehicleCount, refreshedVehicleCount] = await Promise.all([
         client.query(
           "SELECT COUNT(*)::int AS count FROM vehicles WHERE " + rangeFilter,
           rangeParams
@@ -707,6 +720,19 @@ export default async function handler(req, res) {
           "SELECT vin,registration,customer_name,model,created_at FROM vehicles WHERE " + rangeFilter +
           " ORDER BY created_at DESC LIMIT 200",
           rangeParams
+        ),
+        client.query(
+          "SELECT COUNT(DISTINCT UPPER(TRIM(vin)))::int AS count FROM vehicle_upload_events " +
+          "WHERE created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Kolkata') " +
+          "AND created_at < (($2::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata') " +
+          "AND vehicle_existed_before=TRUE AND new_job_cards>0",
+          rangeParams
+        ),
+        client.query(
+          "SELECT COUNT(DISTINCT UPPER(TRIM(vin)))::int AS count FROM vehicle_upload_events " +
+          "WHERE created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Kolkata') " +
+          "AND created_at < (($2::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata')",
+          rangeParams
         )
       ]);
 
@@ -717,6 +743,8 @@ export default async function handler(req, res) {
         endDate,
         vehicleCount:vehicleCount.rows[0]?.count || 0,
         lineItemCount:lineCount.rows[0]?.count || 0,
+        modifiedVehicleCount:modifiedVehicleCount.rows[0]?.count || 0,
+        refreshedVehicleCount:refreshedVehicleCount.rows[0]?.count || 0,
         vehicles:vehicles.rows,
         vehicleRowsLimited:vehicles.rowCount >= 200
       });

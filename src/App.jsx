@@ -5479,10 +5479,11 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     const handleMobileNavigation = (event) => {
       const nextMode = event?.detail?.mode;
       if (!nextMode) return;
-      if (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim()) clearCurrentDataRef.current?.();
+      const hadVehicleData = Boolean(analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim());
+      if (hadVehicleData) clearCurrentDataRef.current?.();
       if (nextMode === "estimate") {
         setMode("estimate");
-        if (analysis) void openEstimate();
+        if (analysis && !hadVehicleData) void openEstimate();
         else openStandaloneEstimate();
         return;
       }
@@ -9277,7 +9278,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
               <div className={"excel-tab " + (mode === "home" ? "active" : "")} onClick={() => { if (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim()) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("home"); }}>Home</div>
               <div className={"excel-tab " + (mode === "single" ? "active" : "")} onClick={() => { if (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim()) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("single"); setError(""); setBulkResults([]); setBulkMeta(null); }}>Single Vehicle</div>
               <div className={`excel-tab ${mode === "bulk" ? "active" : ""}`} onClick={() => { if (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim()) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("bulk"); setError(""); setAnalysis(null); }}>Bulk Vehicle</div>
-              <div className={`excel-tab ${estimateOpen ? "active" : ""}`} onClick={() => { if (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim()) clearCurrentDataRef.current?.(); setMode("estimate"); if (analysis) void openEstimate(); else openStandaloneEstimate(); }}>Prepare Estimate</div>
+              <div className={`excel-tab ${estimateOpen ? "active" : ""}`} onClick={() => { const hadVehicleData = Boolean(analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim()); if (hadVehicleData) clearCurrentDataRef.current?.(); setMode("estimate"); if (analysis && !hadVehicleData) void openEstimate(); else openStandaloneEstimate(); }}>Prepare Estimate</div>
               <div className={`excel-tab ${mode === "warranty-tags" ? "active" : ""}`} onClick={() => { if (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim()) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("warranty-tags"); setError(""); }}>Warranty Tag Print</div>
               <div className={`excel-tab ${mode === "registration-search" ? "active" : ""}`} onClick={() => { if (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim()) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("registration-search"); setRegistrationSearchError(""); }}>Search by Registration</div>
               <div className={`excel-tab ${mode === "document-scanner" ? "active" : ""}`} onClick={() => { if (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim()) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("document-scanner"); setError(""); }}>Document Scanner</div>

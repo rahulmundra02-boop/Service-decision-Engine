@@ -7213,8 +7213,8 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       setAnalysis({ headers: [], records, headerMap: {}, vehicle, running, visits, decision });
       setRegistrationSearchResult({ ...data, searchedRegistration: registration });
       setEstimateOpen(false);
-      setMode("registration-search");
-      logUsage("Registration Database Service Analysis", { mode: "registration-search", vehicleCount: 1, vin: String(vehicle?.vin || "").trim().toUpperCase(), details: { source: "database", rows: records.length, serviceCount: (decision?.services || []).length } });
+      setMode("single");
+      logUsage("Registration Database Service Analysis", { mode: "single", vehicleCount: 1, vin: String(vehicle?.vin || "").trim().toUpperCase(), details: { source: "database", rows: records.length, serviceCount: (decision?.services || []).length } });
     } catch (error) { setRegistrationSearchError(error?.message || "Unable to load vehicle service history. Please try again."); }
     finally { setRegistrationSearchBusy(false); }
   }
@@ -9281,7 +9281,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
               <div className={`excel-tab ${mode === "bulk" ? "active" : ""}`} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("bulk"); setError(""); setAnalysis(null); }}>Bulk Vehicle</div>
               <div className={`excel-tab ${estimateOpen ? "active" : ""}`} onClick={() => { const hadVehicleData = Boolean(analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim()); if (hadVehicleData) clearCurrentDataRef.current?.(); setMode("estimate"); if (analysis && !hadVehicleData) void openEstimate(); else openStandaloneEstimate(); }}>Prepare Estimate</div>
               <div className={`excel-tab ${mode === "warranty-tags" ? "active" : ""}`} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("warranty-tags"); setError(""); }}>Warranty Tag Print</div>
-              <div className={`excel-tab ${mode === "registration-search" ? "active" : ""}`} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("registration-search"); setRegistrationSearchError(""); }}>Search by Registration</div>
+              <div className={`excel-tab ${(mode === "registration-search" || (mode === "single" && registrationSearchResult)) ? "active" : ""}`} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setAnalysis(null); setRegistrationSearchResult(null); setEstimateOpen(false); setMode("registration-search"); setRegistrationSearchError(""); }}>Search by Registration</div>
               <div className={`excel-tab ${mode === "document-scanner" ? "active" : ""}`} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("document-scanner"); setError(""); }}>Document Scanner</div>
               <div className={`excel-tab ${mode === "profile" ? "active" : ""}`} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("profile"); setError(""); }}>Profile</div>
             </div>
@@ -9482,6 +9482,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                 {analysis ? (
                 <div id="single-screenshot-area" className="single-screenshot-area">
                 <div className="sheet-heading" style={{marginTop:10}}>VEHICLE SCHEDULE SERVICE HISTORY AS ON DATE - {todayDisplay}</div>
+                {registrationSearchResult && (() => { const updated = registrationSearchResult.vehicle?.last_refreshed_at ? new Date(registrationSearchResult.vehicle.last_refreshed_at) : null; const valid = updated && !Number.isNaN(updated.getTime()); const updateText = valid ? updated.toLocaleDateString("en-IN") + " at " + updated.toLocaleTimeString("en-IN", {hour:"2-digit",minute:"2-digit"}) : "date/time not available"; return <div className="registration-update-note" role="note">Informational only: this vehicle’s service history was last updated in the database on {updateText}. Services performed after this update may not be included, so verify before relying on the service decision.</div>; })()}
 
 
                 <div className="vehicle-output-layout" style={{marginTop:10}}>

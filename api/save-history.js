@@ -1166,10 +1166,16 @@ export default async function handler(req, res) {
 
     await ensureVehicleUploadEventsSchema(client);
     const priorVehicleResult = await client.query(
-      "SELECT id FROM vehicles WHERE UPPER(TRIM(vin))=$1 LIMIT 1",
+      "SELECT id, created_at FROM vehicles WHERE UPPER(TRIM(vin))=$1 LIMIT 1",
       [vin]
     );
-    const vehicleExistedBeforeUpload = priorVehicleResult.rowCount > 0;
+    // The master list is upserted before history sync starts. A VIN created
+    // moments ago in that same Excel upload is still a new vehicle, not a
+    // modified existing vehicle.
+    const vehicleExistedBeforeUpload = Boolean(
+      priorVehicleResult.rows[0]?.created_at &&
+      new Date(priorVehicleResult.rows[0].created_at).getTime() < Date.now() - 30 * 60 * 1000
+    );
 
     const vehicleResult = await client.query(
       "INSERT INTO vehicles (vin,registration,customer_number,customer_name,engine,model,sale_date,last_refreshed_at) " +

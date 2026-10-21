@@ -69,7 +69,6 @@ function serviceLineIdentityFromRecord(record = {}) {
     normalizeLineIdentityText(record.standardizedPart),
     normalizeLineIdentityText(record.repairTypeLine),
     normalizeLineIdentityText(record.faultCode || record.complaintCode),
-    normalizeLineIdentityText(record.repairType),
   ].join("|");
 }
 
@@ -84,7 +83,6 @@ function serviceLineIdentityFromDb(row = {}) {
     normalizeLineIdentityText(row.standardized_part),
     normalizeLineIdentityText(row.repair_line_item_type),
     normalizeLineIdentityText(row.complaint_code),
-    normalizeLineIdentityText(row.repair_type),
   ].join("|");
 }
 
@@ -1276,8 +1274,7 @@ export default async function handler(req, res) {
     if (allJobCardIdsArray.length) {
       const existingServiceResult = await client.query(
         "SELECT id, job_card_id, item_category, part_code, part_description, standardized_part, " +
-        "quantity, rate, customer_voice, codified_customer_voice, repair_line_item_type, " +
-        "complaint_code, repair_type " +
+        "quantity, repair_line_item_type, complaint_code " +
         "FROM service_history WHERE job_card_id=ANY($1::int[]) ORDER BY id ASC",
         [allJobCardIdsArray]
       );
@@ -1321,12 +1318,8 @@ export default async function handler(req, res) {
         const incomingDescription = clean(record.part || record.partDescription);
         const incomingStandardizedPart = clean(record.standardizedPart);
         const incomingQuantity = clean(record.qty || record.quantity);
-        const incomingRate = normalizeRate(record);
-        const incomingCustomerVoice = clean(record.customerVoice);
-        const incomingCodifiedVoice = clean(record.codifiedCustomerVoice);
         const incomingRepairLine = clean(record.repairTypeLine);
         const incomingComplaint = clean(record.faultCode || record.complaintCode);
-        const incomingRepairType = clean(record.repairType);
 
         if (existingRow) {
           const updateResult = await client.query(
@@ -1336,24 +1329,16 @@ export default async function handler(req, res) {
             "part_description=COALESCE($3,part_description), " +
             "standardized_part=COALESCE($4,standardized_part), " +
             "quantity=COALESCE($5,quantity), " +
-            "rate=COALESCE($6,rate), " +
-            "customer_voice=COALESCE($7,customer_voice), " +
-            "codified_customer_voice=COALESCE($8,codified_customer_voice), " +
-            "repair_line_item_type=COALESCE($9,repair_line_item_type), " +
-            "complaint_code=COALESCE($10,complaint_code), " +
-            "repair_type=COALESCE($11,repair_type) " +
-            "WHERE id=$12 AND (" +
+            "repair_line_item_type=COALESCE($6,repair_line_item_type), " +
+            "complaint_code=COALESCE($7,complaint_code) " +
+            "WHERE id=$8 AND (" +
             "item_category IS DISTINCT FROM COALESCE($1,item_category) OR " +
             "part_code IS DISTINCT FROM COALESCE($2,part_code) OR " +
             "part_description IS DISTINCT FROM COALESCE($3,part_description) OR " +
             "standardized_part IS DISTINCT FROM COALESCE($4,standardized_part) OR " +
             "quantity IS DISTINCT FROM COALESCE($5,quantity) OR " +
-            "rate IS DISTINCT FROM COALESCE($6,rate) OR " +
-            "customer_voice IS DISTINCT FROM COALESCE($7,customer_voice) OR " +
-            "codified_customer_voice IS DISTINCT FROM COALESCE($8,codified_customer_voice) OR " +
-            "repair_line_item_type IS DISTINCT FROM COALESCE($9,repair_line_item_type) OR " +
-            "complaint_code IS DISTINCT FROM COALESCE($10,complaint_code) OR " +
-            "repair_type IS DISTINCT FROM COALESCE($11,repair_type)) " +
+            "repair_line_item_type IS DISTINCT FROM COALESCE($6,repair_line_item_type) OR " +
+            "complaint_code IS DISTINCT FROM COALESCE($7,complaint_code)) " +
             "RETURNING id",
             [
               incomingCategory,
@@ -1361,12 +1346,8 @@ export default async function handler(req, res) {
               incomingDescription,
               incomingStandardizedPart,
               incomingQuantity,
-              incomingRate,
-              incomingCustomerVoice,
-              incomingCodifiedVoice,
               incomingRepairLine,
               incomingComplaint,
-              incomingRepairType,
               existingRow.id
             ]
           );
@@ -1376,9 +1357,9 @@ export default async function handler(req, res) {
         } else {
           await client.query(
             "INSERT INTO service_history " +
-            "(job_card_id,item_category,part_code,part_description,standardized_part,quantity,rate," +
-            "customer_voice,codified_customer_voice,repair_line_item_type,complaint_code,repair_type) " +
-            "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
+            "(job_card_id,item_category,part_code,part_description,standardized_part,quantity," +
+            "repair_line_item_type,complaint_code) " +
+            "VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
             [
               jobCardId,
               incomingCategory,
@@ -1386,12 +1367,8 @@ export default async function handler(req, res) {
               incomingDescription,
               incomingStandardizedPart,
               incomingQuantity,
-              incomingRate,
-              incomingCustomerVoice,
-              incomingCodifiedVoice,
               incomingRepairLine,
-              incomingComplaint,
-              incomingRepairType
+              incomingComplaint
             ]
           );
           newServiceLines++;

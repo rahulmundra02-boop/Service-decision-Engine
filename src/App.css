@@ -515,3 +515,6 @@ tr:last-child td { border-bottom:0; }
 .home-registration-controls .excel-input{min-width:0;flex:1}
 .home-registration-error{grid-column:1/-1;margin:0!important}
 @media(max-width:650px){.home-registration-check{grid-template-columns:1fr;padding:12px}.home-registration-controls{width:100%}.home-registration-controls .excel-button{flex:0 0 auto}}
+
+/* Keep only the colourful emoji icons in the left navigation; hide legacy green pseudo-icons. */
+.excel-tabs .excel-tab::before,.excel-tabs .excel-tab::after{content:none!important;display:none!important}

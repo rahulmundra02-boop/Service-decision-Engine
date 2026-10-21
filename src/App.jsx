@@ -6176,6 +6176,19 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     return payload;
   }
 
+  async function upsertVehicleMaster(vehicles) {
+    const response = await fetch(`${API_BASE_URL}/api/save-history`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "upsert-vehicle-master", vehicles }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload?.success) {
+      throw new Error(payload?.error || `Vehicle master update failed (${response.status})`);
+    }
+    return payload;
+  }
+
   async function touchVehicleRefreshTimestamps(vins) {
     const uniqueVins = [...new Set((vins || []).map(value => String(value || "").trim().toUpperCase()).filter(Boolean))];
     if (!uniqueVins.length) return { updatedVehicles: 0 };
@@ -6242,16 +6255,20 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         const cutoff=await fetchEmergencyDbUploadCutoff();
         if(cancelProcessingRef.current){const e=new Error("Upload cancelled.");e.name="AbortError";throw e;}
         const uploadedVins=[...new Set(parsedRows.map(r=>String(r?.vin||"").trim().toUpperCase()).filter(Boolean))];
-        // Every successful Excel upload refreshes each vehicle's DB timestamp,
-        // even when all Job Cards are already present in the browser cache/Neon.
+        // Ensure every uploaded vehicle master exists in Neon independently of
+        // Job Card cache/deduplication. This also refreshes its timestamp.
         try {
-          const refreshResult=await touchVehicleRefreshTimestamps(uploadedVins);
-          if(refreshResult.updatedVehicles < uploadedVins.length) {
-            console.warn("Some vehicle timestamps could not be refreshed", {requested:uploadedVins.length,updated:refreshResult.updatedVehicles});
+          const vehicleMasterRecords = uploadedVins.map(vin => {
+            const rows = parsedRows.filter(record => String(record?.vin || "").trim().toUpperCase() === vin);
+            return deriveVehicle(rows);
+          });
+          const masterResult = await upsertVehicleMaster(vehicleMasterRecords);
+          if(masterResult.upsertedVehicles < uploadedVins.length) {
+            console.warn("Some vehicle master records were not upserted", {requested:uploadedVins.length,upserted:masterResult.upsertedVehicles});
           }
         } catch (refreshError) {
-          console.error("Vehicle DB timestamp refresh failed after Excel upload:", refreshError);
-          setError("Excel is ready for analysis, but the database update timestamp could not be refreshed. Please retry the upload or contact the administrator.");
+          console.error("Vehicle master upsert failed after Excel upload:", refreshError);
+          setError("Excel is ready for analysis, but vehicle details could not be updated in the database. Please retry the upload or contact the administrator.");
         }
         if(cutoff.enabled)setUploadProgress({stage:"History lookup complete",current:1,total:1,detail:"History save paused by safety cutoff; parsed data remains available locally"});
         else{

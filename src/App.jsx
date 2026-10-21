@@ -6160,7 +6160,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        records,
+        records: (records || []).map(({ customerVoice, codifiedCustomerVoice, repairType, rate, netValue, ...record }) => record),
         vehicle: {
           ...vehicle,
           sale: vehicle?.sale instanceof Date

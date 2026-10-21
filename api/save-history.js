@@ -961,6 +961,62 @@ export default async function handler(req, res) {
     }
   }
 
+  // Upsert vehicle master records independently from Job Card deduplication.
+  // This ensures registration search can find newly uploaded vehicles even when
+  // all their Job Cards are already present in browser cache/Neon.
+  if (body.action === "upsert-vehicle-master") {
+    const vehicles = Array.isArray(body.vehicles) ? body.vehicles : [];
+    const uniqueVehicles = new Map();
+    for (const item of vehicles) {
+      const vehicle = normalizeVehicle(item || {});
+      const vin = String(vehicle.vin || vehicle.chassis || "").trim().toUpperCase();
+      if (!vin) continue;
+      const existing = uniqueVehicles.get(vin) || {};
+      uniqueVehicles.set(vin, {
+        vin,
+        registration: clean(vehicle.registration || vehicle.reg) || existing.registration || null,
+        customerNumber: clean(vehicle.customerNumber) || existing.customerNumber || null,
+        customerName: clean(vehicle.customerName) || existing.customerName || null,
+        engine: clean(vehicle.engine) || existing.engine || null,
+        model: clean(vehicle.model) || existing.model || null,
+        sale: clean(vehicle.sale) || existing.sale || null,
+      });
+    }
+    if (!uniqueVehicles.size) {
+      return res.status(400).json({ success:false, error:"No valid vehicle VINs were supplied." });
+    }
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      let upsertedVehicles = 0;
+      for (const vehicle of uniqueVehicles.values()) {
+        await client.query(
+          "INSERT INTO vehicles (vin,registration,customer_number,customer_name,engine,model,sale_date,last_refreshed_at) " +
+          "VALUES ($1,$2,$3,$4,$5,$6,$7,NOW()) " +
+          "ON CONFLICT (vin) DO UPDATE SET " +
+          "registration=COALESCE(EXCLUDED.registration,vehicles.registration), " +
+          "customer_number=COALESCE(EXCLUDED.customer_number,vehicles.customer_number), " +
+          "customer_name=COALESCE(EXCLUDED.customer_name,vehicles.customer_name), " +
+          "engine=COALESCE(EXCLUDED.engine,vehicles.engine), " +
+          "model=COALESCE(EXCLUDED.model,vehicles.model), " +
+          "sale_date=COALESCE(EXCLUDED.sale_date,vehicles.sale_date), " +
+          "last_refreshed_at=NOW()",
+          [vehicle.vin, vehicle.registration, vehicle.customerNumber, vehicle.customerName,
+           vehicle.engine, vehicle.model, vehicle.sale]
+        );
+        upsertedVehicles += 1;
+      }
+      await client.query("COMMIT");
+      return res.status(200).json({ success:true, upsertedVehicles });
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      console.error("Vehicle Master Upsert Error:", error);
+      return res.status(500).json({ success:false, error:error?.message || "Vehicle master upsert failed." });
+    } finally {
+      client.release();
+    }
+  }
+
   // Refresh vehicle timestamp even when the uploaded Job Cards already exist.
   // This keeps Admin stale-history buckets accurate without re-uploading history.
   if (body.action === "touch-vehicle-refresh") {

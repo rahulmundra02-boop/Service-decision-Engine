@@ -381,8 +381,8 @@ export default async function handler(req, res) {
             "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
             "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
             "jc.driver_phone, jc.service_contact_person_phone, " +
-            "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
-            "sh.repair_line_item_type, sh.complaint_code, sh.repair_type, sh.id AS service_history_id, jc.id AS job_card_id, " +
+            "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, " +
+            "sh.repair_line_item_type, sh.complaint_code, sh.id AS service_history_id, jc.id AS job_card_id, " +
             "UPPER(REPLACE(TRIM(COALESCE(sh.part_code,'')), ' ', '')) AS normalized_code " +
             "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
             "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +
@@ -407,7 +407,7 @@ export default async function handler(req, res) {
         const rateResult = await client.query(
           "WITH paid_rates AS (" +
           "SELECT UPPER(REPLACE(TRIM(sh.part_code), ' ', '')) AS normalized_code, " +
-          "sh.part_code, sh.part_description, sh.rate, jc.job_date, jc.id AS job_card_id, sh.id AS service_history_id " +
+          "sh.part_code, sh.part_description, NULL::numeric AS rate, jc.job_date, jc.id AS job_card_id, sh.id AS service_history_id " +
           "FROM service_history sh JOIN job_cards jc ON jc.id=sh.job_card_id " +
           "WHERE sh.item_category LIKE 'P002%' AND sh.part_code IS NOT NULL " +
           "AND UPPER(REPLACE(COALESCE(sh.repair_line_item_type, ''), ' ', '')) LIKE '%POSTWARRANTY/PAIDORDER%' " +
@@ -624,7 +624,7 @@ export default async function handler(req, res) {
             "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
             "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
           "jc.driver_phone, jc.service_contact_person_phone, " +
-            "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
+            "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, " +
             "sh.repair_line_item_type, sh.complaint_code " +
             "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
             "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +

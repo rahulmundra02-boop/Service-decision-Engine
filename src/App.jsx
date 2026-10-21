@@ -6209,7 +6209,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       const result=await parseExcelFiles(files,{onProgress:setUploadProgress,isCancelled:()=>cancelProcessingRef.current});
       if(cancelProcessingRef.current){const e=new Error("Upload cancelled.");e.name="AbortError";throw e;}
       const parsedRows=result.records||[],accepted=files.filter(f=>result.files.includes(f.name));
-      setExcelData("");setUploadedFiles(accepted);setUploadMeta({files:result.files,failedFiles:result.failedFiles||[],rowsBefore:result.totalRowsBeforeDedup,duplicates:result.duplicateRowsIgnored,rowsAfter:parsedRows.length,invalidRows:result.invalidRows||[]});
+      setExcelData("");setUploadedFiles(accepted);setRegistrationSearchResult(null);setUploadMeta({files:result.files,failedFiles:result.failedFiles||[],rowsBefore:result.totalRowsBeforeDedup,duplicates:result.duplicateRowsIgnored,rowsAfter:parsedRows.length,invalidRows:result.invalidRows||[]});
       setAnalysis(null);setBulkResults([]);setBulkMeta(null);setCustomerGroups([]);setSelectedCustomers([]);setUploadParsedRecords(parsedRows);
       if(parsedRows.length){const vins=new Set(parsedRows.map(r=>String(r?.vin||"").trim().toUpperCase()).filter(Boolean));setMode(vins.size>1?"bulk":"single");logUsage("Excel Upload",{fileCount:accepted.length,vehicleCount:vins.size,details:{rows:parsedRows.length,files:accepted.map(f=>f.name)}});}
       if(!parsedRows.length&&result.failedFiles?.length)setError(result.failedFiles.map(x=>`${x.name} — ${x.reason}`).join(" | "));
@@ -6417,6 +6417,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     };
   }, []);
   const analyze = async () => {
+    setRegistrationSearchResult(null);
     setError("");cancelProcessingRef.current=false;setAnalysisBusy(true);setUploadProgress({stage:"Preparing decision calculation",current:0,total:1,detail:"Validating vehicle records"});
     try {
       const parsed = getAnalysisRecords();
@@ -9281,7 +9282,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
               <div className={`excel-tab ${mode === "bulk" ? "active" : ""}`} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("bulk"); setError(""); setAnalysis(null); }}>Bulk Vehicle</div>
               <div className={`excel-tab ${estimateOpen ? "active" : ""}`} onClick={() => { const hadVehicleData = Boolean(analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim()); if (hadVehicleData) clearCurrentDataRef.current?.(); setMode("estimate"); if (analysis && !hadVehicleData) void openEstimate(); else openStandaloneEstimate(); }}>Prepare Estimate</div>
               <div className={`excel-tab ${mode === "warranty-tags" ? "active" : ""}`} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("warranty-tags"); setError(""); }}>Warranty Tag Print</div>
-              <div className={`excel-tab ${(mode === "registration-search" || (mode === "single" && registrationSearchResult)) ? "active" : ""}`} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setAnalysis(null); setRegistrationSearchResult(null); setEstimateOpen(false); setMode("registration-search"); setRegistrationSearchError(""); }}>Search by Registration</div>
+              <div className={`excel-tab ${mode === "registration-search" ? "active" : ""}`} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setAnalysis(null); setRegistrationSearchResult(null); setEstimateOpen(false); setMode("registration-search"); setRegistrationSearchError(""); }}>Search by Registration</div>
               <div className={`excel-tab ${mode === "document-scanner" ? "active" : ""}`} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("document-scanner"); setError(""); }}>Document Scanner</div>
               <div className={`excel-tab ${mode === "profile" ? "active" : ""}`} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("profile"); setError(""); }}>Profile</div>
             </div>

@@ -9290,8 +9290,12 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
             box-shadow: 0 3px 10px rgba(0,0,0,.16);
           }
           .excel-tab.active::before { background: #10243b; color: #a3e635; }
-          .excel-toolbar { margin-left: 224px; }
-          .excel-sheet { margin-left: 224px; }
+          .excel-toolbar { margin-left: 224px; min-width: 0; box-sizing: border-box; }
+          .excel-sheet { margin-left: 224px; width: calc(100% - 224px); min-width: 0; box-sizing: border-box; }
+          .excel-sheet > * { max-width: 100%; box-sizing: border-box; }
+          .excel-sheet table { max-width: 100%; }
+          .excel-sheet .customer-vehicle-profile, .excel-sheet .customer-output, .excel-sheet .history-wrap { min-width: 0; max-width: 100%; }
+          .excel-sheet img, .excel-sheet input, .excel-sheet select, .excel-sheet textarea { max-width: 100%; }
           .sidebar-toggle{display:flex!important;align-items:center;justify-content:center;align-self:flex-start;flex:0 0 36px;width:36px;min-width:36px;height:30px;margin:0 0 4px 2px;padding:0;border:1px solid #d9f99d;border-radius:6px;background:#a3e635;color:#10243b;font-size:24px;font-weight:900;line-height:1;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.22)}
           .sidebar-toggle:hover{background:#bef264;border-color:#ecfccb}
           .sidebar-toggle:focus-visible{outline:2px solid #fff;outline-offset:2px}

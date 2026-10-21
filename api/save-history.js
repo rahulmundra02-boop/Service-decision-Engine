@@ -1119,21 +1119,11 @@ export default async function handler(req, res) {
     await client.query("ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS plant_name TEXT");
     await client.query("ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS plant_code TEXT");
 
-    await client.query(
-      "ALTER TABLE service_history ADD COLUMN IF NOT EXISTS amount NUMERIC"
-    );
-    await client.query(
-      "ALTER TABLE service_history ADD COLUMN IF NOT EXISTS rate NUMERIC"
-    );
-    await client.query(
-      "UPDATE service_history SET rate = CASE " +
-      "WHEN quantity IS NOT NULL AND quantity <> 0 AND amount IS NOT NULL " +
-      "THEN amount / quantity ELSE rate END " +
-      "WHERE rate IS NULL AND amount IS NOT NULL"
-    );
-    await client.query(
-      "ALTER TABLE service_history DROP COLUMN IF EXISTS amount"
-    );
+    // Keep service_history schema stable. Repeatedly adding and dropping the
+    // legacy amount column consumes PostgreSQL's physical attribute slots and
+    // eventually hits the 1600-column limit even though few columns are live.
+    // The current schema stores per-unit values in rate; no amount migration
+    // should run on each upload.
 
     // These job-card fields are not needed for Service Decision / Estimate
     // storage. Keep them out of the DB to reduce unnecessary table size.

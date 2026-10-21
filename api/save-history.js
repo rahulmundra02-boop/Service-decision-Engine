@@ -458,7 +458,7 @@ export default async function handler(req, res) {
         const modelResult = await client.query(
           "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
           "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
-          "jc.secondary_cumulative_reading, jc.secondary_cumulative_unit, jc.driver_phone, jc.service_contact_person_phone, jc.plant_name, jc.plant_code, " +
+          "jc.secondary_cumulative_reading, jc.secondary_cumulative_unit, jc.driver_phone, jc.service_contact_person_phone, jc.plant_name, " +
           "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, " +
           "sh.repair_line_item_type, sh.complaint_code " +
           "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
@@ -592,7 +592,6 @@ export default async function handler(req, res) {
 
       if (registration) {
         await client.query("ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS plant_name TEXT");
-        await client.query("ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS plant_code TEXT");
         const vehicleResult = await client.query(
           "SELECT v.id, v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, v.last_refreshed_at " +
           "FROM vehicles v " +
@@ -1119,7 +1118,6 @@ export default async function handler(req, res) {
       "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS service_contact_person_phone TEXT"
     );
     await client.query("ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS plant_name TEXT");
-    await client.query("ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS plant_code TEXT");
 
     // Keep service_history schema stable. Repeatedly adding and dropping the
     // legacy amount column consumes PostgreSQL's physical attribute slots and
@@ -1177,7 +1175,7 @@ export default async function handler(req, res) {
       const existingResult = await client.query(
         "SELECT id, job_card_no, job_date, cumulative_reading, cumulative_unit, " +
         "secondary_cumulative_reading, secondary_cumulative_unit, " +
-        "driver_phone, service_contact_person_phone, plant_name, plant_code " +
+        "driver_phone, service_contact_person_phone, plant_name " +
         "FROM job_cards WHERE vehicle_id=$1 AND job_card_no=ANY($2::text[])",
         [vehicleId, jobCardNumbers]
       );
@@ -1202,8 +1200,8 @@ export default async function handler(req, res) {
           "secondary_cumulative_unit=COALESCE($5,secondary_cumulative_unit), " +
           "driver_phone=COALESCE($6,driver_phone), " +
           "service_contact_person_phone=COALESCE($7,service_contact_person_phone), " +
-          "plant_name=COALESCE(NULLIF($8,''),plant_name), plant_code=COALESCE(NULLIF($9,''),plant_code) " +
-          "WHERE id=$10 AND (" +
+          "plant_name=COALESCE(NULLIF($8,''),plant_name) " +
+          "WHERE id=$9 AND (" +
           "job_date IS DISTINCT FROM COALESCE($1,job_date) OR " +
           "cumulative_reading IS DISTINCT FROM COALESCE($2,cumulative_reading) OR " +
           "cumulative_unit IS DISTINCT FROM COALESCE($3,cumulative_unit) OR " +

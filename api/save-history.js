@@ -352,8 +352,8 @@ export default async function handler(req, res) {
           "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
           "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
           "jc.secondary_cumulative_reading, jc.secondary_cumulative_unit, jc.driver_phone, jc.service_contact_person_phone, jc.plant_name, jc.plant_code, " +
-          "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
-          "sh.repair_line_item_type, sh.complaint_code, sh.repair_type, sh.id AS service_history_id, jc.id AS job_card_id, " +
+          "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, " +
+          "sh.repair_line_item_type, sh.complaint_code, sh.id AS service_history_id, jc.id AS job_card_id, " +
           "UPPER(REPLACE(TRIM(COALESCE(sh.part_code,'')), ' ', '')) AS normalized_code " +
           "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
           "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +
@@ -368,7 +368,7 @@ export default async function handler(req, res) {
           "FROM filtered WHERE normalized_code <> ''" +
           ") SELECT vin, registration, customer_name, engine, model, sale_date, job_card_no, job_date, " +
           "cumulative_reading, cumulative_unit, driver_phone, service_contact_person_phone, item_category, part_code, " +
-          "part_description, standardized_part, quantity, rate, repair_line_item_type, complaint_code, repair_type " +
+          "part_description, standardized_part, quantity, repair_line_item_type, complaint_code " +
           "FROM ranked WHERE rn<=10 ORDER BY job_date DESC NULLS LAST, job_card_id DESC, service_history_id DESC",
           [vehicle.id, requestedCodes]
         );
@@ -397,7 +397,7 @@ export default async function handler(req, res) {
             "FROM filtered WHERE normalized_code <> ''" +
             ") SELECT vin, registration, customer_name, engine, model, sale_date, job_card_no, job_date, " +
             "cumulative_reading, cumulative_unit, driver_phone, service_contact_person_phone, item_category, part_code, " +
-            "part_description, standardized_part, quantity, rate, repair_line_item_type, complaint_code, repair_type " +
+            "part_description, standardized_part, quantity, repair_line_item_type, complaint_code " +
             "FROM ranked WHERE rn<=10 ORDER BY job_date DESC NULLS LAST, job_card_id DESC, service_history_id DESC;",
             [modelName, vehicle.vin, requestedCodes]
           );
@@ -411,7 +411,7 @@ export default async function handler(req, res) {
           "FROM service_history sh JOIN job_cards jc ON jc.id=sh.job_card_id " +
           "WHERE sh.item_category LIKE 'P002%' AND sh.part_code IS NOT NULL " +
           "AND UPPER(REPLACE(COALESCE(sh.repair_line_item_type, ''), ' ', '')) LIKE '%POSTWARRANTY/PAIDORDER%' " +
-          "AND sh.rate IS NOT NULL AND sh.rate > 0 " +
+          "AND FALSE " +
           "AND EXISTS (" +
           "SELECT 1 FROM unnest($1::text[]) AS requested(code) " +
           "WHERE UPPER(REPLACE(TRIM(sh.part_code), ' ', ''))=requested.code " +
@@ -459,8 +459,8 @@ export default async function handler(req, res) {
           "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
           "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
           "jc.secondary_cumulative_reading, jc.secondary_cumulative_unit, jc.driver_phone, jc.service_contact_person_phone, jc.plant_name, jc.plant_code, " +
-          "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
-          "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
+          "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, " +
+          "sh.repair_line_item_type, sh.complaint_code " +
           "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
           "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +
           "WHERE UPPER(TRIM(v.model))=UPPER(TRIM($1)) OR UPPER(TRIM(v.model)) LIKE '%' || UPPER(TRIM($1)) || '%' " +
@@ -469,14 +469,14 @@ export default async function handler(req, res) {
         );
         const rateResult = await client.query(
           "WITH paid_rates AS ( " +
-          "SELECT sh.part_code, sh.part_description, sh.rate, jc.job_date, jc.id AS job_card_id, sh.id AS service_history_id, " +
+          "SELECT sh.part_code, sh.part_description, NULL::numeric AS rate, jc.job_date, jc.id AS job_card_id, sh.id AS service_history_id, " +
           "ROW_NUMBER() OVER (PARTITION BY UPPER(REPLACE(TRIM(sh.part_code), ' ', '')) " +
           "ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC) AS rn " +
           "FROM service_history sh JOIN job_cards jc ON jc.id=sh.job_card_id " +
           "JOIN vehicles v ON v.id=jc.vehicle_id " +
           "WHERE sh.item_category LIKE 'P002%' AND sh.part_code IS NOT NULL " +
           "AND UPPER(REPLACE(COALESCE(sh.repair_line_item_type, ''), ' ', '')) LIKE '%POSTWARRANTY/PAIDORDER%' " +
-          "AND sh.rate IS NOT NULL AND sh.rate > 0 " +
+          "AND FALSE " +
           "), latest_ten AS ( " +
           "SELECT * FROM paid_rates WHERE rn <= 10 " +
           "), max_rates AS ( " +
@@ -558,7 +558,7 @@ export default async function handler(req, res) {
         // genuinely does not contain the requested part.
         const result = await client.query(
           "WITH paid_rates AS ( " +
-          "SELECT sh.part_code, sh.part_description, sh.rate, jc.job_date, jc.id AS job_card_id, sh.id AS service_history_id, " +
+          "SELECT sh.part_code, sh.part_description, NULL::numeric AS rate, jc.job_date, jc.id AS job_card_id, sh.id AS service_history_id, " +
           "ROW_NUMBER() OVER (" +
           "ORDER BY (CASE WHEN UPPER(REPLACE(COALESCE(sh.repair_line_item_type, ''), ' ', '')) LIKE '%POSTWARRANTY/PAIDORDER%' THEN 1 ELSE 2 END), " +
           "jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC) AS rn " +
@@ -570,7 +570,7 @@ export default async function handler(req, res) {
           "  OR UPPER(REPLACE(TRIM(sh.part_code), ' ', '')) LIKE $1 || '(%)' " +
           "  OR UPPER(REPLACE(REGEXP_REPLACE(TRIM(sh.part_code), '\\([A-Za-z0-9]+\\)$', ''), ' ', ''))=$1 " +
           ") " +
-          "AND sh.rate IS NOT NULL AND sh.rate > 0 " +
+          "AND FALSE " +
           ") " +
           "SELECT part_code, part_description, rate, job_date " +
           "FROM paid_rates WHERE rn <= 10 " +
@@ -609,8 +609,8 @@ export default async function handler(req, res) {
           "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
           "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
           "jc.secondary_cumulative_reading, jc.secondary_cumulative_unit, jc.driver_phone, jc.service_contact_person_phone, " +
-          "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
-          "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
+          "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, " +
+          "sh.repair_line_item_type, sh.complaint_code " +
           "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
           "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +
           "WHERE v.id=$1 ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id ASC",
@@ -625,7 +625,7 @@ export default async function handler(req, res) {
             "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
           "jc.driver_phone, jc.service_contact_person_phone, " +
             "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
-            "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
+            "sh.repair_line_item_type, sh.complaint_code " +
             "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
             "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +
             "WHERE UPPER(TRIM(v.model))=UPPER(TRIM($1)) AND v.vin<>$2 " +
@@ -636,14 +636,14 @@ export default async function handler(req, res) {
         }
         const rateResult = await client.query(
           "WITH paid_rates AS ( " +
-          "SELECT sh.part_code, sh.part_description, sh.rate, jc.job_date, jc.id AS job_card_id, sh.id AS service_history_id, " +
+          "SELECT sh.part_code, sh.part_description, NULL::numeric AS rate, jc.job_date, jc.id AS job_card_id, sh.id AS service_history_id, " +
           "ROW_NUMBER() OVER (PARTITION BY UPPER(REPLACE(TRIM(sh.part_code), ' ', '')) " +
           "ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC) AS rn " +
           "FROM service_history sh JOIN job_cards jc ON jc.id=sh.job_card_id " +
           "JOIN vehicles v ON v.id=jc.vehicle_id " +
           "WHERE sh.item_category LIKE 'P002%' AND sh.part_code IS NOT NULL " +
           "AND UPPER(REPLACE(COALESCE(sh.repair_line_item_type, ''), ' ', '')) LIKE '%POSTWARRANTY/PAIDORDER%' " +
-          "AND sh.rate IS NOT NULL AND sh.rate > 0 " +
+          "AND FALSE " +
           "), latest_ten AS ( " +
           "SELECT * FROM paid_rates WHERE rn <= 10 " +
           "), max_rates AS ( " +
@@ -670,8 +670,8 @@ export default async function handler(req, res) {
         "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
         "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
           "jc.driver_phone, jc.service_contact_person_phone, " +
-        "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
-        "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
+        "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, " +
+        "sh.repair_line_item_type, sh.complaint_code " +
         "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
         "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +
         "WHERE v.vin=$1 ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id ASC",
@@ -685,8 +685,8 @@ export default async function handler(req, res) {
           "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, " +
           "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
           "jc.secondary_cumulative_reading, jc.secondary_cumulative_unit, jc.driver_phone, jc.service_contact_person_phone, " +
-          "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
-          "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
+          "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, " +
+          "sh.repair_line_item_type, sh.complaint_code " +
           "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
           "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +
           "WHERE UPPER(TRIM(v.model))=UPPER(TRIM($1)) AND v.vin<>$2 " +
@@ -698,14 +698,14 @@ export default async function handler(req, res) {
 
       const rateResult = await client.query(
         "WITH paid_rates AS ( " +
-          "SELECT sh.part_code, sh.part_description, sh.rate, jc.job_date, jc.id AS job_card_id, sh.id AS service_history_id, " +
+          "SELECT sh.part_code, sh.part_description, NULL::numeric AS rate, jc.job_date, jc.id AS job_card_id, sh.id AS service_history_id, " +
           "ROW_NUMBER() OVER (PARTITION BY UPPER(REPLACE(TRIM(sh.part_code), ' ', '')) " +
           "ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC) AS rn " +
           "FROM service_history sh JOIN job_cards jc ON jc.id=sh.job_card_id " +
           "JOIN vehicles v ON v.id=jc.vehicle_id " +
           "WHERE sh.item_category LIKE 'P002%' AND sh.part_code IS NOT NULL " +
           "AND UPPER(REPLACE(COALESCE(sh.repair_line_item_type, ''), ' ', '')) LIKE '%POSTWARRANTY/PAIDORDER%' " +
-          "AND sh.rate IS NOT NULL AND sh.rate > 0 " +
+          "AND FALSE " +
           "), latest_ten AS ( " +
           "SELECT * FROM paid_rates WHERE rn <= 10 " +
           "), max_rates AS ( " +
@@ -856,8 +856,8 @@ export default async function handler(req, res) {
           "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
           "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
           "jc.secondary_cumulative_reading, jc.secondary_cumulative_unit, jc.driver_phone, jc.service_contact_person_phone, " +
-          "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
-          "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
+          "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, " +
+          "sh.repair_line_item_type, sh.complaint_code " +
           "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
           "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +
           "WHERE UPPER(TRIM(v.model))=UPPER(TRIM($1)) OR UPPER(TRIM(v.model)) LIKE '%' || UPPER(TRIM($1)) || '%' " +
@@ -866,14 +866,14 @@ export default async function handler(req, res) {
         );
         const rateResult = await client.query(
           "WITH paid_rates AS ( " +
-          "SELECT sh.part_code, sh.part_description, sh.rate, jc.job_date, jc.id AS job_card_id, sh.id AS service_history_id, " +
+          "SELECT sh.part_code, sh.part_description, NULL::numeric AS rate, jc.job_date, jc.id AS job_card_id, sh.id AS service_history_id, " +
           "ROW_NUMBER() OVER (PARTITION BY UPPER(REPLACE(TRIM(sh.part_code), ' ', '')) " +
           "ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC) AS rn " +
           "FROM service_history sh JOIN job_cards jc ON jc.id=sh.job_card_id " +
           "JOIN vehicles v ON v.id=jc.vehicle_id " +
           "WHERE sh.item_category LIKE 'P002%' AND sh.part_code IS NOT NULL " +
           "AND UPPER(REPLACE(COALESCE(sh.repair_line_item_type, ''), ' ', '')) LIKE '%POSTWARRANTY/PAIDORDER%' " +
-          "AND sh.rate IS NOT NULL AND sh.rate > 0 " +
+          "AND FALSE " +
           "), latest_ten AS ( " +
           "SELECT * FROM paid_rates WHERE rn <= 10 " +
           "), max_rates AS ( " +
@@ -1047,8 +1047,8 @@ export default async function handler(req, res) {
           "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
           "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
           "jc.secondary_cumulative_reading, jc.secondary_cumulative_unit, jc.driver_phone, jc.service_contact_person_phone, " +
-          "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, sh.rate, " +
-          "sh.repair_line_item_type, sh.complaint_code, sh.repair_type " +
+          "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, " +
+          "sh.repair_line_item_type, sh.complaint_code " +
           "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
           "LEFT JOIN service_history sh ON sh.job_card_id=jc.id " +
           "WHERE UPPER(TRIM(v.model))=UPPER(TRIM($1)) OR UPPER(TRIM(v.model)) LIKE '%' || UPPER(TRIM($1)) || '%' " +
@@ -1057,14 +1057,14 @@ export default async function handler(req, res) {
         );
         const rateResult = await client.query(
           "WITH paid_rates AS ( " +
-          "SELECT sh.part_code, sh.part_description, sh.rate, jc.job_date, jc.id AS job_card_id, sh.id AS service_history_id, " +
+          "SELECT sh.part_code, sh.part_description, NULL::numeric AS rate, jc.job_date, jc.id AS job_card_id, sh.id AS service_history_id, " +
           "ROW_NUMBER() OVER (PARTITION BY UPPER(REPLACE(TRIM(sh.part_code), ' ', '')) " +
           "ORDER BY jc.job_date DESC NULLS LAST, jc.id DESC, sh.id DESC) AS rn " +
           "FROM service_history sh JOIN job_cards jc ON jc.id=sh.job_card_id " +
           "JOIN vehicles v ON v.id=jc.vehicle_id " +
           "WHERE sh.item_category LIKE 'P002%' AND sh.part_code IS NOT NULL " +
           "AND UPPER(REPLACE(COALESCE(sh.repair_line_item_type, ''), ' ', '')) LIKE '%POSTWARRANTY/PAIDORDER%' " +
-          "AND sh.rate IS NOT NULL AND sh.rate > 0 " +
+          "AND FALSE " +
           "), latest_ten AS ( " +
           "SELECT * FROM paid_rates WHERE rn <= 10 " +
           "), max_rates AS ( " +

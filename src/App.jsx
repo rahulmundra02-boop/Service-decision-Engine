@@ -5459,6 +5459,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   const [appliedOverride, setAppliedOverride] = useState(null);
   const [decisionBasis, setDecisionBasis] = useState("AUTO");
   const [mode, setMode] = useState("home");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [registrationSearchInput, setRegistrationSearchInput] = useState("");
   const [registrationSearchBusy, setRegistrationSearchBusy] = useState(false);
   const [registrationSearchError, setRegistrationSearchError] = useState("");
@@ -9291,6 +9292,13 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
           .excel-tab.active::before { background: #10243b; color: #a3e635; }
           .excel-toolbar { margin-left: 224px; }
           .excel-sheet { margin-left: 224px; }
+          .sidebar-toggle{align-self:flex-start;width:34px;height:28px;margin:0 0 4px 2px;padding:0;border:0;border-radius:6px;background:transparent;color:#e5eef8;font-size:24px;font-weight:900;line-height:1;cursor:pointer}
+          .sidebar-toggle:hover{background:#1b3855}
+          .sidebar-collapsed .excel-tabs{width:72px;padding:18px 8px;align-items:center}
+          .sidebar-collapsed .excel-tab{justify-content:center;gap:0;padding:10px 4px;font-size:0;white-space:nowrap;overflow:hidden}
+          .sidebar-collapsed .excel-tab .nav-icon{font-size:16px;flex:0 0 22px}
+          .sidebar-collapsed .excel-toolbar,.sidebar-collapsed .excel-sheet{margin-left:72px}
+          .sidebar-collapsed .sidebar-toggle{align-self:center}
         }
       `}
       </style>
@@ -9304,13 +9312,14 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       </div></div>}
 
       <div className={`excel-app theme-${dashboardPrefs.theme || "blue"}`}>
-        <div className="excel-window">
+        <div className={`excel-window ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
           <div className="excel-titlebar">
             <div className="excel-title">Vehicle Service Decision &amp; Maintenance Dashboard</div>
           </div>
 
           <div className="excel-ribbon no-print">
             <div className="excel-tabs">
+              <button type="button" className="sidebar-toggle" onClick={() => setSidebarCollapsed(value => !value)} title={sidebarCollapsed ? "Expand navigation" : "Minimize navigation"} aria-label={sidebarCollapsed ? "Expand navigation" : "Minimize navigation"}>⋯</button>
               <div className={"excel-tab " + (mode === "home" ? "active" : "")} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("home"); }}> <span className="nav-icon">🏠</span>Home</div>
               <div className={`excel-tab ${mode === "registration-search" ? "active" : ""}`} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setAnalysis(null); setRegistrationSearchResult(null); setEstimateOpen(false); setMode("registration-search"); setRegistrationSearchError(""); }}> <span className="nav-icon">🚛</span>Search by Registration No.</div>
               <div className={"excel-tab " + (mode === "single" ? "active" : "")} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("single"); setError(""); setBulkResults([]); setBulkMeta(null); }}> <span className="nav-icon">🚚</span>Single Vehicle</div>

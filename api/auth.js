@@ -729,9 +729,13 @@ export default async function handler(req, res) {
           rangeParams
         ),
         client.query(
-          "SELECT COUNT(DISTINCT UPPER(TRIM(vin)))::int AS count FROM vehicle_upload_events " +
-          "WHERE created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Kolkata') " +
-          "AND created_at < (($2::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata')",
+          "SELECT COUNT(DISTINCT UPPER(TRIM(v.vin)))::int AS count FROM vehicles v " +
+          "WHERE v.vin IS NOT NULL AND TRIM(v.vin)<>'' AND (" +
+          "(v.last_refreshed_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Kolkata') " +
+          "AND v.last_refreshed_at < (($2::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata')) " +
+          "OR EXISTS (SELECT 1 FROM vehicle_upload_events e WHERE UPPER(TRIM(e.vin))=UPPER(TRIM(v.vin)) " +
+          "AND e.created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Kolkata') " +
+          "AND e.created_at < (($2::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata')))",
           rangeParams
         )
       ]);

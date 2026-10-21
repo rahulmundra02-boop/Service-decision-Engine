@@ -1464,6 +1464,34 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading, onChang
 function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRefreshAccountRequests, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel, priceMasterMeta, priceMasterUploadBusy, priceMasterUploadMessage, priceMasterUploadError, onUploadPriceMasterExcel }) {
   const analyticsDetailRef = useRef(null);
   const [view, setView] = useState("overview");
+  const localDateString = (date = new Date()) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  };
+  const [dbStartDate, setDbStartDate] = useState(localDateString());
+  const [dbEndDate, setDbEndDate] = useState(localDateString());
+  const [dbData, setDbData] = useState(null);
+  const [dbLoading, setDbLoading] = useState(false);
+  const [dbError, setDbError] = useState("");
+  const loadDatabaseView = async (startDate = dbStartDate, endDate = dbEndDate) => {
+    setDbLoading(true);
+    setDbError("");
+    try {
+      const data = await api("admin-database-view", { startDate, endDate }, localStorage.getItem(TOKEN_KEY));
+      setDbData(data);
+      setDbStartDate(startDate);
+      setDbEndDate(endDate);
+    } catch (e) {
+      setDbError(e.message || "Unable to load database view.");
+    } finally {
+      setDbLoading(false);
+    }
+  };
+  useEffect(() => {
+    if (view === "database") loadDatabaseView(dbStartDate, dbEndDate);
+  }, [view]);
 
   const selected = analyticsUserId
     ? analytics.summary.find(u => Number(u.id) === Number(analyticsUserId))
@@ -1692,6 +1720,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
               ["overview","Overview"],
               ["users","User Insights"],
               ["activity","Activity"],
+              ["database","Database View"],
               ["management","User Management"]
             ].map(([key,label])=>
               <button key={key} className={view===key ? "active" : ""} onClick={()=>setView(key)}>{label}</button>
@@ -1823,6 +1852,58 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
                   </tbody>
                 </table>
               </div>
+            </div>
+          </>
+        )}
+
+        {view === "database" && (
+          <>
+            <div className="admin-section-title">Database View</div>
+            <div className="admin-panel-card" style={{marginBottom:16}}>
+              <div className="admin-panel-card-title">New Data Stored in DM Database</div>
+              <div className="admin-panel-card-sub">Counts use database record creation time in India Standard Time, not vehicle sale date or job-card service date.</div>
+              <div style={{display:"flex",gap:10,alignItems:"end",flexWrap:"wrap",marginTop:14}}>
+                <button className="admin-analytics-btn" onClick={() => { const d=localDateString(); setDbStartDate(d); setDbEndDate(d); loadDatabaseView(d,d); }}>Today</button>
+                <button className="admin-analytics-btn" onClick={() => { const end=localDateString(); const start=localDateString(new Date(Date.now()-6*24*60*60*1000)); setDbStartDate(start); setDbEndDate(end); loadDatabaseView(start,end); }}>Last 7 Days</button>
+                <div><label style={{display:"block",fontSize:12,fontWeight:700,marginBottom:5}}>From date</label><input type="date" value={dbStartDate} onChange={e=>setDbStartDate(e.target.value)} style={{padding:8,border:"1px solid #cbd5e1",borderRadius:6}} /></div>
+                <div><label style={{display:"block",fontSize:12,fontWeight:700,marginBottom:5}}>To date</label><input type="date" value={dbEndDate} onChange={e=>setDbEndDate(e.target.value)} style={{padding:8,border:"1px solid #cbd5e1",borderRadius:6}} /></div>
+                <button className="auth-primary" style={{width:"auto",marginTop:0}} disabled={dbLoading || !dbStartDate || !dbEndDate || dbStartDate>dbEndDate} onClick={()=>loadDatabaseView(dbStartDate,dbEndDate)}>{dbLoading ? "Loading..." : "Apply Range"}</button>
+                {dbLoading && <span className="admin-loading-pill">Refreshing database counts...</span>}
+              </div>
+              {dbError && <div className="auth-inline-error">{dbError}</div>}
+              <div className="admin-dashboard-grid" style={{marginTop:16}}>
+                <div className="admin-kpi"><div className="admin-kpi-label">Vehicles Added</div><div className="admin-kpi-value">{Number(dbData?.vehicleCount||0).toLocaleString("en-IN")}</div><div className="admin-kpi-sub">New VIN records</div></div>
+                <div className="admin-kpi"><div className="admin-kpi-label">Line Items Added</div><div className="admin-kpi-value">{Number(dbData?.lineItemCount||0).toLocaleString("en-IN")}</div><div className="admin-kpi-sub">New service-history rows</div></div>
+              </div>
+              <div className="admin-panel-card-sub" style={{marginTop:12}}>Selected period: {dbStartDate} to {dbEndDate}. Counts are exact; each detail table shows up to 200 latest rows.</div>
+            </div>
+
+            <div className="admin-panel-card" style={{marginBottom:16}}>
+              <div className="admin-panel-card-title">Vehicle Records Added</div>
+              <div style={{overflowX:"auto",marginTop:10}}>
+                <table className="admin-table">
+                  <thead><tr><th>Created At</th><th>VIN</th><th>Registration</th><th>Customer</th><th>Model</th></tr></thead>
+                  <tbody>
+                    {(dbData?.vehicles||[]).map((v,i)=><tr key={v.vin||i}><td>{v.created_at?new Date(v.created_at).toLocaleString("en-IN"):"—"}</td><td>{v.vin||"—"}</td><td>{v.registration||"—"}</td><td>{v.customer_name||"—"}</td><td>{v.model||"—"}</td></tr>)}
+                    {!(dbData?.vehicles||[]).length && <tr><td colSpan="5" className="admin-empty">No vehicle records added in this period.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+              {dbData?.vehicleRowsLimited && <div className="admin-panel-card-sub">Showing latest 200 vehicle records. Total count above includes all records.</div>}
+            </div>
+
+            <div className="admin-panel-card">
+              <div className="admin-panel-card-title">Line Items Added</div>
+              <div style={{overflowX:"auto",marginTop:10}}>
+                <table className="admin-table">
+                  <thead><tr><th>Created At</th><th>VIN</th><th>Registration</th><th>Job Card</th><th>Part Code</th><th>Description</th><th>Qty</th><th>Line Type</th></tr></thead>
+                  <tbody>
+                    {(dbData?.lineItems||[]).map((r,i)=><tr key={`${r.vin}-${r.job_card_no}-${r.part_code}-${r.created_at}-${i}`}><td>{r.created_at?new Date(r.created_at).toLocaleString("en-IN"):"—"}</td><td>{r.vin||"—"}</td><td>{r.registration||"—"}</td><td>{r.job_card_no||"—"}</td><td>{r.part_code||"—"}</td><td>{r.standardized_part||r.part_description||"—"}</td><td>{r.quantity??"—"}</td><td>{r.repair_line_item_type||"—"}</td></tr>)}
+                    {!(dbData?.lineItems||[]).length && <tr><td colSpan="8" className="admin-empty">No line items added in this period.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+              {dbData?.lineItemRowsLimited && <div className="admin-panel-card-sub">Showing latest 200 line items. Total count above includes all records.</div>}
             </div>
           </>
         )}

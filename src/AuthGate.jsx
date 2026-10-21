@@ -1490,7 +1490,10 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
     }
   };
   useEffect(() => {
-    if (view === "database") loadDatabaseView(dbStartDate, dbEndDate);
+    if (view === "database") {
+      const today = localDateString();
+      loadDatabaseView(today, today);
+    }
   }, [view]);
 
   const selected = analyticsUserId
@@ -1892,19 +1895,6 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
               {dbData?.vehicleRowsLimited && <div className="admin-panel-card-sub">Showing latest 200 vehicle records. Total count above includes all records.</div>}
             </div>
 
-            <div className="admin-panel-card">
-              <div className="admin-panel-card-title">Line Items Added</div>
-              <div style={{overflowX:"auto",marginTop:10}}>
-                <table className="admin-table">
-                  <thead><tr><th>Created At</th><th>VIN</th><th>Registration</th><th>Job Card</th><th>Part Code</th><th>Description</th><th>Qty</th><th>Line Type</th></tr></thead>
-                  <tbody>
-                    {(dbData?.lineItems||[]).map((r,i)=><tr key={`${r.vin}-${r.job_card_no}-${r.part_code}-${r.created_at}-${i}`}><td>{r.created_at?new Date(r.created_at).toLocaleString("en-IN"):"—"}</td><td>{r.vin||"—"}</td><td>{r.registration||"—"}</td><td>{r.job_card_no||"—"}</td><td>{r.part_code||"—"}</td><td>{r.standardized_part||r.part_description||"—"}</td><td>{r.quantity??"—"}</td><td>{r.repair_line_item_type||"—"}</td></tr>)}
-                    {!(dbData?.lineItems||[]).length && <tr><td colSpan="8" className="admin-empty">No line items added in this period.</td></tr>}
-                  </tbody>
-                </table>
-              </div>
-              {dbData?.lineItemRowsLimited && <div className="admin-panel-card-sub">Showing latest 200 line items. Total count above includes all records.</div>}
-            </div>
           </>
         )}
 

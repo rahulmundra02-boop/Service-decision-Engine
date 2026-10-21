@@ -1877,6 +1877,8 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
               <div className="admin-dashboard-grid" style={{marginTop:16}}>
                 <div className="admin-kpi"><div className="admin-kpi-label">Vehicles Added</div><div className="admin-kpi-value">{Number(dbData?.vehicleCount||0).toLocaleString("en-IN")}</div><div className="admin-kpi-sub">New VIN records</div></div>
                 <div className="admin-kpi"><div className="admin-kpi-label">Line Items Added</div><div className="admin-kpi-value">{Number(dbData?.lineItemCount||0).toLocaleString("en-IN")}</div><div className="admin-kpi-sub">New service-history rows</div></div>
+                <div className="admin-kpi"><div className="admin-kpi-label">Total Vehicle Modified</div><div className="admin-kpi-value">{Number(dbData?.modifiedVehicleCount||0).toLocaleString("en-IN")}</div><div className="admin-kpi-sub">Existing vehicles with newly added Job Cards</div></div>
+                <div className="admin-kpi"><div className="admin-kpi-label">Total Vehicle Timestamp Refreshed</div><div className="admin-kpi-value">{Number(dbData?.refreshedVehicleCount||0).toLocaleString("en-IN")}</div><div className="admin-kpi-sub">Unique vehicles refreshed in selected period</div></div>
               </div>
               <div className="admin-panel-card-sub" style={{marginTop:12}}>Selected period: {dbStartDate} to {dbEndDate}. Counts are exact; each detail table shows up to 200 latest rows.</div>
             </div>

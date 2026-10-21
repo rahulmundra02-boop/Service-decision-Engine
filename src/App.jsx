@@ -7212,8 +7212,9 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       setOverrideReading(""); setAppliedOverride(null); setHistoryViewMode("schedule"); setRemark(""); setCustomerVoice(""); setCampaigns([]); setCampaignLoading(false);
       setAnalysis({ headers: [], records, headerMap: {}, vehicle, running, visits, decision });
       setRegistrationSearchResult({ ...data, searchedRegistration: registration });
-      setMode("single");
-      logUsage("Registration Database Service Analysis", { mode: "single", vehicleCount: 1, vin: String(vehicle?.vin || "").trim().toUpperCase(), details: { source: "database", rows: records.length, serviceCount: (decision?.services || []).length } });
+      setEstimateOpen(false);
+      setMode("registration-search");
+      logUsage("Registration Database Service Analysis", { mode: "registration-search", vehicleCount: 1, vin: String(vehicle?.vin || "").trim().toUpperCase(), details: { source: "database", rows: records.length, serviceCount: (decision?.services || []).length } });
     } catch (error) { setRegistrationSearchError(error?.message || "Unable to load vehicle service history. Please try again."); }
     finally { setRegistrationSearchBusy(false); }
   }
@@ -9455,7 +9456,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                     </div>
                     <div className="customer-output-panel" style={{marginTop:12}}>
                       <div className="section-title">Customer Output — Service To Be Completed</div>
-                      <div className="due-box"><div className="small-note">Registration Search displays saved database history. To calculate services due at the current reading, use Single Vehicle with the DMS Excel file and Analyze; this lookup does not independently calculate service due.</div></div>
+                      <div className="due-box"><div className="small-note" style={{marginBottom:10}}>Informational estimate based on the database history shown below. The database may not include services performed after its last update.</div>{analysis?.decision?.services?.length ? <div className="due-service-list">{analysis.decision.services.map((service,index)=><span className="due-service-chip" key={service.key || service.name || index}>{service.name || service.label || service.part || String(service)}</span>)}</div> : <div className="small-note">No service items are currently flagged by the database-based decision. Please verify against the latest DMS records.</div>}</div>
                     </div>
                     <div className="customer-output-panel" style={{marginTop:12}}>
                       <div className="section-title registration-history-heading">

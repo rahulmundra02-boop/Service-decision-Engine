@@ -6168,6 +6168,21 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     return payload;
   }
 
+  async function touchVehicleRefreshTimestamps(vins) {
+    const uniqueVins = [...new Set((vins || []).map(value => String(value || "").trim().toUpperCase()).filter(Boolean))];
+    if (!uniqueVins.length) return { updatedVehicles: 0 };
+    const response = await fetch(`${API_BASE_URL}/api/save-history`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "touch-vehicle-refresh", vins: uniqueVins }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload?.success) {
+      throw new Error(payload?.error || `Vehicle timestamp update failed (${response.status})`);
+    }
+    return payload;
+  }
+
   async function saveHistoryInBackground(records) {
     const groups = new Map();
     for (const record of records || []) {
@@ -6218,6 +6233,18 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         if(cancelProcessingRef.current){const e=new Error("Upload cancelled.");e.name="AbortError";throw e;}
         const cutoff=await fetchEmergencyDbUploadCutoff();
         if(cancelProcessingRef.current){const e=new Error("Upload cancelled.");e.name="AbortError";throw e;}
+        const uploadedVins=[...new Set(parsedRows.map(r=>String(r?.vin||"").trim().toUpperCase()).filter(Boolean))];
+        // Every successful Excel upload refreshes each vehicle's DB timestamp,
+        // even when all Job Cards are already present in the browser cache/Neon.
+        try {
+          const refreshResult=await touchVehicleRefreshTimestamps(uploadedVins);
+          if(refreshResult.updatedVehicles < uploadedVins.length) {
+            console.warn("Some vehicle timestamps could not be refreshed", {requested:uploadedVins.length,updated:refreshResult.updatedVehicles});
+          }
+        } catch (refreshError) {
+          console.error("Vehicle DB timestamp refresh failed after Excel upload:", refreshError);
+          setError("Excel is ready for analysis, but the database update timestamp could not be refreshed. Please retry the upload or contact the administrator.");
+        }
         if(cutoff.enabled)setUploadProgress({stage:"History lookup complete",current:1,total:1,detail:"History save paused by safety cutoff; parsed data remains available locally"});
         else{
           const cards=parsedRows.map(r=>normalizeJobCard(r?.jobCard)).filter(Boolean);

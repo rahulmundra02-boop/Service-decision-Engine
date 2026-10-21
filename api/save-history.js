@@ -1211,7 +1211,7 @@ export default async function handler(req, res) {
           "driver_phone=COALESCE($6,driver_phone), " +
           "service_contact_person_phone=COALESCE($7,service_contact_person_phone), " +
           "plant_name=COALESCE(NULLIF($8,''),plant_name), plant_code=COALESCE(NULLIF($9,''),plant_code) " +
-          "WHERE id=$8 AND (" +
+          "WHERE id=$10 AND (" +
           "job_date IS DISTINCT FROM COALESCE($1,job_date) OR " +
           "cumulative_reading IS DISTINCT FROM COALESCE($2,cumulative_reading) OR " +
           "cumulative_unit IS DISTINCT FROM COALESCE($3,cumulative_unit) OR " +

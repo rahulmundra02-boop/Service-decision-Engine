@@ -8,6 +8,21 @@ const pool = new Pool({
   max: 4,
 });
 
+async function ensureVehicleUploadEventsSchema(client) {
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS vehicle_upload_events (
+      id BIGSERIAL PRIMARY KEY,
+      vin TEXT NOT NULL,
+      vehicle_existed_before BOOLEAN NOT NULL DEFAULT FALSE,
+      new_job_cards INTEGER NOT NULL DEFAULT 0,
+      event_type TEXT NOT NULL DEFAULT 'refresh',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await client.query("CREATE INDEX IF NOT EXISTS idx_vehicle_upload_events_created_at ON vehicle_upload_events(created_at)");
+  await client.query("CREATE INDEX IF NOT EXISTS idx_vehicle_upload_events_vin_created_at ON vehicle_upload_events(vin,created_at)");
+}
+
 function normalizeJobCard(value) {
   return String(value ?? "").trim().toUpperCase().replace(/\\s+/g, " ");
 }
@@ -1082,9 +1097,15 @@ export default async function handler(req, res) {
           globalPartRates: rateResult.rows
         });
       }
+      await ensureVehicleUploadEventsSchema(client);
       const result = await client.query(
         "UPDATE vehicles SET last_refreshed_at=NOW() " +
         "WHERE UPPER(TRIM(vin))=ANY($1::text[]) RETURNING vin",
+        [vins]
+      );
+      await client.query(
+        "INSERT INTO vehicle_upload_events (vin,vehicle_existed_before,new_job_cards,event_type) " +
+        "SELECT UPPER(TRIM(vin)),TRUE,0,'refresh' FROM vehicles WHERE UPPER(TRIM(vin))=ANY($1::text[])",
         [vins]
       );
       return res.status(200).json({ success:true, updatedVehicles:result.rowCount || 0 });
@@ -1142,6 +1163,13 @@ export default async function handler(req, res) {
     await client.query(
       "ALTER TABLE service_history DROP COLUMN IF EXISTS service_type"
     );
+
+    await ensureVehicleUploadEventsSchema(client);
+    const priorVehicleResult = await client.query(
+      "SELECT id FROM vehicles WHERE UPPER(TRIM(vin))=$1 LIMIT 1",
+      [vin]
+    );
+    const vehicleExistedBeforeUpload = priorVehicleResult.rowCount > 0;
 
     const vehicleResult = await client.query(
       "INSERT INTO vehicles (vin,registration,customer_number,customer_name,engine,model,sale_date,last_refreshed_at) " +
@@ -1372,6 +1400,11 @@ export default async function handler(req, res) {
         }
       }
     }
+
+    await client.query(
+      "INSERT INTO vehicle_upload_events (vin,vehicle_existed_before,new_job_cards,event_type) VALUES ($1,$2,$3,'history-upload')",
+      [vin, vehicleExistedBeforeUpload, insertedJobCards.length]
+    );
 
     await client.query("COMMIT");
     return res.status(200).json({

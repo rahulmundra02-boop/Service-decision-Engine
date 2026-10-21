@@ -351,7 +351,7 @@ export default async function handler(req, res) {
           "WITH filtered AS (" +
           "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
           "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
-          "jc.secondary_cumulative_reading, jc.secondary_cumulative_unit, jc.driver_phone, jc.service_contact_person_phone, jc.plant_name, jc.plant_code, " +
+          "jc.secondary_cumulative_reading, jc.secondary_cumulative_unit, jc.driver_phone, jc.service_contact_person_phone, jc.plant_name, " +
           "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, " +
           "sh.repair_line_item_type, sh.complaint_code, sh.id AS service_history_id, jc.id AS job_card_id, " +
           "UPPER(REPLACE(TRIM(COALESCE(sh.part_code,'')), ' ', '')) AS normalized_code " +
@@ -1211,7 +1211,7 @@ export default async function handler(req, res) {
           "secondary_cumulative_unit IS DISTINCT FROM COALESCE($5,secondary_cumulative_unit) OR " +
           "driver_phone IS DISTINCT FROM COALESCE($6,driver_phone) OR " +
           "service_contact_person_phone IS DISTINCT FROM COALESCE($7,service_contact_person_phone) OR " +
-          "plant_name IS DISTINCT FROM COALESCE(NULLIF($8,''),plant_name) OR plant_code IS DISTINCT FROM COALESCE(NULLIF($9,''),plant_code)) " +
+          "plant_name IS DISTINCT FROM COALESCE(NULLIF($8,''),plant_name)) " +
           "RETURNING id,job_card_no",
           [
             clean(first.date),
@@ -1222,7 +1222,6 @@ export default async function handler(req, res) {
             clean(first.driverPhone),
             clean(first.serviceContactPhone),
             clean(first.plantName || first.plant || first.workshopName || first.dealerName),
-            clean(first.plantCode || first.workshopCode || first.dealerCode),
             existingJobCard.id
           ]
         );
@@ -1234,7 +1233,7 @@ export default async function handler(req, res) {
           clean(first.cumulative), clean(first.cumulativeUnit),
           clean(first.secondaryCumulative ?? first.secondaryCumulativeReading), clean(first.secondaryCumulativeUnit ?? first.secondaryCumulativeReadingUnit),
           clean(first.driverPhone), clean(first.serviceContactPhone),
-          clean(first.plantName || first.plant || first.workshopName || first.dealerName), clean(first.plantCode || first.workshopCode || first.dealerCode)
+          clean(first.plantName || first.plant || first.workshopName || first.dealerName)
         ]);
       }
     }
@@ -1252,7 +1251,7 @@ export default async function handler(req, res) {
         "INSERT INTO job_cards " +
         "(vehicle_id,job_card_no,job_date,cumulative_reading,cumulative_unit," +
         "secondary_cumulative_reading,secondary_cumulative_unit," +
-        "driver_phone,service_contact_person_phone,plant_name,plant_code) " +
+        "driver_phone,service_contact_person_phone,plant_name) " +
         "VALUES " + placeholders.join(",") +
         " ON CONFLICT (vehicle_id,job_card_no) DO NOTHING RETURNING id,job_card_no",
         values

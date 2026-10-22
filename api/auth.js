@@ -881,11 +881,13 @@ export default async function handler(req, res) {
                ${!includeAdmins ? "AND u.role <> 'admin'" : ""}
            ),
            vehicle_counts AS (
-             SELECT COUNT(*)::int AS vehicles
-             FROM user_vehicle_analysis uva
-             JOIN app_users u ON u.id=uva.user_id
-             WHERE uva.analysis_date=(NOW() AT TIME ZONE 'Asia/Kolkata')::date
-               ${targetUserId ? "AND uva.user_id=$1" : ""}
+             SELECT COALESCE(SUM(a.vehicle_count),0)::int AS vehicles
+             FROM user_activity a
+             JOIN app_users u ON u.id=a.user_id
+             WHERE (a.activity_time AT TIME ZONE 'Asia/Kolkata')::date =
+               (NOW() AT TIME ZONE 'Asia/Kolkata')::date
+               AND a.activity_type IN ('Single Vehicle Analysis','Bulk Vehicle Analysis')
+               ${targetUserId ? "AND a.user_id=$1" : ""}
                ${!includeAdmins ? "AND u.role <> 'admin'" : ""}
            )
            SELECT (NOW() AT TIME ZONE 'Asia/Kolkata')::date AS activity_date,
@@ -943,14 +945,15 @@ export default async function handler(req, res) {
            ),
            vehicle_counts AS (
              SELECT
-               uva.analysis_date AS activity_date,
-               COUNT(*)::int AS vehicles
-             FROM user_vehicle_analysis uva
-             JOIN app_users u ON u.id=uva.user_id
-             WHERE uva.analysis_date BETWEEN
-               (NOW() AT TIME ZONE 'Asia/Kolkata')::date - ($1 - 1)
-               AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date
-               ${targetUserId ? "AND uva.user_id=$2" : ""}
+               (a.activity_time AT TIME ZONE 'Asia/Kolkata')::date AS activity_date,
+               COALESCE(SUM(a.vehicle_count),0)::int AS vehicles
+             FROM user_activity a
+             JOIN app_users u ON u.id=a.user_id
+             WHERE a.activity_type IN ('Single Vehicle Analysis','Bulk Vehicle Analysis')
+               AND (a.activity_time AT TIME ZONE 'Asia/Kolkata')::date BETWEEN
+                 (NOW() AT TIME ZONE 'Asia/Kolkata')::date - ($1 - 1)
+                 AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date
+               ${targetUserId ? "AND a.user_id=$2" : ""}
                ${!includeAdmins ? "AND u.role <> 'admin'" : ""}
              GROUP BY 1
            )

@@ -916,14 +916,25 @@ function splitDelimitedLine(line, delimiter) {
 }
 
 function parseDate(value) {
-  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    // Treat spreadsheet dates as calendar dates, not UTC instants.
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  }
   const text = String(value ?? "").trim();
   if (!text) return null;
+
+  // Database DATE fields are returned as ISO timestamps. Keep their calendar
+  // portion unchanged instead of allowing local timezone conversion to shift a day.
+  const isoDate = text.match(/^(\d{4})-(\d{2})-(\d{2})(?:$|T)/);
+  if (isoDate) {
+    const d = new Date(Number(isoDate[1]), Number(isoDate[2]) - 1, Number(isoDate[3]));
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
 
   if (/^\d+(\.\d+)?$/.test(text)) {
     const serial = Number(text);
     if (serial > 20000 && serial < 80000) {
-      const d = new Date(Date.UTC(1899, 11, 30) + serial * 86400000);
+      const d = new Date(Date.UTC(1899, 11, 30) + Math.floor(serial) * 86400000);
       return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
     }
   }
@@ -6160,11 +6171,33 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        records: (records || []).map(({ customerVoice, codifiedCustomerVoice, repairType, rate, netValue, ...record }) => record),
+        records: (records || []).map(({ customerVoice, codifiedCustomerVoice, repairType, rate, netValue, ...record }) => {
+          const dateOnly = value => {
+            if (value instanceof Date && !Number.isNaN(value.getTime())) {
+              return String(value.getFullYear()).padStart(4, "0") + "-" +
+                String(value.getMonth() + 1).padStart(2, "0") + "-" +
+                String(value.getDate()).padStart(2, "0");
+            }
+            const text = String(value ?? "").trim();
+            const iso = text.match(/^(\d{4}-\d{2}-\d{2})/);
+            if (iso) return iso[1];
+            return value || null;
+          };
+          return {
+            ...record,
+            date: dateOnly(record.date),
+            inwardDate: dateOnly(record.inwardDate),
+            checkInDate: dateOnly(record.checkInDate),
+            startDate: dateOnly(record.startDate),
+            endDate: dateOnly(record.endDate),
+          };
+        }),
         vehicle: {
           ...vehicle,
           sale: vehicle?.sale instanceof Date
-            ? vehicle.sale.toISOString()
+            ? String(vehicle.sale.getFullYear()).padStart(4, "0") + "-" +
+              String(vehicle.sale.getMonth() + 1).padStart(2, "0") + "-" +
+              String(vehicle.sale.getDate()).padStart(2, "0")
             : vehicle?.sale || null,
         },
       }),

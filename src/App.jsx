@@ -6602,7 +6602,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
           mode:"bulk",
           vehicleCount:results.length,
           fileCount:uploadedFiles.length,
-          details:{ rows:parsed.records.length, customers:groups.length, automatic:true }
+          details:{ rows:parsed.records.length, customers:groups.length, automatic:true, vins:[...new Set(results.map(item => String(item?.vehicle?.vin || "").trim().toUpperCase()).filter(Boolean))] }
         });
         setUploadProgress({stage:"Decision calculation complete",current:results.length,total:results.length,detail:`${results.length} vehicles processed; ${(results.skippedVehicles||[]).length} skipped; ${(results.failedVehicles||[]).length} failed`});
         setError(`Multiple Vehicle Detected: ${uniqueVins.length} unique VINs found. Automatically switched to Bulk Service.`);
@@ -6696,7 +6696,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         mode: "bulk",
         vehicleCount: results.length,
         fileCount: uploadedFiles.length,
-        details: { rows: parsed.records.length, customers: groups.length }
+        details: { rows: parsed.records.length, customers: groups.length, vins: [...new Set(results.map(item => String(item?.vehicle?.vin || "").trim().toUpperCase()).filter(Boolean))] }
       });
       setUploadProgress({
         stage: "Decision calculation complete",

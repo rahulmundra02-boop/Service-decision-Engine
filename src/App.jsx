@@ -960,6 +960,14 @@ function parseNumber(value) {
 
 function formatDate(date) {
   if (!date) return "-";
+
+  // Calendar dates from Excel/API/SQL DATE must not be interpreted as UTC
+  // instants. Preserve the YYYY-MM-DD portion to prevent timezone day shifts.
+  if (typeof date === "string") {
+    const iso = date.trim().match(/^(\d{4})-(\d{2})-(\d{2})(?:$|T)/);
+    if (iso) return `${iso[3]}-${iso[2]}-${iso[1]}`;
+  }
+
   const value = date instanceof Date ? date : new Date(date);
   if (Number.isNaN(value.getTime())) return "-";
   return value.toLocaleDateString("en-GB");

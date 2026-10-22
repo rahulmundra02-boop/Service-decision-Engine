@@ -8,21 +8,6 @@ const pool = new Pool({
   max: 4,
 });
 
-async function ensureVehicleUploadEventsSchema(client) {
-  await client.query(`
-    CREATE TABLE IF NOT EXISTS vehicle_upload_events (
-      id BIGSERIAL PRIMARY KEY,
-      vin TEXT NOT NULL,
-      vehicle_existed_before BOOLEAN NOT NULL DEFAULT FALSE,
-      new_job_cards INTEGER NOT NULL DEFAULT 0,
-      event_type TEXT NOT NULL DEFAULT 'refresh',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  await client.query("CREATE INDEX IF NOT EXISTS idx_vehicle_upload_events_created_at ON vehicle_upload_events(created_at)");
-  await client.query("CREATE INDEX IF NOT EXISTS idx_vehicle_upload_events_vin_created_at ON vehicle_upload_events(vin,created_at)");
-}
-
 function normalizeJobCard(value) {
   return String(value ?? "").trim().toUpperCase().replace(/\\s+/g, " ");
 }
@@ -617,7 +602,6 @@ export default async function handler(req, res) {
       }
 
       if (registration) {
-        await client.query("ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS plant_name TEXT");
         const vehicleResult = await client.query(
           "SELECT v.id, v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, v.last_refreshed_at " +
           "FROM vehicles v " +
@@ -1108,7 +1092,6 @@ export default async function handler(req, res) {
           globalPartRates: rateResult.rows
         });
       }
-      await ensureVehicleUploadEventsSchema(client);
       const result = await client.query(
         "UPDATE vehicles SET last_refreshed_at=NOW() " +
         "WHERE UPPER(TRIM(vin))=ANY($1::text[]) RETURNING vin",
@@ -1140,42 +1123,6 @@ export default async function handler(req, res) {
   try {
     await client.query("BEGIN");
 
-    // Store only the per-unit rate for future estimates.
-    // Ensure the temporary amount column exists so this migration is safe
-    // even if no upload happened after the earlier amount-field change.
-    await client.query(
-      "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS driver_phone TEXT"
-    );
-    await client.query(
-      "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS service_contact_person_phone TEXT"
-    );
-    await client.query("ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS plant_name TEXT");
-
-    // Keep service_history schema stable. Repeatedly adding and dropping the
-    // legacy amount column consumes PostgreSQL's physical attribute slots and
-    // eventually hits the 1600-column limit even though few columns are live.
-    // The current schema stores per-unit values in rate; no amount migration
-    // should run on each upload.
-
-    // These job-card fields are not needed for Service Decision / Estimate
-    // storage. Keep them out of the DB to reduce unnecessary table size.
-    await client.query(
-      "ALTER TABLE job_cards " +
-      "DROP COLUMN IF EXISTS invoice_no, " +
-      "DROP COLUMN IF EXISTS reading, " +
-      "DROP COLUMN IF EXISTS reading_unit, " +
-      "DROP COLUMN IF EXISTS secondary_reading, " +
-      "DROP COLUMN IF EXISTS secondary_unit, " +
-      "DROP COLUMN IF EXISTS inward_date, " +
-      "DROP COLUMN IF EXISTS check_in_date, " +
-      "DROP COLUMN IF EXISTS start_date, " +
-      "DROP COLUMN IF EXISTS end_date"
-    );
-    await client.query(
-      "ALTER TABLE service_history DROP COLUMN IF EXISTS service_type"
-    );
-
-    await ensureVehicleUploadEventsSchema(client);
     const priorVehicleResult = await client.query(
       "SELECT id, created_at FROM vehicles WHERE UPPER(TRIM(vin))=$1 LIMIT 1",
       [vin]

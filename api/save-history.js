@@ -3,7 +3,7 @@ import crypto from "crypto";
 import { Pool } from "pg";
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: process.env.DATABASE_URL || process.env.DATABASE_URL1,
   ssl: { rejectUnauthorized: false },
   max: 4,
 });
@@ -34,8 +34,19 @@ function clean(value) {
 
 function normalizeDate(value) {
   if (!value) return null;
-  const d = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d;
+  // PostgreSQL DATE columns must receive a calendar date string, not a JS Date
+  // instant that can be shifted by the runtime/server timezone.
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return String(value.getFullYear()).padStart(4, "0") + "-" +
+      String(value.getMonth() + 1).padStart(2, "0") + "-" +
+      String(value.getDate()).padStart(2, "0");
+  }
+  const text = String(value).trim();
+  const isoDate = text.match(/^(\d{4}-\d{2}-\d{2})(?:$|T)/);
+  if (isoDate) return isoDate[1];
+  const d = new Date(text);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10);
 }
 
 function normalizeRecord(record = {}) {

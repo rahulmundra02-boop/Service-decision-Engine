@@ -821,6 +821,20 @@ export default async function handler(req, res) {
           WHERE v.vin IS NOT NULL AND TRIM(v.vin) <> ''`
       );
 
+      const uniqueVehiclesAnalyzedResult = await client.query(
+        `SELECT COUNT(DISTINCT UPPER(TRIM(uva.vin)))::int AS unique_vehicles_analyzed
+           FROM user_vehicle_analysis uva
+           JOIN app_users u ON u.id=uva.user_id
+          WHERE uva.analysis_date >=
+            CASE WHEN ${rangeDays} = 1
+              THEN (NOW() AT TIME ZONE 'Asia/Kolkata')::date
+              ELSE (NOW() AT TIME ZONE 'Asia/Kolkata')::date - (${rangeDays} - 1)
+            END
+            ${targetUserId ? "AND uva.user_id=$1" : ""}
+            ${!includeAdmins ? "AND u.role <> 'admin'" : ""}`,
+        targetUserId ? [targetUserId] : []
+      );
+
       const recent = await client.query(
         `SELECT a.id,a.user_id,u.person_name,u.dealer_name,a.activity_type,a.activity_time,
                 a.mode,a.vehicle_count,a.file_count,a.vin,a.details
@@ -867,7 +881,7 @@ export default async function handler(req, res) {
                ${!includeAdmins ? "AND u.role <> 'admin'" : ""}
            ),
            vehicle_counts AS (
-             SELECT COUNT(*)::int AS vehicles
+             SELECT COUNT(DISTINCT UPPER(TRIM(uva.vin)))::int AS vehicles
              FROM user_vehicle_analysis uva
              JOIN app_users u ON u.id=uva.user_id
              WHERE uva.analysis_date=(NOW() AT TIME ZONE 'Asia/Kolkata')::date
@@ -930,7 +944,7 @@ export default async function handler(req, res) {
            vehicle_counts AS (
              SELECT
                uva.analysis_date AS activity_date,
-               COUNT(*)::int AS vehicles
+               COUNT(DISTINCT UPPER(TRIM(uva.vin)))::int AS vehicles
              FROM user_vehicle_analysis uva
              JOIN app_users u ON u.id=uva.user_id
              WHERE uva.analysis_date BETWEEN
@@ -976,6 +990,7 @@ export default async function handler(req, res) {
         rangeDays,
         includeAdmins,
         totalVehicles:Number(totalVehiclesResult.rows[0]?.total_vehicles || 0),
+        uniqueVehiclesAnalyzed:Number(uniqueVehiclesAnalyzedResult.rows[0]?.unique_vehicles_analyzed || 0),
         summary:summary.rows.map(row => ({
           ...userPayload(row),
           totalActivities:Number(row.total_activities||0),

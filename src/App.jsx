@@ -1437,8 +1437,10 @@ async function parseExcelFiles(files, options = {}) {
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, {
         type: "array",
-        cellDates: true,
-        raw: false
+        // Keep Excel date cells as numeric serials. Converting them to JS Date
+        // objects can introduce timezone-dependent day shifts before parsing.
+        cellDates: false,
+        raw: true
       });
 
       for (let sheetIndex = 0; sheetIndex < workbook.SheetNames.length; sheetIndex++) {

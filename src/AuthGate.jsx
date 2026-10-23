@@ -1,6 +1,7 @@
 import { cloneElement, useEffect, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import "./AuthGate.css";
+import CustomerPortal from "./CustomerPortal";
 
 const TOKEN_KEY = "serviceDecisionAuthToken";
 const ACTIVITY_KEY = "serviceDecisionLastActivity";
@@ -66,6 +67,8 @@ export default function AuthGate({ children }) {
   const [adminOpen, setAdminOpen] = useState(false);
   const adminOpenedFromProfileRef = useRef(false);
   const [adminUsers, setAdminUsers] = useState([]);
+  const [customerAccessData,setCustomerAccessData]=useState({companyRequests:[],vehicleRequests:[],companies:[],customers:[]});
+  const [directVehicleForm,setDirectVehicleForm]=useState({userId:"",vin:""});
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminForm, setAdminForm] = useState({ userId:null, personName:"", dealerName:"", email:"", mobile:"", password:"" });
   const [profileOpen, setProfileOpen] = useState(false);
@@ -621,6 +624,7 @@ export default function AuthGate({ children }) {
       const data = await api("admin-list-users", {}, localStorage.getItem(TOKEN_KEY));
       setAdminUsers(data.users || []);
       await loadAccountRequests();
+      setCustomerAccessData(await api("admin-customer-access-data",{},localStorage.getItem(TOKEN_KEY)));
       await loadAdminAnalytics(analyticsUserId, analyticsRange);
     } catch (e) {
       setError(e.message || "Unable to load users.");
@@ -641,6 +645,17 @@ export default function AuthGate({ children }) {
       }
     }
   }, [user?.role, adminOpen, analyticsIncludeAdmins]);
+
+  const reviewCustomerRequest=(requestType,requestId,decision)=>run(async()=>{
+    const r=await api("admin-review-customer-request",{requestType,requestId,decision},localStorage.getItem(TOKEN_KEY));
+    setMessage(r.message||"Customer access request updated.");
+    setCustomerAccessData(await api("admin-customer-access-data",{},localStorage.getItem(TOKEN_KEY)));
+  });
+  const assignCustomerVehicle=()=>run(async()=>{
+    const r=await api("admin-assign-customer-vehicle",directVehicleForm,localStorage.getItem(TOKEN_KEY));
+    setMessage(r.message||"Vehicle assigned.");setDirectVehicleForm({userId:"",vin:""});
+    setCustomerAccessData(await api("admin-customer-access-data",{},localStorage.getItem(TOKEN_KEY)));
+  });
 
   const createUser = () => run(async () => {
     if (!adminForm.userId && adminForm.password.length < 8) {
@@ -981,6 +996,11 @@ export default function AuthGate({ children }) {
       {adminOpen && user.role === "admin" ? (
         <AdminPanel
           users={adminUsers}
+          customerAccessData={customerAccessData}
+          directVehicleForm={directVehicleForm}
+          setDirectVehicleForm={setDirectVehicleForm}
+          onReviewCustomerRequest={reviewCustomerRequest}
+          onAssignCustomerVehicle={assignCustomerVehicle}
           accountRequests={accountRequests}
           onReviewAccountRequest={reviewAccountRequest}
           onRefreshAccountRequests={loadAccountRequests}
@@ -1015,6 +1035,8 @@ export default function AuthGate({ children }) {
           priceMasterUploadError={priceMasterUploadError}
           onUploadPriceMasterExcel={uploadPriceMasterExcel}
         />
+      ) : user.userType === "al_customer" ? (
+        <CustomerPortal user={user} onLogout={logout} onChangePassword={() => { setShowPassword(true); setError(""); setMessage(""); }} />
       ) : cloneElement(children, {
         user,
         onOpenProfile: openProfile,
@@ -1490,7 +1512,7 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading, onChang
   {signatureOpen && <SignaturePad initialValue={form.signature} onUse={v=>{setForm({...form,signature:v});setSignatureOpen(false);}} onClose={()=>setSignatureOpen(false)}/>}
   </div>;
 }
-function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRefreshAccountRequests, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel, priceMasterMeta, priceMasterUploadBusy, priceMasterUploadMessage, priceMasterUploadError, onUploadPriceMasterExcel }) {
+function AdminPanel({ users, customerAccessData={companyRequests:[],vehicleRequests:[],companies:[],customers:[]}, directVehicleForm, setDirectVehicleForm, onReviewCustomerRequest, onAssignCustomerVehicle, accountRequests = [], onReviewAccountRequest, onRefreshAccountRequests, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel, priceMasterMeta, priceMasterUploadBusy, priceMasterUploadMessage, priceMasterUploadError, onUploadPriceMasterExcel }) {
   const analyticsDetailRef = useRef(null);
   const [view, setView] = useState("overview");
   const localDateString = (date = new Date()) => {
@@ -1932,6 +1954,17 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
         {view === "management" && (
           <>
             <div className="admin-section-title">User Management</div>
+            <div className="admin-users-card" style={{marginBottom:16}}>
+              <div className="admin-users-header"><h3>Customer Access Approval</h3><button className="auth-secondary admin-refresh" onClick={onRefresh} disabled={loading}>Refresh</button></div>
+              <div className="admin-panel-card-sub">Super Admin approval is required for every new company link or individual vehicle access.</div>
+              <h4>Pending Company Requests ({customerAccessData.companyRequests.length})</h4><div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>User</th><th>Email</th><th>Company</th><th>Requested</th><th>Action</th></tr></thead><tbody>
+              {customerAccessData.companyRequests.map(r=><tr key={r.id}><td>{r.person_name}</td><td>{r.email}</td><td>{r.company_name}</td><td>{new Date(r.created_at).toLocaleString()}</td><td><div className="admin-row-actions"><button onClick={()=>onReviewCustomerRequest("company",r.id,"approve")}>Approve</button><button onClick={()=>onReviewCustomerRequest("company",r.id,"reject")}>Reject</button></div></td></tr>)}
+              {!customerAccessData.companyRequests.length&&<tr><td colSpan="5" className="admin-empty">No pending company requests.</td></tr>}</tbody></table></div>
+              <h4>Pending Vehicle Requests ({customerAccessData.vehicleRequests.length})</h4><div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>User</th><th>Email</th><th>VIN / Chassis</th><th>Requested</th><th>Action</th></tr></thead><tbody>
+              {customerAccessData.vehicleRequests.map(r=><tr key={r.id}><td>{r.person_name}</td><td>{r.email}</td><td>{r.vin}</td><td>{new Date(r.created_at).toLocaleString()}</td><td><div className="admin-row-actions"><button onClick={()=>onReviewCustomerRequest("vehicle",r.id,"approve")}>Approve</button><button onClick={()=>onReviewCustomerRequest("vehicle",r.id,"reject")}>Reject</button></div></td></tr>)}
+              {!customerAccessData.vehicleRequests.length&&<tr><td colSpan="5" className="admin-empty">No pending vehicle requests.</td></tr>}</tbody></table></div>
+              <h4>Direct Vehicle Assignment</h4><div className="admin-inline-assign"><select value={directVehicleForm.userId} onChange={e=>setDirectVehicleForm(v=>({...v,userId:e.target.value}))}><option value="">Select customer</option>{customerAccessData.customers.map(c=><option key={c.id} value={c.id}>{c.person_name} · {c.email}</option>)}</select><input value={directVehicleForm.vin} onChange={e=>setDirectVehicleForm(v=>({...v,vin:e.target.value.toUpperCase()}))} placeholder="VIN / chassis number"/><button className="auth-primary" style={{width:"auto",marginTop:0}} disabled={loading||!directVehicleForm.userId||!directVehicleForm.vin.trim()} onClick={onAssignCustomerVehicle}>Assign Vehicle</button></div>
+            </div>
             <div className="admin-grid admin-management-grid">
               <div className="admin-form-card">
                 <h3>{form.userId ? "Edit User Account" : "Create User Account"}</h3>

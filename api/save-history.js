@@ -602,6 +602,10 @@ export default async function handler(req, res) {
       }
 
       if (registration) {
+      const registrationSetting = await pool.query("SELECT setting_value FROM app_settings WHERE setting_key='registration_search_enabled' LIMIT 1");
+      if (registrationSetting.rows[0]?.setting_value?.enabled === false) {
+        return res.status(403).json({success:false,error:"Registration number service search is disabled by the administrator on both portals."});
+      }
         const vehicleResult = await client.query(
           "SELECT v.id, v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, v.last_refreshed_at " +
           "FROM vehicles v " +

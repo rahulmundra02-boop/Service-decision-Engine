@@ -1,0 +1,112 @@
+name: Neon to Supabase migration (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "validate = checks only; restore = copy Neon public schema/data into an EMPTY Supabase public schema"
+        required: true
+        type: choice
+        options:
+          - validate
+          - restore
+        default: validate
+      confirm_restore:
+        description: 'For restore only, type exactly RESTORE_TO_SUPABASE. Leave blank for validation.'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: neon-to-supabase-migration
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check required secrets
+        env:
+          SOURCE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          TARGET_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          test -n "$SOURCE_URL" || { echo "::error::Missing NEON_DATABASE_URL secret"; exit 1; }
+          test -n "$TARGET_URL" || { echo "::error::Missing SUPABASE_DB_URL secret"; exit 1; }
+          if [ "$SOURCE_URL" = "$TARGET_URL" ]; then
+            echo "::error::Source and target connection strings must be different."
+            exit 1
+          fi
+          echo "Both database secrets are present. Values are not printed."
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Verify source and target
+        env:
+          SOURCE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          TARGET_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          echo "Source database version:"
+          psql "$SOURCE_URL" -X -v ON_ERROR_STOP=1 -Atc "select version();" | cut -c1-120
+          echo "Source database size:"
+          psql "$SOURCE_URL" -X -v ON_ERROR_STOP=1 -Atc "select pg_size_pretty(pg_database_size(current_database()));"
+          echo "Target database version:"
+          psql "$TARGET_URL" -X -v ON_ERROR_STOP=1 -Atc "select version();" | cut -c1-120
+          TABLES=$(psql "$TARGET_URL" -X -v ON_ERROR_STOP=1 -Atc "select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE' and table_name not like 'pg_%';")
+          echo "Target public base-table count: $TABLES"
+          if [ "$TABLES" != "0" ]; then
+            echo "::error::Target public schema is not empty. Restore is blocked to prevent overwriting existing data."
+            exit 1
+          fi
+
+      - name: Validate dump can be created (no restore)
+        if: ${{ inputs.mode == 'validate' }}
+        env:
+          SOURCE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          pg_dump "$SOURCE_URL" --format=custom --schema=public --no-owner --no-privileges --file=/tmp/neon-public.dump
+          pg_restore --list /tmp/neon-public.dump > /tmp/dump-contents.txt
+          echo "Validation dump created successfully. Dump size:"
+          du -h /tmp/neon-public.dump
+          echo "Dump entries (first 20):"
+          head -n 20 /tmp/dump-contents.txt
+          rm -f /tmp/neon-public.dump /tmp/dump-contents.txt
+
+      - name: Restore to Supabase (only after explicit confirmation)
+        if: ${{ inputs.mode == 'restore' }}
+        env:
+          SOURCE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          TARGET_URL: ${{ secrets.SUPABASE_DB_URL }}
+          CONFIRM_RESTORE: ${{ inputs.confirm_restore }}
+        run: |
+          set -euo pipefail
+          if [ "$CONFIRM_RESTORE" != "RESTORE_TO_SUPABASE" ]; then
+            echo "::error::Restore blocked. Enter the exact confirmation phrase in workflow inputs."
+            exit 1
+          fi
+          # Re-check target immediately before restore; never drop/clean existing objects.
+          TABLES=$(psql "$TARGET_URL" -X -v ON_ERROR_STOP=1 -Atc "select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE' and table_name not like 'pg_%';")
+          if [ "$TABLES" != "0" ]; then
+            echo "::error::Target public schema is no longer empty. Restore blocked."
+            exit 1
+          fi
+          pg_dump "$SOURCE_URL" --format=custom --schema=public --no-owner --no-privileges --file=/tmp/neon-public.dump
+          pg_restore --no-owner --no-privileges --exit-on-error --dbname="$TARGET_URL" /tmp/neon-public.dump
+          echo "Restore command completed. Run post-restore table/row-count verification before connecting Beta."
+          rm -f /tmp/neon-public.dump
+
+      - name: Post-restore table inventory
+        if: ${{ inputs.mode == 'restore' }}
+        env:
+          TARGET_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          psql "$TARGET_URL" -X -v ON_ERROR_STOP=1 -c "select schemaname, tablename from pg_tables where schemaname='public' order by tablename;"

@@ -983,9 +983,13 @@ export default async function handler(req, res) {
       const vin = String(vehicle.vin || vehicle.chassis || "").trim().toUpperCase();
       if (!vin) continue;
       const existing = uniqueVehicles.get(vin) || {};
+      const incomingDate = normalizeDate(vehicle.latestJobDate);
+      const existingDate = normalizeDate(existing.latestJobDate);
+      const incomingIsNewer = incomingDate && (!existingDate || incomingDate >= existingDate);
       uniqueVehicles.set(vin, {
         vin,
-        registration: clean(vehicle.registration || vehicle.reg) || existing.registration || null,
+        registration: incomingIsNewer ? (clean(vehicle.registration || vehicle.reg) || existing.registration || null) : (existing.registration || null),
+        latestJobDate: incomingIsNewer ? incomingDate : existingDate,
         customerNumber: clean(vehicle.customerNumber) || existing.customerNumber || null,
         customerName: clean(vehicle.customerName) || existing.customerName || null,
         engine: clean(vehicle.engine) || existing.engine || null,
@@ -1001,6 +1005,13 @@ export default async function handler(req, res) {
       await client.query("BEGIN");
       let upsertedVehicles = 0;
       for (const vehicle of uniqueVehicles.values()) {
+        const latestStoredResult = await client.query(
+          "SELECT MAX(job_date) AS latest_job_date FROM job_cards jc JOIN vehicles v ON v.id=jc.vehicle_id WHERE UPPER(TRIM(v.vin))=$1",
+          [vehicle.vin]
+        );
+        const latestStoredDate = normalizeDate(latestStoredResult.rows[0]?.latest_job_date);
+        const registrationIsCurrent = Boolean(vehicle.latestJobDate && (!latestStoredDate || vehicle.latestJobDate >= latestStoredDate));
+        const registrationForUpsert = registrationIsCurrent ? vehicle.registration : null;
         await client.query(
           "INSERT INTO vehicles (vin,registration,customer_number,customer_name,engine,model,sale_date,last_refreshed_at) " +
           "VALUES ($1,$2,$3,$4,$5,$6,$7,NOW()) " +
@@ -1012,7 +1023,7 @@ export default async function handler(req, res) {
           "model=COALESCE(EXCLUDED.model,vehicles.model), " +
           "sale_date=COALESCE(EXCLUDED.sale_date,vehicles.sale_date), " +
           "last_refreshed_at=NOW()",
-          [vehicle.vin, vehicle.registration, vehicle.customerNumber, vehicle.customerName,
+          [vehicle.vin, registrationForUpsert, vehicle.customerNumber, vehicle.customerName,
            vehicle.engine, vehicle.model, vehicle.sale]
         );
         upsertedVehicles += 1;
@@ -1139,7 +1150,7 @@ export default async function handler(req, res) {
       "INSERT INTO vehicles (vin,registration,customer_number,customer_name,engine,model,sale_date,last_refreshed_at) " +
       "VALUES ($1,$2,$3,$4,$5,$6,$7,NOW()) " +
       "ON CONFLICT (vin) DO UPDATE SET " +
-      "registration=COALESCE(EXCLUDED.registration,vehicles.registration), " +
+      "registration=vehicles.registration, " +
       "customer_number=COALESCE(EXCLUDED.customer_number,vehicles.customer_number), " +
       "customer_name=COALESCE(EXCLUDED.customer_name,vehicles.customer_name), " +
       "engine=COALESCE(EXCLUDED.engine,vehicles.engine), " +

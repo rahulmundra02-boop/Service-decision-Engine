@@ -1247,6 +1247,26 @@ export default async function handler(req, res) {
       });
     }
 
+    if (action === "registration-search-settings") {
+      const result = await client.query("SELECT setting_value, updated_at FROM app_settings WHERE setting_key='registration_search_enabled' LIMIT 1");
+      const settings = result.rows[0]?.setting_value || { enabled:true };
+      await client.query("COMMIT");
+      return res.json({success:true,settings:{enabled:settings.enabled !== false,updatedAt:result.rows[0]?.updated_at || null}});
+    }
+
+    if (action === "admin-registration-search-settings") {
+      const admin = await requireAdmin(client, req);
+      if (admin.error) {
+        await client.query("ROLLBACK");
+        return res.status(admin.status).json({success:false,error:admin.error});
+      }
+      const enabled = body.enabled === true;
+      await client.query("INSERT INTO app_settings (setting_key,setting_value,updated_at) VALUES ('registration_search_enabled',$1::jsonb,NOW()) ON CONFLICT (setting_key) DO UPDATE SET setting_value=EXCLUDED.setting_value,updated_at=NOW()", [JSON.stringify({enabled})]);
+      await logActivity(client, admin.user.id, "Registration Number Service Search", {details:{enabled}});
+      await client.query("COMMIT");
+      return res.json({success:true,settings:{enabled,updatedAt:new Date().toISOString()},message:enabled ? "Registration number service search is enabled on both portals." : "Registration number service search is disabled on both portals."});
+    }
+
     if (action === "emergency-db-upload-cutoff-settings") {
       const result = await client.query(
         "SELECT setting_value, updated_at FROM app_settings WHERE setting_key='emergency_db_upload_cutoff' LIMIT 1"

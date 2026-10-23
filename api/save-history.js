@@ -1006,11 +1006,18 @@ export default async function handler(req, res) {
       let upsertedVehicles = 0;
       for (const vehicle of uniqueVehicles.values()) {
         const latestStoredResult = await client.query(
-          "SELECT MAX(job_date) AS latest_job_date FROM job_cards jc JOIN vehicles v ON v.id=jc.vehicle_id WHERE UPPER(TRIM(v.vin))=$1",
+          "SELECT v.registration, MAX(jc.job_date) AS latest_job_date FROM vehicles v LEFT JOIN job_cards jc ON jc.vehicle_id=v.id WHERE UPPER(TRIM(v.vin))=$1 GROUP BY v.registration",
           [vehicle.vin]
         );
+        const storedRegistration = clean(latestStoredResult.rows[0]?.registration);
         const latestStoredDate = normalizeDate(latestStoredResult.rows[0]?.latest_job_date);
-        const registrationIsCurrent = Boolean(vehicle.latestJobDate && (!latestStoredDate || vehicle.latestJobDate >= latestStoredDate));
+        // If Vehicle Master has no registration yet, fill it from the uploaded
+        // VIN record even when older job cards already exist. Once a registration
+        // exists, only a registration from the latest/equal Job Card date may replace it.
+        const registrationIsCurrent = Boolean(
+          vehicle.registration &&
+          (!storedRegistration || !vehicle.latestJobDate || !latestStoredDate || vehicle.latestJobDate >= latestStoredDate)
+        );
         const registrationForUpsert = registrationIsCurrent ? vehicle.registration : null;
         await client.query(
           "INSERT INTO vehicles (vin,registration,customer_number,customer_name,engine,model,sale_date,last_refreshed_at) " +

@@ -149,7 +149,7 @@ async function requireAdminForPriceMaster(client, req) {
 
 export default async function handler(req, res) {
   if (req.method === "GET") {
-    const token = String(req.headers?.authorization || "").replace(/^Bearer\\s+/i, "").trim();
+    const token = String(req.headers?.authorization || "").replace(/^Bearer\s+/i, "").trim();
     if (!token) return res.status(401).json({success:false,error:"Authentication required."});
     const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
     const session = await pool.query(

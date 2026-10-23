@@ -3669,7 +3669,7 @@ function getHardcodedHubGreaseConfig(vehicleModel = "") {
   if (!modelText) return null;
 
   // IMPORTANT: contains matching, not exact model matching.
-  // This is deliberately NOT /^\\d{4}$/ and does not require the
+  // This is deliberately NOT /^\d{4}$/ and does not require the
   // model to be only four characters.
   const match = Object.entries(HUB_GREASE_MODEL_CONFIG).find(([code]) =>
     modelText.includes(String(code).toUpperCase())
@@ -4756,7 +4756,7 @@ function formatWarrantyDate(value){
   }
   const text=warrantyText(value);
   if(!text) return "";
-  const iso=text.match(/^(\\d{4})-(\\d{2})-(\\d{2})/);
+  const iso=text.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if(iso) return iso[3]+"/"+iso[2]+"/"+iso[1];
   return text;
 }
@@ -6339,7 +6339,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                 const vehicleRows=parsedRows.filter(record=>String(record?.vin||"").trim().toUpperCase()===vin);
                 const dateKey=value=>{
                   const raw=String(value??"").trim();
-                  const iso=raw.match(/^(\\d{4}-\\d{2}-\\d{2})/);
+                  const iso=raw.match(/^(\d{4}-\d{2}-\d{2})/);
                   if(iso)return iso[1];
                   const parsed=new Date(value);
                   return Number.isNaN(parsed.getTime())?"":parsed.toISOString().slice(0,10);

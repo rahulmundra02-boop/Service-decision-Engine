@@ -149,6 +149,15 @@ async function requireAdminForPriceMaster(client, req) {
 
 export default async function handler(req, res) {
   if (req.method === "GET") {
+    const token = String(req.headers?.authorization || "").replace(/^Bearer\\s+/i, "").trim();
+    if (!token) return res.status(401).json({success:false,error:"Authentication required."});
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    const session = await pool.query(
+      "SELECT u.id,u.role,u.user_type FROM auth_sessions s JOIN app_users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>NOW() AND u.status='active' LIMIT 1",
+      [tokenHash]
+    );
+    if (!session.rows[0]) return res.status(401).json({success:false,error:"Session expired."});
+    if (session.rows[0].user_type === "al_customer") return res.status(403).json({success:false,error:"Customer accounts cannot access internal service-history APIs."});
     const vin = String(req.query?.vin || "").trim().toUpperCase();
     const registration = String(req.query?.registration || "").replace(/\s+/g, "").trim().toUpperCase();
     const partNo = String(req.query?.partNo || "").trim().toUpperCase().replace(/\s+/g, "");

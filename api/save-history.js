@@ -177,7 +177,9 @@ export default async function handler(req, res) {
     // the same uploaded master regardless of their separate DB environments.
     const requestHost = String(req.headers?.host || "").toLowerCase();
     const isBetaPriceMasterSource = requestHost.includes("git-v12-ui-testing");
-    if (priceMasterFlag || priceMasterMetaFlag || priceMasterChunkFlag || (priceMasterPartFlag && partNo)) {
+    const isPriceMasterRead = priceMasterFlag || priceMasterMetaFlag || priceMasterChunkFlag || (priceMasterPartFlag && partNo);
+    const hasPriceMasterAuth = Boolean(String(req.headers?.authorization || "").replace(/^Bearer\\s+/i, "").trim());
+    if (isPriceMasterRead && (isBetaPriceMasterSource || hasPriceMasterAuth)) {
         if (isBetaPriceMasterSource || priceMasterFlag || priceMasterMetaFlag || priceMasterChunkFlag) {
         let sourceClient = null;
         try {

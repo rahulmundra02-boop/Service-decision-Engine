@@ -60,7 +60,7 @@ async function getCurrentUser(client, req) {
   if (!token) return null;
   const tokenHash = hashValue(token);
   const result = await client.query(
-    `SELECT u.id,u.status,s.device_name
+    `SELECT u.id,u.status,u.user_type,s.device_name
        FROM auth_sessions s
        JOIN app_users u ON u.id=s.user_id
       WHERE s.token_hash=$1
@@ -109,6 +109,10 @@ export default async function handler(req, res) {
     if (!user) {
       await client.query("ROLLBACK");
       return res.status(401).json({ success:false, error:"Session expired." });
+    }
+    if (user.user_type === "al_customer") {
+      await client.query("ROLLBACK");
+      return res.status(403).json({success:false,error:"Customer accounts cannot access the internal estimate system."});
     }
 
     if (action === "list") {

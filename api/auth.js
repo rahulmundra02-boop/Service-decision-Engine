@@ -1563,7 +1563,15 @@ export default async function handler(req, res) {
       WHERE ($2::text='' OR v.registration ILIKE '%'||$2||'%' OR v.vin ILIKE '%'||$2||'%' OR v.model ILIKE '%'||$2||'%' OR v.customer_name ILIKE '%'||$2||'%')
       ORDER BY v.registration NULLS LAST,v.vin LIMIT $3 OFFSET $4`,[user.id,vehicleSearch,pageSize,(page-1)*pageSize]);
       await client.query("COMMIT");
-      return res.json({success:true,companies:companies.rows,allCompanies:allCompanies.rows,companyRequests:companyRequests.rows,vehicleRequests:vehicleRequests.rows,vehicles:vehicles.rows.map(({total_visible_vehicles,...v})=>v),totalVehicles:Number(vehicles.rows[0]?.total_visible_vehicles||0),page,pageSize});
+      return res.json({success:true,companies:companies.rows,allCompanies:allCompanies.rows,companyRequests:companyRequests.rows,vehicleRequests:vehicleRequests.rows,vehicles:vehicles.rows.map(({total_visible_vehicles,...v})=>({
+        ...v,
+        service_due_status:"Needs Verification",
+        service_due_reason:!v.last_service_date
+          ? "No service history found. Verify DMS history and vehicle sale details."
+          : (v.last_service_reading==null || !v.last_service_unit)
+            ? "Latest service reading is missing. Verify cumulative KM/HRS before calculating due status."
+            : "Full service history and model-specific schedule rules must be evaluated before confirming due status."
+      })),totalVehicles:Number(vehicles.rows[0]?.total_visible_vehicles||0),page,pageSize});
     }
     if (action === "customer-remove-company" || action === "customer-request-company" || action === "customer-request-vehicle" || action === "customer-remove-vehicle-source") {
       const user=await getUserByToken(client,authToken(req));

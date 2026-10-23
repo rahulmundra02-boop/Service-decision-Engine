@@ -5135,29 +5135,28 @@ function WarrantyTagPanel({user,onBack}){
     const claimRows=parseWarrantyClaimRows(claimDataset);
     const summaryRows=parseWarrantySummaryRows(summaryDataset);
 
-    // Every Job Card present in the Billed JC Claim Statement must also exist
-    // in the Jobcard Summary before any warranty tag result is populated.
+    // Only Job Cards attached to parts eligible for warranty tag printing
+    // must be present in Jobcard Summary. Other claim-statement Job Cards are optional.
     const summaryJobCards=new Set(
       summaryRows
         .map(row=>normalizeWarrantyJobCard(row.jobCard))
         .filter(Boolean)
     );
-    const missingJobCards=[...new Set(
-      claimRows
-        .map(row=>normalizeWarrantyJobCard(row.jobCard))
+
+    const nextTags=buildWarrantyTags(claimRows,summaryRows);
+    const eligibleTags=nextTags.filter(tag=>isWarrantyPrintEligiblePart(tag.partNo));
+    const missingEligibleJobCards=[...new Set(
+      eligibleTags
+        .map(tag=>normalizeWarrantyJobCard(tag.jobCard))
         .filter(Boolean)
         .filter(jobCard=>!summaryJobCards.has(jobCard))
     )];
 
-    if(missingJobCards.length){
+    if(missingEligibleJobCards.length){
       setTags([]);
-      
-      setError("Please upload Jobcard Summary and Billed JC Claim Statement data for the same date.");
+      setError("Jobcard Summary is missing Job Card(s) required for eligible warranty tag printing: "+missingEligibleJobCards.join(", ")+". Please upload the matching Jobcard Summary data.");
       return;
     }
-
-    const nextTags=buildWarrantyTags(claimRows,summaryRows);
-    const eligibleTags=nextTags.filter(tag=>isWarrantyPrintEligiblePart(tag.partNo));
 
     if(!eligibleTags.length){
       setTags([]);

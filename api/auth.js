@@ -1532,6 +1532,10 @@ export default async function handler(req, res) {
       const allCompanies=await client.query("SELECT id,name FROM customer_companies ORDER BY name LIMIT 5000");
       const companyRequests=await client.query("SELECT r.id,r.company_id,c.name AS company_name,r.status,r.created_at FROM customer_company_requests r JOIN customer_companies c ON c.id=r.company_id WHERE r.user_id=$1 ORDER BY r.created_at DESC",[user.id]);
       const vehicleRequests=await client.query("SELECT id,vin,status,created_at FROM customer_vehicle_requests WHERE user_id=$1 ORDER BY created_at DESC",[user.id]);
+      const pageSize=50;
+      const requestedPage=Number(body.page);
+      const page=Number.isSafeInteger(requestedPage)&&requestedPage>=1?Math.min(requestedPage,100000):1;
+      const vehicleSearch=clean(body.search).slice(0,100);
       const vehicles=await client.query(`WITH sources AS (
         SELECT v.id,v.vin,v.registration,v.customer_name,v.model,v.sale_date,v.last_refreshed_at,'company'::text source_type,cc.id company_id,cc.name source_name
         FROM customer_user_companies uc JOIN customer_companies cc ON cc.id=uc.company_id JOIN vehicles v ON LOWER(REGEXP_REPLACE(TRIM(COALESCE(v.customer_name,'')),'[[:space:]]+',' ','g'))=cc.normalized_name WHERE uc.user_id=$1
@@ -1545,14 +1549,15 @@ export default async function handler(req, res) {
                json_agg(DISTINCT jsonb_build_object('sourceType',source_type,'companyId',company_id,'sourceName',source_name)) access_source_details
         FROM visible_sources GROUP BY id,vin,registration,customer_name,model,sale_date,last_refreshed_at
       )
-      SELECT v.*,jc.job_card_no last_job_card,jc.job_date last_service_date,jc.cumulative_reading last_service_reading,jc.cumulative_unit last_service_unit,
+      SELECT v.*,COUNT(*) OVER()::int total_visible_vehicles,jc.job_card_no last_job_card,jc.job_date last_service_date,jc.cumulative_reading last_service_reading,jc.cumulative_unit last_service_unit,
         COALESCE(sh.aggregates,ARRAY[]::text[]) last_service_aggregates
       FROM uv v
       LEFT JOIN LATERAL(SELECT j.job_card_no,j.job_date,j.cumulative_reading,j.cumulative_unit FROM job_cards j WHERE j.vehicle_id=v.id ORDER BY j.job_date DESC NULLS LAST,j.id DESC LIMIT 1) jc ON TRUE
       LEFT JOIN LATERAL(SELECT ARRAY(SELECT DISTINCT COALESCE(NULLIF(TRIM(s.standardized_part),''),NULLIF(TRIM(s.item_category),'')) FROM service_history s JOIN job_cards j2 ON j2.id=s.job_card_id WHERE j2.vehicle_id=v.id AND j2.id=(SELECT j3.id FROM job_cards j3 WHERE j3.vehicle_id=v.id ORDER BY j3.job_date DESC NULLS LAST,j3.id DESC LIMIT 1) AND COALESCE(NULLIF(TRIM(s.standardized_part),''),NULLIF(TRIM(s.item_category),'')) IS NOT NULL ORDER BY 1 LIMIT 8) aggregates) sh ON TRUE
-      ORDER BY v.registration NULLS LAST,v.vin LIMIT 1000`,[user.id]);
+      WHERE ($2::text='' OR v.registration ILIKE '%'||$2||'%' OR v.vin ILIKE '%'||$2||'%' OR v.model ILIKE '%'||$2||'%' OR v.customer_name ILIKE '%'||$2||'%')
+      ORDER BY v.registration NULLS LAST,v.vin LIMIT $3 OFFSET $4`,[user.id,vehicleSearch,pageSize,(page-1)*pageSize]);
       await client.query("COMMIT");
-      return res.json({success:true,companies:companies.rows,allCompanies:allCompanies.rows,companyRequests:companyRequests.rows,vehicleRequests:vehicleRequests.rows,vehicles:vehicles.rows});
+      return res.json({success:true,companies:companies.rows,allCompanies:allCompanies.rows,companyRequests:companyRequests.rows,vehicleRequests:vehicleRequests.rows,vehicles:vehicles.rows.map(({total_visible_vehicles,...v})=>v),totalVehicles:Number(vehicles.rows[0]?.total_visible_vehicles||0),page,pageSize});
     }
     if (action === "customer-remove-company" || action === "customer-request-company" || action === "customer-request-vehicle" || action === "customer-remove-vehicle-source") {
       const user=await getUserByToken(client,authToken(req));

@@ -104,6 +104,8 @@ async function ensureSchema(client) {
     ALTER TABLE app_users ALTER COLUMN email_verified SET DEFAULT TRUE;
     ALTER TABLE app_users ALTER COLUMN mobile_verified SET DEFAULT TRUE;
     ALTER TABLE app_users ADD COLUMN IF NOT EXISTS preferences JSONB NOT NULL DEFAULT '{}'::jsonb;
+    ALTER TABLE app_users ADD COLUMN IF NOT EXISTS user_type TEXT NOT NULL DEFAULT 'al_internal';
+    UPDATE app_users SET user_type='al_internal' WHERE user_type IS NULL OR user_type='';
 
     CREATE TABLE IF NOT EXISTS auth_otps (
       id BIGSERIAL PRIMARY KEY,
@@ -129,7 +131,27 @@ async function ensureSchema(client) {
       reviewed_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE account_requests ADD COLUMN IF NOT EXISTS user_type TEXT NOT NULL DEFAULT 'al_internal';
+    ALTER TABLE account_requests ADD COLUMN IF NOT EXISTS company_ids JSONB NOT NULL DEFAULT '[]'::jsonb;
     CREATE INDEX IF NOT EXISTS idx_account_requests_mobile_created ON account_requests(mobile, created_at DESC);
+    CREATE TABLE IF NOT EXISTS customer_companies (
+      id BIGSERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      normalized_name TEXT NOT NULL UNIQUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS customer_user_companies (
+      user_id BIGINT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+      company_id BIGINT NOT NULL REFERENCES customer_companies(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY(user_id, company_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_customer_user_companies_company ON customer_user_companies(company_id);
+    INSERT INTO customer_companies(name, normalized_name)
+    SELECT DISTINCT TRIM(customer_name), LOWER(REGEXP_REPLACE(TRIM(customer_name), '[[:space:]]+', ' ', 'g'))
+      FROM vehicles
+     WHERE NULLIF(TRIM(customer_name),'') IS NOT NULL
+    ON CONFLICT(normalized_name) DO NOTHING;
     CREATE TABLE IF NOT EXISTS user_referrals (
       id BIGSERIAL PRIMARY KEY,
       referrer_user_id BIGINT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
@@ -270,7 +292,7 @@ async function getUserByToken(client, token) {
   const result = await client.query(
     `SELECT u.id,u.person_name,u.dealer_name,u.email,u.mobile,u.role,u.status,
             u.email_verified,u.mobile_verified,u.created_at,u.last_login_at,u.last_activity_at,
-            u.preferences,
+            u.preferences,u.user_type,
             s.last_seen_at,s.device_name
        FROM auth_sessions s
        JOIN app_users u ON u.id=s.user_id
@@ -415,6 +437,7 @@ function userPayload(user) {
     lastLoginAt: user.last_login_at,
     lastActivityAt: user.last_activity_at,
     preferences: user.preferences || {},
+    userType: user.user_type || 'al_internal',
   };
 }
 
@@ -1399,21 +1422,40 @@ export default async function handler(req, res) {
       return res.json({success:true,request:{status:found.rows[0].status === "active" ? "approved" : found.rows[0].status,alreadyRegistered:true}});
     }
 
+    if (action === "list-customer-companies") {
+      await client.query("INSERT INTO customer_companies(name,normalized_name) SELECT DISTINCT TRIM(customer_name),LOWER(REGEXP_REPLACE(TRIM(customer_name),'[[:space:]]+',' ','g')) FROM vehicles WHERE NULLIF(TRIM(customer_name),'') IS NOT NULL ON CONFLICT(normalized_name) DO NOTHING");
+      const result = await client.query("SELECT id,name FROM customer_companies ORDER BY name ASC LIMIT 5000");
+      await client.query("COMMIT");
+      return res.json({success:true,companies:result.rows});
+    }
+
     if (action === "request-account") {
       const personName = clean(body.personName);
+      const userType = body.userType === "al_customer" ? "al_customer" : "al_internal";
       const dealerName = clean(body.dealerName);
       const email = normalizeEmail(body.email);
       const mobile = normalizeMobile(body.mobile);
       const referralCode = clean(body.referralCode).toUpperCase();
+      const companyIds = Array.isArray(body.companyIds) ? [...new Set(body.companyIds.map(Number).filter(id => Number.isSafeInteger(id) && id > 0))] : [];
       if (!personName || !dealerName || !/^\S+@\S+\.\S+$/.test(email) || mobile.replace(/\D/g, "").length < 10) {
         await client.query("ROLLBACK");
-        return res.status(400).json({success:false,error:"Name, dealer/workshop, valid email and mobile number are required."});
+        return res.status(400).json({success:false,error:"Name, transport/dealer name, valid email and mobile number are required."});
+      }
+      if (userType === "al_customer" && companyIds.length) {
+        const validCompanies = await client.query("SELECT COUNT(*)::int AS count FROM customer_companies WHERE id = ANY($1::bigint[])",[companyIds]);
+        if (Number(validCompanies.rows[0]?.count || 0) !== companyIds.length) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({success:false,error:"One or more selected companies are invalid. Refresh the company list and try again."});
+        }
       }
       const existing = await client.query("SELECT id FROM app_users WHERE lower(email)=lower($1) OR regexp_replace(COALESCE(mobile,''),'[^0-9]','','g')=regexp_replace($2,'[^0-9]','','g') LIMIT 1",[email,mobile]);
       if (existing.rows[0]) { await client.query("ROLLBACK"); return res.status(409).json({success:false,error:"An account already exists with this email or mobile number."}); }
       const duplicate = await client.query("SELECT id FROM account_requests WHERE (lower(email)=lower($1) OR regexp_replace(mobile,'[^0-9]','','g')=regexp_replace($2,'[^0-9]','','g')) AND status='pending' LIMIT 1",[email,mobile]);
       if (duplicate.rows[0]) { await client.query("ROLLBACK"); return res.status(409).json({success:false,error:"An account request for this email or mobile is already pending."}); }
-      const result = await client.query("INSERT INTO account_requests(person_name,dealer_name,email,mobile,referral_code) VALUES($1,$2,$3,$4,$5) RETURNING id,created_at",[personName,dealerName,email,mobile,referralCode || null]);
+      const result = await client.query(
+        "INSERT INTO account_requests(person_name,dealer_name,email,mobile,referral_code,user_type,company_ids) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb) RETURNING id,created_at",
+        [personName,dealerName,email,mobile,referralCode || null,userType,JSON.stringify(userType === "al_customer" ? companyIds : [])]
+      );
       await client.query("COMMIT");
       return res.json({success:true,requestId:result.rows[0].id,createdAt:result.rows[0].created_at,message:"Account request submitted successfully. Use your mobile number to check status."});
     }
@@ -1432,7 +1474,7 @@ export default async function handler(req, res) {
     if (action === "admin-list-account-requests") {
       const admin = await requireAdmin(client, req);
       if (admin.error) { await client.query("ROLLBACK"); return res.status(admin.status).json({success:false,error:admin.error}); }
-      const result = await client.query("SELECT id,person_name,dealer_name,email,mobile,referral_code,status,created_at,reviewed_at FROM account_requests ORDER BY CASE WHEN status='pending' THEN 0 ELSE 1 END,created_at DESC");
+      const result = await client.query("SELECT ar.id,ar.person_name,ar.dealer_name,ar.email,ar.mobile,ar.referral_code,ar.user_type,ar.company_ids,COALESCE(co.company_names,'') AS company_names,ar.status,ar.created_at,ar.reviewed_at FROM account_requests ar LEFT JOIN LATERAL (SELECT string_agg(cc.name, ', ' ORDER BY cc.name) AS company_names FROM jsonb_array_elements_text(ar.company_ids) ids(value) JOIN customer_companies cc ON cc.id=ids.value::bigint) co ON TRUE ORDER BY CASE WHEN ar.status='pending' THEN 0 ELSE 1 END,ar.created_at DESC");
       await client.query("COMMIT");
       return res.json({success:true,requests:result.rows});
     }
@@ -1452,7 +1494,16 @@ export default async function handler(req, res) {
         const duplicate = await client.query("SELECT id FROM app_users WHERE lower(email)=lower($1) OR regexp_replace(COALESCE(mobile,''),'[^0-9]','','g')=regexp_replace($2,'[^0-9]','','g') LIMIT 1",[r.email,r.mobile]);
         if (duplicate.rows[0]) { await client.query("ROLLBACK"); return res.status(409).json({success:false,error:"A user already exists with this email/mobile. Review users first."}); }
         const passwordHash = await hashPassword(password);
-        const created = await client.query("INSERT INTO app_users(person_name,dealer_name,email,mobile,password_hash,role,status,email_verified,mobile_verified) VALUES($1,$2,$3,$4,$5,'standard','active',TRUE,TRUE) RETURNING id",[r.person_name,r.dealer_name,r.email,r.mobile,passwordHash]);
+        const created = await client.query(
+          "INSERT INTO app_users(person_name,dealer_name,email,mobile,password_hash,role,status,email_verified,mobile_verified,user_type) VALUES($1,$2,$3,$4,$5,'standard','active',TRUE,TRUE,$6) RETURNING id",
+          [r.person_name,r.dealer_name,r.email,r.mobile,passwordHash,r.user_type || "al_internal"]
+        );
+        if ((r.user_type || "al_internal") === "al_customer") {
+          const requestedCompanyIds = Array.isArray(r.company_ids) ? r.company_ids.map(Number).filter(id => Number.isSafeInteger(id) && id > 0) : [];
+          for (const companyId of requestedCompanyIds) {
+            await client.query("INSERT INTO customer_user_companies(user_id,company_id) SELECT $1,id FROM customer_companies WHERE id=$2 ON CONFLICT(user_id,company_id) DO NOTHING",[created.rows[0].id,companyId]);
+          }
+        }
         if (r.referral_code) {
           const ref = await client.query("SELECT id FROM app_users WHERE upper(split_part(email,'@',1))=$1 AND role <> 'admin' LIMIT 1",[r.referral_code]);
           if (ref.rows[0]) await client.query("INSERT INTO user_referrals(referrer_user_id,referred_user_id) VALUES($1,$2) ON CONFLICT(referred_user_id) DO NOTHING",[ref.rows[0].id,created.rows[0].id]);
@@ -1480,7 +1531,7 @@ export default async function handler(req, res) {
       }
 
       const users = await client.query(
-        `SELECT id,person_name,dealer_name,email,mobile,role,status,created_at,last_login_at,last_activity_at
+        `SELECT id,person_name,dealer_name,email,mobile,role,status,user_type,created_at,last_login_at,last_activity_at
            FROM app_users ORDER BY role DESC, created_at DESC`
       );
       await client.query("COMMIT");

@@ -3669,7 +3669,7 @@ function getHardcodedHubGreaseConfig(vehicleModel = "") {
   if (!modelText) return null;
 
   // IMPORTANT: contains matching, not exact model matching.
-  // This is deliberately NOT /^\\d{4}$/ and does not require the
+  // This is deliberately NOT /^\d{4}$/ and does not require the
   // model to be only four characters.
   const match = Object.entries(HUB_GREASE_MODEL_CONFIG).find(([code]) =>
     modelText.includes(String(code).toUpperCase())
@@ -4756,7 +4756,7 @@ function formatWarrantyDate(value){
   }
   const text=warrantyText(value);
   if(!text) return "";
-  const iso=text.match(/^(\\d{4})-(\\d{2})-(\\d{2})/);
+  const iso=text.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if(iso) return iso[3]+"/"+iso[2]+"/"+iso[1];
   return text;
 }
@@ -5135,29 +5135,28 @@ function WarrantyTagPanel({user,onBack}){
     const claimRows=parseWarrantyClaimRows(claimDataset);
     const summaryRows=parseWarrantySummaryRows(summaryDataset);
 
-    // Every Job Card present in the Billed JC Claim Statement must also exist
-    // in the Jobcard Summary before any warranty tag result is populated.
+    // Only Job Cards attached to parts eligible for warranty tag printing
+    // must be present in Jobcard Summary. Other claim-statement Job Cards are optional.
     const summaryJobCards=new Set(
       summaryRows
         .map(row=>normalizeWarrantyJobCard(row.jobCard))
         .filter(Boolean)
     );
-    const missingJobCards=[...new Set(
-      claimRows
-        .map(row=>normalizeWarrantyJobCard(row.jobCard))
+
+    const nextTags=buildWarrantyTags(claimRows,summaryRows);
+    const eligibleTags=nextTags.filter(tag=>isWarrantyPrintEligiblePart(tag.partNo));
+    const missingEligibleJobCards=[...new Set(
+      eligibleTags
+        .map(tag=>normalizeWarrantyJobCard(tag.jobCard))
         .filter(Boolean)
         .filter(jobCard=>!summaryJobCards.has(jobCard))
     )];
 
-    if(missingJobCards.length){
+    if(missingEligibleJobCards.length){
       setTags([]);
-      
-      setError("Please upload Jobcard Summary and Billed JC Claim Statement data for the same date.");
+      setError("Jobcard Summary is missing Job Card(s) required for eligible warranty tag printing: "+missingEligibleJobCards.join(", ")+". Please upload the matching Jobcard Summary data.");
       return;
     }
-
-    const nextTags=buildWarrantyTags(claimRows,summaryRows);
-    const eligibleTags=nextTags.filter(tag=>isWarrantyPrintEligiblePart(tag.partNo));
 
     if(!eligibleTags.length){
       setTags([]);
@@ -6335,7 +6334,23 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
             const cutoff=await fetchEmergencyDbUploadCutoff();
             diag.cutoff=Boolean(cutoff.enabled);
             try{
-              const vehicleMasterRecords=uploadedVins.map(vin=>deriveVehicle(parsedRows.filter(record=>String(record?.vin||"").trim().toUpperCase()===vin)));
+              const vehicleMasterRecords=uploadedVins.map(vin=>{
+                const vehicleRows=parsedRows.filter(record=>String(record?.vin||"").trim().toUpperCase()===vin);
+                const dateKey=value=>{
+                  const raw=String(value??"").trim();
+                  const iso=raw.match(/^(\d{4}-\d{2}-\d{2})/);
+                  if(iso)return iso[1];
+                  const parsed=new Date(value);
+                  return Number.isNaN(parsed.getTime())?"":parsed.toISOString().slice(0,10);
+                };
+                const datedRows=vehicleRows.map(record=>({record,date:dateKey(record?.date)}))
+                  .filter(item=>item.date&&String(item.record?.reg||item.record?.registration||"").trim())
+                  .sort((a,b)=>b.date.localeCompare(a.date)||normalizeJobCard(b.record?.jobCard).localeCompare(normalizeJobCard(a.record?.jobCard)));
+                const vehicle=deriveVehicle(vehicleRows);
+                const latest=datedRows[0];
+                return {...vehicle,registration:latest?(latest.record.reg||latest.record.registration):vehicle.registration,
+                  latestJobDate:latest?.date||null};
+              });
               const masterResult=await upsertVehicleMaster(vehicleMasterRecords);
               diag.vehiclesUpserted=Number(masterResult.upsertedVehicles||0);
               if(diag.vehiclesUpserted<uploadedVins.length)throw new Error(`Vehicle master update count mismatch: expected ${uploadedVins.length}, updated ${diag.vehiclesUpserted}`);

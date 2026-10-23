@@ -349,7 +349,7 @@ export default function AuthGate({ children }) {
 
   const loadPriceMasterMeta = async () => {
     try {
-      const response = await fetch("/api/save-history?priceMaster=1");
+      const response = await fetch("/api/save-history?priceMasterMeta=1", { cache: "no-store" });
       const data = await response.json();
       if (!response.ok || data?.success === false) throw new Error(data?.error || "Unable to load Price List status.");
       setPriceMasterMeta({

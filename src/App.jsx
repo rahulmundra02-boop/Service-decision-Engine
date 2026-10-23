@@ -1609,7 +1609,27 @@ function parseExcelPaste(text) {
       ["inward date"], ["inward date"]),
 
     reg: headerIndex(headers,
-      ["registration number"], ["registration number"]),
+      [
+        "registration number",
+        "registration no",
+        "registration no.",
+        "vehicle registration number",
+        "vehicle registration no",
+        "vehicle registration no.",
+        "regn number",
+        "regn. number",
+        "reg no",
+        "reg no.",
+        "registration"
+      ],
+      [
+        "registration number",
+        "registration no",
+        "vehicle registration number",
+        "vehicle registration no",
+        "regn number",
+        "reg no"
+      ]),
 
     lineOfBusiness: headerIndex(headers,
       ["line of business"], ["line of business"]),

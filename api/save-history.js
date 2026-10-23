@@ -178,7 +178,7 @@ export default async function handler(req, res) {
     const requestHost = String(req.headers?.host || "").toLowerCase();
     const isBetaPriceMasterSource = requestHost.includes("git-v12-ui-testing");
     if (priceMasterFlag || priceMasterMetaFlag || priceMasterChunkFlag || (priceMasterPartFlag && partNo)) {
-        if (isBetaPriceMasterSource) {
+        if (isBetaPriceMasterSource || priceMasterFlag || priceMasterMetaFlag || priceMasterChunkFlag) {
         let sourceClient = null;
         try {
           sourceClient = await pool.connect();

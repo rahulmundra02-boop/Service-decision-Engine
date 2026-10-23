@@ -1083,6 +1083,12 @@ export default async function handler(req, res) {
         await client.query("ROLLBACK");
         return res.status(401).json({success:false,error:"Session expired."});
       }
+      // Customer accounts must use the customer-safe portal payload only.
+      // Campaign records are internal service-tool data and are not part of the customer portal.
+      if (user.user_type === "al_customer") {
+        await client.query("ROLLBACK");
+        return res.status(403).json({success:false,error:"Campaign lookup is not available for customer accounts."});
+      }
 
       const vin = clean(body.vin);
       if (!vin) {

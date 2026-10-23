@@ -75,6 +75,7 @@ export default function AuthGate({ children }) {
   const [analyticsIncludeAdmins, setAnalyticsIncludeAdmins] = useState(true);
   const [jobCardCacheSettings, setJobCardCacheSettings] = useState({ enabled:true, intervalHours:24, version:1, lastRebuildAt:null, nextRebuildAt:null, cachedJobCards:0 });
   const [emergencyDbUploadCutoff, setEmergencyDbUploadCutoff] = useState(false);
+  const [registrationSearchEnabled, setRegistrationSearchEnabled] = useState(true);
   const [sessionConflict, setSessionConflict] = useState(null);
   const [pendingLoginCredentials, setPendingLoginCredentials] = useState(null);
   const [campaignMeta, setCampaignMeta] = useState({ rows:0, vehicles:0, fileName:"", uploadedAt:null });
@@ -328,6 +329,21 @@ export default function AuthGate({ children }) {
       setError(e.message || "Unable to load emergency DB upload cutoff settings.");
     }
   };
+
+  const loadRegistrationSearchSetting = async () => {
+    try {
+      const data = await api("registration-search-settings");
+      setRegistrationSearchEnabled(data?.settings?.enabled !== false);
+    } catch (e) {
+      setError(e.message || "Unable to load registration search setting.");
+    }
+  };
+
+  const updateRegistrationSearchSetting = (enabled) => run(async () => {
+    const data = await api("admin-registration-search-settings", { enabled: enabled === true }, localStorage.getItem(TOKEN_KEY));
+    setRegistrationSearchEnabled(data?.settings?.enabled !== false);
+    setMessage(data.message || "Registration search setting updated.");
+  });
 
   const updateEmergencyDbUploadCutoff = (enabled) => run(async () => {
     const data = await api("admin-emergency-db-upload-cutoff", { enabled: enabled === true }, localStorage.getItem(TOKEN_KEY));
@@ -626,6 +642,7 @@ export default function AuthGate({ children }) {
         loadAdminUsers();
         loadJobCardCacheSettings();
         loadEmergencyDbUploadCutoff();
+        loadRegistrationSearchSetting();
         loadCampaignMeta();
         loadPriceMasterMeta();
       }
@@ -975,6 +992,8 @@ export default function AuthGate({ children }) {
           onJobCardCacheSettings={updateJobCardCacheSettings}
           emergencyDbUploadCutoff={emergencyDbUploadCutoff}
           onEmergencyDbUploadCutoff={updateEmergencyDbUploadCutoff}
+          registrationSearchEnabled={registrationSearchEnabled}
+          onRegistrationSearchSetting={updateRegistrationSearchSetting}
           campaignMeta={campaignMeta}
           campaignUploadBusy={campaignUploadBusy}
           campaignUploadMessage={campaignUploadMessage}
@@ -1461,7 +1480,7 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading, onChang
   {signatureOpen && <SignaturePad initialValue={form.signature} onUse={v=>{setForm({...form,signature:v});setSignatureOpen(false);}} onClose={()=>setSignatureOpen(false)}/>}
   </div>;
 }
-function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRefreshAccountRequests, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel, priceMasterMeta, priceMasterUploadBusy, priceMasterUploadMessage, priceMasterUploadError, onUploadPriceMasterExcel }) {
+function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRefreshAccountRequests, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, registrationSearchEnabled, onRegistrationSearchSetting, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel, priceMasterMeta, priceMasterUploadBusy, priceMasterUploadMessage, priceMasterUploadError, onUploadPriceMasterExcel }) {
   const analyticsDetailRef = useRef(null);
   const [view, setView] = useState("overview");
   const localDateString = (date = new Date()) => {
@@ -1595,6 +1614,26 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           <div style={{display:"flex",gap:10,marginTop:16,flexWrap:"wrap"}}>
             <button className="auth-primary" onClick={()=>onJobCardCacheSettings({operation:"rebuild"})}>Rebuild Cache Now</button>
             <button className="auth-secondary" onClick={()=>onJobCardCacheSettings({operation:"reset"})}>Clear Cache Policy</button>
+          </div>
+        </div>
+
+        <div className="admin-panel-card" style={{marginTop:16,padding:"18px 20px",border:"1px solid #cbd5e1"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
+            <div>
+              <div className="admin-panel-card-title">Registration Number Service Search</div>
+              <div className="admin-panel-card-sub">Global control for Stable and Beta. When OFF, registration-number service search is blocked for all users on both portals.</div>
+            </div>
+            <label style={{display:"flex",alignItems:"center",gap:8,fontWeight:800,color:registrationSearchEnabled ? "#166534" : "#b91c1c"}}>
+              <span>{registrationSearchEnabled ? "SEARCH ENABLED" : "SEARCH DISABLED"}</span>
+              <input type="checkbox" checked={registrationSearchEnabled} onChange={e => {
+                const enabled = e.target.checked;
+                if (!window.confirm(enabled ? "Enable registration-number service search on BOTH Stable and Beta portals?" : "Disable registration-number service search for ALL users on BOTH Stable and Beta portals?")) return;
+                onRegistrationSearchSetting(enabled);
+              }} />
+            </label>
+          </div>
+          <div style={{marginTop:12,padding:"10px 12px",borderRadius:8,background:registrationSearchEnabled ? "#ecfdf5" : "#fee2e2",color:registrationSearchEnabled ? "#166534" : "#991b1b",fontWeight:700}}>
+            {registrationSearchEnabled ? "ON: registration number service search is available on both portals." : "OFF: registration number service search is blocked for everyone on both portals."}
           </div>
         </div>
 

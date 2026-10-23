@@ -147,6 +147,15 @@ async function ensureSchema(client) {
       PRIMARY KEY(user_id, company_id)
     );
     CREATE INDEX IF NOT EXISTS idx_customer_user_companies_company ON customer_user_companies(company_id);
+    CREATE TABLE IF NOT EXISTS customer_company_requests (id BIGSERIAL PRIMARY KEY,user_id BIGINT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,company_id BIGINT NOT NULL REFERENCES customer_companies(id) ON DELETE CASCADE,status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),reviewed_by BIGINT REFERENCES app_users(id) ON DELETE SET NULL,reviewed_at TIMESTAMPTZ,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),UNIQUE(user_id,company_id,status));
+    CREATE TABLE IF NOT EXISTS customer_vehicle_requests (id BIGSERIAL PRIMARY KEY,user_id BIGINT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,vin TEXT NOT NULL,vehicle_id BIGINT REFERENCES vehicles(id) ON DELETE SET NULL,status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),reviewed_by BIGINT REFERENCES app_users(id) ON DELETE SET NULL,reviewed_at TIMESTAMPTZ,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+    CREATE TABLE IF NOT EXISTS customer_vehicle_access (user_id BIGINT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,vehicle_id BIGINT NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,granted_by BIGINT REFERENCES app_users(id) ON DELETE SET NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),PRIMARY KEY(user_id,vehicle_id));
+    CREATE TABLE IF NOT EXISTS customer_hidden_vehicle_sources (id BIGSERIAL PRIMARY KEY,user_id BIGINT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,vehicle_id BIGINT NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,source_type TEXT NOT NULL CHECK(source_type IN ('company','direct')),company_id BIGINT REFERENCES customer_companies(id) ON DELETE CASCADE,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_hidden_source_unique ON customer_hidden_vehicle_sources(user_id,vehicle_id,source_type,COALESCE(company_id,0));
+    CREATE TABLE IF NOT EXISTS customer_access_audit (id BIGSERIAL PRIMARY KEY,actor_user_id BIGINT REFERENCES app_users(id) ON DELETE SET NULL,target_user_id BIGINT REFERENCES app_users(id) ON DELETE SET NULL,action TEXT NOT NULL,entity_type TEXT NOT NULL,entity_id TEXT,details JSONB NOT NULL DEFAULT '{}'::jsonb,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+    CREATE INDEX IF NOT EXISTS idx_customer_company_requests_status ON customer_company_requests(status,created_at);
+    CREATE INDEX IF NOT EXISTS idx_customer_vehicle_requests_status ON customer_vehicle_requests(status,created_at);
+    CREATE INDEX IF NOT EXISTS idx_customer_vehicle_access_vehicle ON customer_vehicle_access(vehicle_id);
     INSERT INTO customer_companies(name, normalized_name)
     SELECT DISTINCT TRIM(customer_name), LOWER(REGEXP_REPLACE(TRIM(customer_name), '[[:space:]]+', ' ', 'g'))
       FROM vehicles
@@ -1513,6 +1522,117 @@ export default async function handler(req, res) {
       await logActivity(client,admin.user.id,decision === "approved" ? "Admin Account Approved" : "Admin Account Rejected",{details:{requestId,email:r.email}});
       await client.query("COMMIT");
       return res.json({success:true,message:decision === "approved" ? "Account approved and created." : "Account request rejected."});
+    }
+
+    if (action === "customer-portal-data") {
+      const user=await getUserByToken(client,authToken(req));
+      if(!user){await client.query("ROLLBACK");return res.status(401).json({success:false,error:"Session expired."});}
+      if(user.user_type!=="al_customer"){await client.query("ROLLBACK");return res.status(403).json({success:false,error:"Customer portal access required."});}
+      const companies=await client.query("SELECT cc.id,cc.name FROM customer_user_companies uc JOIN customer_companies cc ON cc.id=uc.company_id WHERE uc.user_id=$1 ORDER BY cc.name",[user.id]);
+      const allCompanies=await client.query("SELECT id,name FROM customer_companies ORDER BY name LIMIT 5000");
+      const companyRequests=await client.query("SELECT r.id,r.company_id,c.name AS company_name,r.status,r.created_at FROM customer_company_requests r JOIN customer_companies c ON c.id=r.company_id WHERE r.user_id=$1 ORDER BY r.created_at DESC",[user.id]);
+      const vehicleRequests=await client.query("SELECT id,vin,status,created_at FROM customer_vehicle_requests WHERE user_id=$1 ORDER BY created_at DESC",[user.id]);
+      const vehicles=await client.query(`WITH sources AS (
+        SELECT v.id,v.vin,v.registration,v.customer_name,v.model,v.sale_date,v.last_refreshed_at,'company'::text source_type,cc.id company_id,cc.name source_name
+        FROM customer_user_companies uc JOIN customer_companies cc ON cc.id=uc.company_id JOIN vehicles v ON LOWER(REGEXP_REPLACE(TRIM(COALESCE(v.customer_name,'')),'[[:space:]]+',' ','g'))=cc.normalized_name WHERE uc.user_id=$1
+        UNION ALL
+        SELECT v.id,v.vin,v.registration,v.customer_name,v.model,v.sale_date,v.last_refreshed_at,'direct'::text,NULL::bigint,'Direct assignment'::text
+        FROM customer_vehicle_access a JOIN vehicles v ON v.id=a.vehicle_id WHERE a.user_id=$1
+      ), visible_sources AS (
+        SELECT s.* FROM sources s WHERE NOT EXISTS(SELECT 1 FROM customer_hidden_vehicle_sources h WHERE h.user_id=$1 AND h.vehicle_id=s.id AND h.source_type=s.source_type AND COALESCE(h.company_id,0)=COALESCE(s.company_id,0))
+      ), uv AS (
+        SELECT id,vin,registration,customer_name,model,sale_date,last_refreshed_at,string_agg(DISTINCT source_name,', ' ORDER BY source_name) access_sources,
+               json_agg(DISTINCT jsonb_build_object('sourceType',source_type,'companyId',company_id,'sourceName',source_name)) access_source_details
+        FROM visible_sources GROUP BY id,vin,registration,customer_name,model,sale_date,last_refreshed_at
+      )
+      SELECT v.*,jc.job_card_no last_job_card,jc.job_date last_service_date,jc.cumulative_reading last_service_reading,jc.cumulative_unit last_service_unit,
+        COALESCE(sh.aggregates,ARRAY[]::text[]) last_service_aggregates
+      FROM uv v
+      LEFT JOIN LATERAL(SELECT j.job_card_no,j.job_date,j.cumulative_reading,j.cumulative_unit FROM job_cards j WHERE j.vehicle_id=v.id ORDER BY j.job_date DESC NULLS LAST,j.id DESC LIMIT 1) jc ON TRUE
+      LEFT JOIN LATERAL(SELECT ARRAY(SELECT DISTINCT COALESCE(NULLIF(TRIM(s.standardized_part),''),NULLIF(TRIM(s.item_category),'')) FROM service_history s JOIN job_cards j2 ON j2.id=s.job_card_id WHERE j2.vehicle_id=v.id AND j2.id=(SELECT j3.id FROM job_cards j3 WHERE j3.vehicle_id=v.id ORDER BY j3.job_date DESC NULLS LAST,j3.id DESC LIMIT 1) AND COALESCE(NULLIF(TRIM(s.standardized_part),''),NULLIF(TRIM(s.item_category),'')) IS NOT NULL ORDER BY 1 LIMIT 8) aggregates) sh ON TRUE
+      ORDER BY v.registration NULLS LAST,v.vin LIMIT 1000`,[user.id]);
+      await client.query("COMMIT");
+      return res.json({success:true,companies:companies.rows,allCompanies:allCompanies.rows,companyRequests:companyRequests.rows,vehicleRequests:vehicleRequests.rows,vehicles:vehicles.rows});
+    }
+    if (action === "customer-remove-company" || action === "customer-request-company" || action === "customer-request-vehicle" || action === "customer-remove-vehicle-source") {
+      const user=await getUserByToken(client,authToken(req));
+      if(!user){await client.query("ROLLBACK");return res.status(401).json({success:false,error:"Session expired."});}
+      if(user.user_type!=="al_customer"){await client.query("ROLLBACK");return res.status(403).json({success:false,error:"Customer portal access required."});}
+      if(action==="customer-remove-company"){
+        const id=Number(body.companyId);
+        const removed=await client.query("DELETE FROM customer_user_companies WHERE user_id=$1 AND company_id=$2 RETURNING company_id",[user.id,id]);
+        if(!removed.rowCount){await client.query("ROLLBACK");return res.status(404).json({success:false,error:"Company mapping not found."});}
+        await client.query("UPDATE customer_company_requests SET status='rejected',reviewed_at=NOW() WHERE user_id=$1 AND company_id=$2 AND status='pending'",[user.id,id]);
+        await client.query("INSERT INTO customer_access_audit(actor_user_id,target_user_id,action,entity_type,entity_id) VALUES($1,$1,'customer_removed_company','company',$2)",[user.id,String(id)]);
+        await client.query("COMMIT");return res.json({success:true,message:"Company removed. Other approved access paths remain available."});
+      }
+      if(action==="customer-request-company"){
+        const id=Number(body.companyId);
+        if(!Number.isSafeInteger(id)||id<1){await client.query("ROLLBACK");return res.status(400).json({success:false,error:"Select a valid company."});}
+        if((await client.query("SELECT 1 FROM customer_companies WHERE id=$1",[id])).rowCount===0){await client.query("ROLLBACK");return res.status(404).json({success:false,error:"Company not found."});}
+        if((await client.query("SELECT 1 FROM customer_user_companies WHERE user_id=$1 AND company_id=$2",[user.id,id])).rowCount){await client.query("ROLLBACK");return res.status(409).json({success:false,error:"Company already linked."});}
+        await client.query("INSERT INTO customer_company_requests(user_id,company_id) VALUES($1,$2) ON CONFLICT(user_id,company_id,status) DO NOTHING",[user.id,id]);
+        await client.query("INSERT INTO customer_access_audit(actor_user_id,target_user_id,action,entity_type,entity_id) VALUES($1,$1,'customer_requested_company','company',$2)",[user.id,String(id)]);
+        await client.query("COMMIT");return res.json({success:true,message:"Company link request sent for Super Admin approval."});
+      }
+      if(action==="customer-request-vehicle"){
+        const vin=clean(body.vin).toUpperCase();
+        if(!vin||vin.length<8||vin.length>32){await client.query("ROLLBACK");return res.status(400).json({success:false,error:"Enter a valid VIN/chassis number."});}
+        const v=await client.query("SELECT id,vin FROM vehicles WHERE UPPER(TRIM(vin))=$1",[vin]);
+        if(!v.rows[0]){await client.query("ROLLBACK");return res.status(404).json({success:false,error:"Vehicle not found in the service database. Contact Super Admin to verify the VIN."});}
+        const exists=await client.query("SELECT 1 FROM customer_vehicle_access WHERE user_id=$1 AND vehicle_id=$2 UNION SELECT 1 FROM customer_user_companies uc JOIN customer_companies c ON c.id=uc.company_id JOIN vehicles x ON LOWER(REGEXP_REPLACE(TRIM(COALESCE(x.customer_name,'')),'[[:space:]]+',' ','g'))=c.normalized_name WHERE uc.user_id=$1 AND x.id=$2 LIMIT 1",[user.id,v.rows[0].id]);
+        if(exists.rowCount){await client.query("ROLLBACK");return res.status(409).json({success:false,error:"You already have access to this vehicle."});}
+        if((await client.query("SELECT 1 FROM customer_vehicle_requests WHERE user_id=$1 AND UPPER(TRIM(vin))=$2 AND status='pending'",[user.id,vin])).rowCount){await client.query("ROLLBACK");return res.status(409).json({success:false,error:"A request for this VIN is already pending."});}
+        await client.query("INSERT INTO customer_vehicle_requests(user_id,vin,vehicle_id) VALUES($1,$2,$3)",[user.id,vin,v.rows[0].id]);
+        await client.query("INSERT INTO customer_access_audit(actor_user_id,target_user_id,action,entity_type,entity_id) VALUES($1,$1,'customer_requested_vehicle','vehicle',$2)",[user.id,vin]);
+        await client.query("COMMIT");return res.json({success:true,message:"Vehicle access request sent for Super Admin approval."});
+      }
+      const vehicleId=Number(body.vehicleId),sourceType=body.sourceType==="direct"?"direct":"company",companyId=sourceType==="company"?Number(body.companyId):null;
+      if(!Number.isSafeInteger(vehicleId)||vehicleId<1||(sourceType==="company"&&(!Number.isSafeInteger(companyId)||companyId<1))){await client.query("ROLLBACK");return res.status(400).json({success:false,error:"Valid vehicle access source is required."});}
+      const access=sourceType==="direct"?await client.query("SELECT 1 FROM customer_vehicle_access WHERE user_id=$1 AND vehicle_id=$2",[user.id,vehicleId]):await client.query("SELECT 1 FROM customer_user_companies uc JOIN customer_companies cc ON cc.id=uc.company_id JOIN vehicles v ON LOWER(REGEXP_REPLACE(TRIM(COALESCE(v.customer_name,'')),'[[:space:]]+',' ','g'))=cc.normalized_name WHERE uc.user_id=$1 AND uc.company_id=$2 AND v.id=$3",[user.id,companyId,vehicleId]);
+      if(!access.rowCount){await client.query("ROLLBACK");return res.status(403).json({success:false,error:"You do not have this access source."});}
+      await client.query("INSERT INTO customer_hidden_vehicle_sources(user_id,vehicle_id,source_type,company_id) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING",[user.id,vehicleId,sourceType,companyId]);
+      if(sourceType==="direct")await client.query("DELETE FROM customer_vehicle_access WHERE user_id=$1 AND vehicle_id=$2",[user.id,vehicleId]);
+      await client.query("INSERT INTO customer_access_audit(actor_user_id,target_user_id,action,entity_type,entity_id,details) VALUES($1,$1,'customer_removed_vehicle_source','vehicle',$2,$3::jsonb)",[user.id,String(vehicleId),JSON.stringify({sourceType,companyId})]);
+      await client.query("COMMIT");return res.json({success:true,message:"Vehicle removed from your list. Other approved access paths remain available."});
+    }
+    if(action==="admin-customer-access-data"){
+      const admin=await requireAdmin(client,req);if(admin.error){await client.query("ROLLBACK");return res.status(admin.status).json({success:false,error:admin.error});}
+      const companyRequests=await client.query("SELECT r.id,r.user_id,u.person_name,u.email,r.company_id,c.name company_name,r.created_at FROM customer_company_requests r JOIN app_users u ON u.id=r.user_id JOIN customer_companies c ON c.id=r.company_id WHERE r.status='pending' ORDER BY r.created_at");
+      const vehicleRequests=await client.query("SELECT r.id,r.user_id,u.person_name,u.email,r.vin,r.created_at FROM customer_vehicle_requests r JOIN app_users u ON u.id=r.user_id WHERE r.status='pending' ORDER BY r.created_at");
+      const companies=await client.query("SELECT id,name FROM customer_companies ORDER BY name LIMIT 5000");
+      const customers=await client.query("SELECT id,person_name,dealer_name,email,status FROM app_users WHERE user_type='al_customer' ORDER BY person_name");
+      await client.query("COMMIT");return res.json({success:true,companyRequests:companyRequests.rows,vehicleRequests:vehicleRequests.rows,companies:companies.rows,customers:customers.rows});
+    }
+    if(action==="admin-review-customer-request"){
+      const admin=await requireAdmin(client,req);if(admin.error){await client.query("ROLLBACK");return res.status(admin.status).json({success:false,error:admin.error});}
+      const type=body.requestType==="vehicle"?"vehicle":"company",id=Number(body.requestId),decision=body.decision==="approve"?"approved":body.decision==="reject"?"rejected":"";
+      if(!Number.isSafeInteger(id)||id<1||!decision){await client.query("ROLLBACK");return res.status(400).json({success:false,error:"Valid request and decision are required."});}
+      const table=type==="vehicle"?"customer_vehicle_requests":"customer_company_requests";
+      const found=await client.query(`SELECT * FROM ${table} WHERE id=$1 FOR UPDATE`,[id]);
+      if(!found.rows[0]||found.rows[0].status!=="pending"){await client.query("ROLLBACK");return res.status(404).json({success:false,error:"Pending access request not found."});}
+      const r=found.rows[0];
+      if(decision==="approved"&&type==="company")await client.query("INSERT INTO customer_user_companies(user_id,company_id) VALUES($1,$2) ON CONFLICT(user_id,company_id) DO NOTHING",[r.user_id,r.company_id]);
+      if(decision==="approved"&&type==="vehicle"){
+        const v=await client.query("SELECT id FROM vehicles WHERE id=COALESCE($1,(SELECT id FROM vehicles WHERE UPPER(TRIM(vin))=UPPER(TRIM($2)) LIMIT 1))",[r.vehicle_id,r.vin]);
+        if(!v.rows[0]){await client.query("ROLLBACK");return res.status(404).json({success:false,error:"Vehicle no longer exists."});}
+        await client.query("INSERT INTO customer_vehicle_access(user_id,vehicle_id,granted_by) VALUES($1,$2,$3) ON CONFLICT(user_id,vehicle_id) DO UPDATE SET granted_by=EXCLUDED.granted_by",[r.user_id,v.rows[0].id,admin.user.id]);
+        await client.query("DELETE FROM customer_hidden_vehicle_sources WHERE user_id=$1 AND vehicle_id=$2 AND source_type='direct'",[r.user_id,v.rows[0].id]);
+      }
+      await client.query(`UPDATE ${table} SET status=$1,reviewed_by=$2,reviewed_at=NOW() WHERE id=$3`,[decision,admin.user.id,id]);
+      await client.query("INSERT INTO customer_access_audit(actor_user_id,target_user_id,action,entity_type,entity_id,details) VALUES($1,$2,$3,$4,$5,$6::jsonb)",[admin.user.id,r.user_id,"admin_"+decision,type,type==="company"?String(r.company_id):r.vin,JSON.stringify({requestId:id})]);
+      await client.query("COMMIT");return res.json({success:true,message:decision==="approved"?"Customer access approved.":"Customer access request rejected."});
+    }
+    if(action==="admin-assign-customer-vehicle"){
+      const admin=await requireAdmin(client,req);if(admin.error){await client.query("ROLLBACK");return res.status(admin.status).json({success:false,error:admin.error});}
+      const userId=Number(body.userId),vin=clean(body.vin).toUpperCase();
+      if(!Number.isSafeInteger(userId)||userId<1||!vin){await client.query("ROLLBACK");return res.status(400).json({success:false,error:"Select customer and enter VIN."});}
+      const target=await client.query("SELECT id FROM app_users WHERE id=$1 AND user_type='al_customer'",[userId]),v=await client.query("SELECT id,vin FROM vehicles WHERE UPPER(TRIM(vin))=$1",[vin]);
+      if(!target.rows[0]||!v.rows[0]){await client.query("ROLLBACK");return res.status(404).json({success:false,error:"Customer or vehicle not found."});}
+      await client.query("INSERT INTO customer_vehicle_access(user_id,vehicle_id,granted_by) VALUES($1,$2,$3) ON CONFLICT(user_id,vehicle_id) DO UPDATE SET granted_by=EXCLUDED.granted_by",[userId,v.rows[0].id,admin.user.id]);
+      await client.query("DELETE FROM customer_hidden_vehicle_sources WHERE user_id=$1 AND vehicle_id=$2 AND source_type='direct'",[userId,v.rows[0].id]);
+      await client.query("INSERT INTO customer_access_audit(actor_user_id,target_user_id,action,entity_type,entity_id) VALUES($1,$2,'admin_direct_vehicle_assignment','vehicle',$3)",[admin.user.id,userId,vin]);
+      await client.query("COMMIT");return res.json({success:true,message:"Vehicle assigned to customer."});
     }
 
     if (action === "my-referrals") {

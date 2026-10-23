@@ -11,6 +11,17 @@ import DocumentScanner from "./DocumentScanner.jsx";
 import AuthGate from "./AuthGate.jsx";
 import { validateEstimateAggregateSelection } from "./estimateAggregateValidation.js";
 
+async function fetchSaveHistory(url, init = {}) {
+  const token = localStorage.getItem("serviceDecisionAuthToken") || "";
+  return fetch(url, {
+    ...init,
+    headers: {
+      ...(init.headers || {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+}
+
 const PART_STANDARDIZATION = {
   'T9999997': 'Tipping Oil',
   'C9999998': 'Engine Oil',
@@ -1245,7 +1256,7 @@ async function syncJobCardIndex(apiBaseUrl) {
     let afterId = Number(state.lastId || 0);
 
     while (true) {
-      const response = await fetch(`${apiBaseUrl}/api/save-history`, {
+      const response = await fetchSaveHistory(`${apiBaseUrl}/api/save-history`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -6154,7 +6165,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
 
     if (!uniqueJobCards.length) return new Set();
 
-    const response = await fetch(`${apiBaseUrl}/api/save-history`, {
+    const response = await fetchSaveHistory(`${apiBaseUrl}/api/save-history`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -6176,7 +6187,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   }
 
   async function saveHistoryToBackend({ records, vehicle }) {
-    const response = await fetch(`${API_BASE_URL}/api/save-history`, {
+    const response = await fetchSaveHistory(`${API_BASE_URL}/api/save-history`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -6227,7 +6238,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   }
 
   async function upsertVehicleMaster(vehicles) {
-    const response = await fetch(`${API_BASE_URL}/api/save-history`, {
+    const response = await fetchSaveHistory(`${API_BASE_URL}/api/save-history`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "upsert-vehicle-master", vehicles }),
@@ -6242,7 +6253,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   async function touchVehicleRefreshTimestamps(vins) {
     const uniqueVins = [...new Set((vins || []).map(value => String(value || "").trim().toUpperCase()).filter(Boolean))];
     if (!uniqueVins.length) return { updatedVehicles: 0 };
-    const response = await fetch(`${API_BASE_URL}/api/save-history`, {
+    const response = await fetchSaveHistory(`${API_BASE_URL}/api/save-history`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "touch-vehicle-refresh", vins: uniqueVins }),
@@ -7061,7 +7072,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   }, [mode, openBulkFilter, analysis, uploadParsedRecords.length]);
 
   async function loadEstimateHistoryByVin(vin) {
-    const response = await fetch("/api/save-history?vin=" + encodeURIComponent(vin));
+    const response = await fetchSaveHistory("/api/save-history?vin=" + encodeURIComponent(vin));
     const data = await response.json();
     return { vehicleRows:Array.isArray(data?.rows)?data.rows:[], modelRows:Array.isArray(data?.modelRows)?data.modelRows:[], globalPartRates:Array.isArray(data?.globalPartRates)?data.globalPartRates:[] };
   }
@@ -7217,7 +7228,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         const hasVehicleHistory = restoredHistory.vehicleRows.length || restoredHistory.modelRows.length;
         const modelToLoad = savedSourceModel || vehicleModel;
         if (!hasVehicleHistory && modelToLoad) {
-          const response = await fetch("/api/save-history?model=" + encodeURIComponent(modelToLoad) + "&_ts=" + Date.now(), {cache:"no-store"});
+          const response = await fetchSaveHistory("/api/save-history?model=" + encodeURIComponent(modelToLoad) + "&_ts=" + Date.now(), {cache:"no-store"});
           const data = await response.json().catch(() => ({}));
           const modelRows = Array.isArray(data?.modelRows) ? data.modelRows : [];
           const globalPartRates = Array.isArray(data?.globalPartRates) ? data.globalPartRates : [];
@@ -7260,7 +7271,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     setEstimateModelLoading(true);
     setEstimateStage("model");
     try {
-      const response = await fetch("/api/save-history?models=1&_ts=" + Date.now(), {cache:"no-store"});
+      const response = await fetchSaveHistory("/api/save-history?models=1&_ts=" + Date.now(), {cache:"no-store"});
       const data = await response.json().catch(() => ({}));
       const models = Array.isArray(data?.models)
         ? [...new Set(data.models.map(model => String(model || "").trim()).filter(Boolean))]
@@ -7290,7 +7301,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     setEstimateModelLoading(true);
     setEstimateVehicleLookupMessage("");
     try {
-      const response = await fetch("/api/save-history?model=" + encodeURIComponent(selectedModel) + "&_ts=" + Date.now(), {cache:"no-store"});
+      const response = await fetchSaveHistory("/api/save-history?model=" + encodeURIComponent(selectedModel) + "&_ts=" + Date.now(), {cache:"no-store"});
       const data = await response.json().catch(() => ({}));
       const modelRows = Array.isArray(data?.modelRows) ? data.modelRows : [];
       const globalPartRates = Array.isArray(data?.globalPartRates) ? data.globalPartRates : [];
@@ -7339,7 +7350,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     if (!registration) { setRegistrationSearchError("Please enter a vehicle registration number."); return; }
     setRegistrationSearchBusy(true);
     try {
-      const response = await fetch("/api/save-history?registration=" + encodeURIComponent(registration));
+      const response = await fetchSaveHistory("/api/save-history?registration=" + encodeURIComponent(registration));
       const data = await response.json().catch(() => ({}));
       if (!response.ok || data?.success === false) throw new Error(data?.error || "Unable to search the database right now.");
       if (!data?.vehicle) { setRegistrationSearchError("Vehicle not found. The registration number may be incorrect, or the vehicle may not be available in the database."); return; }
@@ -7379,7 +7390,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     if(!registration){ setEstimateVehicleLookupMessage("Please enter Vehicle No."); return; }
     setEstimateVehicleLookupBusy(true); setEstimateVehicleLookupMessage("");
     try {
-      const response=await fetch("/api/save-history?registration="+encodeURIComponent(registration));
+      const response=await fetchSaveHistory("/api/save-history?registration="+encodeURIComponent(registration));
       const data=await response.json().catch(()=>({}));
       const rows=Array.isArray(data?.rows)?data.rows:[];
       const dbVehicle=data?.vehicle || rows[0] || null;
@@ -7452,7 +7463,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       const lookupResults = await Promise.all(
         [...new Set(missingCodes)].map(async code => {
           try {
-            const response = await fetch("/api/save-history?priceMasterPart=1&partNo=" + encodeURIComponent(code), {cache:"no-store"});
+            const response = await fetchSaveHistory("/api/save-history?priceMasterPart=1&partNo=" + encodeURIComponent(code), {cache:"no-store"});
             const data = await response.json().catch(() => ({}));
             const master = data?.part;
             const mrp = Number(master?.mrp || 0);
@@ -7542,7 +7553,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     // Do not let an older browser cache silently override the current MRP.
     setManualPartLookupBusy(prev => ({...prev,[id]:true}));
     try {
-      const response = await fetch("/api/save-history?partNo=" + encodeURIComponent(code) + "&_ts=" + Date.now(), {cache:"no-store"});
+      const response = await fetchSaveHistory("/api/save-history?partNo=" + encodeURIComponent(code) + "&_ts=" + Date.now(), {cache:"no-store"});
       const data = await response.json().catch(() => ({}));
 
       if (data?.part?.mrp > 0 || data?.part?.rateInclGst > 0) {

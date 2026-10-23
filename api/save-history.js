@@ -617,7 +617,7 @@ export default async function handler(req, res) {
         const historyResult = await client.query(
           "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
           "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
-          "jc.secondary_cumulative_reading, jc.secondary_cumulative_unit, jc.driver_phone, jc.service_contact_person_phone, " +
+          "jc.secondary_cumulative_reading, jc.secondary_cumulative_unit, jc.driver_phone, jc.service_contact_person_phone, jc.plant_name, " +
           "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, " +
           "sh.repair_line_item_type, sh.complaint_code " +
           "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +
@@ -678,7 +678,7 @@ export default async function handler(req, res) {
       const result = await client.query(
         "SELECT v.vin, v.registration, v.customer_name, v.engine, v.model, v.sale_date, " +
         "jc.job_card_no, jc.job_date, jc.cumulative_reading, jc.cumulative_unit, " +
-          "jc.driver_phone, jc.service_contact_person_phone, " +
+          "jc.driver_phone, jc.service_contact_person_phone, jc.plant_name, " +
         "sh.item_category, sh.part_code, sh.part_description, sh.standardized_part, sh.quantity, " +
         "sh.repair_line_item_type, sh.complaint_code " +
         "FROM vehicles v JOIN job_cards jc ON jc.vehicle_id=v.id " +

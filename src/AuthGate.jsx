@@ -53,7 +53,9 @@ export default function AuthGate({ children }) {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [showAccountHelp, setShowAccountHelp] = useState(false);
-  const [requestForm, setRequestForm] = useState({personName:"",dealerName:"",email:"",mobile:"",referralCode:""});
+  const [requestForm, setRequestForm] = useState({userType:"al_internal",personName:"",dealerName:"",email:"",mobile:"",referralCode:"",companyIds:[]});
+  const [customerCompanies, setCustomerCompanies] = useState([]);
+  const [companySearch, setCompanySearch] = useState("");
   const [requestStatusForm, setRequestStatusForm] = useState({mobile:""});
   const [requestStatusResult, setRequestStatusResult] = useState("");
   const [accountRequests, setAccountRequests] = useState([]);
@@ -165,6 +167,13 @@ export default function AuthGate({ children }) {
       .catch(() => localStorage.removeItem(TOKEN_KEY))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!showAccountHelp || customerCompanies.length) return;
+    api("list-customer-companies")
+      .then(data => setCustomerCompanies(Array.isArray(data.companies) ? data.companies : []))
+      .catch(() => setCustomerCompanies([]));
+  }, [showAccountHelp, customerCompanies.length]);
 
   const run = async (fn) => {
     setError("");
@@ -579,7 +588,8 @@ export default function AuthGate({ children }) {
   const submitAccountRequest = () => run(async () => {
     const data = await api("request-account", requestForm);
     setMessage(data.message + " Request ID: " + data.requestId);
-    setRequestForm({personName:"",dealerName:"",email:"",mobile:"",referralCode:""});
+    setRequestForm({userType:"al_internal",personName:"",dealerName:"",email:"",mobile:"",referralCode:"",companyIds:[]});
+    setCompanySearch("");
   });
 
   const checkAccountRequest = () => run(async () => {
@@ -841,11 +851,30 @@ export default function AuthGate({ children }) {
             {showAccountHelp && (
               <div className="auth-account-help">
                 <div className="auth-help-title">Request an Account (No OTP)</div>
-                <label>Your Name</label><input value={requestForm.personName} onChange={e=>setRequestForm(v=>({...v,personName:e.target.value}))} />
-                <label>Dealer / Workshop Name</label><input value={requestForm.dealerName} onChange={e=>setRequestForm(v=>({...v,dealerName:e.target.value}))} />
-                <label>Email</label><input type="email" value={requestForm.email} onChange={e=>setRequestForm(v=>({...v,email:e.target.value}))} />
-                <label>Mobile Number</label><input type="tel" inputMode="tel" value={requestForm.mobile} onChange={e=>setRequestForm(v=>({...v,mobile:e.target.value}))} />
-                <label>Referral Code (optional)</label><input value={requestForm.referralCode} onChange={e=>setRequestForm(v=>({...v,referralCode:e.target.value.toUpperCase()}))} />
+                <label>User Type *</label>
+                <select value={requestForm.userType} onChange={e=>setRequestForm(v=>({...v,userType:e.target.value,companyIds:[]}))}>
+                  <option value="al_internal">AL Team / AL Dealer Executive</option>
+                  <option value="al_customer">AL Customer</option>
+                </select>
+                <label>Your Name *</label><input value={requestForm.personName} onChange={e=>setRequestForm(v=>({...v,personName:e.target.value}))} />
+                <label>{requestForm.userType === "al_customer" ? "Transport / Fleet Name *" : "Dealer / Workshop Name *"}</label>
+                <input value={requestForm.dealerName} onChange={e=>setRequestForm(v=>({...v,dealerName:e.target.value}))} placeholder={requestForm.userType === "al_customer" ? "Enter your transport company name" : "Enter dealer / workshop name"} />
+                {requestForm.userType === "al_customer" && <div className="auth-company-picker">
+                  <label>Link Transport Company Name(s)</label>
+                  <input type="search" value={companySearch} onChange={e=>setCompanySearch(e.target.value)} placeholder="Search companies..." aria-label="Search transport companies" />
+                  <div className="auth-company-options" role="group" aria-label="Available companies">
+                    {customerCompanies.filter(c=>String(c.name||"").toLowerCase().includes(companySearch.trim().toLowerCase())).map(c=><label className="auth-company-option" key={c.id}>
+                      <input type="checkbox" checked={requestForm.companyIds.includes(Number(c.id))} onChange={e=>setRequestForm(v=>({...v,companyIds:e.target.checked?[...new Set([...v.companyIds,Number(c.id)])]:v.companyIds.filter(id=>id!==Number(c.id))}))} />
+                      <span>{c.name}</span>
+                    </label>)}
+                    {!customerCompanies.length && <div className="auth-company-empty">No company list available yet.</div>}
+                    {customerCompanies.length>0 && !customerCompanies.some(c=>String(c.name||"").toLowerCase().includes(companySearch.trim().toLowerCase())) && <div className="auth-company-empty">No matching companies.</div>}
+                  </div>
+                  <div className="auth-company-selected">{requestForm.companyIds.length} company name(s) selected</div>
+                </div>}
+                <label>Email *</label><input type="email" value={requestForm.email} onChange={e=>setRequestForm(v=>({...v,email:e.target.value}))} />
+                <label>Mobile Number *</label><input type="tel" inputMode="tel" value={requestForm.mobile} onChange={e=>setRequestForm(v=>({...v,mobile:e.target.value}))} />
+                {requestForm.userType === "al_internal" && <><label>Referral Code (optional)</label><input value={requestForm.referralCode} onChange={e=>setRequestForm(v=>({...v,referralCode:e.target.value.toUpperCase()}))} /></>}
                 <button className="auth-primary" onClick={submitAccountRequest} disabled={loading}>Submit Account Request</button>
                 <div className="auth-help-title" style={{marginTop:18}}>Check Request Status</div>
                 <label>Mobile Number</label><input type="tel" inputMode="tel" placeholder="Enter registered mobile number" value={requestStatusForm.mobile} onChange={e=>setRequestStatusForm(v=>({...v,mobile:e.target.value}))} />
@@ -1927,8 +1956,8 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
                 </div>
                 <div className="admin-table-wrap">
                   <table className="admin-table">
-                    <thead><tr><th>ID</th><th>Name</th><th>Dealer</th><th>Email</th><th>Mobile</th><th>Referral</th><th>Requested</th><th>Action</th></tr></thead>
-                    <tbody>{accountRequests.map(r=><tr key={r.id}><td>{r.id}</td><td>{r.person_name}</td><td>{r.dealer_name}</td><td>{r.email}</td><td>{r.mobile || "—"}</td><td>{r.referral_code || "—"}</td><td>{r.created_at ? new Date(r.created_at).toLocaleString() : "—"}</td><td>{r.status==="pending" ? <div className="admin-row-actions"><button onClick={()=>onReviewAccountRequest(r,"approve")}>Approve</button><button onClick={()=>onReviewAccountRequest(r,"reject")}>Reject</button></div> : r.status}</td></tr>)}{!accountRequests.length && <tr><td colSpan="8" className="admin-empty">No account requests found.</td></tr>}</tbody>
+                    <thead><tr><th>ID</th><th>Name</th><th>User Type</th><th>Transport / Dealer</th><th>Linked Companies</th><th>Email</th><th>Mobile</th><th>Requested</th><th>Action</th></tr></thead>
+                    <tbody>{accountRequests.map(r=><tr key={r.id}><td>{r.id}</td><td>{r.person_name}</td><td>{r.user_type==="al_customer" ? "AL Customer" : "AL Team / AL Dealer Executive"}</td><td>{r.dealer_name}</td><td>{r.company_names || "—"}</td><td>{r.email}</td><td>{r.mobile || "—"}</td><td>{r.created_at ? new Date(r.created_at).toLocaleString() : "—"}</td><td>{r.status==="pending" ? <div className="admin-row-actions"><button onClick={()=>onReviewAccountRequest(r,"approve")}>Approve</button><button onClick={()=>onReviewAccountRequest(r,"reject")}>Reject</button></div> : r.status}</td></tr>)}{!accountRequests.length && <tr><td colSpan="9" className="admin-empty">No account requests found.</td></tr>}</tbody>
                   </table>
                 </div>
               </div>
@@ -1937,10 +1966,10 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
                 <div className="admin-users-header"><h3>Users</h3><button className="auth-secondary admin-refresh" onClick={onRefresh} disabled={loading}>Refresh</button></div>
                 <div className="admin-table-wrap">
                   <table className="admin-table">
-                    <thead><tr><th>ID</th><th>Name</th><th>Dealer</th><th>Email</th><th>Status</th><th>Last Login</th><th>Last Activity</th><th>Analytics</th><th>Action</th></tr></thead>
+                    <thead><tr><th>ID</th><th>Name</th><th>User Type</th><th>Dealer</th><th>Email</th><th>Status</th><th>Last Login</th><th>Last Activity</th><th>Analytics</th><th>Action</th></tr></thead>
                     <tbody>
                       {users.map(u=><tr key={u.id}>
-                        <td>{u.id}</td><td>{u.personName}</td><td>{displayDealerName(u)}</td><td>{u.email}</td>
+                        <td>{u.id}</td><td>{u.personName}</td><td>{u.userType === "al_customer" ? "AL Customer" : "AL Team / AL Dealer Executive"}</td><td>{displayDealerName(u)}</td><td>{u.email}</td>
                         <td>{u.role === "admin" ? "ADMIN" : u.status}</td>
                         <td>{u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : "Never"}</td>
                         <td>{u.lastActivityAt ? new Date(u.lastActivityAt).toLocaleString() : "—"}</td>

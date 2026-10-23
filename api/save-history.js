@@ -179,6 +179,34 @@ export default async function handler(req, res) {
     const isBetaPriceMasterSource = requestHost.includes("git-v12-ui-testing");
     const isPriceMasterRead = priceMasterFlag || priceMasterMetaFlag || priceMasterChunkFlag || (priceMasterPartFlag && partNo);
     const hasPriceMasterAuth = Boolean(String(req.headers?.authorization || "").replace(/^Bearer\\s+/i, "").trim());
+    if (isPriceMasterRead && !isBetaPriceMasterSource) {
+      const params = new URLSearchParams();
+      if (priceMasterMetaFlag) params.set("priceMasterMeta", "1");
+      else if (priceMasterChunkFlag) {
+        params.set("priceMasterChunk", "1");
+        params.set("offset", String(priceMasterOffset));
+        params.set("limit", String(priceMasterLimit));
+      } else if (priceMasterFlag) {
+        params.set("priceMaster", "1");
+        if (priceMasterVersion > 0) params.set("version", String(priceMasterVersion));
+      } else if (priceMasterPartFlag && partNo) {
+        params.set("priceMasterPart", "1");
+        params.set("partNo", partNo);
+      }
+      try {
+        const sourceResponse = await fetch(BETA_PRICE_MASTER_API + "?" + params.toString(), {
+          headers: req.headers?.authorization ? { Authorization: req.headers.authorization } : {}
+        });
+        const sourceText = await sourceResponse.text();
+        let sourceData;
+        try { sourceData = JSON.parse(sourceText); }
+        catch { return res.status(502).json({success:false,error:"Beta Price Master returned a non-JSON response (HTTP " + sourceResponse.status + ")."}); }
+        return res.status(sourceResponse.status).json(sourceData);
+      } catch (error) {
+        console.error("Stable Price Master proxy failed:", error);
+        return res.status(502).json({success:false,error:"Unable to reach Beta Price Master source."});
+      }
+    }
     if (isPriceMasterRead && (isBetaPriceMasterSource || hasPriceMasterAuth)) {
         if (isBetaPriceMasterSource || priceMasterFlag || priceMasterMetaFlag || priceMasterChunkFlag) {
         let sourceClient = null;

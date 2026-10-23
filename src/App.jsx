@@ -6335,7 +6335,23 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
             const cutoff=await fetchEmergencyDbUploadCutoff();
             diag.cutoff=Boolean(cutoff.enabled);
             try{
-              const vehicleMasterRecords=uploadedVins.map(vin=>deriveVehicle(parsedRows.filter(record=>String(record?.vin||"").trim().toUpperCase()===vin)));
+              const vehicleMasterRecords=uploadedVins.map(vin=>{
+                const vehicleRows=parsedRows.filter(record=>String(record?.vin||"").trim().toUpperCase()===vin);
+                const dateKey=value=>{
+                  const raw=String(value??"").trim();
+                  const iso=raw.match(/^(\\d{4}-\\d{2}-\\d{2})/);
+                  if(iso)return iso[1];
+                  const parsed=new Date(value);
+                  return Number.isNaN(parsed.getTime())?"":parsed.toISOString().slice(0,10);
+                };
+                const datedRows=vehicleRows.map(record=>({record,date:dateKey(record?.date)}))
+                  .filter(item=>item.date&&String(item.record?.reg||item.record?.registration||"").trim())
+                  .sort((a,b)=>b.date.localeCompare(a.date)||normalizeJobCard(b.record?.jobCard).localeCompare(normalizeJobCard(a.record?.jobCard)));
+                const vehicle=deriveVehicle(vehicleRows);
+                const latest=datedRows[0];
+                return {...vehicle,registration:latest?(latest.record.reg||latest.record.registration):vehicle.registration,
+                  latestJobDate:latest?.date||null};
+              });
               const masterResult=await upsertVehicleMaster(vehicleMasterRecords);
               diag.vehiclesUpserted=Number(masterResult.upsertedVehicles||0);
               if(diag.vehiclesUpserted<uploadedVins.length)throw new Error(`Vehicle master update count mismatch: expected ${uploadedVins.length}, updated ${diag.vehiclesUpserted}`);

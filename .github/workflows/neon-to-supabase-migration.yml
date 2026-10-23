@@ -107,9 +107,12 @@ jobs:
             exit 1
           fi
           /usr/lib/postgresql/18/bin/pg_dump "$SOURCE_URL" --format=custom --schema=public --no-owner --no-privileges --file=/tmp/neon-public.dump
-          /usr/lib/postgresql/18/bin/pg_restore --no-owner --no-privileges --exit-on-error --dbname="$TARGET_URL" /tmp/neon-public.dump
+          # Supabase already owns the public schema. Exclude only its CREATE SCHEMA entry,
+          # while preserving all tables, data, sequences, indexes, constraints, and functions.
+          /usr/lib/postgresql/18/bin/pg_restore --list /tmp/neon-public.dump | sed '/ SCHEMA - public /d' > /tmp/neon-public.list
+          /usr/lib/postgresql/18/bin/pg_restore --use-list=/tmp/neon-public.list --no-owner --no-privileges --exit-on-error --dbname="$TARGET_URL" /tmp/neon-public.dump
           echo "Restore command completed. Run post-restore table/row-count verification before connecting Beta."
-          rm -f /tmp/neon-public.dump
+          rm -f /tmp/neon-public.dump /tmp/neon-public.list
 
       - name: Post-restore table inventory
         if: ${{ inputs.mode == 'restore' }}

@@ -1600,9 +1600,7 @@ export default async function handler(req, res) {
                   sh.item_category,sh.part_code,sh.part_description,sh.standardized_part,sh.quantity
            FROM job_cards jc JOIN service_history sh ON sh.job_card_id=jc.id
            WHERE jc.vehicle_id=ANY($1::bigint[])
-             AND (NULLIF(TRIM(COALESCE(sh.standardized_part,'')),'') IS NOT NULL
-               OR NULLIF(TRIM(COALESCE(sh.part_code,'')),'') IS NOT NULL
-               OR NULLIF(TRIM(COALESCE(sh.part_description,'')),'') IS NOT NULL)
+             AND NULLIF(TRIM(COALESCE(sh.standardized_part,'')),'') IS NOT NULL
            ORDER BY jc.job_date ASC NULLS LAST,jc.id ASC,sh.id ASC`,
           [vehicleIds]
         );

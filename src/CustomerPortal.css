@@ -138,3 +138,18 @@
  .customer-history-request-action{flex:0 1 auto!important;width:auto!important;align-items:flex-start!important}
  .customer-history-request-row .customer-timestamp-compact{max-width:155px!important}
 }
+
+
+/* Keep vertical page scrolling available while service tables scroll horizontally */
+.customer-vehicle-service-cards{overflow:visible!important;touch-action:pan-y}
+.customer-vehicle-service-card{overflow:visible!important;touch-action:pan-y}
+.customer-vehicle-service-card .customer-table-wrap{overflow-x:auto!important;overflow-y:visible!important;touch-action:pan-x pan-y;overscroll-behavior-x:contain}
+.customer-vehicle-service-card .customer-due-table{touch-action:pan-x pan-y}
+.customer-access-actions button{width:auto!important;max-width:none!important;min-width:0!important;align-self:flex-start!important;padding:5px 9px!important;font-size:11px!important;white-space:nowrap!important}
+.customer-loading-overlay{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;background:rgba(8,25,42,.88);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);pointer-events:all;touch-action:none}
+.customer-loading-panel{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;color:#fff;max-width:320px}
+.customer-loading-panel strong{font-size:16px;line-height:1.4;color:#fff}
+.customer-loading-panel>span:last-child{font-size:12px;line-height:1.5;color:#dbe7f1}
+.customer-loading-spinner{width:52px;height:52px;box-sizing:border-box;border:5px solid rgba(255,255,255,.25);border-top-color:#52d18a;border-right-color:#52d18a;border-radius:50%;animation:customerPortalSpin .8s linear infinite}
+@keyframes customerPortalSpin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.customer-loading-spinner{animation-duration:1.8s}}

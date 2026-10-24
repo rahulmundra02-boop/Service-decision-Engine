@@ -614,7 +614,14 @@ export default function AuthGate({ children }) {
   const checkAccountRequest = () => run(async () => {
     const data = await api("check-account-request", requestStatusForm);
     const status = String(data.request.status || "").trim().toUpperCase();
-    setRequestStatusResult({ text: data.request.alreadyRegistered ? ("Account already registered. Status: " + status) : ("Request status: " + status), status });
+    const pendingText = "Your account request has been received and is pending approval from the administrator. For a quicker response, please contact the administrator at 9461768278.";
+    const approvedText = "Your account request has been approved. You can now try logging in.";
+    const rejectedText = "Your account request was not approved. Please contact the administrator at 9461768278 for assistance.";
+    const activeText = "Your account is active. You can now log in.";
+    const text = data.request.alreadyRegistered
+      ? (status === "ACTIVE" || status === "APPROVED" ? activeText : "Account already registered. Current status: " + status + ". For assistance, contact the administrator at 9461768278.")
+      : (status === "PENDING" ? pendingText : status === "APPROVED" ? approvedText : status === "REJECTED" ? rejectedText : "Request status: " + status + ". For assistance, contact the administrator at 9461768278.");
+    setRequestStatusResult({ text, status });
   });
 
   const loadAccountRequests = async () => {
@@ -628,7 +635,25 @@ export default function AuthGate({ children }) {
       password = window.prompt("Set initial password for " + request.email + " (minimum 8 characters):") || "";
       if (password.length < 8) throw new Error("Approval cancelled or password is shorter than 8 characters.");
     } else if (!window.confirm("Reject account request from " + request.email + "?")) return;
-    const data = await api("admin-review-account-request", {requestId:request.id,decision,password}, localStorage.getItem(TOKEN_KEY));
+    let approvedCompanyIds;
+    if (decision === "approve" && request.user_type === "al_customer") {
+      const allCompanies = customerAccessData.companies || [];
+      const requestedIds = Array.isArray(request.company_ids) ? request.company_ids.map(Number) : [];
+      const requestedNames = requestedIds.map(id => allCompanies.find(c => Number(c.id) === id)).filter(Boolean).map(c => c.name);
+      const otherCompanies = allCompanies.filter(c => !requestedIds.includes(Number(c.id)));
+      const promptText = "Requested companies:\n" + (requestedNames.length ? requestedNames.map((n,i)=>`${i+1}. ${n}`).join("\n") : "(No companies selected)") +
+        "\n\nAvailable additional companies:\n" + otherCompanies.slice(0,150).map(c=>`${c.id}: ${c.name}`).join("\n") +
+        (otherCompanies.length > 150 ? "\n… (list limited to first 150; use company IDs)" : "") +
+        "\n\nEnter the company IDs to link, separated by commas. Keep requested IDs you approve and add any extra IDs you want. Leave blank for no company links.";
+      const defaultIds = requestedIds.join(",");
+      const input = window.prompt(promptText, defaultIds);
+      if (input === null) return;
+      const parsed = input.trim() ? input.split(",").map(v=>Number(v.trim())).filter(v=>Number.isSafeInteger(v)&&v>0) : [];
+      approvedCompanyIds = [...new Set(parsed)];
+      const validIds = new Set(allCompanies.map(c=>Number(c.id)));
+      if (approvedCompanyIds.some(id=>!validIds.has(id))) throw new Error("One or more company IDs are invalid. Refresh the admin panel and try again.");
+    }
+    const data = await api("admin-review-account-request", {requestId:request.id,decision,password,approvedCompanyIds}, localStorage.getItem(TOKEN_KEY));
     setMessage(data.message || "Request updated.");
     await loadAccountRequests();
     await loadAdminUsers();

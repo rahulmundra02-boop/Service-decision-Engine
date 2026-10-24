@@ -2915,6 +2915,38 @@ function additionalServiceEligibility(records, vehicle, running, analysisDate, d
   return services;
 }
 
+function getAggregateServiceBases(records, vehicle, decisionBasis = "AUTO") {
+  const serviceRecords = getServiceDecisionRecords(records);
+  const bases = {};
+  const model = String(vehicle?.model || "").toUpperCase();
+  const useHours = decisionBasis === "HRS" ? true : decisionBasis === "KM" ? false : isTipperModel(model);
+  for (const key of ["engineOil","coolant","gearOil","hubGrease","axleOil","fuelFilter","cngFilter","steeringOil","airFilter","clutchOil","defFilter","defInline","apdaFilter","sparkPlug","tippingOil"]) {
+    let base = null;
+    if (key === "engineOil") {
+      base = isGB2822G50HCoModel(model)
+        ? serviceBase(serviceRecords, ["ENGINE OIL"], 12, false, vehicle)
+        : serviceBase(serviceRecords, ["ENGINE OIL"], 12, true, vehicle, "ENGINE OIL FILTER", true);
+    } else if (key === "steeringOil") base = steeringOilServiceBase(serviceRecords, vehicle);
+    else if (key === "clutchOil") base = clutchOilServiceBase(serviceRecords, vehicle);
+    else if (key === "airFilter") base = latestFilter(serviceRecords, "AIR FILTER", "AIR FILTER KIT", vehicle);
+    else if (key === "fuelFilter") base = isCngModel(model) ? null : latestFuelFilter(serviceRecords, vehicle);
+    else if (key === "defFilter") base = isBSVIApplicable(vehicle) ? latestDefFilter(serviceRecords, vehicle) : null;
+    else if (key === "defInline") {
+      const startDate = new Date(2025, 4, 1);
+      const hasHistory = serviceRecords.some(r => String(r.standardizedPart || "").toUpperCase().includes("DEF INLINE FILTER"));
+      base = (hasHistory || (vehicle?.sale && vehicle.sale >= startDate)) ? serviceBase(serviceRecords, ["DEF INLINE FILTER"], 1, false, vehicle) : null;
+    } else if (key === "apdaFilter") base = isBSVIApplicable(vehicle) ? serviceBase(serviceRecords, ["APDA FILTER"], 1, false, vehicle) : null;
+    else if (key === "sparkPlug") base = isCngModel(model) ? serviceBase(serviceRecords, ["SPARK PLUG"], 1, false, vehicle) : null;
+    else if (key === "tippingOil") base = isTipperModel(model) && model.includes("TIP") ? serviceBase(serviceRecords, ["TIPPING OIL"], 1, false, vehicle) : null;
+    else {
+      const cfg = DECISION_RULES[key];
+      if (cfg) base = serviceBase(serviceRecords, [keyToPart(key)], cfg[2], false, vehicle);
+    }
+    bases[key] = base || null;
+  }
+  return bases;
+}
+
 function calculateDecisions(records,vehicle,running,decisionBasis = "AUTO"){
   const analysisDate=new Date(); analysisDate.setHours(0,0,0,0);
 
@@ -10235,4 +10267,4 @@ function App() {
 export default App;
 
 // Reuse the same authoritative rules in the customer portal.
-export { calculateDecisions, getDueServiceNames, deriveVehicle, deriveRunningReading };
+export { calculateDecisions, getDueServiceNames, deriveVehicle, deriveRunningReading, getAggregateServiceBases };

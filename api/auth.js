@@ -1578,23 +1578,16 @@ export default async function handler(req, res) {
                json_agg(DISTINCT jsonb_build_object('sourceType',source_type,'companyId',company_id,'sourceName',source_name)) access_source_details
         FROM visible_sources GROUP BY id,vin,registration,customer_name,model,sale_date,last_refreshed_at
       )
-      SELECT v.*,COUNT(*) OVER()::int total_visible_vehicles,jc.job_card_no last_job_card,jc.job_date last_service_date,jc.cumulative_reading last_service_reading,jc.cumulative_unit last_service_unit,
-        COALESCE(sh.aggregates,ARRAY[]::text[]) last_service_aggregates
+      SELECT v.*,COUNT(*) OVER()::int total_visible_vehicles
       FROM uv v
-      LEFT JOIN LATERAL(SELECT j.job_card_no,j.job_date,j.cumulative_reading,j.cumulative_unit FROM job_cards j WHERE j.vehicle_id=v.id ORDER BY j.job_date DESC NULLS LAST,j.id DESC LIMIT 1) jc ON TRUE
-      LEFT JOIN LATERAL(SELECT ARRAY(SELECT DISTINCT COALESCE(NULLIF(TRIM(s.standardized_part),''),NULLIF(TRIM(s.item_category),'')) FROM service_history s JOIN job_cards j2 ON j2.id=s.job_card_id WHERE j2.vehicle_id=v.id AND j2.id=(SELECT j3.id FROM job_cards j3 WHERE j3.vehicle_id=v.id ORDER BY j3.job_date DESC NULLS LAST,j3.id DESC LIMIT 1) AND COALESCE(NULLIF(TRIM(s.standardized_part),''),NULLIF(TRIM(s.item_category),'')) IS NOT NULL ORDER BY 1 LIMIT 8) aggregates) sh ON TRUE
       WHERE ($2::text='' OR v.registration ILIKE '%'||$2||'%' OR v.vin ILIKE '%'||$2||'%' OR v.model ILIKE '%'||$2||'%' OR v.customer_name ILIKE '%'||$2||'%')
       ORDER BY v.registration NULLS LAST,v.vin LIMIT $3 OFFSET $4`,[user.id,vehicleSearch,pageSize,(page-1)*pageSize]);
       await client.query("COMMIT");
       return res.json({success:true,companies:companies.rows,allCompanies:allCompanies.rows,companyRequests:companyRequests.rows,vehicleRequests:vehicleRequests.rows,vehicles:vehicles.rows.map(({total_visible_vehicles,...v})=>({
         ...v,
-        service_due_status:"Needs Verification",
-        service_due_reason:!v.last_service_date
-          ? "No service history found. Verify DMS history and vehicle sale details."
-          : (v.last_service_reading==null || !v.last_service_unit)
-            ? "Latest service reading is missing. Verify cumulative KM/HRS before calculating due status."
-            : "Full service history and model-specific schedule rules must be evaluated before confirming due status."
-      })),totalVehicles:Number(vehicles.rows[0]?.total_visible_vehicles||0),page,pageSize});
+        schedule_status:"Schedule calculation unavailable",
+         schedule_message:"Verified model-specific schedule rules are not yet connected to the customer portal. Repair history is withheld."
+       })),totalVehicles:Number(vehicles.rows[0]?.total_visible_vehicles||0),page,pageSize});
     }
     if (action === "customer-remove-company" || action === "customer-request-company" || action === "customer-request-vehicle" || action === "customer-remove-vehicle-source") {
       const user=await getUserByToken(client,authToken(req));

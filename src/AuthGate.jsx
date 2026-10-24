@@ -2089,9 +2089,9 @@ function AdminPanel({ users, customerAccessData={companyRequests:[],vehicleReque
               <div className="admin-panel-card-title">Latest 200 Vehicle Records <button type="button" className="admin-db-search-icon" onClick={()=>{setDbSearchOpen(v=>!v);setDbVehicleSearch("");}} aria-label="Search vehicle records">⌕</button></div>{dbSearchOpen && <input className="admin-db-search-input" type="search" value={dbVehicleSearch} onChange={e=>setDbVehicleSearch(e.target.value)} placeholder="Search across all columns..." autoFocus/>}
               <div style={{overflowX:"auto",marginTop:10}}>
                 <table className="admin-table">
-                  <thead><tr><th>Created At</th><th>VIN</th><th>Registration</th><th>Customer</th><th>Model</th></tr></thead>
+                  <thead><tr><th>Last Refreshed</th><th>VIN</th><th>Registration</th><th>Customer</th><th>Model</th></tr></thead>
                   <tbody>
-                    {(dbData?.vehicles||[]).map((v,i)=>{const vals=[v.created_at?new Date(v.created_at).toLocaleString("en-IN"):"—",v.vin||"—",v.registration||"—",v.customer_name||"—",v.model||"—"];const q=dbVehicleSearch.trim().toLowerCase();if(q&&!vals.some(x=>String(x).toLowerCase().includes(q)))return null;const cell=x=>{const t=String(x),at=t.toLowerCase().indexOf(q);return q&&at>=0?<>{t.slice(0,at)}<mark className="admin-db-search-highlight">{t.slice(at,at+q.length)}</mark>{t.slice(at+q.length)}</>:t;};return <tr key={v.vin||i}>{vals.map((x,j)=><td key={j}>{cell(x)}</td>)}</tr>;})}
+                    {(dbData?.vehicles||[]).map((v,i)=>{const vals=[(v.last_refreshed_at||v.created_at)?new Date(v.last_refreshed_at||v.created_at).toLocaleString("en-IN"):"—",v.vin||"—",v.registration||"—",v.customer_name||"—",v.model||"—"];const q=dbVehicleSearch.trim().toLowerCase();if(q&&!vals.some(x=>String(x).toLowerCase().includes(q)))return null;const cell=x=>{const t=String(x),at=t.toLowerCase().indexOf(q);return q&&at>=0?<>{t.slice(0,at)}<mark className="admin-db-search-highlight">{t.slice(at,at+q.length)}</mark>{t.slice(at+q.length)}</>:t;};return <tr key={v.vin||i}>{vals.map((x,j)=><td key={j}>{cell(x)}</td>)}</tr>;})}
                     {!(dbData?.vehicles||[]).length && <tr><td colSpan="5" className="admin-empty">No vehicle records added in this period.</td></tr>}
                   </tbody>
                 </table>

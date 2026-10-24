@@ -54,7 +54,7 @@ export default function AuthGate({ children }) {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [showAccountHelp, setShowAccountHelp] = useState(false);
-  const [requestForm, setRequestForm] = useState({userType:"al_internal",personName:"",dealerName:"",email:"",mobile:"",referralCode:"",companyIds:[]});
+  const [requestForm, setRequestForm] = useState({userType:"",personName:"",dealerName:"",email:"",mobile:"",referralCode:"",companyIds:[]});
   const [customerCompanies, setCustomerCompanies] = useState([]);
   const [companySearch, setCompanySearch] = useState("");
   const [requestStatusForm, setRequestStatusForm] = useState({mobile:""});
@@ -607,7 +607,7 @@ export default function AuthGate({ children }) {
   const submitAccountRequest = () => run(async () => {
     const data = await api("request-account", requestForm);
     setMessage(data.message + " Request ID: " + data.requestId);
-    setRequestForm({userType:"al_internal",personName:"",dealerName:"",email:"",mobile:"",referralCode:"",companyIds:[]});
+    setRequestForm({userType:"",personName:"",dealerName:"",email:"",mobile:"",referralCode:"",companyIds:[]});
     setCompanySearch("");
   });
 
@@ -790,6 +790,70 @@ export default function AuthGate({ children }) {
 
   if (loading && !user) return <div className="auth-loading">Loading Service Decision...</div>;
 
+  if (!user && showAccountHelp) {
+    return (
+      <div className="account-request-page">
+        <header className="account-request-header">
+          <button type="button" className="account-back-button" onClick={() => { setShowAccountHelp(false); setError(""); setMessage(""); }}>← Back to Login</button>
+          <div className="account-request-brand"><span className="account-request-mark">AL</span><div><strong>Service Decision</strong><small>Account Access Request</small></div></div>
+        </header>
+        <main className="account-request-layout">
+          <section className="account-request-intro">
+            <span className="account-request-eyebrow">GET STARTED</span>
+            <h1>Request your account</h1>
+            <p>Choose your user category to see the relevant registration form. Your request will be reviewed by the administrator.</p>
+            <div className="account-request-note"><strong>Account approval required</strong><span>Submitting this form does not immediately activate access.</span></div>
+          </section>
+          <section className="account-request-card">
+            <div className="account-request-card-heading"><h2>Account details</h2><p>Fields marked <b>*</b> are required.</p></div>
+            {error && <div className="auth-error" role="alert">{error}</div>}
+            {message && <div className="auth-message" role="status">{message}</div>}
+            <label htmlFor="account-user-type">User Type <span>*</span></label>
+            <select id="account-user-type" className="account-request-select" value={requestForm.userType} onChange={e=>setRequestForm(v=>({...v,userType:e.target.value,personName:"",dealerName:"",email:"",mobile:"",referralCode:"",companyIds:[]}))}>
+              <option value="">Select your user type</option>
+              <option value="al_internal">AL Team / AL Dealer Executive</option>
+              <option value="al_customer">AL Customer</option>
+            </select>
+            {requestForm.userType && <form className="account-request-form" onSubmit={e=>{e.preventDefault();void submitAccountRequest();}}>
+              <div className="account-request-field"><label htmlFor="account-person-name">Your Name <span>*</span></label><input id="account-person-name" required autoComplete="name" value={requestForm.personName} onChange={e=>setRequestForm(v=>({...v,personName:e.target.value}))} placeholder="Enter your full name" /></div>
+              {requestForm.userType === "al_internal" ? <div className="account-request-field"><label htmlFor="account-dealer-name">Dealer / Workshop Name <span>*</span></label><input id="account-dealer-name" required value={requestForm.dealerName} onChange={e=>setRequestForm(v=>({...v,dealerName:e.target.value}))} placeholder="Enter dealer or workshop name" /></div> : <div className="account-request-field"><label htmlFor="account-fleet-name">Transport / Fleet Name <span>*</span></label><input id="account-fleet-name" required value={requestForm.dealerName} onChange={e=>setRequestForm(v=>({...v,dealerName:e.target.value}))} placeholder="Enter registered transport / fleet name" /></div>}
+              {requestForm.userType === "al_customer" && <div className="account-company-picker">
+                <div className="account-company-heading"><label>Link transport company</label><span>Optional</span></div>
+                <p>Search and select the company or companies associated with your fleet.</p>
+                <input className="account-company-search" type="search" value={companySearch} onChange={e=>setCompanySearch(e.target.value)} placeholder="Search by company name…" aria-label="Search transport companies" />
+                <div className="account-company-options" role="group" aria-label="Available transport companies">
+                  {customerCompanies.filter(c=>String(c.name||"").toLowerCase().includes(companySearch.trim().toLowerCase())).map(c=><label className="account-company-option" key={c.id}>
+                    <input type="checkbox" checked={requestForm.companyIds.includes(Number(c.id))} onChange={e=>setRequestForm(v=>({...v,companyIds:e.target.checked?[...new Set([...v.companyIds,Number(c.id)])]:v.companyIds.filter(id=>id!==Number(c.id))}))} />
+                    <span>{c.name}</span>
+                  </label>)}
+                  {!customerCompanies.length && <div className="account-company-empty">Company list is currently unavailable.</div>}
+                  {customerCompanies.length>0 && !customerCompanies.some(c=>String(c.name||"").toLowerCase().includes(companySearch.trim().toLowerCase())) && <div className="account-company-empty">No matching companies found.</div>}
+                </div>
+                {requestForm.companyIds.length>0 && <div className="account-company-selected">{requestForm.companyIds.length} company selected{requestForm.companyIds.length===1?"":"s"}</div>}
+              </div>}
+              <div className="account-request-grid">
+                <div className="account-request-field"><label htmlFor="account-email">Email Address <span>*</span></label><input id="account-email" type="email" required autoComplete="email" value={requestForm.email} onChange={e=>setRequestForm(v=>({...v,email:e.target.value}))} placeholder="name@company.com" /></div>
+                <div className="account-request-field"><label htmlFor="account-mobile">Mobile Number <span>*</span></label><input id="account-mobile" type="tel" inputMode="tel" required autoComplete="tel" value={requestForm.mobile} onChange={e=>setRequestForm(v=>({...v,mobile:e.target.value}))} placeholder="Enter mobile number" /></div>
+              </div>
+              {requestForm.userType === "al_internal" && <div className="account-request-field"><label htmlFor="account-referral">Referral Code <small>(Optional)</small></label><input id="account-referral" value={requestForm.referralCode} onChange={e=>setRequestForm(v=>({...v,referralCode:e.target.value.toUpperCase()}))} placeholder="Enter referral code if available" /></div>}
+              <button type="submit" className="account-request-submit" disabled={loading}>{loading?"Submitting request…":"Submit Account Request →"}</button>
+            </form>}
+            <div className="account-status-divider"></div>
+            <details className="account-status-details">
+              <summary>Already submitted a request? Check status</summary>
+              <form onSubmit={e=>{e.preventDefault();void checkAccountRequest();}} className="account-status-form">
+                <label htmlFor="account-status-mobile">Registered mobile number</label>
+                <input id="account-status-mobile" type="tel" inputMode="tel" required placeholder="Enter mobile number" value={requestStatusForm.mobile} onChange={e=>setRequestStatusForm(v=>({...v,mobile:e.target.value}))} />
+                <button type="submit" disabled={loading}>{loading?"Checking…":"Check Request Status"}</button>
+              </form>
+              {requestStatusResult && <div className={`auth-contact-row auth-request-status-result ${requestStatusResult.status === "INACTIVE" || requestStatusResult.status === "REJECTED" ? "status-inactive" : requestStatusResult.status === "ACTIVE" || requestStatusResult.status === "APPROVED" ? "status-active" : requestStatusResult.status.includes("PENDING") ? "status-pending" : ""}`} role="status">{requestStatusResult.text}</div>}
+            </details>
+          </section>
+        </main>
+      </div>
+    );
+  }
+
   if (!user) {
     return (
       <div className="auth-page">
@@ -876,7 +940,7 @@ export default function AuthGate({ children }) {
               </div>
             )}
 
-            <button className="auth-secondary auth-secondary-outline" onClick={() => setShowAccountHelp(v => !v)}>
+            <button className="auth-secondary auth-secondary-outline" onClick={() => { setError(""); setMessage(""); setShowAccountHelp(true); }}>
               {showAccountHelp ? "Hide Account Creation" : "Sign Up / Request Account"}
             </button>
 

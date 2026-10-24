@@ -2947,6 +2947,55 @@ function getAggregateServiceBases(records, vehicle, decisionBasis = "AUTO") {
   return bases;
 }
 
+export function getAggregateServiceProjection(records, vehicle, running, key, decisionBasis = "AUTO", decision = null) {
+  const model = String(vehicle?.model || "").toUpperCase();
+  const tip = isTipperModel(model);
+  const effectiveBasis = decisionBasis === "AUTO" ? (tip ? "HRS" : "KM") : getEffectiveDecisionBasis(vehicle, decisionBasis);
+  const useHours = effectiveBasis === "HRS";
+  const sale = vehicle?.sale ? new Date(vehicle.sale) : null;
+  const serviceRecords = getServiceDecisionRecords(records || []);
+  const bases = getAggregateServiceBases(serviceRecords, vehicle, effectiveBasis);
+  let base = bases[key] || null;
+  let interval = 0, months = 0, margin = useHours ? 60 : 4000;
+  if (key === "engineOil") {
+    if (isGB2822G50HCoModel(model)) { interval = 20000; months = 6; margin = 0; }
+    else if (useHours) { interval = (isA4Model(model) || isH4Model(model) || isH6Model(model)) ? 1000 : 1500; months = 18; }
+    else { interval = isH4Model(model) ? 40000 : isA4Model(model) ? (base && base.serviceQty >= 19 ? 80000 : 40000) : isH6Model(model) ? 80000 : 120000; months = 18; }
+  } else if (key === "cngFilter") { interval = 40000; months = 6; margin = 0; }
+  else if (key === "sparkPlug") { interval = 20000; months = 0; margin = 0; }
+  else if (key === "tippingOil") { interval = 0; months = 12; margin = 0; }
+  else if (key === "steeringOil") { interval = useHours ? 4000 : 160000; months = 24; }
+  else if (key === "clutchOil") { interval = useHours ? 2000 : 80000; months = useHours ? 12 : 18; }
+  else {
+    const cfg = DECISION_RULES[key];
+    const tipCfg = TIP_RULES[key];
+    if (useHours && tipCfg) { interval = tipCfg[0]; months = tipCfg[1]; }
+    else if (cfg) { interval = cfg[0]; months = cfg[1]; }
+  }
+  if (key === "defInline" && !isDefInlineApplicable(serviceRecords, vehicle)) return null;
+  if ((key === "defFilter" || key === "apdaFilter") && !isBSVIApplicable(vehicle)) return null;
+  if (key === "fuelFilter" && isCngModel(model)) return null;
+  if (key === "cngFilter" && !isCngModel(model)) return null;
+  if (key === "sparkPlug" && !isCngModel(model)) return null;
+  if (key === "tippingOil" && (!tip || !model.includes("TIP"))) return null;
+  if (key === "engineOil" && isGB2822G50HCoModel(model)) {
+    base = serviceBase(serviceRecords, ["ENGINE OIL"], 12, false, vehicle);
+  }
+  const baseDate = base?.date ? new Date(base.date) : sale;
+  const baseReading = base ? Number(useHours ? getRelevantReadingForBasis(base, "HRS") : getRelevantReadingForBasis(base, "KM")) : 0;
+  const currentReading = Number(running?.current || 0);
+  const nextReading = interval ? baseReading + interval : null;
+  const nextDate = baseDate && months ? monthsAfter(baseDate, months) : null;
+  const daysRemaining = nextDate ? Math.ceil((nextDate.getTime() - Date.now()) / 86400000) : null;
+  const readingRemaining = nextReading == null ? null : nextReading - currentReading;
+  const engineDue = decision && Object.prototype.hasOwnProperty.call(decision, key) ? Boolean(decision[key]) : false;
+  let status = "No Due";
+  if (nextDate && daysRemaining <= 0) status = "Lapsed";
+  else if (engineDue) status = "Due";
+  else if ((readingRemaining != null && readingRemaining <= (margin ? margin * 2 : 2000)) || (daysRemaining != null && daysRemaining <= 30)) status = "Near Due";
+  return { base, interval, months, baseReading, nextReading, nextDate, daysRemaining, readingRemaining, status, unit: useHours ? "HRS" : "KM" };
+}
+
 function calculateDecisions(records,vehicle,running,decisionBasis = "AUTO"){
   const analysisDate=new Date(); analysisDate.setHours(0,0,0,0);
 

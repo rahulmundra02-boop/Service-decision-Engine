@@ -2961,7 +2961,7 @@ export function getAggregateServiceProjection(records, vehicle, running, key, de
     if (isGB2822G50HCoModel(model)) { interval = 20000; months = 6; margin = 0; }
     else if (useHours) { interval = (isA4Model(model) || isH4Model(model) || isH6Model(model)) ? 1000 : 1500; months = 18; }
     else { interval = isH4Model(model) ? 40000 : isA4Model(model) ? (base && base.serviceQty >= 19 ? 80000 : 40000) : isH6Model(model) ? 80000 : 120000; months = 18; }
-  } else if (key === "cngFilter") { interval = 40000; months = 6; margin = 0; }
+  } else if (key === "cngFilter") { base = serviceBase(serviceRecords, ["CNG FILTER"], 1, false, vehicle); interval = 40000; months = 6; margin = 0; }
   else if (key === "sparkPlug") { interval = 20000; months = 0; margin = 0; }
   else if (key === "tippingOil") { interval = 0; months = 12; margin = 0; }
   else if (key === "steeringOil") { interval = useHours ? 4000 : 160000; months = 24; }
@@ -2988,11 +2988,15 @@ export function getAggregateServiceProjection(records, vehicle, running, key, de
   const nextDate = baseDate && months ? monthsAfter(baseDate, months) : null;
   const daysRemaining = nextDate ? Math.ceil((nextDate.getTime() - Date.now()) / 86400000) : null;
   const readingRemaining = nextReading == null ? null : nextReading - currentReading;
-  const engineDue = decision && Object.prototype.hasOwnProperty.call(decision, key) ? Boolean(decision[key]) : false;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const dueDate = baseDate && months ? monthsAfter(baseDate, Math.max(0, months - 1)) : null;
+  const timeDue = !!(dueDate && today >= dueDate);
+  const readingDue = interval > 0 && readingRemaining != null && readingRemaining <= margin;
+  const engineDue = key === "tippingOil" ? timeDue : key === "sparkPlug" ? readingDue : (readingDue || timeDue);
   let status = "No Due";
   if (nextDate && daysRemaining <= 0) status = "Lapsed";
   else if (engineDue) status = "Due";
-  else if ((readingRemaining != null && readingRemaining <= (margin ? margin * 2 : 2000)) || (daysRemaining != null && daysRemaining <= 30)) status = "Near Due";
+  else if ((readingRemaining != null && readingRemaining <= (margin ? margin * 2 : 2000)) || (daysRemaining != null && daysRemaining <= 30)) status = "Nearly Due";
   return { base, interval, months, baseReading, nextReading, nextDate, daysRemaining, readingRemaining, status, unit: useHours ? "HRS" : "KM" };
 }
 

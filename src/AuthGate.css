@@ -689,3 +689,15 @@
 
 /* Compact admin dashboard typography on mobile */
 @media(max-width:768px){.admin-panel-card-title{font-size:15px!important;line-height:1.3!important}.admin-panel-card-sub{font-size:11px!important;line-height:1.4!important}.admin-section-title{font-size:15px!important;line-height:1.25!important}.admin-users-header h3,.admin-users-card h3{font-size:16px!important;line-height:1.25!important}.admin-users-card h4{font-size:13px!important}.admin-table{font-size:12px!important}.admin-table th{font-size:11px!important;padding:7px 6px!important}.admin-table td{font-size:12px!important;padding:7px 6px!important}.admin-panel-card,.admin-users-card{padding:12px!important}.admin-analytics-toolbar{gap:6px!important}.admin-range-tabs button,.admin-view-tabs button,.admin-dashboard-scope-tabs button{font-size:11px!important;padding:6px 8px!important}.admin-kpi-label{font-size:11px!important}.admin-kpi-value{font-size:19px!important}.admin-kpi-sub{font-size:10px!important}.admin-row-actions button{font-size:11px!important;padding:6px 7px!important}}
+
+.admin-db-range-toolbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:12px}
+.admin-db-range-toolbar button{font-size:12px!important;padding:7px 10px!important}
+.admin-db-range-toolbar button.active{background:#0f8f62!important;color:#fff!important}
+.admin-db-custom-range{display:flex;flex-wrap:wrap;align-items:end;gap:8px;margin-top:10px;font-size:12px}
+.admin-db-custom-range label{display:grid;gap:4px;font-size:12px;font-weight:600}
+.admin-db-custom-range input{padding:7px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;max-width:155px}
+.admin-db-custom-range button{width:auto!important;margin:0!important;padding:8px 12px!important;font-size:12px!important}
+.admin-db-search-icon{float:right;border:1px solid #cbd5e1;border-radius:6px;background:#fff;color:#334155;font-size:18px;line-height:1;padding:3px 9px;cursor:pointer}
+.admin-db-search-input{width:100%;box-sizing:border-box;margin-top:8px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px}
+.admin-db-search-highlight{background:#ffeb3b;color:#111;padding:0 1px;border-radius:2px}
+@media(max-width:768px){.admin-db-range-toolbar{gap:5px}.admin-db-range-toolbar button{font-size:11px!important;padding:6px 8px!important}.admin-db-custom-range{gap:6px}.admin-db-custom-range input{max-width:135px}}

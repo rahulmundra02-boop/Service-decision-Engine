@@ -68,3 +68,17 @@
 .customer-history-due-box{min-height:112px!important;max-height:none!important;overflow:visible!important;align-content:flex-start;padding:12px!important}.customer-history-output-title{margin-top:8px!important}.customer-full-history-table-wrap{min-height:220px!important;max-height:50vh!important;overflow:auto!important;-webkit-overflow-scrolling:touch!important}.customer-full-history-table-wrap table{min-width:820px!important}.customer-history-profile-grid input{display:none!important}
 
 .customer-history-reading-panel{display:flex;align-items:end;gap:12px;flex-wrap:wrap;padding:12px;margin:10px 0 14px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px}.customer-history-reading-panel label{display:flex;flex-direction:column;gap:5px;font-weight:600;color:#334155}.customer-history-reading-panel input{width:150px;max-width:42vw;padding:9px;border:1px solid #94a3b8;border-radius:6px;background:#fff;color:#0f172a}.customer-history-reading-panel button{padding:10px 14px;border:0;border-radius:6px;background:#174b38;color:#fff;font-weight:700}.customer-history-reading-panel span{padding-bottom:10px;font-weight:700;color:#475569}.customer-full-history-table-wrap{overflow:auto!important;max-width:100%;-webkit-overflow-scrolling:touch}.customer-full-history-table-wrap table{min-width:850px}
+
+/* Compact vehicle service cards and allow touch scrolling anywhere within a card */
+.customer-vehicle-service-card{padding:10px!important;margin:8px 0!important}
+.customer-vehicle-service-head{display:grid!important;grid-template-columns:minmax(0,1.25fr) minmax(145px,.75fr)!important;gap:6px 12px!important;align-items:center!important;padding:4px 2px 8px!important}
+.customer-vehicle-service-head>div:first-child{min-width:0}
+.customer-vehicle-service-head strong{font-size:15px!important;line-height:1.2}
+.customer-vehicle-service-head span,.customer-vehicle-sale-date{font-size:12px!important;line-height:1.25}
+.customer-vehicle-sale-date{display:block;color:#64748b;margin-top:3px}
+.customer-vehicle-service-head small{font-size:11px!important}
+.customer-reading-edit{height:36px!important;padding:6px 8px!important;font-size:14px!important;max-width:100%}
+.customer-table-wrap{max-width:100%;overflow-x:auto!important;overflow-y:visible!important;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y!important}
+.customer-vehicle-service-card,.customer-vehicle-service-card *{touch-action:pan-x pan-y}
+.customer-due-table th,.customer-due-table td{padding:8px 9px!important;font-size:12px!important;line-height:1.3}
+.customer-due-table td small{font-size:11px!important}

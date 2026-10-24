@@ -1568,6 +1568,7 @@ export default async function handler(req, res) {
       const allCompanies=await client.query("SELECT id,name FROM customer_companies ORDER BY name LIMIT 5000");
       const companyRequests=await client.query("SELECT r.id,r.company_id,c.name AS company_name,r.status,r.created_at FROM customer_company_requests r JOIN customer_companies c ON c.id=r.company_id WHERE r.user_id=$1 ORDER BY r.created_at DESC",[user.id]);
       const vehicleRequests=await client.query("SELECT id,vin,status,created_at FROM customer_vehicle_requests WHERE user_id=$1 ORDER BY created_at DESC",[user.id]);
+      const timestampRequests=await client.query("SELECT r.id,r.vehicle_id,r.vin,r.created_at,v.last_refreshed_at FROM customer_timestamp_update_requests r JOIN vehicles v ON v.id=r.vehicle_id WHERE r.user_id=$1 AND r.status='pending' AND (v.last_refreshed_at IS NULL OR v.last_refreshed_at < r.created_at) ORDER BY r.created_at DESC",[user.id]);
       const pageSize=500;
       const requestedPage=Number(body.page);
       const page=Number.isSafeInteger(requestedPage)&&requestedPage>=1?Math.min(requestedPage,100000):1;
@@ -1639,7 +1640,7 @@ export default async function handler(req, res) {
         });
       }
       await client.query("COMMIT");
-      return res.json({success:true,companies:companies.rows,allCompanies:allCompanies.rows,companyRequests:companyRequests.rows,vehicleRequests:vehicleRequests.rows,vehicles:visibleVehicles.map(({total_visible_vehicles,...v})=>({
+      return res.json({success:true,companies:companies.rows,allCompanies:allCompanies.rows,companyRequests:companyRequests.rows,vehicleRequests:vehicleRequests.rows,timestampRequests:timestampRequests.rows,pendingTimestampCount:timestampRequests.rows.length,vehicles:visibleVehicles.map(({total_visible_vehicles,...v})=>({
         ...v,
         schedule_history:scheduleByVehicle.get(Number(v.id))||[],
       })),totalVehicles:Number(visibleVehicles[0]?.total_visible_vehicles||0),page,pageSize});
@@ -1652,6 +1653,9 @@ export default async function handler(req, res) {
       if(!Number.isSafeInteger(vehicleId)||vehicleId<1||!vin){await client.query("ROLLBACK");return res.status(400).json({success:false,error:"Valid vehicle is required."});}
       const access=await client.query("SELECT 1 FROM (SELECT v.id FROM customer_user_companies uc JOIN customer_companies cc ON cc.id=uc.company_id JOIN vehicles v ON LOWER(REGEXP_REPLACE(TRIM(COALESCE(v.customer_name,'')),'[[:space:]]+',' ','g'))=cc.normalized_name WHERE uc.user_id=$1 AND v.id=$2 UNION SELECT vehicle_id FROM customer_vehicle_access WHERE user_id=$1 AND vehicle_id=$2) a LIMIT 1",[user.id,vehicleId]);
       if(!access.rowCount){await client.query("ROLLBACK");return res.status(403).json({success:false,error:"You do not have access to this vehicle."});}
+      const freshness=await client.query("SELECT last_refreshed_at, (last_refreshed_at IS NOT NULL AND last_refreshed_at > NOW() - INTERVAL '1 day') AS too_recent FROM vehicles WHERE id=$1 AND UPPER(TRIM(vin))=$2",[vehicleId,vin]);
+      if(!freshness.rowCount){await client.query("ROLLBACK");return res.status(404).json({success:false,error:"Vehicle not found."});}
+      if(freshness.rows[0].too_recent){await client.query("ROLLBACK");return res.status(409).json({success:false,error:"This vehicle was updated within the last 24 hours. A timestamp update request is not needed."});}
       const existing=await client.query("SELECT id FROM customer_timestamp_update_requests WHERE user_id=$1 AND vehicle_id=$2 AND status='pending'",[user.id,vehicleId]);
       if(existing.rowCount){await client.query("ROLLBACK");return res.status(409).json({success:false,error:"A timestamp update request is already pending for this vehicle."});}
       await client.query("INSERT INTO customer_timestamp_update_requests(user_id,vehicle_id,vin) VALUES($1,$2,$3)",[user.id,vehicleId,vin]);

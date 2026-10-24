@@ -2551,6 +2551,12 @@ function dueByHours(current, base, interval, months, analysisDate, saleDate, veh
   return current >= baseH + interval - 60 || analysisDate >= monthsAfter(baseDate, months - 1);
 }
 
+export function isDefInlineApplicable(records,vehicle){
+  const startDate = new Date(2025, 4, 1);
+  const hasHistory = (records||[]).some(r => String(r.standardizedPart || "").toUpperCase().includes("DEF INLINE FILTER"));
+  const sale = vehicle?.sale;
+  return !!(hasHistory || (sale && sale >= startDate));
+}
 export function isBSVIApplicable(vehicle){
   // DEF Filter and APDA Filter are applicable only for BS-VI vehicles.
   // Explicit BS-IV/BS4 model identification always overrides date-based fallback.

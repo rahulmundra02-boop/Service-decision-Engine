@@ -754,8 +754,10 @@ export default async function handler(req, res) {
           rangeParams
         ),
         client.query(
-          "SELECT vin,registration,customer_name,model,created_at FROM vehicles WHERE " + rangeFilter +
-          " ORDER BY created_at DESC LIMIT 200",
+          "SELECT vin,registration,customer_name,model,created_at,last_refreshed_at FROM vehicles WHERE vin IS NOT NULL AND TRIM(vin)<>'' AND (" +
+          "(last_refreshed_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Kolkata') AND last_refreshed_at < (($2::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata')) " +
+          "OR EXISTS (SELECT 1 FROM vehicle_upload_events e WHERE UPPER(TRIM(e.vin))=UPPER(TRIM(vehicles.vin)) AND e.created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Kolkata') AND e.created_at < (($2::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata'))) " +
+          "ORDER BY COALESCE(last_refreshed_at,created_at) DESC LIMIT 200",
           rangeParams
         ),
         client.query(

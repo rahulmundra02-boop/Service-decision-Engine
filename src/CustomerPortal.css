@@ -104,3 +104,7 @@
 .customer-due-table td .customer-inline-value{display:inline-block;white-space:nowrap!important}
 .customer-due-table td small{display:inline!important;white-space:nowrap!important;margin:0!important;font-size:inherit!important}
 @media(max-width:600px){.customer-due-table th,.customer-due-table td{padding:5px 6px!important;font-size:10.5px!important}.customer-due-table th:first-child,.customer-due-table td:first-child{white-space:normal!important;min-width:88px!important}}
+
+
+/* History refresh metadata and request action on service-due vehicle cards */
+.customer-history-request-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:8px 2px;margin:0 0 8px;border-top:1px solid #e1e8ef;border-bottom:1px solid #e1e8ef}.customer-history-request-row>div:first-child{display:flex;flex-direction:column;gap:3px;min-width:0}.customer-history-request-row small{font-size:11px;color:#64748b}.customer-history-request-row strong{font-size:12px;color:#243e52;overflow-wrap:anywhere}.customer-history-request-action{display:flex;align-items:flex-end;flex-direction:column;gap:3px}.customer-history-request-row .customer-timestamp-compact{font-size:11px;padding:7px 9px;white-space:normal}.customer-history-request-row .customer-timestamp-compact:disabled{opacity:.65;cursor:not-allowed}@media(max-width:600px){.customer-history-request-row{align-items:flex-start}.customer-history-request-action{align-items:flex-start;width:100%}.customer-history-request-row .customer-timestamp-compact{width:100%}}

@@ -819,7 +819,8 @@ export default async function handler(req, res) {
         ? (targetUserId ? [targetUserId] : [])
         : (targetUserId ? [targetUserId, rangeDays] : [rangeDays]);
 
-      await backfillUserVehicleAnalyses(client);
+      // Historical VIN backfill is a one-time migration task, not dashboard work.
+      // New analyses are recorded by logActivity; avoid rescanning all activity rows on every analytics refresh.
 
       const summary = await client.query(
         `SELECT

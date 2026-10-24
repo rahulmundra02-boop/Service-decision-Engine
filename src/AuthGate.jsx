@@ -613,6 +613,7 @@ export default function AuthGate({ children }) {
   });
 
   const checkAccountRequest = () => run(async () => {
+    setShowRequestStatus(true);
     const data = await api("check-account-request", requestStatusForm);
     const status = String(data.request.status || "").trim().toUpperCase();
     const pendingText = "Your account request has been received and is pending approval from the administrator. For a quicker response, please contact the administrator at 9461768278.";

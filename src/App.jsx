@@ -2957,7 +2957,7 @@ export function getAggregateServiceProjection(records, vehicle, running, key, de
   const bases = getAggregateServiceBases(serviceRecords, vehicle, effectiveBasis);
   let base = bases[key] || null;
   // Customer portal status thresholds: 3,000 KM, 60 HRS, or 1 month.
-  let interval = 0, months = 0;
+  let interval = 0, months = 0, margin = useHours ? 60 : 3000;
   if (key === "engineOil") {
     if (isGB2822G50HCoModel(model)) { interval = 20000; months = 6; margin = 0; }
     else if (useHours) { interval = (isA4Model(model) || isH4Model(model) || isH6Model(model)) ? 1000 : 1500; months = 18; }

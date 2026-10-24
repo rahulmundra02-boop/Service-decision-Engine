@@ -108,3 +108,33 @@
 
 /* History refresh metadata and request action on service-due vehicle cards */
 .customer-history-request-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:8px 2px;margin:0 0 8px;border-top:1px solid #e1e8ef;border-bottom:1px solid #e1e8ef}.customer-history-request-row>div:first-child{display:flex;flex-direction:column;gap:3px;min-width:0}.customer-history-request-row small{font-size:11px;color:#64748b}.customer-history-request-row strong{font-size:12px;color:#243e52;overflow-wrap:anywhere}.customer-history-request-action{display:flex;align-items:flex-end;flex-direction:column;gap:3px}.customer-history-request-row .customer-timestamp-compact{font-size:11px;padding:7px 9px;white-space:normal}.customer-history-request-row .customer-timestamp-compact:disabled{opacity:.65;cursor:not-allowed}@media(max-width:600px){.customer-history-request-row{align-items:flex-start}.customer-history-request-action{align-items:flex-start;width:100%}.customer-history-request-row .customer-timestamp-compact{width:100%}}
+
+
+/* True compact / content-fit tables: avoid forced wide columns on mobile */
+.customer-home-table,.customer-due-table{width:max-content!important;min-width:100%!important;table-layout:auto!important}
+.customer-home-table th,.customer-home-table td,.customer-due-table th,.customer-due-table td{padding:5px 6px!important}
+.customer-home-table th,.customer-due-table th{white-space:nowrap}
+.customer-home-table td,.customer-due-table td{white-space:normal;overflow-wrap:anywhere}
+.customer-due-table td:first-child{white-space:nowrap}
+.customer-due-table .customer-inline-value{display:inline;white-space:normal;overflow-wrap:anywhere}
+.customer-history-request-row{padding:5px 0!important;margin-bottom:5px!important;gap:6px!important}
+.customer-history-request-row .customer-timestamp-compact{width:auto!important;max-width:175px!important;padding:6px 8px!important;font-size:10px!important;line-height:1.2}
+@media(max-width:760px){
+ .customer-vehicle-service-card .customer-due-table{width:100%!important;min-width:0!important;table-layout:auto!important}
+ .customer-due-table th,.customer-due-table td{padding:4px 4px!important;font-size:10px!important;line-height:1.25}
+ .customer-due-table th{white-space:normal!important}
+ .customer-due-table td:first-child{white-space:normal!important;overflow-wrap:anywhere}
+ .customer-due-table th:nth-child(1),.customer-due-table td:nth-child(1){width:20%}
+ .customer-due-table th:nth-child(2),.customer-due-table td:nth-child(2){width:25%}
+ .customer-due-table th:nth-child(3),.customer-due-table td:nth-child(3){width:33%}
+ .customer-due-table th:nth-child(4),.customer-due-table td:nth-child(4){width:22%}
+ .customer-due-table .customer-status-pill{white-space:normal!important;padding:3px 5px!important;font-size:9px!important}
+ .customer-home-table{min-width:0!important;width:max-content!important}
+ .customer-home-table th,.customer-home-table td{padding:4px 5px!important;font-size:10px!important}
+ .customer-home-table td:nth-child(5){min-width:100px;max-width:150px}
+ .customer-timestamp-compact{white-space:normal!important;max-width:125px!important}
+ .customer-history-request-row{display:flex!important;align-items:flex-start!important;justify-content:space-between!important;flex-wrap:wrap!important}
+ .customer-history-request-row>div:first-child{flex:1 1 130px}
+ .customer-history-request-action{flex:0 1 auto!important;width:auto!important;align-items:flex-start!important}
+ .customer-history-request-row .customer-timestamp-compact{max-width:155px!important}
+}

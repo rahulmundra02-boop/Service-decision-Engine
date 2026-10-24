@@ -2956,7 +2956,8 @@ export function getAggregateServiceProjection(records, vehicle, running, key, de
   const serviceRecords = getServiceDecisionRecords(records || []);
   const bases = getAggregateServiceBases(serviceRecords, vehicle, effectiveBasis);
   let base = bases[key] || null;
-  let interval = 0, months = 0, margin = useHours ? 60 : 4000;
+  // Customer portal status thresholds: 3,000 KM, 60 HRS, or 1 month.
+  let interval = 0, months = 0, margin = useHours ? 60 : 3000;
   if (key === "engineOil") {
     if (isGB2822G50HCoModel(model)) { interval = 20000; months = 6; margin = 0; }
     else if (useHours) { interval = (isA4Model(model) || isH4Model(model) || isH6Model(model)) ? 1000 : 1500; months = 18; }
@@ -2986,17 +2987,24 @@ export function getAggregateServiceProjection(records, vehicle, running, key, de
   const currentReading = Number(running?.current || 0);
   const nextReading = interval ? baseReading + interval : null;
   const nextDate = baseDate && months ? monthsAfter(baseDate, months) : null;
-  const daysRemaining = nextDate ? Math.ceil((nextDate.getTime() - Date.now()) / 86400000) : null;
-  const readingRemaining = nextReading == null ? null : nextReading - currentReading;
   const today = new Date(); today.setHours(0,0,0,0);
+  const daysRemaining = nextDate ? Math.ceil((nextDate.getTime() - today.getTime()) / 86400000) : null;
+  const readingRemaining = nextReading == null ? null : nextReading - currentReading;
+  // The actual due point follows the engine's existing one-month-early time rule.
   const dueDate = baseDate && months ? monthsAfter(baseDate, Math.max(0, months - 1)) : null;
+  const daysPastDue = dueDate ? Math.floor((today.getTime() - dueDate.getTime()) / 86400000) : null;
   const timeDue = !!(dueDate && today >= dueDate);
-  const readingDue = interval > 0 && readingRemaining != null && readingRemaining <= margin;
-  const engineDue = key === "tippingOil" ? timeDue : key === "sparkPlug" ? readingDue : (readingDue || timeDue);
+  const readingDue = interval > 0 && readingRemaining != null && readingRemaining <= 0;
+  const timeLapsed = daysPastDue != null && daysPastDue > 30;
+  const readingLapsed = interval > 0 && readingRemaining != null && readingRemaining < -margin;
   let status = "No Due";
-  if (nextDate && daysRemaining <= 0) status = "Lapsed";
-  else if (engineDue) status = "Due";
-  else if ((readingRemaining != null && readingRemaining <= (margin ? margin * 2 : 2000)) || (daysRemaining != null && daysRemaining <= 30)) status = "Nearly Due";
+  // Mark Lapsed only after the due point is exceeded by >3,000 KM, >60 HRS,
+  // or more than one month. Being at/past the due point but within that grace
+  // window remains Due; Near Due is strictly before the due point.
+  if (timeLapsed || readingLapsed) status = "Lapsed";
+  else if (key === "tippingOil" ? timeDue : (readingDue || timeDue)) status = "Due";
+  else if ((readingRemaining != null && readingRemaining > 0 && readingRemaining <= margin) ||
+           (daysRemaining != null && daysRemaining > 0 && daysRemaining <= 30)) status = "Nearly Due";
   return { base, interval, months, baseReading, nextReading, nextDate, daysRemaining, readingRemaining, status, unit: useHours ? "HRS" : "KM" };
 }
 

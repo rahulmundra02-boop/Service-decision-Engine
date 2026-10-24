@@ -34,3 +34,14 @@
 .customer-pending-timestamp{margin:12px 0 18px;padding:12px 14px;border:1px solid #d9e4ee;border-radius:10px;background:#f7fafc}
 .customer-pending-timestamp>div{display:flex;align-items:center;gap:10px}.customer-pending-timestamp strong{font-size:22px;color:#244f70}.customer-pending-timestamp span{font-size:12px;font-weight:650;color:#334155}.customer-pending-timestamp p,.customer-pending-timestamp li{font-size:11px;color:#64748b}.customer-pending-timestamp ul{padding-left:18px;margin-bottom:0}
 .customer-card-footer button:disabled{opacity:.55;cursor:not-allowed}
+
+/* Customer portal compact fleet and service tables */
+.customer-profile-header{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:14px 0 18px;border-bottom:1px solid #e5ebf1;margin:8px 0 16px}
+.customer-home-table-wrap{margin-top:10px}
+.customer-home-table,.customer-due-table{min-width:980px!important;font-size:11px!important}
+.customer-home-table th,.customer-home-table td,.customer-due-table th,.customer-due-table td{padding:7px 8px!important}
+.customer-home-table td strong,.customer-due-table td strong{font-size:11px}
+.customer-home-table .customer-muted,.customer-due-table .customer-muted{font-size:10px;margin-top:3px}
+.customer-timestamp-compact{font-size:10px!important;padding:6px 7px!important;white-space:nowrap}
+.customer-due-table .customer-status-pill{white-space:nowrap}
+@media(max-width:760px){.customer-profile-header{align-items:flex-start;flex-direction:column}.customer-home-table,.customer-due-table{min-width:850px!important}.customer-timestamp-compact{font-size:10px!important}}

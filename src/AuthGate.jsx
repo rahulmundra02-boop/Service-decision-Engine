@@ -698,6 +698,17 @@ export default function AuthGate({ children }) {
     setMessage(r.message||"Customer access request updated.");
     setCustomerAccessData(await api("admin-customer-access-data",{},localStorage.getItem(TOKEN_KEY)));
   });
+  const refreshCustomerAccessData = async () => {
+    const data = await api("admin-customer-access-data", {}, localStorage.getItem(TOKEN_KEY));
+    setCustomerAccessData({
+      companyRequests: Array.isArray(data.companyRequests) ? data.companyRequests : [],
+      vehicleRequests: Array.isArray(data.vehicleRequests) ? data.vehicleRequests : [],
+      companies: Array.isArray(data.companies) ? data.companies : [],
+      customers: Array.isArray(data.customers) ? data.customers : []
+    });
+    return data;
+  };
+
   const assignCustomerVehicle=()=>run(async()=>{
     const r=await api("admin-assign-customer-vehicle",directVehicleForm,localStorage.getItem(TOKEN_KEY));
     setMessage(r.message||"Vehicle assigned.");setDirectVehicleForm({userId:"",vin:""});
@@ -2127,7 +2138,7 @@ function AdminPanel({ users, customerAccessData={companyRequests:[],vehicleReque
                 <div className="admin-table-wrap">
                   <table className="admin-table">
                     <thead><tr><th>ID</th><th>Name</th><th>User Type</th><th>Transport / Dealer</th><th>Linked Companies</th><th>Email</th><th>Mobile</th><th>Requested</th><th>Action</th></tr></thead>
-                    <tbody>{accountRequests.map(r=><tr key={r.id}><td>{r.id}</td><td>{r.person_name}</td><td>{r.user_type==="al_customer" ? "AL Customer" : "AL Team / AL Dealer Executive"}</td><td>{r.dealer_name}</td><td>{r.company_names || "—"}</td><td>{r.email}</td><td>{r.mobile || "—"}</td><td>{r.created_at ? new Date(r.created_at).toLocaleString() : "—"}</td><td>{r.status==="pending" ? <div className="admin-row-actions"><button onClick={()=>{setReviewRequest(r);setReviewCompanyIds(Array.isArray(r.company_ids)?r.company_ids.map(Number):[]);setReviewCompanySearch("");}}>Review &amp; Edit</button><button onClick={()=>onReviewAccountRequest(r,"reject")}>Reject</button></div> : r.status}</td></tr>)}{!accountRequests.length && <tr><td colSpan="9" className="admin-empty">No account requests found.</td></tr>}</tbody>
+                    <tbody>{accountRequests.map(r=><tr key={r.id}><td>{r.id}</td><td>{r.person_name}</td><td>{r.user_type==="al_customer" ? "AL Customer" : "AL Team / AL Dealer Executive"}</td><td>{r.dealer_name}</td><td>{r.company_names || "—"}</td><td>{r.email}</td><td>{r.mobile || "—"}</td><td>{r.created_at ? new Date(r.created_at).toLocaleString() : "—"}</td><td>{r.status==="pending" ? <div className="admin-row-actions"><button onClick={async()=>{setReviewRequest(r);setReviewCompanyIds(Array.isArray(r.company_ids)?r.company_ids.map(Number):[]);setReviewCompanySearch("");try{await refreshCustomerAccessData();}catch(e){setError(e.message||"Unable to load company list.");}}}>Review &amp; Edit</button><button onClick={()=>onReviewAccountRequest(r,"reject")}>Reject</button></div> : r.status}</td></tr>)}{!accountRequests.length && <tr><td colSpan="9" className="admin-empty">No account requests found.</td></tr>}</tbody>
                   </table>
                 </div>
               {reviewRequest && <div className="auth-modal-backdrop" style={{zIndex:10050}}>
@@ -2143,13 +2154,13 @@ function AdminPanel({ users, customerAccessData={companyRequests:[],vehicleReque
                         <input type="checkbox" checked={reviewCompanyIds.includes(Number(company.id))} onChange={e=>setReviewCompanyIds(ids=>e.target.checked?[...new Set([...ids,Number(company.id)])]:ids.filter(id=>id!==Number(company.id)))}/>
                         <span>{company.name}</span><small>{Array.isArray(reviewRequest.company_ids)&&reviewRequest.company_ids.map(Number).includes(Number(company.id))?"Requested":"Additional company"}</small>
                       </label>)}
-                      {!(customerAccessData.companies||[]).some(company=>String(company.name||"").toLowerCase().includes(reviewCompanySearch.trim().toLowerCase())) && <div className="auth-hint">No matching companies found.</div>}
+                      {!(customerAccessData.companies||[]).length && <div className="review-company-empty">Company list is still loading or unavailable. Cancel, refresh the Admin Panel, and try again.</div>}{!!(customerAccessData.companies||[]).length && !(customerAccessData.companies||[]).some(company=>String(company.name||"").toLowerCase().includes(reviewCompanySearch.trim().toLowerCase())) && <div className="review-company-empty">No company matches this search. Clear the search to see all companies.</div>}
                     </div>
                     <div className="review-company-summary">{reviewCompanyIds.length} company{reviewCompanyIds.length===1?"":"ies"} selected</div>
                   </> : <p>This request is for AL Team / AL Dealer Executive. No customer company mapping is required.</p>}
                   <div className="auth-modal-actions">
                     <button className="auth-secondary" onClick={()=>setReviewRequest(null)}>Cancel</button>
-                    <button className="auth-primary" onClick={()=>{const req=reviewRequest;const ids=[...reviewCompanyIds];setReviewRequest(null);onReviewAccountRequest(req,"approve",ids);}}>Approve Selected</button>
+                    <button className="auth-primary" disabled={reviewRequest.user_type==="al_customer" && !(customerAccessData.companies||[]).length} onClick={()=>{const req=reviewRequest;const ids=[...reviewCompanyIds];setReviewRequest(null);onReviewAccountRequest(req,"approve",ids);}}>Approve Selected</button>
                   </div>
                 </div>
               </div>}

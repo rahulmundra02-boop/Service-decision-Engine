@@ -1074,7 +1074,7 @@ export default async function handler(req, res) {
           "ON CONFLICT (vin) DO UPDATE SET " +
           "registration=COALESCE(EXCLUDED.registration,vehicles.registration), " +
           "customer_number=COALESCE(EXCLUDED.customer_number,vehicles.customer_number), " +
-          "customer_name=COALESCE(EXCLUDED.customer_name,vehicles.customer_name), " +
+          "customer_name=COALESCE($8,vehicles.customer_name), " +
           "engine=COALESCE(EXCLUDED.engine,vehicles.engine), " +
           "model=COALESCE(EXCLUDED.model,vehicles.model), " +
           "sale_date=COALESCE(EXCLUDED.sale_date,vehicles.sale_date), " +
@@ -1198,6 +1198,17 @@ export default async function handler(req, res) {
       "SELECT id, created_at FROM vehicles WHERE UPPER(TRIM(vin))=$1 LIMIT 1",
       [vin]
     );
+    const storedLatestJobDateResult = await client.query(
+      "SELECT MAX(job_date) AS latest_job_date FROM job_cards WHERE vehicle_id=$1",
+      [priorVehicleResult.rows[0]?.id || -1]
+    );
+    const storedLatestJobDate = normalizeDate(storedLatestJobDateResult.rows[0]?.latest_job_date);
+    const incomingJobDates = recordsNormalized.map(record => normalizeDate(record.date || record.jobDate || record.job_date)).filter(Boolean).sort();
+    const incomingLatestJobDate = incomingJobDates.length ? incomingJobDates[incomingJobDates.length - 1] : null;
+    const customerNameForUpsert = clean(vehicle.customerName) &&
+      (!storedLatestJobDate || (incomingLatestJobDate && incomingLatestJobDate >= storedLatestJobDate))
+      ? clean(vehicle.customerName)
+      : null;
     // The master list is upserted before history sync starts. A VIN created
     // moments ago in that same Excel upload is still a new vehicle, not a
     // modified existing vehicle.
@@ -1217,8 +1228,8 @@ export default async function handler(req, res) {
       "model=COALESCE(EXCLUDED.model,vehicles.model), " +
       "sale_date=COALESCE(EXCLUDED.sale_date,vehicles.sale_date), " +
       "last_refreshed_at=NOW() RETURNING id",
-      [vin, clean(vehicle.registration), clean(vehicle.customerNumber), clean(vehicle.customerName),
-       clean(vehicle.engine), clean(vehicle.model), clean(vehicle.sale)]
+      [vin, clean(vehicle.registration), clean(vehicle.customerNumber), customerNameForUpsert,
+       clean(vehicle.engine), clean(vehicle.model), clean(vehicle.sale), customerNameForUpsert]
     );
 
     const vehicleId = vehicleResult.rows[0].id;
@@ -1436,6 +1447,10 @@ export default async function handler(req, res) {
       }
     }
 
+    await client.query(
+      "INSERT INTO customer_companies(name,normalized_name) SELECT TRIM(customer_name),LOWER(REGEXP_REPLACE(TRIM(customer_name),'[[:space:]]+',' ','g')) FROM vehicles WHERE id=$1 AND customer_name IS NOT NULL AND TRIM(customer_name)<>'' ON CONFLICT(normalized_name) DO NOTHING",
+      [vehicleId]
+    );
     await client.query(
       "INSERT INTO vehicle_upload_events (vin,vehicle_existed_before,new_job_cards,event_type) VALUES ($1,$2,$3,'history-upload')",
       [vin, vehicleExistedBeforeUpload, insertedJobCards.length]

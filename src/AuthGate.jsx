@@ -54,14 +54,13 @@ export default function AuthGate({ children }) {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [showAccountHelp, setShowAccountHelp] = useState(false);
-  const [requestForm, setRequestForm] = useState({userType:"",personName:"",dealerName:"",email:"",mobile:"",referralCode:"",companyIds:[]});
+  const [requestForm, setRequestForm] = useState({userType:"",personName:"",dealerName:"",email:"",mobile:"",companyIds:[]});
   const [customerCompanies, setCustomerCompanies] = useState([]);
   const [companySearch, setCompanySearch] = useState("");
   const [requestStatusForm, setRequestStatusForm] = useState({mobile:""});
   const [requestStatusResult, setRequestStatusResult] = useState("");
   const [showRequestStatus, setShowRequestStatus] = useState(false);
   const [accountRequests, setAccountRequests] = useState([]);
-  const [referralStats, setReferralStats] = useState({referralCode:"",referralCount:0});
   const [showForgotHelp, setShowForgotHelp] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [passwordForm, setPasswordForm] = useState({ currentPassword:"", newPassword:"", confirmPassword:"" });
@@ -608,7 +607,7 @@ export default function AuthGate({ children }) {
   const submitAccountRequest = () => run(async () => {
     const data = await api("request-account", requestForm);
     setMessage(data.message + " Request ID: " + data.requestId);
-    setRequestForm({userType:"",personName:"",dealerName:"",email:"",mobile:"",referralCode:"",companyIds:[]});
+    setRequestForm({userType:"",personName:"",dealerName:"",email:"",mobile:"",companyIds:[]});
     setCompanySearch("");
   });
 
@@ -850,7 +849,7 @@ export default function AuthGate({ children }) {
             {error && <div className="auth-error" role="alert">{error}</div>}
             {message && <div className="auth-message" role="status">{message}</div>}
             <label htmlFor="account-user-type">User Type <span>*</span></label>
-            <select id="account-user-type" className="account-request-select" value={requestForm.userType} onChange={e=>setRequestForm(v=>({...v,userType:e.target.value,personName:"",dealerName:"",email:"",mobile:"",referralCode:"",companyIds:[]}))}>
+            <select id="account-user-type" className="account-request-select" value={requestForm.userType} onChange={e=>setRequestForm(v=>({...v,userType:e.target.value,personName:"",dealerName:"",email:"",mobile:"",companyIds:[]}))}>
               <option value="">Select your user type</option>
               <option value="al_internal">AL Team / AL Dealer Executive</option>
               <option value="al_customer">AL Customer</option>
@@ -876,7 +875,6 @@ export default function AuthGate({ children }) {
                 <div className="account-request-field"><label htmlFor="account-email">Email Address <span>*</span></label><input id="account-email" type="email" required autoComplete="email" value={requestForm.email} onChange={e=>setRequestForm(v=>({...v,email:e.target.value}))} placeholder="name@company.com" /></div>
                 <div className="account-request-field"><label htmlFor="account-mobile">Mobile Number <span>*</span></label><input id="account-mobile" type="tel" inputMode="tel" required autoComplete="tel" value={requestForm.mobile} onChange={e=>setRequestForm(v=>({...v,mobile:e.target.value}))} placeholder="Enter mobile number" /></div>
               </div>
-              {requestForm.userType === "al_internal" && <div className="account-request-field"><label htmlFor="account-referral">Referral Code <small>(Optional)</small></label><input id="account-referral" value={requestForm.referralCode} onChange={e=>setRequestForm(v=>({...v,referralCode:e.target.value.toUpperCase()}))} placeholder="Enter referral code if available" /></div>}
               <button type="submit" className="account-request-submit" disabled={loading}>{loading?"Submitting request…":"Submit Account Request →"}</button>
             </form>}
             <div className="account-status-divider"></div>
@@ -1011,7 +1009,6 @@ export default function AuthGate({ children }) {
                 </div>}
                 <label>Email *</label><input type="email" value={requestForm.email} onChange={e=>setRequestForm(v=>({...v,email:e.target.value}))} />
                 <label>Mobile Number *</label><input type="tel" inputMode="tel" value={requestForm.mobile} onChange={e=>setRequestForm(v=>({...v,mobile:e.target.value}))} />
-                {requestForm.userType === "al_internal" && <><label>Referral Code (optional)</label><input value={requestForm.referralCode} onChange={e=>setRequestForm(v=>({...v,referralCode:e.target.value.toUpperCase()}))} /></>}
                 <button className="auth-primary" onClick={submitAccountRequest} disabled={loading}>Submit Account Request</button>
                 <div className="auth-help-title" style={{marginTop:18}}>Check Request Status</div>
                 <label>Mobile Number</label><input type="tel" inputMode="tel" placeholder="Enter registered mobile number" value={requestStatusForm.mobile} onChange={e=>setRequestStatusForm(v=>({...v,mobile:e.target.value}))} />
@@ -1042,8 +1039,6 @@ export default function AuthGate({ children }) {
   return (
     <div className="app-auth-shell">
       <div className="auth-userbar" aria-hidden="true"></div>
-      {user && user.role !== "admin" && <div className="auth-referral-panel"><strong>Refer a Workshop</strong><span>Your referral code: <b>{referralStats.referralCode || "—"}</b></span><span>Successful referrals: <b>{referralStats.referralCount}</b></span><button type="button" onClick={()=>navigator.clipboard?.writeText(referralStats.referralCode)}>Copy Code</button></div>}
-
       {error && <div className="auth-inline-error">{error}</div>}
       {message && <div className="auth-inline-message">{message}</div>}
 

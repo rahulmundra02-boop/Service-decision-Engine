@@ -2074,7 +2074,6 @@ function AdminPanel({ users, customerAccessData={companyRequests:[],vehicleReque
               </div>
               {dbCustomOpen && <div className="admin-db-custom-range"><label>From <input type="date" value={dbStartDate} onChange={e=>setDbStartDate(e.target.value)}/></label><label>To <input type="date" value={dbEndDate} onChange={e=>setDbEndDate(e.target.value)}/></label><button className="auth-primary" disabled={dbLoading||!dbStartDate||!dbEndDate||dbStartDate>dbEndDate} onClick={()=>loadDatabaseView(dbStartDate,dbEndDate)}>{dbLoading?"Loading...":"Apply"}</button></div>}
                 {dbLoading && <span className="admin-loading-pill">Refreshing database counts...</span>}
-              </div>
               {dbError && <div className="auth-inline-error">{dbError}</div>}
               <div className="admin-dashboard-grid" style={{marginTop:16}}>
                 <div className="admin-kpi"><div className="admin-kpi-label">Vehicles Added</div><div className="admin-kpi-value">{Number(dbData?.vehicleCount||0).toLocaleString("en-IN")}</div><div className="admin-kpi-sub">New VIN records</div></div>

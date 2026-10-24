@@ -1653,7 +1653,7 @@ export default async function handler(req, res) {
       if(!Number.isSafeInteger(vehicleId)||vehicleId<1||!vin){await client.query("ROLLBACK");return res.status(400).json({success:false,error:"Valid vehicle is required."});}
       const access=await client.query("SELECT 1 FROM (SELECT v.id FROM customer_user_companies uc JOIN customer_companies cc ON cc.id=uc.company_id JOIN vehicles v ON LOWER(REGEXP_REPLACE(TRIM(COALESCE(v.customer_name,'')),'[[:space:]]+',' ','g'))=cc.normalized_name WHERE uc.user_id=$1 AND v.id=$2 UNION SELECT vehicle_id FROM customer_vehicle_access WHERE user_id=$1 AND vehicle_id=$2) a LIMIT 1",[user.id,vehicleId]);
       if(!access.rowCount){await client.query("ROLLBACK");return res.status(403).json({success:false,error:"You do not have access to this vehicle."});}
-      const freshness=await client.query("SELECT last_refreshed_at, (last_refreshed_at IS NOT NULL AND last_refreshed_at > NOW() - INTERVAL '1 day') AS too_recent FROM vehicles WHERE id=$1 AND UPPER(TRIM(vin))=$2",[vehicleId,vin]);
+      const freshness=await client.query("SELECT last_refreshed_at, (last_refreshed_at IS NOT NULL AND last_refreshed_at > NOW() - INTERVAL '7 days') AS too_recent FROM vehicles WHERE id=$1 AND UPPER(TRIM(vin))=$2",[vehicleId,vin]);
       if(!freshness.rowCount){await client.query("ROLLBACK");return res.status(404).json({success:false,error:"Vehicle not found."});}
       if(freshness.rows[0].too_recent){await client.query("ROLLBACK");return res.status(409).json({success:false,error:"This vehicle was updated within the last 24 hours. A timestamp update request is not needed."});}
       const existing=await client.query("SELECT id FROM customer_timestamp_update_requests WHERE user_id=$1 AND vehicle_id=$2 AND status='pending'",[user.id,vehicleId]);
@@ -1706,7 +1706,7 @@ export default async function handler(req, res) {
     }
     if(action==="admin-customer-access-data"){
       const admin=await requireAdmin(client,req);if(admin.error){await client.query("ROLLBACK");return res.status(admin.status).json({success:false,error:admin.error});}
-      const companyRequests=await client.query("SELECT r.id,r.user_id,u.person_name,u.email,r.company_id,c.name company_name,r.created_at FROM customer_company_requests r JOIN app_users u ON u.id=r.user_id JOIN customer_companies c ON c.id=r.company_id WHERE r.status='pending' ORDER BY r.created_at");
+      const companyRequests=await client.query("SELECT r.id,r.user_id,u.person_name,u.email,r.company_id,c.name company_name,r.created_at FROM customer_company_requests r JOIN app_users u ON u.id=r.user_id JOIN customer_companies c ON c.id=r.company_id WHERE r.status='pending' AND (v.last_refreshed_at IS NULL OR v.last_refreshed_at < r.created_at) ORDER BY r.created_at");
       const vehicleRequests=await client.query("SELECT r.id,r.user_id,u.person_name,u.email,r.vin,r.created_at FROM customer_vehicle_requests r JOIN app_users u ON u.id=r.user_id WHERE r.status='pending' ORDER BY r.created_at");
       const companies=await client.query("SELECT id,name FROM customer_companies ORDER BY name LIMIT 5000");
       const timestampRequests=await client.query("SELECT r.id,r.user_id,u.person_name,u.email,r.vehicle_id,r.vin,r.created_at,v.registration,v.model,v.last_refreshed_at FROM customer_timestamp_update_requests r JOIN app_users u ON u.id=r.user_id JOIN vehicles v ON v.id=r.vehicle_id WHERE r.status='pending' ORDER BY r.created_at");

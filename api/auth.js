@@ -70,13 +70,10 @@ let authSchemaEnsured = false;
 async function initAuthSchemaOnce(client) {
   if (authSchemaEnsured) return;
 
-  // Multiple Vercel instances can cold-start at the same time. Serialize
-  // schema bootstrap across instances and re-check after acquiring the lock.
-  await client.query("SELECT pg_advisory_xact_lock(hashtext('service-decision-auth-schema'))");
-  if (authSchemaEnsured) return;
-
+  // Database schema is provisioned separately. Do not run CREATE/ALTER TABLE
+  // inside user requests: concurrent warm instances can be reading these tables,
+  // causing PostgreSQL deadlocks during runtime DDL.
   try {
-    await ensureSchema(client);
     await bootstrapAdmin(client);
     authSchemaEnsured = true;
   } catch (err) {

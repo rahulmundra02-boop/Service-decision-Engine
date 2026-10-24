@@ -166,6 +166,17 @@ async function ensureSchema(client) {
       FROM vehicles
      WHERE NULLIF(TRIM(customer_name),'') IS NOT NULL
     ON CONFLICT(normalized_name) DO NOTHING;
+    CREATE TABLE IF NOT EXISTS customer_timestamp_update_requests (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+      vehicle_id BIGINT NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
+      vin TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','completed','rejected')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      reviewed_at TIMESTAMPTZ,
+      reviewed_by BIGINT REFERENCES app_users(id) ON DELETE SET NULL,
+      UNIQUE(user_id,vehicle_id,status)
+    );
     CREATE TABLE IF NOT EXISTS user_referrals (
       id BIGSERIAL PRIMARY KEY,
       referrer_user_id BIGINT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
@@ -1463,7 +1474,7 @@ export default async function handler(req, res) {
       const dealerName = clean(body.dealerName);
       const email = normalizeEmail(body.email);
       const mobile = normalizeMobile(body.mobile);
-      const referralCode = clean(body.referralCode).toUpperCase();
+      const referralCode = "";
       const companyIds = Array.isArray(body.companyIds) ? [...new Set(body.companyIds.map(Number).filter(id => Number.isSafeInteger(id) && id > 0))] : [];
       if (!personName || !dealerName || !/^\S+@\S+\.\S+$/.test(email) || mobile.replace(/\D/g, "").length < 10) {
         await client.query("ROLLBACK");
@@ -1542,10 +1553,6 @@ export default async function handler(req, res) {
             await client.query("INSERT INTO customer_user_companies(user_id,company_id) SELECT $1,id FROM customer_companies WHERE id=$2 ON CONFLICT(user_id,company_id) DO NOTHING",[created.rows[0].id,companyId]);
           }
         }
-        if (r.referral_code) {
-          const ref = await client.query("SELECT id FROM app_users WHERE upper(split_part(email,'@',1))=$1 AND role <> 'admin' LIMIT 1",[r.referral_code]);
-          if (ref.rows[0]) await client.query("INSERT INTO user_referrals(referrer_user_id,referred_user_id) VALUES($1,$2) ON CONFLICT(referred_user_id) DO NOTHING",[ref.rows[0].id,created.rows[0].id]);
-        }
       }
       await client.query("UPDATE account_requests SET status=$1,reviewed_by=$2,reviewed_at=NOW() WHERE id=$3",[decision,admin.user.id,requestId]);
       await logActivity(client,admin.user.id,decision === "approved" ? "Admin Account Approved" : "Admin Account Rejected",{details:{requestId,email:r.email}});
@@ -1561,7 +1568,7 @@ export default async function handler(req, res) {
       const allCompanies=await client.query("SELECT id,name FROM customer_companies ORDER BY name LIMIT 5000");
       const companyRequests=await client.query("SELECT r.id,r.company_id,c.name AS company_name,r.status,r.created_at FROM customer_company_requests r JOIN customer_companies c ON c.id=r.company_id WHERE r.user_id=$1 ORDER BY r.created_at DESC",[user.id]);
       const vehicleRequests=await client.query("SELECT id,vin,status,created_at FROM customer_vehicle_requests WHERE user_id=$1 ORDER BY created_at DESC",[user.id]);
-      const pageSize=50;
+      const pageSize=500;
       const requestedPage=Number(body.page);
       const page=Number.isSafeInteger(requestedPage)&&requestedPage>=1?Math.min(requestedPage,100000):1;
       const vehicleSearch=clean(body.search).slice(0,100);
@@ -1637,6 +1644,20 @@ export default async function handler(req, res) {
         schedule_history:scheduleByVehicle.get(Number(v.id))||[],
       })),totalVehicles:Number(visibleVehicles[0]?.total_visible_vehicles||0),page,pageSize});
     }
+    if(action==="customer-request-timestamp-update"){
+      const user=await getUserByToken(client,authToken(req));
+      if(!user){await client.query("ROLLBACK");return res.status(401).json({success:false,error:"Session expired."});}
+      if(user.user_type!=="al_customer"){await client.query("ROLLBACK");return res.status(403).json({success:false,error:"Customer portal access required."});}
+      const vehicleId=Number(body.vehicleId),vin=clean(body.vin).toUpperCase();
+      if(!Number.isSafeInteger(vehicleId)||vehicleId<1||!vin){await client.query("ROLLBACK");return res.status(400).json({success:false,error:"Valid vehicle is required."});}
+      const access=await client.query("SELECT 1 FROM (SELECT v.id FROM customer_user_companies uc JOIN customer_companies cc ON cc.id=uc.company_id JOIN vehicles v ON LOWER(REGEXP_REPLACE(TRIM(COALESCE(v.customer_name,'')),'[[:space:]]+',' ','g'))=cc.normalized_name WHERE uc.user_id=$1 AND v.id=$2 UNION SELECT vehicle_id FROM customer_vehicle_access WHERE user_id=$1 AND vehicle_id=$2) a LIMIT 1",[user.id,vehicleId]);
+      if(!access.rowCount){await client.query("ROLLBACK");return res.status(403).json({success:false,error:"You do not have access to this vehicle."});}
+      const existing=await client.query("SELECT id FROM customer_timestamp_update_requests WHERE user_id=$1 AND vehicle_id=$2 AND status='pending'",[user.id,vehicleId]);
+      if(existing.rowCount){await client.query("ROLLBACK");return res.status(409).json({success:false,error:"A timestamp update request is already pending for this vehicle."});}
+      await client.query("INSERT INTO customer_timestamp_update_requests(user_id,vehicle_id,vin) VALUES($1,$2,$3)",[user.id,vehicleId,vin]);
+      await client.query("INSERT INTO customer_access_audit(actor_user_id,target_user_id,action,entity_type,entity_id,details) VALUES($1,$1,'customer_requested_timestamp_update','vehicle',$2,$3::jsonb)",[user.id,String(vehicleId),JSON.stringify({vin})]);
+      await client.query("COMMIT");return res.json({success:true,message:"Timestamp and service-history update request sent to the administrator."});
+    }
     if (action === "customer-remove-company" || action === "customer-request-company" || action === "customer-request-vehicle" || action === "customer-remove-vehicle-source") {
       const user=await getUserByToken(client,authToken(req));
       if(!user){await client.query("ROLLBACK");return res.status(401).json({success:false,error:"Session expired."});}
@@ -1684,8 +1705,9 @@ export default async function handler(req, res) {
       const companyRequests=await client.query("SELECT r.id,r.user_id,u.person_name,u.email,r.company_id,c.name company_name,r.created_at FROM customer_company_requests r JOIN app_users u ON u.id=r.user_id JOIN customer_companies c ON c.id=r.company_id WHERE r.status='pending' ORDER BY r.created_at");
       const vehicleRequests=await client.query("SELECT r.id,r.user_id,u.person_name,u.email,r.vin,r.created_at FROM customer_vehicle_requests r JOIN app_users u ON u.id=r.user_id WHERE r.status='pending' ORDER BY r.created_at");
       const companies=await client.query("SELECT id,name FROM customer_companies ORDER BY name LIMIT 5000");
+      const timestampRequests=await client.query("SELECT r.id,r.user_id,u.person_name,u.email,r.vehicle_id,r.vin,r.created_at,v.registration,v.model,v.last_refreshed_at FROM customer_timestamp_update_requests r JOIN app_users u ON u.id=r.user_id JOIN vehicles v ON v.id=r.vehicle_id WHERE r.status='pending' ORDER BY r.created_at");
       const customers=await client.query("SELECT id,person_name,dealer_name,email,status FROM app_users WHERE user_type='al_customer' ORDER BY person_name");
-      await client.query("COMMIT");return res.json({success:true,companyRequests:companyRequests.rows,vehicleRequests:vehicleRequests.rows,companies:companies.rows,customers:customers.rows});
+      await client.query("COMMIT");return res.json({success:true,companyRequests:companyRequests.rows,vehicleRequests:vehicleRequests.rows,timestampRequests:timestampRequests.rows,companies:companies.rows,customers:customers.rows});
     }
     if(action==="admin-review-customer-request"){
       const admin=await requireAdmin(client,req);if(admin.error){await client.query("ROLLBACK");return res.status(admin.status).json({success:false,error:admin.error});}

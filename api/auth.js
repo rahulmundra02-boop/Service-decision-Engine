@@ -1577,14 +1577,14 @@ export default async function handler(req, res) {
         SELECT v.id,v.vin,v.registration,v.customer_name,v.model,v.sale_date,v.last_refreshed_at,'company'::text source_type,cc.id company_id,cc.name source_name
         FROM customer_user_companies uc JOIN customer_companies cc ON cc.id=uc.company_id JOIN vehicles v ON LOWER(REGEXP_REPLACE(TRIM(COALESCE(v.customer_name,'')),'[[:space:]]+',' ','g'))=cc.normalized_name WHERE uc.user_id=$1
         UNION ALL
-        SELECT v.id,v.vin,v.registration,v.customer_name,v.model,v.sale_date,v.last_refreshed_at,'direct'::text,NULL::bigint,'Direct assignment'::text
+        SELECT v.id,v.vin,v.registration,v.customer_name,v.model,v.engine,v.sale_date,v.last_refreshed_at,'direct'::text,NULL::bigint,'Direct assignment'::text
         FROM customer_vehicle_access a JOIN vehicles v ON v.id=a.vehicle_id WHERE a.user_id=$1
       ), visible_sources AS (
         SELECT s.* FROM sources s WHERE NOT EXISTS(SELECT 1 FROM customer_hidden_vehicle_sources h WHERE h.user_id=$1 AND h.vehicle_id=s.id AND h.source_type=s.source_type AND COALESCE(h.company_id,0)=COALESCE(s.company_id,0))
       ), uv AS (
-        SELECT id,vin,registration,customer_name,model,sale_date,last_refreshed_at,string_agg(DISTINCT source_name,', ' ORDER BY source_name) access_sources,
+        SELECT id,vin,registration,customer_name,model,engine,sale_date,last_refreshed_at,string_agg(DISTINCT source_name,', ' ORDER BY source_name) access_sources,
                json_agg(DISTINCT jsonb_build_object('sourceType',source_type,'companyId',company_id,'sourceName',source_name)) access_source_details
-        FROM visible_sources GROUP BY id,vin,registration,customer_name,model,sale_date,last_refreshed_at
+        FROM visible_sources GROUP BY id,vin,registration,customer_name,model,engine,sale_date,last_refreshed_at
       )
       SELECT v.*,COUNT(*) OVER()::int total_visible_vehicles
       FROM uv v

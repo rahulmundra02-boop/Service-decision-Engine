@@ -59,6 +59,7 @@ export default function AuthGate({ children }) {
   const [companySearch, setCompanySearch] = useState("");
   const [requestStatusForm, setRequestStatusForm] = useState({mobile:""});
   const [requestStatusResult, setRequestStatusResult] = useState("");
+  const [showRequestStatus, setShowRequestStatus] = useState(false);
   const [accountRequests, setAccountRequests] = useState([]);
   const [referralStats, setReferralStats] = useState({referralCode:"",referralCount:0});
   const [showForgotHelp, setShowForgotHelp] = useState(false);
@@ -868,7 +869,7 @@ export default function AuthGate({ children }) {
               <button type="submit" className="account-request-submit" disabled={loading}>{loading?"Submitting request…":"Submit Account Request →"}</button>
             </form>}
             <div className="account-status-divider"></div>
-            <details className="account-status-details">
+            <details className="account-status-details" open={showRequestStatus} onToggle={e=>setShowRequestStatus(e.currentTarget.open)}>
               <summary>Already submitted a request? Check status</summary>
               <form onSubmit={e=>{e.preventDefault();void checkAccountRequest();}} className="account-status-form">
                 <label htmlFor="account-status-mobile">Registered mobile number</label>

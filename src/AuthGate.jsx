@@ -1652,6 +1652,9 @@ function AdminPanel({ users, customerAccessData={companyRequests:[],vehicleReque
   };
   const [dbStartDate, setDbStartDate] = useState(localDateString());
   const [dbEndDate, setDbEndDate] = useState(localDateString());
+  const [dbSearchOpen, setDbSearchOpen] = useState(false);
+  const [dbVehicleSearch, setDbVehicleSearch] = useState("");
+  const [dbCustomOpen, setDbCustomOpen] = useState(false);
   const [dbData, setDbData] = useState(null);
   const [dbLoading, setDbLoading] = useState(false);
   const [dbError, setDbError] = useState("");
@@ -2065,12 +2068,11 @@ function AdminPanel({ users, customerAccessData={companyRequests:[],vehicleReque
             <div className="admin-panel-card" style={{marginBottom:16}}>
               <div className="admin-panel-card-title">New Data Stored in DM Database</div>
               <div className="admin-panel-card-sub">Counts use database record creation time in India Standard Time, not vehicle sale date or job-card service date.</div>
-              <div style={{display:"flex",gap:10,alignItems:"end",flexWrap:"wrap",marginTop:14}}>
-                <button className="admin-analytics-btn" onClick={() => { const d=localDateString(); setDbStartDate(d); setDbEndDate(d); loadDatabaseView(d,d); }}>Today</button>
-                <button className="admin-analytics-btn" onClick={() => { const end=localDateString(); const start=localDateString(new Date(Date.now()-6*24*60*60*1000)); setDbStartDate(start); setDbEndDate(end); loadDatabaseView(start,end); }}>Last 7 Days</button>
-                <div><label style={{display:"block",fontSize:12,fontWeight:700,marginBottom:5}}>From date</label><input type="date" value={dbStartDate} onChange={e=>setDbStartDate(e.target.value)} style={{padding:8,border:"1px solid #cbd5e1",borderRadius:6}} /></div>
-                <div><label style={{display:"block",fontSize:12,fontWeight:700,marginBottom:5}}>To date</label><input type="date" value={dbEndDate} onChange={e=>setDbEndDate(e.target.value)} style={{padding:8,border:"1px solid #cbd5e1",borderRadius:6}} /></div>
-                <button className="auth-primary" style={{width:"auto",marginTop:0}} disabled={dbLoading || !dbStartDate || !dbEndDate || dbStartDate>dbEndDate} onClick={()=>loadDatabaseView(dbStartDate,dbEndDate)}>{dbLoading ? "Loading..." : "Apply Range"}</button>
+              <div className="admin-db-range-toolbar">
+                {[["Today",0],["7 Days",7],["30 Days",30],["90 Days",90],["Inception to Date","inception"]].map(([label,range])=><button key={label} className="admin-analytics-btn" onClick={()=>{const end=localDateString();const start=range==="inception"?"2026-08-01":range===0?end:localDateString(new Date(Date.now()-(Number(range)-1)*86400000));setDbStartDate(start);setDbEndDate(end);loadDatabaseView(start,end);}}>{label}</button>)}
+                <button className="admin-analytics-btn" onClick={()=>setDbCustomOpen(v=>!v)}>Custom Date</button>
+              </div>
+              {dbCustomOpen && <div className="admin-db-custom-range"><label>From <input type="date" value={dbStartDate} onChange={e=>setDbStartDate(e.target.value)}/></label><label>To <input type="date" value={dbEndDate} onChange={e=>setDbEndDate(e.target.value)}/></label><button className="auth-primary" disabled={dbLoading||!dbStartDate||!dbEndDate||dbStartDate>dbEndDate} onClick={()=>loadDatabaseView(dbStartDate,dbEndDate)}>{dbLoading?"Loading...":"Apply"}</button></div>
                 {dbLoading && <span className="admin-loading-pill">Refreshing database counts...</span>}
               </div>
               {dbError && <div className="auth-inline-error">{dbError}</div>}
@@ -2084,12 +2086,12 @@ function AdminPanel({ users, customerAccessData={companyRequests:[],vehicleReque
             </div>
 
             <div className="admin-panel-card" style={{marginBottom:16}}>
-              <div className="admin-panel-card-title">Vehicle Records Added</div>
+              <div className="admin-panel-card-title">Latest 200 Vehicle Records <button type="button" className="admin-db-search-icon" onClick={()=>{setDbSearchOpen(v=>!v);setDbVehicleSearch("");}} aria-label="Search vehicle records">⌕</button></div>{dbSearchOpen && <input className="admin-db-search-input" type="search" value={dbVehicleSearch} onChange={e=>setDbVehicleSearch(e.target.value)} placeholder="Search across all columns..." autoFocus/>}
               <div style={{overflowX:"auto",marginTop:10}}>
                 <table className="admin-table">
                   <thead><tr><th>Created At</th><th>VIN</th><th>Registration</th><th>Customer</th><th>Model</th></tr></thead>
                   <tbody>
-                    {(dbData?.vehicles||[]).map((v,i)=><tr key={v.vin||i}><td>{v.created_at?new Date(v.created_at).toLocaleString("en-IN"):"—"}</td><td>{v.vin||"—"}</td><td>{v.registration||"—"}</td><td>{v.customer_name||"—"}</td><td>{v.model||"—"}</td></tr>)}
+                    {(dbData?.vehicles||[]).map((v,i)=>{const vals=[v.created_at?new Date(v.created_at).toLocaleString("en-IN"):"—",v.vin||"—",v.registration||"—",v.customer_name||"—",v.model||"—"];const q=dbVehicleSearch.trim().toLowerCase();if(q&&!vals.some(x=>String(x).toLowerCase().includes(q)))return null;const cell=x=>{const t=String(x),at=t.toLowerCase().indexOf(q);return q&&at>=0?<>{t.slice(0,at)}<mark className="admin-db-search-highlight">{t.slice(at,at+q.length)}</mark>{t.slice(at+q.length)}</>:t;};return <tr key={v.vin||i}>{vals.map((x,j)=><td key={j}>{cell(x)}</td>)}</tr>;})}
                     {!(dbData?.vehicles||[]).length && <tr><td colSpan="5" className="admin-empty">No vehicle records added in this period.</td></tr>}
                   </tbody>
                 </table>

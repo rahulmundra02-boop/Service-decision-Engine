@@ -1110,7 +1110,7 @@ export default function AuthGate({ children }) {
           </div>
           <button type="button" className="mobile-bottom-nav-item profile profile-button-with-dot" onClick={() => { setMobileMoreOpen(false); window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:"profile"}})); }}>
             <span className="mobile-bottom-nav-icon">●</span><span>Profile</span>
-            {user?.role === "admin" && accountRequests.some(r=>r.status === "pending") && <span className="profile-alert-dot" aria-label="Pending account requests" title="Pending account requests" />}
+            {user?.role === "admin" && accountRequests.some(r=>r.status === "pending") && !profileOpen && !adminOpen && <span className="profile-alert-dot" aria-label="Pending account requests" title="Pending account requests" />}
           </button>
         </div>
       )}

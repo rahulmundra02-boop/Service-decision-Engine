@@ -1600,6 +1600,16 @@ export default async function handler(req, res) {
           [vehicleIds]
         );
         scheduleRows=history.rows;
+        const latestReadings=await client.query(
+          `SELECT DISTINCT ON (jc.vehicle_id) jc.vehicle_id,jc.job_card_no,jc.job_date,jc.cumulative_reading,jc.cumulative_unit,
+                  jc.secondary_cumulative_reading,jc.secondary_cumulative_unit
+           FROM job_cards jc WHERE jc.vehicle_id=ANY($1::bigint[])
+           ORDER BY jc.vehicle_id,jc.job_date DESC NULLS LAST,jc.id DESC`,
+          [vehicleIds]
+        );
+        for(const row of latestReadings.rows){
+          scheduleRows.push({...row,item_category:"",part_code:"",part_description:"",standardized_part:"",quantity:0});
+        }
       }
       const scheduleByVehicle=new Map();
       for(const row of scheduleRows){

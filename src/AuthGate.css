@@ -659,3 +659,30 @@
 @media(max-width:600px){.review-company-modal{padding:18px 14px!important}.review-company-list{max-height:38vh}.review-company-modal .auth-modal-actions{display:flex;flex-wrap:wrap;gap:8px}.review-company-modal .auth-modal-actions button{flex:1;min-width:125px}}
 
 .review-company-empty{padding:14px 12px;color:#7c2d12;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;font-size:13px;line-height:1.45}
+
+
+/* Compact company approval controls */
+.review-company-modal{font-size:14px!important}
+.review-company-modal h2{font-size:21px!important;margin:0 0 8px!important}
+.review-company-modal .auth-hint,.review-company-help{font-size:13px!important;line-height:1.4!important;margin:6px 0 12px!important}
+.review-company-customer{padding:9px 11px!important;margin:10px 0 12px!important;font-size:12px!important}
+.review-company-customer strong{font-size:14px!important}
+.review-requested-heading{font-size:15px;font-weight:700;color:#eaf1f7;margin:10px 0 3px}
+.review-company-help{color:#cbd5e1}
+.review-company-list{max-height:30vh!important}
+.review-company-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 11px;border-bottom:1px solid #e6ebf0;background:#fff}
+.review-company-row:last-child{border-bottom:0}
+.review-company-name{font-size:13px;font-weight:600;line-height:1.3;color:#263e52;overflow-wrap:anywhere;min-width:0;flex:1}
+.review-company-actions{display:flex;gap:6px;flex-shrink:0}
+.review-company-actions button,.review-company-add{border:1px solid #cbd5e1;border-radius:6px;padding:6px 9px;font-size:12px;font-weight:700;background:#f8fafc;color:#475569}
+.review-company-approve.active{background:#dcfce7;border-color:#16a34a;color:#166534}
+.review-company-reject.active{background:#fee2e2;border-color:#dc2626;color:#991b1b}
+.review-add-company-toggle{width:100%;margin-top:10px;padding:10px 12px;border:1px dashed #8da6bb;border-radius:7px;background:rgba(255,255,255,.08);color:#fff;font-size:13px;font-weight:700;text-align:left}
+.review-company-search-label{display:block;margin-top:10px;font-size:12px!important}
+.review-company-modal input[type=search]{font-size:14px!important;padding:9px 11px!important;margin:5px 0 8px!important}
+.review-extra-list{max-height:22vh!important}
+.review-company-add.active{background:#dcfce7;color:#166534;border-color:#16a34a}
+.review-company-summary{font-size:12px!important;margin-top:8px!important}
+.review-company-modal .auth-modal-actions{gap:8px!important;margin-top:14px!important}
+.review-company-modal .auth-modal-actions button{font-size:14px!important;padding:10px 12px!important}
+@media(max-width:600px){.review-company-modal{padding:16px 12px!important}.review-company-modal h2{font-size:19px!important}.review-company-list{max-height:27vh!important}.review-company-row{padding:9px 8px}.review-company-actions button,.review-company-add{padding:6px 7px;font-size:11px}.review-company-modal .auth-modal-actions button{min-width:110px!important}}

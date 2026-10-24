@@ -1929,7 +1929,7 @@ function AdminPanel({ users, customerAccessData={companyRequests:[],vehicleReque
               ["database","Database View"],
               ["management","User Management"]
             ].map(([key,label])=>
-              <button key={key} className={view===key ? "active" : ""} onClick={()=>setView(key)}>{label}</button>
+              <button key={key} className={view===key ? "active" : ""} onClick={()=>{setView(key);if(key==="management"&&accountRequests.some(r=>r.status==="pending"))setTimeout(()=>document.getElementById("pending-account-requests")?.scrollIntoView({behavior:"smooth",block:"start"}),100);}}>{label}{key==="management"&&accountRequests.some(r=>r.status==="pending")&&<span className="pending-request-dot" title="Pending account requests">●</span>}</button>
             )}
           </div>
           <div className="admin-range-tabs">
@@ -2134,7 +2134,7 @@ function AdminPanel({ users, customerAccessData={companyRequests:[],vehicleReque
 
               <div className="admin-users-card">
                 <div className="admin-users-header">
-                  <h3>Pending Account Requests {accountRequests.filter(r=>r.status==="pending").length > 0 && <span className="pending-request-dot" title="Pending requests">{accountRequests.filter(r=>r.status==="pending").length}</span>}</h3>
+                  <h3 id="pending-account-requests">Pending Account Requests {accountRequests.filter(r=>r.status==="pending").length > 0 && <span className="pending-request-dot" title="Pending requests">{accountRequests.filter(r=>r.status==="pending").length}</span>}</h3>
                   <button className="auth-secondary admin-refresh" onClick={()=>void onRefreshAccountRequests()} disabled={loading}>Refresh</button>
                 </div>
                 <div className="admin-table-wrap">

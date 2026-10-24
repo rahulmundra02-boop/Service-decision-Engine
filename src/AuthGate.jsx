@@ -1628,6 +1628,10 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading, onChang
 function AdminPanel({ users, customerAccessData={companyRequests:[],vehicleRequests:[],companies:[],customers:[]}, directVehicleForm, setDirectVehicleForm, onReviewCustomerRequest, onAssignCustomerVehicle, accountRequests = [], onReviewAccountRequest, onRefreshAccountRequests, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, registrationSearchEnabled, onRegistrationSearchSetting, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel, priceMasterMeta, priceMasterUploadBusy, priceMasterUploadMessage, priceMasterUploadError, onUploadPriceMasterExcel }) {
   const analyticsDetailRef = useRef(null);
   const [view, setView] = useState("overview");
+  const [reviewRequest, setReviewRequest] = useState(null);
+  const [reviewCompanyIds, setReviewCompanyIds] = useState([]);
+  const [reviewCompanySearch, setReviewCompanySearch] = useState("");
+
   const localDateString = (date = new Date()) => {
     const y = date.getFullYear();
     const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -2123,9 +2127,32 @@ function AdminPanel({ users, customerAccessData={companyRequests:[],vehicleReque
                 <div className="admin-table-wrap">
                   <table className="admin-table">
                     <thead><tr><th>ID</th><th>Name</th><th>User Type</th><th>Transport / Dealer</th><th>Linked Companies</th><th>Email</th><th>Mobile</th><th>Requested</th><th>Action</th></tr></thead>
-                    <tbody>{accountRequests.map(r=><tr key={r.id}><td>{r.id}</td><td>{r.person_name}</td><td>{r.user_type==="al_customer" ? "AL Customer" : "AL Team / AL Dealer Executive"}</td><td>{r.dealer_name}</td><td>{r.company_names || "—"}</td><td>{r.email}</td><td>{r.mobile || "—"}</td><td>{r.created_at ? new Date(r.created_at).toLocaleString() : "—"}</td><td>{r.status==="pending" ? <div className="admin-row-actions"><button onClick={()=>onReviewAccountRequest(r,"approve")}>Approve</button><button onClick={()=>onReviewAccountRequest(r,"reject")}>Reject</button></div> : r.status}</td></tr>)}{!accountRequests.length && <tr><td colSpan="9" className="admin-empty">No account requests found.</td></tr>}</tbody>
+                    <tbody>{accountRequests.map(r=><tr key={r.id}><td>{r.id}</td><td>{r.person_name}</td><td>{r.user_type==="al_customer" ? "AL Customer" : "AL Team / AL Dealer Executive"}</td><td>{r.dealer_name}</td><td>{r.company_names || "—"}</td><td>{r.email}</td><td>{r.mobile || "—"}</td><td>{r.created_at ? new Date(r.created_at).toLocaleString() : "—"}</td><td>{r.status==="pending" ? <div className="admin-row-actions"><button onClick={()=>{setReviewRequest(r);setReviewCompanyIds(Array.isArray(r.company_ids)?r.company_ids.map(Number):[]);setReviewCompanySearch("");}}>Review &amp; Edit</button><button onClick={()=>onReviewAccountRequest(r,"reject")}>Reject</button></div> : r.status}</td></tr>)}{!accountRequests.length && <tr><td colSpan="9" className="admin-empty">No account requests found.</td></tr>}</tbody>
                   </table>
                 </div>
+              {reviewRequest && <div className="auth-modal-backdrop" style={{zIndex:10050}}>
+                <div className="auth-modal review-company-modal">
+                  <h2>Review Customer Account</h2>
+                  <p className="auth-hint">Select only the companies this customer should access. Unselected companies will not be linked.</p>
+                  <div className="review-company-customer"><strong>{reviewRequest.person_name || "Customer"}</strong><span>{reviewRequest.email}</span><span>{reviewRequest.dealer_name}</span></div>
+                  {reviewRequest.user_type === "al_customer" ? <>
+                    <label>Search and select companies</label>
+                    <input type="search" value={reviewCompanySearch} onChange={e=>setReviewCompanySearch(e.target.value)} placeholder="Search company name..." />
+                    <div className="review-company-list">
+                      {(customerAccessData.companies||[]).filter(company=>String(company.name||"").toLowerCase().includes(reviewCompanySearch.trim().toLowerCase())).map(company=><label className="review-company-option" key={company.id}>
+                        <input type="checkbox" checked={reviewCompanyIds.includes(Number(company.id))} onChange={e=>setReviewCompanyIds(ids=>e.target.checked?[...new Set([...ids,Number(company.id)])]:ids.filter(id=>id!==Number(company.id)))}/>
+                        <span>{company.name}</span><small>{Array.isArray(reviewRequest.company_ids)&&reviewRequest.company_ids.map(Number).includes(Number(company.id))?"Requested":"Additional company"}</small>
+                      </label>)}
+                      {!(customerAccessData.companies||[]).some(company=>String(company.name||"").toLowerCase().includes(reviewCompanySearch.trim().toLowerCase())) && <div className="auth-hint">No matching companies found.</div>}
+                    </div>
+                    <div className="review-company-summary">{reviewCompanyIds.length} company{reviewCompanyIds.length===1?"":"ies"} selected</div>
+                  </> : <p>This request is for AL Team / AL Dealer Executive. No customer company mapping is required.</p>}
+                  <div className="auth-modal-actions">
+                    <button className="auth-secondary" onClick={()=>setReviewRequest(null)}>Cancel</button>
+                    <button className="auth-primary" onClick={()=>{const req=reviewRequest;const ids=[...reviewCompanyIds];setReviewRequest(null);onReviewAccountRequest(req,"approve",ids);}}>Approve Selected</button>
+                  </div>
+                </div>
+              </div>}
               </div>
 
               <div className="admin-users-card">

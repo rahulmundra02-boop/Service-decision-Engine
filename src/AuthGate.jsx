@@ -870,7 +870,7 @@ export default function AuthGate({ children }) {
               <button type="submit" className="account-request-submit" disabled={loading}>{loading?"Submitting request…":"Submit Account Request →"}</button>
             </form>}
             <div className="account-status-divider"></div>
-            <details className="account-status-details" open={showRequestStatus} onToggle={e=>setShowRequestStatus(e.currentTarget.open)}>
+            <details className="account-status-details" open={showRequestStatus} onToggle={e=>setShowRequestStatus(Boolean(requestStatusResult) || e.currentTarget.open)}>
               <summary>Already submitted a request? Check status</summary>
               <form onSubmit={e=>{e.preventDefault();void checkAccountRequest();}} className="account-status-form">
                 <label htmlFor="account-status-mobile">Registered mobile number</label>

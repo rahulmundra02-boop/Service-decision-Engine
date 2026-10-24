@@ -2957,7 +2957,7 @@ export function getAggregateServiceProjection(records, vehicle, running, key, de
   const bases = getAggregateServiceBases(serviceRecords, vehicle, effectiveBasis);
   let base = bases[key] || null;
   // Customer portal status thresholds: 3,000 KM, 60 HRS, or 1 month.
-  let interval = 0, months = 0, margin = useHours ? 60 : 3000;
+  let interval = 0, months = 0;
   if (key === "engineOil") {
     if (isGB2822G50HCoModel(model)) { interval = 20000; months = 6; margin = 0; }
     else if (useHours) { interval = (isA4Model(model) || isH4Model(model) || isH6Model(model)) ? 1000 : 1500; months = 18; }
@@ -2990,21 +2990,24 @@ export function getAggregateServiceProjection(records, vehicle, running, key, de
   const today = new Date(); today.setHours(0,0,0,0);
   const daysRemaining = nextDate ? Math.ceil((nextDate.getTime() - today.getTime()) / 86400000) : null;
   const readingRemaining = nextReading == null ? null : nextReading - currentReading;
-  // The actual due point follows the engine's existing one-month-early time rule.
-  const dueDate = baseDate && months ? monthsAfter(baseDate, Math.max(0, months - 1)) : null;
-  const daysPastDue = dueDate ? Math.floor((today.getTime() - dueDate.getTime()) / 86400000) : null;
-  const timeDue = !!(dueDate && today >= dueDate);
-  const readingDue = interval > 0 && readingRemaining != null && readingRemaining <= 0;
-  const timeLapsed = daysPastDue != null && daysPastDue > 30;
-  const readingLapsed = interval > 0 && readingRemaining != null && readingRemaining < -margin;
-  let status = "No Due";
-  // Mark Lapsed only after the due point is exceeded by >3,000 KM, >60 HRS,
-  // or more than one month. Being at/past the due point but within that grace
-  // window remains Due; Near Due is strictly before the due point.
-  if (timeLapsed || readingLapsed) status = "Lapsed";
-  else if (key === "tippingOil" ? timeDue : (readingDue || timeDue)) status = "Due";
-  else if ((readingRemaining != null && readingRemaining > 0 && readingRemaining <= margin) ||
-           (daysRemaining != null && daysRemaining > 0 && daysRemaining <= 30)) status = "Nearly Due";
+  // Evaluate reading and time independently, then apply strict priority:
+  // Lapsed > Due > Nearly Due > No Due.
+  const readingMargin = useHours ? 60 : 3000;
+  const readingStatus = interval <= 0 || readingRemaining == null ? "No Due"
+    : readingRemaining < -readingMargin ? "Lapsed"
+    : readingRemaining <= 0 ? "Due"
+    : readingRemaining <= readingMargin ? "Nearly Due"
+    : "No Due";
+  // Schedule date is the actual due date; lapse starts only after it is overdue
+  // by more than one month. Time-only services have no reading status.
+  const daysPastDue = nextDate ? Math.floor((today.getTime() - nextDate.getTime()) / 86400000) : null;
+  const timeStatus = !nextDate ? "No Due"
+    : daysPastDue > 30 ? "Lapsed"
+    : daysPastDue >= 0 ? "Due"
+    : daysRemaining <= 30 ? "Nearly Due"
+    : "No Due";
+  const statusRank = { "No Due": 0, "Nearly Due": 1, "Due": 2, "Lapsed": 3 };
+  const status = statusRank[readingStatus] >= statusRank[timeStatus] ? readingStatus : timeStatus;
   return { base, interval, months, baseReading, nextReading, nextDate, daysRemaining, readingRemaining, status, unit: useHours ? "HRS" : "KM" };
 }
 

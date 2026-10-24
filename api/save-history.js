@@ -1074,7 +1074,7 @@ export default async function handler(req, res) {
           "ON CONFLICT (vin) DO UPDATE SET " +
           "registration=COALESCE(EXCLUDED.registration,vehicles.registration), " +
           "customer_number=COALESCE(EXCLUDED.customer_number,vehicles.customer_number), " +
-          "customer_name=COALESCE($8,vehicles.customer_name), " +
+          "customer_name=COALESCE(EXCLUDED.customer_name,vehicles.customer_name), " +
           "engine=COALESCE(EXCLUDED.engine,vehicles.engine), " +
           "model=COALESCE(EXCLUDED.model,vehicles.model), " +
           "sale_date=COALESCE(EXCLUDED.sale_date,vehicles.sale_date), " +
@@ -1082,10 +1082,13 @@ export default async function handler(req, res) {
           [vehicle.vin, registrationForUpsert, vehicle.customerNumber, customerNameForUpsert,
            vehicle.engine, vehicle.model, vehicle.sale]
         );
-        await client.query(
-          "INSERT INTO customer_companies(name,normalized_name) SELECT TRIM(customer_name),LOWER(REGEXP_REPLACE(TRIM(customer_name),'[[:space:]]+',' ','g')) FROM vehicles WHERE UPPER(TRIM(vin))=$1 AND customer_name IS NOT NULL AND TRIM(customer_name)<>'' ON CONFLICT(normalized_name) DO NOTHING",
-          [vehicle.vin]
-        );
+        const companyTable = await client.query("SELECT to_regclass('public.customer_companies') AS table_name");
+        if (companyTable.rows[0]?.table_name) {
+          await client.query(
+            "INSERT INTO customer_companies(name,normalized_name) SELECT TRIM(customer_name),LOWER(REGEXP_REPLACE(TRIM(customer_name),'[[:space:]]+',' ','g')) FROM vehicles WHERE UPPER(TRIM(vin))=$1 AND customer_name IS NOT NULL AND TRIM(customer_name)<>'' ON CONFLICT(normalized_name) DO NOTHING",
+            [vehicle.vin]
+          );
+        }
         upsertedVehicles += 1;
       }
       await client.query("COMMIT");
@@ -1223,7 +1226,7 @@ export default async function handler(req, res) {
       "ON CONFLICT (vin) DO UPDATE SET " +
       "registration=vehicles.registration, " +
       "customer_number=COALESCE(EXCLUDED.customer_number,vehicles.customer_number), " +
-      "customer_name=COALESCE(EXCLUDED.customer_name,vehicles.customer_name), " +
+      "customer_name=COALESCE($8,vehicles.customer_name), " +
       "engine=COALESCE(EXCLUDED.engine,vehicles.engine), " +
       "model=COALESCE(EXCLUDED.model,vehicles.model), " +
       "sale_date=COALESCE(EXCLUDED.sale_date,vehicles.sale_date), " +
@@ -1447,10 +1450,13 @@ export default async function handler(req, res) {
       }
     }
 
-    await client.query(
-      "INSERT INTO customer_companies(name,normalized_name) SELECT TRIM(customer_name),LOWER(REGEXP_REPLACE(TRIM(customer_name),'[[:space:]]+',' ','g')) FROM vehicles WHERE id=$1 AND customer_name IS NOT NULL AND TRIM(customer_name)<>'' ON CONFLICT(normalized_name) DO NOTHING",
-      [vehicleId]
-    );
+    const companyTable = await client.query("SELECT to_regclass('public.customer_companies') AS table_name");
+    if (companyTable.rows[0]?.table_name) {
+      await client.query(
+        "INSERT INTO customer_companies(name,normalized_name) SELECT TRIM(customer_name),LOWER(REGEXP_REPLACE(TRIM(customer_name),'[[:space:]]+',' ','g')) FROM vehicles WHERE id=$1 AND customer_name IS NOT NULL AND TRIM(customer_name)<>'' ON CONFLICT(normalized_name) DO NOTHING",
+        [vehicleId]
+      );
+    }
     await client.query(
       "INSERT INTO vehicle_upload_events (vin,vehicle_existed_before,new_job_cards,event_type) VALUES ($1,$2,$3,'history-upload')",
       [vin, vehicleExistedBeforeUpload, insertedJobCards.length]

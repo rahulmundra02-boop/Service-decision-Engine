@@ -657,3 +657,5 @@
 .review-company-option small{grid-column:2;color:#718096;font-size:11px;margin-top:2px}
 .review-company-summary{font-weight:700;color:#087f53;font-size:13px;margin-top:10px}
 @media(max-width:600px){.review-company-modal{padding:18px 14px!important}.review-company-list{max-height:38vh}.review-company-modal .auth-modal-actions{display:flex;flex-wrap:wrap;gap:8px}.review-company-modal .auth-modal-actions button{flex:1;min-width:125px}}
+
+.review-company-empty{padding:14px 12px;color:#7c2d12;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;font-size:13px;line-height:1.45}

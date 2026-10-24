@@ -1574,7 +1574,7 @@ export default async function handler(req, res) {
       const page=Number.isSafeInteger(requestedPage)&&requestedPage>=1?Math.min(requestedPage,100000):1;
       const vehicleSearch=clean(body.search).slice(0,100);
       const vehicles=await client.query(`WITH sources AS (
-        SELECT v.id,v.vin,v.registration,v.customer_name,v.model,v.sale_date,v.last_refreshed_at,'company'::text source_type,cc.id company_id,cc.name source_name
+        SELECT v.id,v.vin,v.registration,v.customer_name,v.model,v.engine,v.sale_date,v.last_refreshed_at,'company'::text source_type,cc.id company_id,cc.name source_name
         FROM customer_user_companies uc JOIN customer_companies cc ON cc.id=uc.company_id JOIN vehicles v ON LOWER(REGEXP_REPLACE(TRIM(COALESCE(v.customer_name,'')),'[[:space:]]+',' ','g'))=cc.normalized_name WHERE uc.user_id=$1
         UNION ALL
         SELECT v.id,v.vin,v.registration,v.customer_name,v.model,v.engine,v.sale_date,v.last_refreshed_at,'direct'::text,NULL::bigint,'Direct assignment'::text

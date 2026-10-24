@@ -5516,7 +5516,11 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   const [overrideReading, setOverrideReading] = useState("");
   const [appliedOverride, setAppliedOverride] = useState(null);
   const [decisionBasis, setDecisionBasis] = useState("AUTO");
-  const [mode, setMode] = useState("home");
+  const [mode, setMode] = useState(() => {
+    const requestedPage = new URLSearchParams(window.location.search).get("page");
+    const validPages = ["home", "single", "bulk", "warranty-tags", "document-scanner", "registration-search", "profile"];
+    return validPages.includes(requestedPage) ? requestedPage : "home";
+  });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [registrationSearchInput, setRegistrationSearchInput] = useState("");
   const [registrationSearchBusy, setRegistrationSearchBusy] = useState(false);
@@ -5602,7 +5606,9 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       // application mode when Back only moves between those overlays.
       if (event?.state?.serviceDecisionOverlay) return;
       navigationPopRef.current = true;
-      const previousMode = event?.state?.serviceDecisionMode || "home";
+      const urlPage = new URLSearchParams(window.location.search).get("page");
+      const validPages = ["home", "single", "bulk", "warranty-tags", "document-scanner", "registration-search", "profile"];
+      const previousMode = event?.state?.serviceDecisionMode || (validPages.includes(urlPage) ? urlPage : "home");
       setEstimateOpen(false);
       setMode(previousMode);
     };
@@ -5615,7 +5621,16 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       navigationPopRef.current = false;
       return;
     }
-    try { window.history.pushState({ ...(window.history.state || {}), serviceDecisionMode: mode }, "", window.location.href); } catch {}
+    try {
+      const nextUrl = new URL(window.location.href);
+      if (mode === "home") nextUrl.searchParams.delete("page");
+      else nextUrl.searchParams.set("page", mode);
+      window.history.pushState(
+        { ...(window.history.state || {}), serviceDecisionMode: mode },
+        "",
+        nextUrl.pathname + nextUrl.search + nextUrl.hash
+      );
+    } catch {}
   }, [mode]);
   const [estimateStage, setEstimateStage] = useState("select");
   const [estimateHistory, setEstimateHistory] = useState([]);

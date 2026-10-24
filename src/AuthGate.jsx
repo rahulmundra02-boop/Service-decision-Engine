@@ -639,17 +639,21 @@ export default function AuthGate({ children }) {
     if (decision === "approve" && request.user_type === "al_customer") {
       const allCompanies = customerAccessData.companies || [];
       const requestedIds = Array.isArray(request.company_ids) ? request.company_ids.map(Number) : [];
-      const requestedNames = requestedIds.map(id => allCompanies.find(c => Number(c.id) === id)).filter(Boolean).map(c => c.name);
-      const otherCompanies = allCompanies.filter(c => !requestedIds.includes(Number(c.id)));
-      const promptText = "Requested companies:\n" + (requestedNames.length ? requestedNames.map((n,i)=>`${i+1}. ${n}`).join("\n") : "(No companies selected)") +
-        "\n\nAvailable additional companies:\n" + otherCompanies.slice(0,150).map(c=>`${c.id}: ${c.name}`).join("\n") +
-        (otherCompanies.length > 150 ? "\n… (list limited to first 150; use company IDs)" : "") +
-        "\n\nEnter the company IDs to link, separated by commas. Keep requested IDs you approve and add any extra IDs you want. Leave blank for no company links.";
-      const defaultIds = requestedIds.join(",");
-      const input = window.prompt(promptText, defaultIds);
-      if (input === null) return;
-      const parsed = input.trim() ? input.split(",").map(v=>Number(v.trim())).filter(v=>Number.isSafeInteger(v)&&v>0) : [];
-      approvedCompanyIds = [...new Set(parsed)];
+      const requestedCompanies = requestedIds.map(id => allCompanies.find(c => Number(c.id) === id)).filter(Boolean);
+      const approved = [];
+      for (const company of requestedCompanies) {
+        if (window.confirm("Approve company mapping for this account?\\n\\n" + company.name + "\\n\\nOK = Keep and approve this company\\nCancel = Remove this company from approval")) approved.push(Number(company.id));
+      }
+      const requestedSet = new Set(requestedIds);
+      const otherCompanies = allCompanies.filter(c => !requestedSet.has(Number(c.id)));
+      const promptText = "Optional: add extra companies that the customer did not request.\\n\\nAvailable company IDs and names:\\n" +
+        otherCompanies.slice(0,200).map(c=>`${c.id}: ${c.name}`).join("\\n") +
+        (otherCompanies.length > 200 ? "\\n… (showing first 200; enter valid company IDs)" : "") +
+        "\\n\\nEnter additional company IDs separated by commas, or leave blank for none.";
+      const extraInput = window.prompt(promptText, "");
+      if (extraInput === null) return;
+      const extras = extraInput.trim() ? extraInput.split(",").map(v=>Number(v.trim())).filter(v=>Number.isSafeInteger(v)&&v>0) : [];
+      approvedCompanyIds = [...new Set([...approved, ...extras])];
       const validIds = new Set(allCompanies.map(c=>Number(c.id)));
       if (approvedCompanyIds.some(id=>!validIds.has(id))) throw new Error("One or more company IDs are invalid. Refresh the admin panel and try again.");
     }

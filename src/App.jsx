@@ -2367,7 +2367,7 @@ function isGB2822G50HCoModel(model){
   const t=String(model||'').toUpperCase().replace(/\s+/g,' ').trim();
   return /^GB2822G\s*\/\s*50\s+H\s+CO$/.test(t);
 }
-function isCngModel(model){
+export function isCngModel(model){
   const t=String(model||'').toUpperCase().replace(/\s+/g,' ').trim();
   return /^(?:GB2822G\s*\/\s*50\s+H\s+CO|CA1615\s*\/\s*47\s+H\s+FBL\s+G)$/.test(t);
 }
@@ -2551,7 +2551,7 @@ function dueByHours(current, base, interval, months, analysisDate, saleDate, veh
   return current >= baseH + interval - 60 || analysisDate >= monthsAfter(baseDate, months - 1);
 }
 
-function isBSVIApplicable(vehicle){
+export function isBSVIApplicable(vehicle){
   // DEF Filter and APDA Filter are applicable only for BS-VI vehicles.
   // Explicit BS-IV/BS4 model identification always overrides date-based fallback.
   const model = String(vehicle?.model || "").toUpperCase().replace(/[-\/_]/g, " ");

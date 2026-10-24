@@ -10267,4 +10267,4 @@ function App() {
 export default App;
 
 // Reuse the same authoritative rules in the customer portal.
-export { calculateDecisions, getDueServiceNames, deriveVehicle, deriveRunningReading, getAggregateServiceBases };
+export { calculateDecisions, getDueServiceNames, deriveVehicle, deriveRunningReading, getAggregateServiceBases, standardizePart };

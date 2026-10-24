@@ -701,3 +701,10 @@
 .admin-db-search-input{width:100%;box-sizing:border-box;margin-top:8px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px}
 .admin-db-search-highlight{background:#ffeb3b;color:#111;padding:0 1px;border-radius:2px}
 @media(max-width:768px){.admin-db-range-toolbar{gap:5px}.admin-db-range-toolbar button{font-size:11px!important;padding:6px 8px!important}.admin-db-custom-range{gap:6px}.admin-db-custom-range input{max-width:135px}}
+
+@media(max-width:768px){
+ .admin-view-tabs{display:flex!important;flex-wrap:wrap!important;gap:5px!important;overflow:visible!important}
+ .admin-view-tabs button{flex:1 1 auto!important;min-width:0!important;white-space:normal!important;font-size:11px!important;line-height:1.2!important;padding:8px 9px!important}
+ .admin-range-tabs{display:flex!important;flex-wrap:wrap!important;gap:5px!important}
+ .admin-range-tabs button{font-size:11px!important;padding:7px 10px!important}
+}

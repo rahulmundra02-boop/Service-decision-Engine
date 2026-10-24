@@ -1081,7 +1081,20 @@ export default function AuthGate({ children }) {
       )}
 
       
-      {!adminOpen && (
+      {!adminOpen && (user.userType === "al_customer" ? (
+        <div className="mobile-bottom-nav customer-bottom-nav" aria-label="Customer navigation">
+          {[
+            ["customer-home","⌂","Home"],
+            ["customer-due","✓","Service Due"],
+            ["customer-fleet","▦","Fleet"],
+            ["profile","●","Profile"]
+          ].map(([key,icon,label])=>(
+            <button key={key} type="button" className="mobile-bottom-nav-item" onClick={()=>{setMobileMoreOpen(false);window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:key}}));}}>
+              <span className="mobile-bottom-nav-icon">{icon}</span><span>{label}</span>
+            </button>
+          ))}
+        </div>
+      ) : (
         <div className="mobile-bottom-nav" aria-label="Mobile app navigation">
           {[
             ["home","⌂","Home"],
@@ -1113,7 +1126,7 @@ export default function AuthGate({ children }) {
             {user?.role === "admin" && accountRequests.some(r=>r.status === "pending") && !profileOpen && !adminOpen && <span className="profile-alert-dot" aria-label="Pending account requests" title="Pending account requests" />}
           </button>
         </div>
-      )}
+      ))}
 
       {adminOpen && user.role === "admin" ? (
         <AdminPanel

@@ -1642,6 +1642,7 @@ function AdminPanel({ users, customerAccessData={companyRequests:[],vehicleReque
   const [reviewRequest, setReviewRequest] = useState(null);
   const [reviewCompanyIds, setReviewCompanyIds] = useState([]);
   const [reviewCompanySearch, setReviewCompanySearch] = useState("");
+  const [showOtherCompanies, setShowOtherCompanies] = useState(false);
 
   const localDateString = (date = new Date()) => {
     const y = date.getFullYear();
@@ -2138,7 +2139,7 @@ function AdminPanel({ users, customerAccessData={companyRequests:[],vehicleReque
                 <div className="admin-table-wrap">
                   <table className="admin-table">
                     <thead><tr><th>ID</th><th>Name</th><th>User Type</th><th>Transport / Dealer</th><th>Linked Companies</th><th>Email</th><th>Mobile</th><th>Requested</th><th>Action</th></tr></thead>
-                    <tbody>{accountRequests.map(r=><tr key={r.id}><td>{r.id}</td><td>{r.person_name}</td><td>{r.user_type==="al_customer" ? "AL Customer" : "AL Team / AL Dealer Executive"}</td><td>{r.dealer_name}</td><td>{r.company_names || "—"}</td><td>{r.email}</td><td>{r.mobile || "—"}</td><td>{r.created_at ? new Date(r.created_at).toLocaleString() : "—"}</td><td>{r.status==="pending" ? <div className="admin-row-actions"><button onClick={async()=>{setReviewRequest(r);setReviewCompanyIds(Array.isArray(r.company_ids)?r.company_ids.map(Number):[]);setReviewCompanySearch("");try{await refreshCustomerAccessData();}catch(e){setError(e.message||"Unable to load company list.");}}}>Review &amp; Edit</button><button onClick={()=>onReviewAccountRequest(r,"reject")}>Reject</button></div> : r.status}</td></tr>)}{!accountRequests.length && <tr><td colSpan="9" className="admin-empty">No account requests found.</td></tr>}</tbody>
+                    <tbody>{accountRequests.map(r=><tr key={r.id}><td>{r.id}</td><td>{r.person_name}</td><td>{r.user_type==="al_customer" ? "AL Customer" : "AL Team / AL Dealer Executive"}</td><td>{r.dealer_name}</td><td>{r.company_names || "—"}</td><td>{r.email}</td><td>{r.mobile || "—"}</td><td>{r.created_at ? new Date(r.created_at).toLocaleString() : "—"}</td><td>{r.status==="pending" ? <div className="admin-row-actions"><button onClick={async()=>{setReviewRequest(r);setReviewCompanyIds(Array.isArray(r.company_ids)?r.company_ids.map(Number):[]);setReviewCompanySearch("");setShowOtherCompanies(false);try{await refreshCustomerAccessData();}catch(e){setError(e.message||"Unable to load company list.");}}}>Review &amp; Edit</button><button onClick={()=>onReviewAccountRequest(r,"reject")}>Reject</button></div> : r.status}</td></tr>)}{!accountRequests.length && <tr><td colSpan="9" className="admin-empty">No account requests found.</td></tr>}</tbody>
                   </table>
                 </div>
               {reviewRequest && <div className="auth-modal-backdrop" style={{zIndex:10050}}>
@@ -2147,16 +2148,35 @@ function AdminPanel({ users, customerAccessData={companyRequests:[],vehicleReque
                   <p className="auth-hint">Select only the companies this customer should access. Unselected companies will not be linked.</p>
                   <div className="review-company-customer"><strong>{reviewRequest.person_name || "Customer"}</strong><span>{reviewRequest.email}</span><span>{reviewRequest.dealer_name}</span></div>
                   {reviewRequest.user_type === "al_customer" ? <>
-                    <label>Search and select companies</label>
-                    <input type="search" value={reviewCompanySearch} onChange={e=>setReviewCompanySearch(e.target.value)} placeholder="Search company name..." />
+                    <div className="review-requested-heading">Requested companies</div>
+                    <p className="review-company-help">Approve or reject each requested company separately. Only approved companies will be mapped.</p>
                     <div className="review-company-list">
-                      {(customerAccessData.companies||[]).filter(company=>String(company.name||"").toLowerCase().includes(reviewCompanySearch.trim().toLowerCase())).map(company=><label className="review-company-option" key={company.id}>
-                        <input type="checkbox" checked={reviewCompanyIds.includes(Number(company.id))} onChange={e=>setReviewCompanyIds(ids=>e.target.checked?[...new Set([...ids,Number(company.id)])]:ids.filter(id=>id!==Number(company.id)))}/>
-                        <span>{company.name}</span><small>{Array.isArray(reviewRequest.company_ids)&&reviewRequest.company_ids.map(Number).includes(Number(company.id))?"Requested":"Additional company"}</small>
-                      </label>)}
-                      {!(customerAccessData.companies||[]).length && <div className="review-company-empty">Company list is still loading or unavailable. Cancel, refresh the Admin Panel, and try again.</div>}{!!(customerAccessData.companies||[]).length && !(customerAccessData.companies||[]).some(company=>String(company.name||"").toLowerCase().includes(reviewCompanySearch.trim().toLowerCase())) && <div className="review-company-empty">No company matches this search. Clear the search to see all companies.</div>}
+                      {(Array.isArray(reviewRequest.company_ids)?reviewRequest.company_ids:[]).map(Number).map(id=>(customerAccessData.companies||[]).find(company=>Number(company.id)===id)).filter(Boolean).map(company=>{
+                        const approved=reviewCompanyIds.includes(Number(company.id));
+                        return <div className="review-company-row" key={company.id}>
+                          <div className="review-company-name">{company.name}</div>
+                          <div className="review-company-actions">
+                            <button type="button" className={approved?"review-company-approve active":"review-company-approve"} onClick={()=>setReviewCompanyIds(ids=>[...new Set([...ids,Number(company.id)])])}>Approve</button>
+                            <button type="button" className={!approved?"review-company-reject active":"review-company-reject"} onClick={()=>setReviewCompanyIds(ids=>ids.filter(id=>id!==Number(company.id)))}>Reject</button>
+                          </div>
+                        </div>;
+                      })}
+                      {!(reviewRequest.company_ids||[]).length && <div className="review-company-empty">No companies were requested.</div>}
+                      {!!(reviewRequest.company_ids||[]).length && !(customerAccessData.companies||[]).length && <div className="review-company-empty">Company details are loading or unavailable. Cancel and refresh the Admin Panel.</div>}
                     </div>
-                    <div className="review-company-summary">{reviewCompanyIds.length} company{reviewCompanyIds.length===1?"":"ies"} selected</div>
+                    <button type="button" className="review-add-company-toggle" onClick={()=>{setShowOtherCompanies(v=>!v);setReviewCompanySearch("");}}>{showOtherCompanies?"− Hide other companies":"+ Map other company (optional)"}</button>
+                    {showOtherCompanies && <>
+                      <label className="review-company-search-label">Search company to add</label>
+                      <input type="search" value={reviewCompanySearch} onChange={e=>setReviewCompanySearch(e.target.value)} placeholder="Type company name..." />
+                      <div className="review-company-list review-extra-list">
+                        {(customerAccessData.companies||[]).filter(company=>!(reviewRequest.company_ids||[]).map(Number).includes(Number(company.id)) && String(company.name||"").toLowerCase().includes(reviewCompanySearch.trim().toLowerCase())).map(company=><div className="review-company-row" key={company.id}>
+                          <div className="review-company-name">{company.name}</div>
+                          <button type="button" className={reviewCompanyIds.includes(Number(company.id))?"review-company-add active":"review-company-add"} onClick={()=>setReviewCompanyIds(ids=>ids.includes(Number(company.id))?ids.filter(id=>id!==Number(company.id)):[...ids,Number(company.id)])}>{reviewCompanyIds.includes(Number(company.id))?"Added ✓":"+ Add"}</button>
+                        </div>)}
+                        {!!(customerAccessData.companies||[]).length && !(customerAccessData.companies||[]).some(company=>!(reviewRequest.company_ids||[]).map(Number).includes(Number(company.id))&&String(company.name||"").toLowerCase().includes(reviewCompanySearch.trim().toLowerCase())) && <div className="review-company-empty">No matching additional companies.</div>}
+                      </div>
+                    </>}
+                    <div className="review-company-summary">{reviewCompanyIds.length} company{reviewCompanyIds.length===1?"":"ies"} approved for mapping</div>
                   </> : <p>This request is for AL Team / AL Dealer Executive. No customer company mapping is required.</p>}
                   <div className="auth-modal-actions">
                     <button className="auth-secondary" onClick={()=>setReviewRequest(null)}>Cancel</button>

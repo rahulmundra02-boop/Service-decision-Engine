@@ -7,3 +7,5 @@
 .customer-bottom-nav .mobile-bottom-nav-item{font-size:10px!important}
 .customer-portal{padding-bottom:94px!important}
 @media(max-width:760px){.customer-desktop-nav{display:none}.customer-portal h1{font-size:21px}.customer-portal h2{font-size:16px}.customer-portal p,.customer-portal button,.customer-portal input,.customer-portal select{font-size:12px}.customer-kpis span{font-size:11px}.customer-kpis strong{font-size:19px}.customer-table-wrap table{min-width:680px}.customer-card{margin-bottom:10px}}
+
+.customer-due-list{margin:6px 0 8px;padding-left:18px;font-size:12px;line-height:1.5;color:#1d604b}.customer-due-list li{margin:2px 0}

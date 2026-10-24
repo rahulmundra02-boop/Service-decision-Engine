@@ -68,15 +68,20 @@ function generateToken() {
 
 let authSchemaEnsured = false;
 async function initAuthSchemaOnce(client) {
-  if (!authSchemaEnsured) {
-    try {
-      await ensureSchema(client);
-      await bootstrapAdmin(client);
-      authSchemaEnsured = true;
-    } catch (err) {
-      authSchemaEnsured = false;
-      throw err;
-    }
+  if (authSchemaEnsured) return;
+
+  // Multiple Vercel instances can cold-start at the same time. Serialize
+  // schema bootstrap across instances and re-check after acquiring the lock.
+  await client.query("SELECT pg_advisory_xact_lock(hashtext('service-decision-auth-schema'))");
+  if (authSchemaEnsured) return;
+
+  try {
+    await ensureSchema(client);
+    await bootstrapAdmin(client);
+    authSchemaEnsured = true;
+  } catch (err) {
+    authSchemaEnsured = false;
+    throw err;
   }
 }
 

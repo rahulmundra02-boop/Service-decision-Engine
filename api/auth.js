@@ -1582,12 +1582,56 @@ export default async function handler(req, res) {
       FROM uv v
       WHERE ($2::text='' OR v.registration ILIKE '%'||$2||'%' OR v.vin ILIKE '%'||$2||'%' OR v.model ILIKE '%'||$2||'%' OR v.customer_name ILIKE '%'||$2||'%')
       ORDER BY v.registration NULLS LAST,v.vin LIMIT $3 OFFSET $4`,[user.id,vehicleSearch,pageSize,(page-1)*pageSize]);
+      const visibleVehicles=vehicles.rows;
+      const vehicleIds=visibleVehicles.map(v=>Number(v.id)).filter(Number.isSafeInteger);
+      let scheduleRows=[];
+      if(vehicleIds.length){
+        const history=await client.query(
+          `SELECT jc.vehicle_id,jc.job_card_no,jc.job_date,jc.cumulative_reading,jc.cumulative_unit,
+                  jc.secondary_cumulative_reading,jc.secondary_cumulative_unit,
+                  sh.item_category,sh.part_code,sh.part_description,sh.standardized_part,sh.quantity
+           FROM job_cards jc JOIN service_history sh ON sh.job_card_id=jc.id
+           WHERE jc.vehicle_id=ANY($1::bigint[])
+             AND UPPER(TRIM(COALESCE(sh.standardized_part,''))) IN (
+               'ENGINE OIL','ENGINE OIL FILTER','COOLANT','GEAR OIL','HUB GREASE','AXLE OIL','FUEL FILTER',
+               'FUEL FILTER KIT','CNG FILTER','STEERING OIL','STEERING OIL FILTER','AIR FILTER','AIR FILTER KIT',
+               'CLUTCH OIL','DEF FILTER','DEF FILTER KIT','DEF FILTER SUCTION','DEF FILTER AIR','DEF INLINE FILTER',
+               'APDA FILTER','APDA FILTER (ASSY)','SPARK PLUG','TIPPING OIL','1ST FREE SERVICE','2ND FREE SERVICE',
+               '3RD FREE SERVICE','BODY BUILDING CHECK UP','BODY BUILDING CHECKUP','PDI SERVICE',
+               'WHEEL ALIGNMENT 1ST','WHEEL ALIGNMENT 2ND','WHEEL ALIGNMENT 3RD','WHEEL ALIGNMENT 4TH',
+               'WHEEL ALIGNMENT - 1','WHEEL ALIGNMENT - 2','WHEEL ALIGNMENT - 3','WHEEL ALIGNMENT - 4',
+               'WHEEL ALIGNMENT SERVICE-1','WHEEL ALIGNMENT SERVICE-2','WHEEL ALIGNMENT SERVICE-3','WHEEL ALIGNMENT SERVICE-4'
+             )
+           ORDER BY jc.job_date ASC NULLS LAST,jc.id ASC,sh.id ASC`,
+          [vehicleIds]
+        );
+        scheduleRows=history.rows;
+      }
+      const scheduleByVehicle=new Map();
+      for(const row of scheduleRows){
+        const id=Number(row.vehicle_id);
+        if(!scheduleByVehicle.has(id))scheduleByVehicle.set(id,[]);
+        scheduleByVehicle.get(id).push({
+          vin:"",reg:"",customerName:"",engine:"",model:"",sale:null,
+          date:row.job_date?new Date(row.job_date):null,
+          jobCard:String(row.job_card_no||""),
+          cumulative:Number(row.cumulative_reading||0),
+          cumulativeUnit:String(row.cumulative_unit||""),
+          secondaryCumulativeReading:Number(row.secondary_cumulative_reading||0),
+          secondaryCumulativeUnit:String(row.secondary_cumulative_unit||""),
+          standardizedPart:String(row.standardized_part||""),
+          partDescription:String(row.part_description||""),
+          partCode:String(row.part_code||""),
+          itemCategory:String(row.item_category||""),
+          qty:Number(row.quantity||0),
+          repairTypeLine:""
+        });
+      }
       await client.query("COMMIT");
-      return res.json({success:true,companies:companies.rows,allCompanies:allCompanies.rows,companyRequests:companyRequests.rows,vehicleRequests:vehicleRequests.rows,vehicles:vehicles.rows.map(({total_visible_vehicles,...v})=>({
+      return res.json({success:true,companies:companies.rows,allCompanies:allCompanies.rows,companyRequests:companyRequests.rows,vehicleRequests:vehicleRequests.rows,vehicles:visibleVehicles.map(({total_visible_vehicles,...v})=>({
         ...v,
-        schedule_status:"Schedule calculation unavailable",
-         schedule_message:"Verified model-specific schedule rules are not yet connected to the customer portal. Repair history is withheld."
-       })),totalVehicles:Number(vehicles.rows[0]?.total_visible_vehicles||0),page,pageSize});
+        schedule_history:scheduleByVehicle.get(Number(v.id))||[],
+      })),totalVehicles:Number(visibleVehicles[0]?.total_visible_vehicles||0),page,pageSize});
     }
     if (action === "customer-remove-company" || action === "customer-request-company" || action === "customer-request-vehicle" || action === "customer-remove-vehicle-source") {
       const user=await getUserByToken(client,authToken(req));

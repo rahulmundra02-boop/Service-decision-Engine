@@ -1035,7 +1035,7 @@ export default async function handler(req, res) {
         registration: incomingIsNewer ? (clean(vehicle.registration || vehicle.reg) || existing.registration || null) : (existing.registration || null),
         latestJobDate: incomingIsNewer ? incomingDate : existingDate,
         customerNumber: clean(vehicle.customerNumber) || existing.customerNumber || null,
-        customerName: clean(vehicle.customerName) || existing.customerName || null,
+        customerName: incomingIsNewer ? (clean(vehicle.customerName) || existing.customerName || null) : (existing.customerName || clean(vehicle.customerName) || null),
         engine: clean(vehicle.engine) || existing.engine || null,
         model: clean(vehicle.model) || existing.model || null,
         sale: clean(vehicle.sale) || existing.sale || null,
@@ -1050,7 +1050,7 @@ export default async function handler(req, res) {
       let upsertedVehicles = 0;
       for (const vehicle of uniqueVehicles.values()) {
         const latestStoredResult = await client.query(
-          "SELECT v.registration, MAX(jc.job_date) AS latest_job_date FROM vehicles v LEFT JOIN job_cards jc ON jc.vehicle_id=v.id WHERE UPPER(TRIM(v.vin))=$1 GROUP BY v.registration",
+          "SELECT v.registration, v.customer_name, MAX(jc.job_date) AS latest_job_date FROM vehicles v LEFT JOIN job_cards jc ON jc.vehicle_id=v.id WHERE UPPER(TRIM(v.vin))=$1 GROUP BY v.registration,v.customer_name",
           [vehicle.vin]
         );
         const storedRegistration = clean(latestStoredResult.rows[0]?.registration);
@@ -1063,6 +1063,11 @@ export default async function handler(req, res) {
           (!storedRegistration || !vehicle.latestJobDate || !latestStoredDate || vehicle.latestJobDate >= latestStoredDate)
         );
         const registrationForUpsert = registrationIsCurrent ? vehicle.registration : null;
+        const customerNameIsCurrent = Boolean(
+          vehicle.customerName &&
+          (!latestStoredDate || (vehicle.latestJobDate && vehicle.latestJobDate >= latestStoredDate))
+        );
+        const customerNameForUpsert = customerNameIsCurrent ? vehicle.customerName : null;
         await client.query(
           "INSERT INTO vehicles (vin,registration,customer_number,customer_name,engine,model,sale_date,last_refreshed_at) " +
           "VALUES ($1,$2,$3,$4,$5,$6,$7,NOW()) " +
@@ -1074,8 +1079,12 @@ export default async function handler(req, res) {
           "model=COALESCE(EXCLUDED.model,vehicles.model), " +
           "sale_date=COALESCE(EXCLUDED.sale_date,vehicles.sale_date), " +
           "last_refreshed_at=NOW()",
-          [vehicle.vin, registrationForUpsert, vehicle.customerNumber, vehicle.customerName,
+          [vehicle.vin, registrationForUpsert, vehicle.customerNumber, customerNameForUpsert,
            vehicle.engine, vehicle.model, vehicle.sale]
+        );
+        await client.query(
+          "INSERT INTO customer_companies(name,normalized_name) SELECT TRIM(customer_name),LOWER(REGEXP_REPLACE(TRIM(customer_name),'[[:space:]]+',' ','g')) FROM vehicles WHERE UPPER(TRIM(vin))=$1 AND customer_name IS NOT NULL AND TRIM(customer_name)<>'' ON CONFLICT(normalized_name) DO NOTHING",
+          [vehicle.vin]
         );
         upsertedVehicles += 1;
       }

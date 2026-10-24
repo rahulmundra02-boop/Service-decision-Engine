@@ -96,3 +96,11 @@
 .customer-vehicle-service-head strong{font-size:14px!important}
 .customer-vehicle-service-head span,.customer-vehicle-sale-date{font-size:11px!important}
 @media(max-width:600px){.customer-due-table th,.customer-due-table td{padding:6px 5px!important;font-size:10.5px!important}.customer-due-table th:nth-child(1),.customer-due-table td:nth-child(1){width:21%!important}.customer-due-table th:nth-child(2),.customer-due-table td:nth-child(2){width:25%!important}.customer-due-table th:nth-child(3),.customer-due-table td:nth-child(3){width:30%!important}.customer-due-table th:nth-child(4),.customer-due-table td:nth-child(4){width:24%!important}}
+
+/* Excel-like auto-fit columns with borders on every cell */
+.customer-due-table{width:max-content!important;min-width:100%!important;table-layout:auto!important;border-collapse:collapse!important;border:1px solid #c7d0dc!important}
+.customer-table-wrap{max-width:100%;overflow-x:auto!important;overflow-y:visible!important;-webkit-overflow-scrolling:touch!important;touch-action:pan-x pan-y!important}
+.customer-due-table th,.customer-due-table td{width:auto!important;white-space:nowrap!important;overflow-wrap:normal!important;border:1px solid #c7d0dc!important;padding:6px 8px!important;font-size:11.5px!important;line-height:1.25!important;vertical-align:middle!important}
+.customer-due-table td .customer-inline-value{display:inline-block;white-space:nowrap!important}
+.customer-due-table td small{display:inline!important;white-space:nowrap!important;margin:0!important;font-size:inherit!important}
+@media(max-width:600px){.customer-due-table th,.customer-due-table td{padding:5px 6px!important;font-size:10.5px!important}.customer-due-table th:first-child,.customer-due-table td:first-child{white-space:normal!important;min-width:88px!important}}

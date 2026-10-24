@@ -1531,6 +1531,17 @@ export default async function handler(req, res) {
       if (!found.rows[0]) { await client.query("ROLLBACK"); return res.status(404).json({success:false,error:"Account request not found."}); }
       const r = found.rows[0];
       if (r.status !== "pending") { await client.query("ROLLBACK"); return res.status(409).json({success:false,error:"This request has already been reviewed."}); }
+      let approvedCompanyIds = Array.isArray(r.company_ids) ? r.company_ids.map(Number).filter(id => Number.isSafeInteger(id) && id > 0) : [];
+      if (decision === "approved" && (r.user_type || "al_internal") === "al_customer" && Array.isArray(body.approvedCompanyIds)) {
+        approvedCompanyIds = [...new Set(body.approvedCompanyIds.map(Number).filter(id => Number.isSafeInteger(id) && id > 0))];
+        if (approvedCompanyIds.length) {
+          const validCompanies = await client.query("SELECT COUNT(*)::int AS count FROM customer_companies WHERE id = ANY($1::bigint[])",[approvedCompanyIds]);
+          if (Number(validCompanies.rows[0]?.count || 0) !== approvedCompanyIds.length) {
+            await client.query("ROLLBACK");
+            return res.status(400).json({success:false,error:"One or more selected company mappings are invalid. Refresh and try again."});
+          }
+        }
+      }
       if (decision === "approved") {
         const duplicate = await client.query("SELECT id FROM app_users WHERE lower(email)=lower($1) OR regexp_replace(COALESCE(mobile,''),'[^0-9]','','g')=regexp_replace($2,'[^0-9]','','g') LIMIT 1",[r.email,r.mobile]);
         if (duplicate.rows[0]) { await client.query("ROLLBACK"); return res.status(409).json({success:false,error:"A user already exists with this email/mobile. Review users first."}); }
@@ -1540,8 +1551,7 @@ export default async function handler(req, res) {
           [r.person_name,r.dealer_name,r.email,r.mobile,passwordHash,r.user_type || "al_internal"]
         );
         if ((r.user_type || "al_internal") === "al_customer") {
-          const requestedCompanyIds = Array.isArray(r.company_ids) ? r.company_ids.map(Number).filter(id => Number.isSafeInteger(id) && id > 0) : [];
-          for (const companyId of requestedCompanyIds) {
+          for (const companyId of approvedCompanyIds) {
             await client.query("INSERT INTO customer_user_companies(user_id,company_id) SELECT $1,id FROM customer_companies WHERE id=$2 ON CONFLICT(user_id,company_id) DO NOTHING",[created.rows[0].id,companyId]);
           }
         }

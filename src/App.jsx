@@ -6278,21 +6278,36 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       : "");
 
   async function fetchEmergencyDbUploadCutoff() {
-    try {
-      const response = await fetch("/api/auth", {
-        method:"POST",
-        headers:{ "Content-Type":"application/json" },
-        body:JSON.stringify({ action:"emergency-db-upload-cutoff-settings" })
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || data?.success === false) {
-        throw new Error(data?.error || "Emergency DB upload cutoff status unavailable.");
+    let lastError = null;
+    // Retry once for transient DB connection failures, but never allow writes when
+    // the emergency cutoff status cannot be confirmed.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const response = await fetch("/api/auth", {
+          method:"POST",
+          headers:{ "Content-Type":"application/json" },
+          body:JSON.stringify({ action:"emergency-db-upload-cutoff-settings" })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data?.success === false) {
+          throw new Error(data?.error || `Emergency DB upload cutoff check failed (HTTP ${response.status}).`);
+        }
+        return {
+          enabled:data?.settings?.enabled === true,
+          statusAvailable:true,
+          error:""
+        };
+      } catch (error) {
+        lastError = error;
+        if (attempt === 0) await new Promise(resolve => window.setTimeout(resolve, 1200));
       }
-      return { enabled:data?.settings?.enabled === true, statusAvailable:true };
-    } catch (error) {
-      console.warn("Emergency DB upload cutoff status unavailable; pausing DB history save for safety.", error);
-      return { enabled:true, statusAvailable:false };
     }
+    console.warn("Emergency DB upload cutoff status unavailable; pausing Job Card database writes for safety.", lastError);
+    return {
+      enabled:true,
+      statusAvailable:false,
+      error:lastError?.message || "Emergency DB upload cutoff status unavailable."
+    };
   }
 
   async function checkNewJobCards(apiBaseUrl, jobCards) {
@@ -6507,7 +6522,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       setExcelData("");setUploadedFiles(accepted);setRegistrationSearchResult(null);setUploadMeta({files:result.files,failedFiles:result.failedFiles||[],rowsBefore:result.totalRowsBeforeDedup,duplicates:result.duplicateRowsIgnored,rowsAfter:parsedRows.length,invalidRows:result.invalidRows||[]});
       setAnalysis(null);setBulkResults([]);setBulkMeta(null);setCustomerGroups([]);setSelectedCustomers([]);setUploadParsedRecords(parsedRows);
       if(parsedRows.length){const vins=new Set(parsedRows.map(r=>String(r?.vin||"").trim().toUpperCase()).filter(Boolean));setMode(vins.size>1?"bulk":"single");logUsage("Excel Upload",{fileCount:accepted.length,vehicleCount:vins.size,details:{rows:parsedRows.length,files:accepted.map(f=>f.name)}});}
-      const diag = { filesSelected: files.length, filesRead: accepted.length, filesFailed: result.failedFiles || [], rowsBeforeDedup: Number(result.totalRowsBeforeDedup || 0), duplicateRowsIgnored: Number(result.duplicateRowsIgnored || 0), parsedRows: parsedRows.length, invalidRows: result.invalidRows || [], uniqueJobCards: 0, jobCardsAlreadyInDb: 0, jobCardsSubmitted: 0, jobCardsSaved: 0, newJobCardsInserted: 0, serviceLinesSaved: 0, vehicleCount: 0, vehiclesUpserted: 0, timestampsUpdated: 0, timestampFailedVins: [], timestampErrors: [], failedVins: [], failedOperations: [], vehicleMasterError: "", cutoff: false, outcomes: [], status: "processing", startedAt: new Date().toISOString() };
+      const diag = { filesSelected: files.length, filesRead: accepted.length, filesFailed: result.failedFiles || [], rowsBeforeDedup: Number(result.totalRowsBeforeDedup || 0), duplicateRowsIgnored: Number(result.duplicateRowsIgnored || 0), parsedRows: parsedRows.length, invalidRows: result.invalidRows || [], uniqueJobCards: 0, jobCardsAlreadyInDb: 0, jobCardsSubmitted: 0, jobCardsSaved: 0, newJobCardsInserted: 0, serviceLinesSaved: 0, vehicleCount: 0, vehiclesUpserted: 0, timestampsUpdated: 0, timestampFailedVins: [], timestampErrors: [], failedVins: [], failedOperations: [], vehicleMasterError: "", cutoff: false, cutoffStatusAvailable: false, cutoffCheckError: "", outcomes: [], status: "processing", startedAt: new Date().toISOString() };
       setUploadDiagnostic(diag);
       if(!parsedRows.length&&result.failedFiles?.length)setError(result.failedFiles.map(x=>`${x.name} — ${x.reason}`).join(" | "));
       if(parsedRows.length){
@@ -6522,6 +6537,18 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
           try{
             const cutoff=await fetchEmergencyDbUploadCutoff();
             diag.cutoff=Boolean(cutoff.enabled);
+            diag.cutoffStatusAvailable=Boolean(cutoff.statusAvailable);
+            diag.cutoffCheckError=cutoff.error || "";
+            if (!cutoff.statusAvailable) {
+              diag.status="paused-cutoff-status-unavailable";
+              diag.backgroundError="Job Card database writes were paused because the emergency cutoff status could not be verified. " + (cutoff.error || "");
+              diag.failedOperations.push({operation:"cutoff-check",error:diag.cutoffCheckError});
+              return;
+            }
+            if (cutoff.enabled) {
+              diag.status="paused-cutoff-enabled";
+              return;
+            }
             const vehicleMasterRecords=uploadedVins.map(vin=>{
               const vehicleRows=parsedRows.filter(record=>String(record?.vin||"").trim().toUpperCase()===vin);
               const dateKey=value=>{
@@ -6560,7 +6587,6 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
               diag.failedOperations.push(...diag.timestampErrors.map(error=>({operation:"timestamp-update",...error})));
             }
             diag.failedVins=[...new Set(diag.failedVins)];
-            if(cutoff.enabled){diag.status=diag.timestampFailedVins.length||masterResult.failedVins?.length?"completed-with-errors":"paused";return;}
             const cards=parsedRows.map(r=>normalizeJobCard(r?.jobCard)).filter(Boolean);
             const fresh=await getHybridNewJobCards(API_BASE_URL,cards,candidates=>checkNewJobCards(API_BASE_URL,candidates));
             diag.jobCardsSubmitted=fresh.size;
@@ -9770,6 +9796,8 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                     <span className="status-pill">Service lines inserted: {Number(uploadDiagnostic.serviceLinesSaved||0).toLocaleString()}</span>
                     <span className="status-pill">Failed VINs: {(uploadDiagnostic.failedVins||[]).length.toLocaleString()}</span>
                   </div>
+                  {uploadDiagnostic.cutoffStatusAvailable===false&&<div className="small-note" style={{marginTop:8,color:"#b45309"}}>Job Card database save paused: emergency cutoff status could not be verified. {(uploadDiagnostic.cutoffCheckError||"").slice(0,240)}</div>}
+                  {uploadDiagnostic.status==="paused-cutoff-enabled"&&<div className="small-note" style={{marginTop:8,color:"#b45309"}}>Job Card database save paused because the emergency DB upload cutoff is enabled.</div>}
                   {(uploadDiagnostic.timestampFailedVins||[]).length>0&&<details style={{marginTop:8}} open><summary style={{cursor:"pointer",fontWeight:700}}>Timestamp failures / missing VINs ({uploadDiagnostic.timestampFailedVins.length})</summary><div style={{maxHeight:180,overflow:"auto",marginTop:6,overflowWrap:"anywhere"}}>{uploadDiagnostic.timestampFailedVins.join(", ")}</div></details>}
                   {(uploadDiagnostic.failedOperations||[]).length>0&&<details style={{marginTop:8}}><summary style={{cursor:"pointer",fontWeight:700}}>Failed operations ({uploadDiagnostic.failedOperations.length})</summary><pre style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere",maxHeight:180,overflow:"auto"}}>{JSON.stringify(uploadDiagnostic.failedOperations,null,2)}</pre></details>}
                   {uploadDiagnostic.vehicleMasterError&&<div style={{color:"#b91c1c",marginTop:6,fontWeight:700}}>{uploadDiagnostic.vehicleMasterError}</div>}

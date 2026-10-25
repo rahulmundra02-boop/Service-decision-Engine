@@ -1706,6 +1706,18 @@ export default async function handler(req, res) {
       await client.query("INSERT INTO customer_access_audit(actor_user_id,target_user_id,action,entity_type,entity_id,details) VALUES($1,$1,'customer_removed_vehicle_source','vehicle',$2,$3::jsonb)",[user.id,String(vehicleId),JSON.stringify({sourceType,companyId})]);
       await client.query("COMMIT");return res.json({success:true,message:"Vehicle removed from your list. Other approved access paths remain available."});
     }
+    if(action==="admin-vehicle-timestamp-list"){
+      const admin=await requireAdmin(client,req);if(admin.error){await client.query("ROLLBACK");return res.status(admin.status).json({success:false,error:admin.error});}
+      const requestedOffset=Number(body.offset||0);
+      const offset=Number.isSafeInteger(requestedOffset)&&requestedOffset>0?Math.min(requestedOffset,10000000):0;
+      const rows=await client.query(
+        "SELECT vin,last_refreshed_at FROM vehicles WHERE vin IS NOT NULL AND TRIM(vin)<>'' ORDER BY last_refreshed_at ASC NULLS FIRST, UPPER(TRIM(vin)) ASC LIMIT 50 OFFSET $1",
+        [offset]
+      );
+      const count=await client.query("SELECT COUNT(*)::int AS total FROM vehicles WHERE vin IS NOT NULL AND TRIM(vin)<>''");
+      await client.query("COMMIT");
+      return res.json({success:true,rows:rows.rows,total:Number(count.rows[0]?.total||0),offset,limit:50,hasPrevious:offset>0,hasNext:offset+rows.rows.length<Number(count.rows[0]?.total||0)});
+    }
     if(action==="admin-customer-access-data"){
       const admin=await requireAdmin(client,req);if(admin.error){await client.query("ROLLBACK");return res.status(admin.status).json({success:false,error:admin.error});}
       const companyRequests=await client.query("SELECT r.id,r.user_id,u.person_name,u.email,r.company_id,c.name company_name,r.created_at FROM customer_company_requests r JOIN app_users u ON u.id=r.user_id JOIN customer_companies c ON c.id=r.company_id WHERE r.status='pending' ORDER BY r.created_at");

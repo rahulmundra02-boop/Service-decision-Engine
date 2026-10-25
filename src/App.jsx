@@ -6678,11 +6678,12 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     finally{setUploadBusy(false);cancelProcessingRef.current=false;window.setTimeout(()=>setUploadProgress(null),1800);}
   };
 
+  contributionUploadHandlerRef.current = handleExcelUpload;
   useEffect(() => {
     if (typeof registerContributionUpload !== "function") return undefined;
     registerContributionUpload(async (file) => {
-      const result = await handleExcelUpload({ target: { files: [file], value: "" } }, { awaitDatabaseSync: true });
-      return result;
+      if (typeof contributionUploadHandlerRef.current !== "function") throw new Error("Bulk upload handler not ready.");
+      return contributionUploadHandlerRef.current({ target: { files: [file], value: "" } }, { awaitDatabaseSync: true });
     });
     return () => registerContributionUpload(null);
   }, [registerContributionUpload]);
@@ -10508,6 +10509,7 @@ function Info({ label, value }) {
 
 
 function App({ registerContributionUpload }) {
+  const contributionUploadHandlerRef = useRef(null);
   return <AuthGate><ServiceDecisionApp /></AuthGate>;
 }
 

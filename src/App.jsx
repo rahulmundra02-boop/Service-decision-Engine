@@ -9991,8 +9991,6 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                 </section>
                 <ProfileSection user={user} onOpenProfile={onOpenProfile} onOpenAdmin={onOpenAdmin} onChangePassword={onChangePassword} onLogout={onLogout} />
               </>
-            ) : mode === "profile" ? (
-              <ProfileSection user={user} onOpenProfile={onOpenProfile} onOpenAdmin={onOpenAdmin} onChangePassword={onChangePassword} onLogout={onLogout} />
             ) : mode === "registration-search" ? (
               <section className="registration-search-view">
                 <div className="sheet-heading">VEHICLE SERVICE HISTORY BY REGISTRATION</div>
@@ -10258,6 +10256,13 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                   <div className="section-title">Customer-wise Output</div>
                   {customerGroups.map(group=>{const dueVehicles=group.vehicles.filter(v=>v.services.length>0);return <div className="bulk-card" key={group.id}><div className="bulk-card-head"><div className="action-row"><strong>{group.name}</strong><span className="small-note">{group.vehicles.length} vehicles · {dueVehicles.length} due</span><span className="spacer"/><button className="excel-button no-print" onClick={()=>copyCustomerSummary(group, user?.dealerName, user?.preferences || {})}>Copy WhatsApp Summary</button><button className="excel-button no-print" onClick={()=>printCustomerReport(group,true)}>Print Detailed PDF</button></div></div></div>})}
 
+                  <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",gap:10,margin:"8px 0"}}>
+                    <label style={{display:"inline-flex",alignItems:"center",gap:8,fontWeight:700,cursor:"pointer"}}>
+                      <input type="checkbox" checked={customerPrefs.bsviOnly} onChange={e=>void saveCustomerPreference({bsviOnly:e.target.checked})}/>
+                      BSVI Only
+                    </label>
+                    {customerPrefs.bsviOnly && <span className="small-note">{customerFilteredResults.length} BSVI vehicles</span>}
+                  </div>
                   <div className="bulk-overview-grid">
                     <button type="button" className={"bulk-overview-card bulk-overview-card-button " + (bulkQuickFilter === "all" ? "active" : "")} onClick={() => setBulkQuickFilter("all")}><span>Total Vehicles</span><strong>{customerFilteredResults.length}</strong><small>Show all vehicles</small></button>
                     <button type="button" className={"bulk-overview-card bulk-overview-card-button " + (bulkQuickFilter === "due" ? "active" : "")} onClick={() => setBulkQuickFilter("due")}><span>Service Due</span><strong>{bulkResults.filter(item => item.services?.length > 0).length}</strong><small>Show due vehicles</small></button>

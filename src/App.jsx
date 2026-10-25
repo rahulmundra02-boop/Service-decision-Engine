@@ -9576,11 +9576,6 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                   ))}
                 </div>
               )}
-              {uploadMeta&&<div className="no-print" style={{marginTop:10,padding:"10px 12px",border:"1px solid #d9e2ea",borderRadius:8,background:"var(--panel-bg, #f8fafc)",fontSize:12}}>
-                <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",fontWeight:800}}><span>Upload summary</span><span className="status-pill green">{Number(uploadMeta.rowsAfter||0).toLocaleString()} rows ready</span><span className="status-pill blue">{Number(uploadMeta.duplicates||0).toLocaleString()} duplicate rows ignored</span><span className="status-pill">{(uploadMeta.invalidRows||[]).length} invalid rows</span><span className="status-pill">{(uploadMeta.duplicateFiles||[]).length} repeated files skipped</span></div>
-                {(uploadMeta.invalidRows||[]).length>0&&<details style={{marginTop:7}}><summary style={{cursor:"pointer",fontWeight:700}}>Show invalid/skipped rows ({uploadMeta.invalidRows.length})</summary><ul style={{margin:"6px 0 0",paddingLeft:20}}>{uploadMeta.invalidRows.slice(0,100).map((x,i)=><li key={i}>{x.fileName||"Unknown file"} — Row {x.rowNumber}: {x.reason}</li>)}</ul>{uploadMeta.invalidRows.length>100&&<div>Showing first 100 rows.</div>}</details>}
-                {(uploadMeta.failedFiles||[]).length>0&&<div style={{marginTop:7}}><b>Failed files:</b> {uploadMeta.failedFiles.map(x=>x.name).join(", ")}</div>}
-              </div>}
               {mode === "single" && analysis && (
                 <div className="no-print" style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
                   <button

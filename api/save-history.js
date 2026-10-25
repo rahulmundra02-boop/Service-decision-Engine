@@ -1042,60 +1042,68 @@ export default async function handler(req, res) {
         sale: clean(vehicle.sale) || existing.sale || null,
       });
     }
-    if (!uniqueVehicles.size) {
+    const uniqueList = [...uniqueVehicles.values()];
+    if (!uniqueList.length) {
       return res.status(400).json({ success:false, error:"No valid vehicle VINs were supplied." });
     }
     const client = await pool.connect();
     try {
-      await client.query("BEGIN");
-      let upsertedVehicles = 0;
-      for (const vehicle of uniqueVehicles.values()) {
-        const latestStoredResult = await client.query(
-          "SELECT v.registration, v.customer_name, MAX(jc.job_date) AS latest_job_date FROM vehicles v LEFT JOIN job_cards jc ON jc.vehicle_id=v.id WHERE UPPER(TRIM(v.vin))=$1 GROUP BY v.registration,v.customer_name",
-          [vehicle.vin]
-        );
-        const storedRegistration = clean(latestStoredResult.rows[0]?.registration);
-        const latestStoredDate = normalizeDate(latestStoredResult.rows[0]?.latest_job_date);
-        // If Vehicle Master has no registration yet, fill it from the uploaded
-        // VIN record even when older job cards already exist. Once a registration
-        // exists, only a registration from the latest/equal Job Card date may replace it.
-        const registrationIsCurrent = Boolean(
-          vehicle.registration &&
-          (!storedRegistration || !vehicle.latestJobDate || !latestStoredDate || vehicle.latestJobDate >= latestStoredDate)
-        );
-        const registrationForUpsert = registrationIsCurrent ? vehicle.registration : null;
-        const customerNameIsCurrent = Boolean(
-          vehicle.customerName &&
-          (!latestStoredDate || (vehicle.latestJobDate && vehicle.latestJobDate >= latestStoredDate))
-        );
-        const customerNameForUpsert = customerNameIsCurrent ? vehicle.customerName : null;
+      // Process the complete VIN batch in set-based SQL instead of 2-3 queries
+      // per chassis inside one long transaction. This avoids transaction timeout
+      // and ensures last_refreshed_at advances even when every Job Card is old.
+      const result = await client.query(
+        "WITH incoming AS (" +
+        " SELECT * FROM jsonb_to_recordset($1::jsonb) AS x(" +
+        " vin text, registration text, latestJobDate date, customerNumber text," +
+        " customerName text, engine text, model text, sale text)" +
+        "), stored AS (" +
+        " SELECT v.vin, v.registration, v.customer_name, MAX(jc.job_date) AS latest_job_date" +
+        " FROM vehicles v LEFT JOIN job_cards jc ON jc.vehicle_id=v.id" +
+        " WHERE UPPER(TRIM(v.vin)) IN (SELECT vin FROM incoming)" +
+        " GROUP BY v.vin, v.registration, v.customer_name" +
+        "), prepared AS (" +
+        " SELECT i.vin," +
+        " CASE WHEN i.registration IS NOT NULL AND (s.registration IS NULL OR i.latestJobDate IS NULL OR s.latest_job_date IS NULL OR i.latestJobDate >= s.latest_job_date) THEN i.registration ELSE NULL END AS registration," +
+        " i.customerNumber AS customer_number," +
+        " CASE WHEN i.customerName IS NOT NULL AND (s.latest_job_date IS NULL OR (i.latestJobDate IS NOT NULL AND i.latestJobDate >= s.latest_job_date)) THEN i.customerName ELSE NULL END AS customer_name," + +
+        " i.engine, i.model, i.sale AS sale_date" +
+        " FROM incoming i LEFT JOIN stored s ON UPPER(TRIM(s.vin))=i.vin" +
+        ")" +
+        " INSERT INTO vehicles (vin,registration,customer_number,customer_name,engine,model,sale_date,last_refreshed_at)" +
+        " SELECT vin,registration,customer_number,customer_name,engine,model,sale_date,NOW() FROM prepared" +
+        " ON CONFLICT (vin) DO UPDATE SET" +
+        " registration=COALESCE(EXCLUDED.registration,vehicles.registration)," +
+        " customer_number=COALESCE(EXCLUDED.customer_number,vehicles.customer_number)," +
+        " customer_name=COALESCE(EXCLUDED.customer_name,vehicles.customer_name)," +
+        " engine=COALESCE(EXCLUDED.engine,vehicles.engine)," +
+        " model=COALESCE(EXCLUDED.model,vehicles.model)," +
+        " sale_date=COALESCE(EXCLUDED.sale_date,vehicles.sale_date)," +
+        " last_refreshed_at=NOW()" +
+        " RETURNING vin",
+        [JSON.stringify(uniqueList)]
+      );
+      if (true) {
+        // Maintain the searchable customer-company directory without one query per VIN.
         await client.query(
-          "INSERT INTO vehicles (vin,registration,customer_number,customer_name,engine,model,sale_date,last_refreshed_at) " +
-          "VALUES ($1,$2,$3,$4,$5,$6,$7,NOW()) " +
-          "ON CONFLICT (vin) DO UPDATE SET " +
-          "registration=COALESCE(EXCLUDED.registration,vehicles.registration), " +
-          "customer_number=COALESCE(EXCLUDED.customer_number,vehicles.customer_number), " +
-          "customer_name=COALESCE(EXCLUDED.customer_name,vehicles.customer_name), " +
-          "engine=COALESCE(EXCLUDED.engine,vehicles.engine), " +
-          "model=COALESCE(EXCLUDED.model,vehicles.model), " +
-          "sale_date=COALESCE(EXCLUDED.sale_date,vehicles.sale_date), " +
-          "last_refreshed_at=NOW()",
-          [vehicle.vin, registrationForUpsert, vehicle.customerNumber, customerNameForUpsert,
-           vehicle.engine, vehicle.model, vehicle.sale]
-        );
-        const companyTable = await client.query("SELECT to_regclass('public.customer_companies') AS table_name");
-        if (companyTable.rows[0]?.table_name) {
-          await client.query(
-            "INSERT INTO customer_companies(name,normalized_name) SELECT TRIM(customer_name),LOWER(REGEXP_REPLACE(TRIM(customer_name),'[[:space:]]+',' ','g')) FROM vehicles WHERE UPPER(TRIM(vin))=$1 AND customer_name IS NOT NULL AND TRIM(customer_name)<>'' ON CONFLICT(normalized_name) DO NOTHING",
-            [vehicle.vin]
-          );
-        }
-        upsertedVehicles += 1;
+          "INSERT INTO customer_companies(name,normalized_name)" +
+          " SELECT DISTINCT TRIM(customer_name),LOWER(REGEXP_REPLACE(TRIM(customer_name),'[[:space:]]+',' ','g'))" +
+          " FROM vehicles WHERE UPPER(TRIM(vin))=ANY($1::text[])" +
+          " AND customer_name IS NOT NULL AND TRIM(customer_name)<>''" +
+          " ON CONFLICT(normalized_name) DO NOTHING",
+          [uniqueList.map(v => v.vin)]
+        ).catch(async error => {
+          if (error?.code === "42P01") return;
+          throw error;
+        });
       }
-      await client.query("COMMIT");
-      return res.status(200).json({ success:true, upsertedVehicles });
+      const upsertedVehicles = result.rowCount || 0;
+      return res.status(200).json({
+        success: upsertedVehicles === uniqueList.length,
+        upsertedVehicles,
+        requestedVehicles: uniqueList.length,
+        missingVehicles: Math.max(0, uniqueList.length - upsertedVehicles)
+      });
     } catch (error) {
-      await client.query("ROLLBACK").catch(() => {});
       console.error("Vehicle Master Upsert Error:", error);
       return res.status(500).json({ success:false, error:error?.message || "Vehicle master upsert failed." });
     } finally {

@@ -9770,11 +9770,6 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                   ))}
                 </div>
               )}
-              {uploadMeta&&<div className="no-print" style={{marginTop:10,padding:"10px 12px",border:"1px solid #d9e2ea",borderRadius:8,background:"var(--panel-bg, #f8fafc)",fontSize:12}}>
-                <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",fontWeight:800}}><span>Upload summary</span><span className="status-pill green">{Number(uploadMeta.rowsAfter||0).toLocaleString()} rows ready</span><span className="status-pill blue">{Number(uploadMeta.duplicates||0).toLocaleString()} duplicate rows ignored</span><span className="status-pill">{(uploadMeta.invalidRows||[]).length} invalid rows</span><span className="status-pill">{(uploadMeta.duplicateFiles||[]).length} repeated files skipped</span></div>
-                {(uploadMeta.invalidRows||[]).length>0&&<details style={{marginTop:7}}><summary style={{cursor:"pointer",fontWeight:700}}>Show invalid/skipped rows ({uploadMeta.invalidRows.length})</summary><ul style={{margin:"6px 0 0",paddingLeft:20}}>{uploadMeta.invalidRows.slice(0,100).map((x,i)=><li key={i}>{x.fileName||"Unknown file"} — Row {x.rowNumber}: {x.reason}</li>)}</ul>{uploadMeta.invalidRows.length>100&&<div>Showing first 100 rows.</div>}</details>}
-                {(uploadMeta.failedFiles||[]).length>0&&<div style={{marginTop:7}}><b>Failed files:</b> {uploadMeta.failedFiles.map(x=>x.name).join(", ")}</div>}
-              </div>}
               {uploadDiagnostic && (
                 <div className="no-print" style={{marginTop:10,padding:"10px 12px",border:"1px solid #cbd5e1",borderRadius:8,background:"var(--panel-bg, #f8fafc)",fontSize:12}}>
                   <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",fontWeight:800}}>
@@ -9783,14 +9778,24 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                     
                   </div>
                   <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:8}}>
+                    <span className="status-pill">Files selected: {Number(uploadDiagnostic.filesSelected||0).toLocaleString()}</span>
+                    <span className="status-pill">Files read: {Number(uploadDiagnostic.filesRead||0).toLocaleString()}</span>
+                    <span className="status-pill">Rows before dedup: {Number(uploadDiagnostic.rowsBeforeDedup||0).toLocaleString()}</span>
+                    <span className="status-pill">Duplicate rows skipped: {Number(uploadDiagnostic.duplicateRowsIgnored||0).toLocaleString()}</span>
+                    <span className="status-pill">Parsed rows: {Number(uploadDiagnostic.parsedRows||0).toLocaleString()}</span>
                     <span className="status-pill">Unique vehicles: {Number(uploadDiagnostic.vehicleCount||0).toLocaleString()}</span>
-                    <span className="status-pill">Vehicle Master inserted/updated: {Number(uploadDiagnostic.vehiclesUpserted||0).toLocaleString()}</span>
-                    <span className="status-pill">Timestamps updated: {Number(uploadDiagnostic.timestampsUpdated||0).toLocaleString()}</span>
+                    <span className="status-pill">Unique Job Cards in Excel: {Number(uploadDiagnostic.uniqueJobCards||0).toLocaleString()}</span>
+                    <span className="status-pill">Job Cards submitted: {Number(uploadDiagnostic.jobCardsSubmitted||0).toLocaleString()}</span>
                     <span className="status-pill">Existing Job Cards: {Number(uploadDiagnostic.jobCardsAlreadyInDb||0).toLocaleString()}</span>
                     <span className="status-pill">New Job Cards inserted: {Number(uploadDiagnostic.newJobCardsInserted||uploadDiagnostic.jobCardsSaved||0).toLocaleString()}</span>
                     <span className="status-pill">Service lines inserted: {Number(uploadDiagnostic.serviceLinesSaved||0).toLocaleString()}</span>
+                    <span className="status-pill">Vehicle Master inserted/updated: {Number(uploadDiagnostic.vehiclesUpserted||0).toLocaleString()}</span>
+                    <span className="status-pill">Timestamps updated: {Number(uploadDiagnostic.timestampsUpdated||0).toLocaleString()}</span>
                     <span className="status-pill">Failed VINs: {(uploadDiagnostic.failedVins||[]).length.toLocaleString()}</span>
                   </div>
+                  <div style={{marginTop:8,color:"var(--text-muted,#64748b)"}}>Started: {uploadDiagnostic.startedAt ? new Date(uploadDiagnostic.startedAt).toLocaleString() : "—"} · Last update: {uploadDiagnostic.updatedAt ? new Date(uploadDiagnostic.updatedAt).toLocaleString() : "—"}</div>
+                  {(uploadDiagnostic.filesFailed||[]).length>0&&<details open style={{marginTop:8}}><summary style={{cursor:"pointer",fontWeight:700}}>Files that failed to parse ({uploadDiagnostic.filesFailed.length})</summary><pre style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere",maxHeight:180,overflow:"auto"}}>{JSON.stringify(uploadDiagnostic.filesFailed,null,2)}</pre></details>}
+                  {(uploadDiagnostic.outcomes||[]).length>0&&<details open style={{marginTop:8}}><summary style={{cursor:"pointer",fontWeight:700}}>Per-vehicle database results ({uploadDiagnostic.outcomes.length})</summary><div style={{maxHeight:360,overflow:"auto",marginTop:6}}><table className="history-table"><thead><tr><th>VIN / Chassis</th><th>Registration</th><th>Rows</th><th>Job Cards in Excel</th><th>New Job Cards saved</th><th>Service lines saved</th><th>Result</th><th>Error</th></tr></thead><tbody>{uploadDiagnostic.outcomes.map((item,index)=><tr key={item.vin||index}><td style={{overflowWrap:"anywhere"}}>{item.vin||"—"}</td><td>{item.registration||"—"}</td><td>{Number(item.inputRows||0).toLocaleString()}</td><td>{Number(item.uniqueJobCards||0).toLocaleString()}</td><td>{Number(item.newJobCardsSaved||0).toLocaleString()}</td><td>{Number(item.newServiceLines||0).toLocaleString()}</td><td>{item.status||"—"}</td><td style={{overflowWrap:"anywhere",color:item.message?"#b91c1c":"inherit"}}>{item.message||"—"}</td></tr>)}</tbody></table></div></details>}
                   {uploadDiagnostic.cutoffStatusAvailable===false&&<div className="small-note" style={{marginTop:8,color:"#b45309"}}>Job Card database save paused: emergency cutoff status could not be verified. {(uploadDiagnostic.cutoffCheckError||"").slice(0,240)}</div>}
                   {uploadDiagnostic.status==="paused-cutoff-enabled"&&<div className="small-note" style={{marginTop:8,color:"#b45309"}}>Job Card database save paused because the emergency DB upload cutoff is enabled.</div>}
                   {(uploadDiagnostic.timestampFailedVins||[]).length>0&&<details style={{marginTop:8}} open><summary style={{cursor:"pointer",fontWeight:700}}>Timestamp failures / missing VINs ({uploadDiagnostic.timestampFailedVins.length})</summary><div style={{maxHeight:180,overflow:"auto",marginTop:6,overflowWrap:"anywhere"}}>{uploadDiagnostic.timestampFailedVins.join(", ")}</div></details>}

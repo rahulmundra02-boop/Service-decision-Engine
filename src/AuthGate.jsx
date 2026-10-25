@@ -64,7 +64,7 @@ export default function AuthGate({ children }) {
   const [showForgotHelp, setShowForgotHelp] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [passwordForm, setPasswordForm] = useState({ currentPassword:"", newPassword:"", confirmPassword:"" });
-  const [adminOpen, setAdminOpen] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(() => { try { return new URLSearchParams(window.location.search).has("adminSection"); } catch { return false; } });
   const [adminSection, setAdminSection] = useState(() => {
     try { return new URLSearchParams(window.location.search).get("adminSection") || "management"; } catch { return "management"; }
   });

@@ -6471,8 +6471,49 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     const outcomes = [];
     if (!jobs.length) return outcomes;
 
+    // Keep each request small enough for Vercel's request-body limit.
+    // Never split a Job Card's service lines across requests.
+    const makeChunks = (vehicleRecords, maxJobCards = 15) => {
+      const byJobCard = new Map();
+      for (const record of vehicleRecords) {
+        const jc = normalizeJobCard(record?.jobCard) || "__NO_JOB_CARD__";
+        if (!byJobCard.has(jc)) byJobCard.set(jc, []);
+        byJobCard.get(jc).push(record);
+      }
+      const chunks = [];
+      let chunk = [];
+      let cardCount = 0;
+      for (const cardRecords of byJobCard.values()) {
+        if (cardCount >= maxJobCards) {
+          chunks.push(chunk);
+          chunk = [];
+          cardCount = 0;
+        }
+        chunk.push(...cardRecords);
+        cardCount++;
+      }
+      if (chunk.length) chunks.push(chunk);
+      return chunks;
+    };
+
     const concurrency = Math.min(4, jobs.length);
     let nextIndex = 0;
+
+    async function saveChunkWithSplit(chunk, vehicle) {
+      try {
+        return [await saveHistoryToBackend({ records: chunk, vehicle })];
+      } catch (error) {
+        const message = String(error?.message || "");
+        if (message.includes("(413)") && chunk.length > 1) {
+          // A single oversized request is retried as smaller requests.
+          const midpoint = Math.floor(chunk.length / 2);
+          const left = await saveChunkWithSplit(chunk.slice(0, midpoint), vehicle);
+          const right = await saveChunkWithSplit(chunk.slice(midpoint), vehicle);
+          return [...left, ...right];
+        }
+        throw error;
+      }
+    }
 
     async function worker() {
       while (nextIndex < jobs.length) {
@@ -6480,29 +6521,37 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         const [vin, vehicleRecords] = jobs[index];
         const vehicle = deriveVehicle(vehicleRecords);
         const jobCards = [...new Set(vehicleRecords.map(record => normalizeJobCard(record?.jobCard)).filter(Boolean))];
-        try {
-          const payload = await saveHistoryToBackend({ records: vehicleRecords, vehicle });
-          if (Array.isArray(payload.insertedJobCardNumbers) && payload.insertedJobCardNumbers.length) {
-            await addJobCardsToBrowserIndex(payload.insertedJobCardNumbers);
+        const chunks = makeChunks(vehicleRecords);
+        const savedPayloads = [];
+        const chunkErrors = [];
+        for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+          try {
+            const payloads = await saveChunkWithSplit(chunks[chunkIndex], vehicle);
+            savedPayloads.push(...payloads);
+            for (const payload of payloads) {
+              if (Array.isArray(payload.insertedJobCardNumbers) && payload.insertedJobCardNumbers.length) {
+                await addJobCardsToBrowserIndex(payload.insertedJobCardNumbers);
+              }
+            }
+          } catch (error) {
+            const message = error?.message || "Unknown database error";
+            chunkErrors.push(`Batch ${chunkIndex + 1}/${chunks.length}: ${message}`);
+            console.error("Background history save failed:", { vin, chunkIndex, message });
           }
-          outcomes.push({
-            vin, registration: vehicleRecords[0]?.reg || vehicleRecords[0]?.registration || "",
-            inputRows: vehicleRecords.length, uniqueJobCards: jobCards.length,
-            newJobCardsSaved: Number(payload.newJobCards || 0),
-            duplicateJobCards: Number(payload.duplicateJobCards || 0),
-            newServiceLines: Number(payload.newServiceLines || 0),
-            status: "success", message: ""
-          });
-        } catch (error) {
-          console.error("Background history save failed:", error);
-          const message = error?.message || "Unknown database error";
-          outcomes.push({
-            vin, registration: vehicleRecords[0]?.reg || vehicleRecords[0]?.registration || "",
-            inputRows: vehicleRecords.length, uniqueJobCards: jobCards.length,
-            newJobCardsSaved: 0, duplicateJobCards: 0, newServiceLines: 0,
-            status: "failed", message
-          });
-          setError(`Database history save failed for vehicle ${vehicleRecords[0]?.reg || vin}: ${message}. See Upload Diagnostic Report for details.`);
+        }
+        const newJobCardsSaved = savedPayloads.reduce((sum, payload) => sum + Number(payload.newJobCards || 0), 0);
+        const duplicateJobCards = savedPayloads.reduce((sum, payload) => sum + Number(payload.duplicateJobCards || 0), 0);
+        const newServiceLines = savedPayloads.reduce((sum, payload) => sum + Number(payload.newServiceLines || 0), 0);
+        const failed = chunkErrors.length > 0;
+        outcomes.push({
+          vin, registration: vehicleRecords[0]?.reg || vehicleRecords[0]?.registration || "",
+          inputRows: vehicleRecords.length, uniqueJobCards: jobCards.length,
+          newJobCardsSaved, duplicateJobCards, newServiceLines,
+          status: failed ? (savedPayloads.length ? "partial" : "failed") : "success",
+          message: chunkErrors.join(" | ")
+        });
+        if (failed) {
+          setError(`Database history save failed for vehicle ${vehicleRecords[0]?.reg || vin}: ${chunkErrors.join(" | ")}. See Upload Diagnostic Report for details.`);
         }
       }
     }

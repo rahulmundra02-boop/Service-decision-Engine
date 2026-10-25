@@ -255,7 +255,7 @@ export default async function handler(req, res) {
       if (!/^\d{10}$/.test(receiverMobile) || !Number.isInteger(points) || points<1 || points>50) {
         await client.query("ROLLBACK"); return res.status(400).json({success:false,error:"Registered 10-digit mobile aur valid points enter karein."});
       }
-      const receiver = await client.query("SELECT id FROM app_users WHERE regexp_replace(COALESCE(mobile,''),'\\\\D','','g') IN ($1,$2) AND status='active' LIMIT 1",[receiverMobile,`91${receiverMobile}`]);
+      const receiver = await client.query("SELECT id FROM app_users WHERE right(regexp_replace(COALESCE(mobile,''),'[^0-9]','','g'),10)=$1 AND status='active' LIMIT 1",[receiverMobile]);
       if (!receiver.rows[0]) { await client.query("ROLLBACK"); return res.status(404).json({success:false,error:"Is mobile se active registered account nahi mila."}); }
       if (String(receiver.rows[0].id)===String(user.id)) { await client.query("ROLLBACK"); return res.status(400).json({success:false,error:"Apne account ko points donate nahi kar sakte."}); }
       const d = await dashboard(client,user);

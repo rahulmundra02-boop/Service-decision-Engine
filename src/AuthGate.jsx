@@ -1122,8 +1122,8 @@ export default function AuthGate({ children }) {
       {!adminOpen && (user.userType === "al_customer" ? (
         <div className="mobile-bottom-nav customer-bottom-nav" aria-label="Customer navigation">
           {[
-            ["customer-home","⌂","Home"],
-            ["customer-due","✓","Service Due"],
+            ["customer-home","⌂","Summary"],
+            ["customer-due","✓","Details"],
             ["customer-fleet","▦","Fleet"],
             ["profile","●","Profile"]
           ].map(([key,icon,label])=>(

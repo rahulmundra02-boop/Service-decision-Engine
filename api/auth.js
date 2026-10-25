@@ -298,6 +298,11 @@ async function bootstrapAdmin(client) {
 
 const AUTO_INACTIVE_DAYS = 10;
 
+// Avoid repeating the global inactivity sweep on every login/API request.
+// This map is local to a warm serverless instance and only throttles activity writes.
+const lastActivityWriteByUser = new Map();
+const LAST_ACTIVITY_WRITE_INTERVAL_MS = 5 * 60 * 1000;
+
 async function autoDeactivateInactiveUsers(client) {
   const deactivated = await client.query(
     `UPDATE app_users
@@ -343,7 +348,20 @@ async function getUserByToken(client, token) {
   }
 
   await client.query("UPDATE auth_sessions SET last_seen_at=NOW() WHERE token_hash=$1", [tokenHash]);
-  await client.query("UPDATE app_users SET last_activity_at=NOW() WHERE id=$1", [result.rows[0].id]);
+  const userId = String(result.rows[0].id);
+  const now = Date.now();
+  const lastActivityWrite = lastActivityWriteByUser.get(userId) || 0;
+  if (now - lastActivityWrite >= LAST_ACTIVITY_WRITE_INTERVAL_MS) {
+    await client.query("UPDATE app_users SET last_activity_at=NOW() WHERE id=$1", [result.rows[0].id]);
+    lastActivityWriteByUser.set(userId, now);
+    // Keep the cache bounded in long-lived instances.
+    if (lastActivityWriteByUser.size > 2000) {
+      for (const [key, timestamp] of lastActivityWriteByUser) {
+        if (now - timestamp >= LAST_ACTIVITY_WRITE_INTERVAL_MS) lastActivityWriteByUser.delete(key);
+        if (lastActivityWriteByUser.size <= 1500) break;
+      }
+    }
+  }
   return result.rows[0];
 }
 
@@ -558,7 +576,9 @@ export default async function handler(req, res) {
   try {
     await client.query("BEGIN");
     await initAuthSchemaOnce(client);
-    await autoDeactivateInactiveUsers(client);
+    // Login must stay lightweight during bulk imports; the global inactivity
+    // sweep can update many app_users rows and contend with concurrent requests.
+    if (action !== "login") await autoDeactivateInactiveUsers(client);
 
     if (action === "login") {
       const identifier = clean(body.identifier);

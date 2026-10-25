@@ -2187,6 +2187,30 @@ function AdminPanel({ view = "management", onNavigate = () => {}, users, custome
           </>
         )}
 
+        {view === "timestamps" && (
+          <>
+            <div className="admin-section-title">Vehicle Database Timestamp List</div>
+            <div className="admin-users-card" style={{marginBottom:16}}>
+               <div className="admin-users-header" style={{marginTop:22,alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                 <h4 style={{margin:0}}>Vehicle Database Timestamp List</h4>
+                 <button type="button" className="auth-secondary admin-refresh" style={{width:"auto"}} onClick={()=>void copyVinList(timestampRows,"page")} disabled={!timestampRows.length}>Copy 50 Chassis</button>
+               </div>
+               <div className="admin-panel-card-sub">Oldest to newest by last timestamp update. Showing {timestampRows.length ? timestampPage+1 : 0}–{Math.min(timestampPage+timestampRows.length,timestampTotal)} of {timestampTotal.toLocaleString("en-IN")}.</div>
+               {timestampCopied==="page" && <div className="admin-panel-card-sub" role="status">Visible chassis/VIN numbers copied.</div>}
+               {timestampError && <div className="admin-error" role="alert" style={{marginTop:8}}>{timestampError}</div>}
+               <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>VIN / Chassis</th><th>Last Timestamp Update</th></tr></thead><tbody>
+                 {timestampRows.map((r,i)=><tr key={r.vin+"-"+i}><td>{r.vin}</td><td>{r.last_refreshed_at?new Date(r.last_refreshed_at).toLocaleString():"Never updated"}</td></tr>)}
+                 {!timestampRows.length&&<tr><td colSpan="2" className="admin-empty">{timestampLoading?"Loading vehicle timestamp list…":"No vehicles found."}</td></tr>}
+               </tbody></table></div>
+               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,marginTop:10,flexWrap:"wrap"}}>
+                 <button type="button" className="auth-secondary" style={{width:"auto"}} onClick={()=>void loadTimestampPage(Math.max(0,timestampPage-50))} disabled={timestampLoading||timestampPage===0}>← Previous 50</button>
+                 <span className="admin-panel-card-sub">Page {Math.floor(timestampPage/50)+1} of {Math.max(1,Math.ceil(timestampTotal/50))}</span>
+                 <button type="button" className="auth-secondary" style={{width:"auto"}} onClick={()=>void loadTimestampPage(timestampPage+50)} disabled={timestampLoading||timestampPage+50>=timestampTotal}>Next 50 →</button>
+               </div>
+            </div>
+          </>
+        )}
+
         {view === "management" && (
           <>
             <div className="admin-section-title">User Management</div>
@@ -2208,22 +2232,6 @@ function AdminPanel({ view = "management", onNavigate = () => {}, users, custome
                {(customerAccessData.timestampRequests||[]).map(r=><tr key={r.id}><td>{r.person_name}</td><td>{r.email}</td><td>{r.registration||"—"}</td><td>{r.vin}</td><td>{r.last_refreshed_at?new Date(r.last_refreshed_at).toLocaleString():"Unavailable"}</td><td>{new Date(r.created_at).toLocaleString()}</td></tr>)}
                {!(customerAccessData.timestampRequests||[]).length&&<tr><td colSpan="6" className="admin-empty">No pending timestamp update requests.</td></tr>}</tbody></table></div>
 
-               <div className="admin-users-header" style={{marginTop:22,alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                 <h4 style={{margin:0}}>Vehicle Database Timestamp List</h4>
-                 <button type="button" className="auth-secondary admin-refresh" style={{width:"auto"}} onClick={()=>void copyVinList(timestampRows,"page")} disabled={!timestampRows.length}>Copy 50 Chassis</button>
-               </div>
-               <div className="admin-panel-card-sub">Oldest to newest by last timestamp update. Showing {timestampRows.length ? timestampPage+1 : 0}–{Math.min(timestampPage+timestampRows.length,timestampTotal)} of {timestampTotal.toLocaleString("en-IN")}.</div>
-               {timestampCopied==="page" && <div className="admin-panel-card-sub" role="status">Visible chassis/VIN numbers copied.</div>}
-               {timestampError && <div className="admin-error" role="alert" style={{marginTop:8}}>{timestampError}</div>}
-               <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>VIN / Chassis</th><th>Last Timestamp Update</th></tr></thead><tbody>
-                 {timestampRows.map((r,i)=><tr key={r.vin+"-"+i}><td>{r.vin}</td><td>{r.last_refreshed_at?new Date(r.last_refreshed_at).toLocaleString():"Never updated"}</td></tr>)}
-                 {!timestampRows.length&&<tr><td colSpan="2" className="admin-empty">{timestampLoading?"Loading vehicle timestamp list…":"No vehicles found."}</td></tr>}
-               </tbody></table></div>
-               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,marginTop:10,flexWrap:"wrap"}}>
-                 <button type="button" className="auth-secondary" style={{width:"auto"}} onClick={()=>void loadTimestampPage(Math.max(0,timestampPage-50))} disabled={timestampLoading||timestampPage===0}>← Previous 50</button>
-                 <span className="admin-panel-card-sub">Page {Math.floor(timestampPage/50)+1} of {Math.max(1,Math.ceil(timestampTotal/50))}</span>
-                 <button type="button" className="auth-secondary" style={{width:"auto"}} onClick={()=>void loadTimestampPage(timestampPage+50)} disabled={timestampLoading||timestampPage+50>=timestampTotal}>Next 50 →</button>
-               </div>
               <h4>Direct Vehicle Assignment</h4><div className="admin-inline-assign"><select value={directVehicleForm.userId} onChange={e=>setDirectVehicleForm(v=>({...v,userId:e.target.value}))}><option value="">Select customer</option>{customerAccessData.customers.map(c=><option key={c.id} value={c.id}>{c.person_name} · {c.email}</option>)}</select><input value={directVehicleForm.vin} onChange={e=>setDirectVehicleForm(v=>({...v,vin:e.target.value.toUpperCase()}))} placeholder="VIN / chassis number"/><button className="auth-primary" style={{width:"auto",marginTop:0}} disabled={loading||!directVehicleForm.userId||!directVehicleForm.vin.trim()} onClick={onAssignCustomerVehicle}>Assign Vehicle</button></div>
             </div>
             <div className="admin-grid admin-management-grid">

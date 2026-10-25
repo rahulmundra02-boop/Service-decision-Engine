@@ -2194,7 +2194,12 @@ function AdminPanel({ view = "management", onNavigate = () => {}, users, custome
             <div className="admin-users-card" style={{marginBottom:16}}>
                <div className="admin-users-header" style={{marginTop:22,alignItems:"center",gap:10,flexWrap:"wrap"}}>
                  <h4 style={{margin:0}}>Vehicle Database Timestamp List</h4>
-                 <button type="button" className="auth-secondary admin-refresh" style={{width:"auto"}} onClick={()=>void copyVinList(timestampRows,"page")} disabled={!timestampRows.length}>Copy 50 Chassis</button>
+                 <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
+                   <button type="button" className="auth-secondary" style={{width:30,height:30,minWidth:30,padding:0,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:20,lineHeight:1}} onClick={()=>void loadTimestampPage(Math.max(0,timestampPage-50))} disabled={timestampLoading||timestampPage===0} title="Previous 50 vehicles" aria-label="Previous 50 vehicles">‹</button>
+                   <span className="admin-panel-card-sub" style={{whiteSpace:"nowrap"}} title="Current page and total pages">Page {Math.floor(timestampPage/50)+1} of {Math.max(1,Math.ceil(timestampTotal/50))}</span>
+                   <button type="button" className="auth-secondary" style={{width:30,height:30,minWidth:30,padding:0,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:20,lineHeight:1}} onClick={()=>void loadTimestampPage(timestampPage+50)} disabled={timestampLoading||timestampPage+50>=timestampTotal} title="Next 50 vehicles" aria-label="Next 50 vehicles">›</button>
+                   <button type="button" className="auth-secondary" style={{width:30,height:30,minWidth:30,padding:0,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:16,lineHeight:1}} onClick={()=>void copyVinList(timestampRows,"page")} disabled={!timestampRows.length} title="Copy visible 50 chassis/VIN numbers" aria-label="Copy visible chassis/VIN numbers">{timestampCopied==="page"?"✓":"⧉"}</button>
+                 </div>
                </div>
                <div className="admin-panel-card-sub">Oldest to newest by last timestamp update. Showing {timestampRows.length ? timestampPage+1 : 0}–{Math.min(timestampPage+timestampRows.length,timestampTotal)} of {timestampTotal.toLocaleString("en-IN")}.</div>
                {timestampCopied==="page" && <div className="admin-panel-card-sub" role="status">Visible chassis/VIN numbers copied.</div>}
@@ -2203,11 +2208,7 @@ function AdminPanel({ view = "management", onNavigate = () => {}, users, custome
                  {timestampRows.map((r,i)=><tr key={r.vin+"-"+i}><td>{r.vin}</td><td>{r.last_refreshed_at?new Date(r.last_refreshed_at).toLocaleString():"Never updated"}</td></tr>)}
                  {!timestampRows.length&&<tr><td colSpan="2" className="admin-empty">{timestampLoading?"Loading vehicle timestamp list…":"No vehicles found."}</td></tr>}
                </tbody></table></div>
-               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,marginTop:10,flexWrap:"wrap"}}>
-                 <button type="button" className="auth-secondary" style={{width:"auto"}} onClick={()=>void loadTimestampPage(Math.max(0,timestampPage-50))} disabled={timestampLoading||timestampPage===0}>← Previous 50</button>
-                 <span className="admin-panel-card-sub">Page {Math.floor(timestampPage/50)+1} of {Math.max(1,Math.ceil(timestampTotal/50))}</span>
-                 <button type="button" className="auth-secondary" style={{width:"auto"}} onClick={()=>void loadTimestampPage(timestampPage+50)} disabled={timestampLoading||timestampPage+50>=timestampTotal}>Next 50 →</button>
-               </div>
+
             </div>
           </>
         )}

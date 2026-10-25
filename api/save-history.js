@@ -1055,7 +1055,7 @@ export default async function handler(req, res) {
         " SELECT i.vin," +
         " CASE WHEN i.registration IS NOT NULL AND (s.registration IS NULL OR i.latestJobDate IS NULL OR s.latest_job_date IS NULL OR i.latestJobDate >= s.latest_job_date) THEN i.registration ELSE NULL END AS registration," +
         " i.customerNumber AS customer_number," +
-         " i.customerName AS customer_name," + +
+         " i.customerName AS customer_name," +
         " i.engine, i.model, i.sale AS sale_date" +
         " FROM incoming i LEFT JOIN stored s ON UPPER(TRIM(s.vin))=i.vin" +
         ")" +

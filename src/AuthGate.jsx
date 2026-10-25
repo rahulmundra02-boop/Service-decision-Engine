@@ -708,7 +708,7 @@ export default function AuthGate({ children }) {
   useEffect(() => {
     const syncSectionFromUrl = () => {
       const section = new URLSearchParams(window.location.search).get("adminSection") || "management";
-      setAdminSection(["management","overview","users","activity","database","settings","masters"].includes(section) ? section : "management");
+      setAdminSection(["management","overview","users","activity","database","settings","masters","timestamps"].includes(section) ? section : "management");
     };
     window.addEventListener("popstate", syncSectionFromUrl);
     return () => window.removeEventListener("popstate", syncSectionFromUrl);
@@ -1708,7 +1708,7 @@ function AdminPanel({ view = "management", onNavigate = () => {}, users, custome
     try { await navigator.clipboard.writeText(text); setTimestampCopied(label); setTimeout(() => setTimestampCopied(""), 2200); }
     catch { try { const el=document.createElement("textarea");el.value=text;el.style.position="fixed";el.style.opacity="0";document.body.appendChild(el);el.select();const ok=document.execCommand("copy");el.remove();if(!ok)throw new Error("copy failed");setTimestampCopied(label);setTimeout(()=>setTimestampCopied(""),2200); } catch { setTimestampError("Clipboard copy failed. Please allow clipboard access and try again."); } }
   };
-  useEffect(() => { if (view === "management") void loadTimestampPage(0); }, [view]);
+  useEffect(() => { if (view === "timestamps") void loadTimestampPage(0); }, [view]);
 
   const localDateString = (date = new Date()) => {
     const y = date.getFullYear();
@@ -1835,7 +1835,8 @@ function AdminPanel({ view = "management", onNavigate = () => {}, users, custome
               ["activity","Activity"],
               ["database","Database View"],
               ["settings","System Settings"],
-              ["masters","Master Data"]
+              ["masters","Master Data"],
+              ["timestamps","Vehicle Timestamps"]
             ].map(([key,label])=>
               <button key={key} className={view===key ? "active" : ""} onClick={()=>{onNavigate(key);if(key==="management"&&accountRequests.some(r=>r.status==="pending"))setTimeout(()=>document.getElementById("pending-account-requests")?.scrollIntoView({behavior:"smooth",block:"start"}),100);}}>{label}{key==="management"&&accountRequests.some(r=>r.status==="pending")&&<span className="pending-request-dot" title="Pending account requests">●</span>}</button>
             )}

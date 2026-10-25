@@ -719,10 +719,12 @@ export default function AuthGate({ children }) {
 
   useEffect(() => {
     if (user?.role !== "admin") return;
-    // Keep request count fresh in the background so the Profile notification dot works
-    // even when the admin dashboard is not open.
+    // Load pending requests in the background for the Profile notification dot.
     void loadAccountRequests().catch(() => {});
-    if (!adminOpen) return;
+  }, [user?.role]);
+
+  useEffect(() => {
+    if (user?.role !== "admin" || !adminOpen) return;
     if (adminSection === "management") void loadAdminUsers();
     if (["overview","users","activity"].includes(adminSection)) void loadAdminAnalytics(analyticsUserId, analyticsRange);
     if (adminSection === "database") void loadDatabaseView(dbStartDate, dbEndDate);
@@ -1978,10 +1980,6 @@ function AdminPanel({ view = "management", onNavigate = () => {}, users, custome
         </>}
 
         <div className="admin-analytics-toolbar professional">
-          <div className="admin-dashboard-scope-tabs">
-            <button className={analyticsIncludeAdmins ? "active" : ""} onClick={() => { onSetAnalyticsIncludeAdmins(true); onAnalytics(null, analyticsRange); }}>All Statistics (Including Admin)</button>
-            <button className={!analyticsIncludeAdmins ? "active" : ""} onClick={() => { onSetAnalyticsIncludeAdmins(false); onAnalytics(null, analyticsRange); }}>Statistics Without Admin</button>
-          </div>
           <div className="admin-view-tabs admin-route-tabs">
             {[
               ["management","User Management"],

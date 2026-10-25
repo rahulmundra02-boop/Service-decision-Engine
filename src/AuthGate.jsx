@@ -678,15 +678,12 @@ export default function AuthGate({ children }) {
   const loadAdminUsers = async () => {
     setAdminLoading(true);
     try {
-      const [usersResult, requestsResult, accessResult] = await Promise.allSettled([
+      const [usersResult, accessResult] = await Promise.allSettled([
         api("admin-list-users", {}, localStorage.getItem(TOKEN_KEY)),
-        api("admin-list-account-requests", {}, localStorage.getItem(TOKEN_KEY)),
         api("admin-customer-access-data", {}, localStorage.getItem(TOKEN_KEY))
       ]);
       if (usersResult.status === "fulfilled") setAdminUsers(usersResult.value.users || []);
       else throw usersResult.reason;
-      if (requestsResult.status === "fulfilled") setAccountRequests(requestsResult.value.requests || []);
-      else setError(requestsResult.reason?.message || "Unable to load pending account requests.");
       if (accessResult.status === "fulfilled") setCustomerAccessData(accessResult.value);
       else setError(accessResult.reason?.message || "Unable to load customer access requests.");
     } catch (e) {

@@ -1,8 +1,7 @@
-import { cloneElement, useCallback, useEffect, useRef, useState } from "react";
+import { cloneElement, useEffect, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import "./AuthGate.css";
 import CustomerPortal from "./CustomerPortal";
-import ContributionPanel from "./ContributionPanel";
 
 const TOKEN_KEY = "serviceDecisionAuthToken";
 const ACTIVITY_KEY = "serviceDecisionLastActivity";
@@ -52,8 +51,6 @@ export default function AuthGate({ children }) {
   const [user, setUser] = useState(null);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const sessionValidationRef = useRef(false);
-  const contributionUploadRef = useRef(null);
-  const registerContributionUpload = useCallback((handler) => { contributionUploadRef.current = typeof handler === "function" ? handler : null; }, []);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [showAccountHelp, setShowAccountHelp] = useState(false);
@@ -1087,7 +1084,6 @@ export default function AuthGate({ children }) {
       <div className="auth-userbar" aria-hidden="true"></div>
       {error && <div className="auth-inline-error">{error}</div>}
       {message && <div className="auth-inline-message">{message}</div>}
-      {!adminOpen && <ContributionPanel user={user} onUpload={async (file) => { if (!contributionUploadRef.current) throw new Error("Bulk upload pipeline ready nahi hai. Page reload karke dobara try karein."); return contributionUploadRef.current(file); }} />}
 
       {showPassword && (
         <div className="auth-modal-backdrop">
@@ -1224,7 +1220,6 @@ export default function AuthGate({ children }) {
         onOpenAdmin: () => { adminOpenedFromProfileRef.current = false; setAdminSection("management"); try { const u=new URL(window.location.href); u.searchParams.set("adminSection","management"); window.history.pushState({ ...(window.history.state || {}), serviceDecisionOverlay:"admin", adminSection:"management" }, "", u); } catch {} setAdminOpen(true); setError(""); setMessage(""); },
         onChangePassword: () => { setShowPassword(true); setError(""); setMessage(""); },
         onLogout: logout,
-        registerContributionUpload,
       })}
     </div>
   );

@@ -296,31 +296,11 @@ async function bootstrapAdmin(client) {
   }
 }
 
-const AUTO_INACTIVE_DAYS = 10;
-
-// Avoid repeating the global inactivity sweep on every login/API request.
-// This map is local to a warm serverless instance and only throttles activity writes.
+// Legacy 10-day auto-deactivation is intentionally disabled.
+// Existing inactive accounts remain inactive; only an explicit admin action can reactivate them.
+// Admin accounts are never subject to monthly contribution enforcement.
 const lastActivityWriteByUser = new Map();
 const LAST_ACTIVITY_WRITE_INTERVAL_MS = 5 * 60 * 1000;
-
-async function autoDeactivateInactiveUsers(client) {
-  const deactivated = await client.query(
-    `UPDATE app_users
-        SET status='inactive'
-      WHERE role <> 'admin'
-        AND status='active'
-        AND COALESCE(last_activity_at,last_login_at,created_at) < NOW() - ($1 * INTERVAL '1 day')
-      RETURNING id`,
-    [AUTO_INACTIVE_DAYS]
-  );
-
-  const ids = deactivated.rows.map((row) => Number(row.id)).filter(Number.isInteger);
-  if (ids.length) {
-    await client.query("DELETE FROM auth_sessions WHERE user_id = ANY($1::bigint[])", [ids]);
-  }
-
-  return ids;
-}
 
 async function getUserByToken(client, token) {
   if (!token) return null;
@@ -576,9 +556,7 @@ export default async function handler(req, res) {
   try {
     await client.query("BEGIN");
     await initAuthSchemaOnce(client);
-    // Login must stay lightweight during bulk imports; the global inactivity
-    // sweep can update many app_users rows and contend with concurrent requests.
-    if (action !== "login") await autoDeactivateInactiveUsers(client);
+    // No inactivity sweep: status changes are now explicit/admin-controlled until the monthly contribution cycle is enabled.
 
     if (action === "login") {
       const identifier = clean(body.identifier);
@@ -1867,9 +1845,7 @@ export default async function handler(req, res) {
         return res.status(400).json({success:false,error:"You cannot deactivate your own admin account."});
       }
 
-      // Manual reactivation must also reset the inactivity clock. Otherwise
-      // autoDeactivateInactiveUsers() runs on the next API request and immediately
-      // marks this account inactive again using its old last_activity_at value.
+      // Explicit admin status changes remain the only manual reactivation path.
       const updated = status === "active"
         ? await client.query(
             "UPDATE app_users SET status='active',last_activity_at=NOW() WHERE id=$1 RETURNING *",

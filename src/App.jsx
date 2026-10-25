@@ -6592,10 +6592,15 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
               diag.status="paused-cutoff-status-unavailable";
               diag.backgroundError="Job Card database writes were paused because the emergency cutoff status could not be verified. " + (cutoff.error || "");
               diag.failedOperations.push({operation:"cutoff-check",error:diag.cutoffCheckError});
+              diag.lastUpdatedAt=new Date().toISOString();
+              setUploadDiagnostic({...diag});
               return;
             }
             if (cutoff.enabled) {
               diag.status="paused-cutoff-enabled";
+              diag.backgroundError="Job Card database writes are paused because the emergency cutoff is enabled.";
+              diag.lastUpdatedAt=new Date().toISOString();
+              setUploadDiagnostic({...diag});
               return;
             }
             const vehicleMasterRecords=uploadedVins.map(vin=>{

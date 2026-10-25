@@ -289,3 +289,42 @@
   .customer-profile-grid{padding:7px 0;gap:5px}
   .customer-profile-timestamp-cards>div{padding:6px}
 }
+
+
+/* Fix sticky selectors: JSX uses customer-global-brand, not customer-portal-header. */
+.customer-global-brand{
+  position:sticky!important;
+  top:0!important;
+  z-index:500!important;
+  background:#f3f6fa!important;
+  margin:0 auto 3px!important;
+  padding:5px 8px!important;
+  box-sizing:border-box!important;
+}
+.customer-global-brand-copy{min-width:0}
+.customer-global-brand-copy .customer-eyebrow{font-size:8px!important;line-height:1.1!important;margin:0!important}
+.customer-global-brand-copy h1{font-size:17px!important;line-height:1.15!important;margin:2px 0!important}
+.customer-global-brand-copy p{font-size:10px!important;line-height:1.2!important;margin:2px 0!important}
+.customer-desktop-nav{
+  position:sticky!important;
+  top:58px!important;
+  z-index:499!important;
+  background:#f3f6fa!important;
+  padding:4px 0!important;
+  margin:0 auto 5px!important;
+}
+@media(max-width:760px){
+  .customer-global-brand{
+    position:sticky!important;
+    top:0!important;
+    z-index:500!important;
+    padding:4px 6px!important;
+    flex-direction:row!important;
+    align-items:center!important;
+    gap:5px!important;
+  }
+  .customer-global-brand-copy .customer-eyebrow{font-size:7px!important}
+  .customer-global-brand-copy h1{font-size:14px!important}
+  .customer-global-brand-copy p{font-size:9px!important}
+  .customer-desktop-nav{display:none!important}
+}

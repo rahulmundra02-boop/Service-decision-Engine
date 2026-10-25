@@ -193,7 +193,11 @@ export default async function handler(req, res) {
         await client.query("COMMIT"); return res.json({success:true,status:"Cancelled"});
       }
       if (Number(task.rows[0].attempt_count)>=3) { await client.query("ROLLBACK"); return res.status(409).json({success:false,error:"Is task ke 3 attempts complete ho chuke hain."}); }
+      if (action === "retry-task" && !["Failed","Expired"].includes(task.rows[0].status) && new Date(task.rows[0].expires_at).getTime() > Date.now()) {
+        await client.query("ROLLBACK"); return res.status(409).json({success:false,error:"Active task ko retry nahi kar sakte. Pehle task expire hone dein ya cancel karein."});
+      }
       await client.query("SELECT pg_advisory_xact_lock(hashtext('contribution-task-queue'))");
+      await client.query("DELETE FROM contribution_vehicle_reservations WHERE task_id=$1",[taskId]);
       try {
         for (const rawVin of task.rows[0].vehicle_vins || []) {
           await client.query("INSERT INTO contribution_vehicle_reservations(vin,task_id) VALUES($1,$2)",[normVin(rawVin),taskId]);

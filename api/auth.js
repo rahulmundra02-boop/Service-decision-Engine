@@ -1702,7 +1702,7 @@ export default async function handler(req, res) {
     }
     if(action==="admin-customer-access-data"){
       const admin=await requireAdmin(client,req);if(admin.error){await client.query("ROLLBACK");return res.status(admin.status).json({success:false,error:admin.error});}
-      const companyRequests=await client.query("SELECT r.id,r.user_id,u.person_name,u.email,r.company_id,c.name company_name,r.created_at FROM customer_company_requests r JOIN app_users u ON u.id=r.user_id JOIN customer_companies c ON c.id=r.company_id WHERE r.status='pending' AND (v.last_refreshed_at IS NULL OR v.last_refreshed_at < r.created_at) ORDER BY r.created_at");
+      const companyRequests=await client.query("SELECT r.id,r.user_id,u.person_name,u.email,r.company_id,c.name company_name,r.created_at FROM customer_company_requests r JOIN app_users u ON u.id=r.user_id JOIN customer_companies c ON c.id=r.company_id WHERE r.status='pending' ORDER BY r.created_at");
       const vehicleRequests=await client.query("SELECT r.id,r.user_id,u.person_name,u.email,r.vin,r.created_at FROM customer_vehicle_requests r JOIN app_users u ON u.id=r.user_id WHERE r.status='pending' ORDER BY r.created_at");
       const companies=await client.query("SELECT id,name FROM customer_companies ORDER BY name LIMIT 5000");
       const timestampRequests=await client.query("SELECT r.id,r.user_id,u.person_name,u.email,r.vehicle_id,r.vin,r.created_at,v.registration,v.model,v.last_refreshed_at FROM customer_timestamp_update_requests r JOIN app_users u ON u.id=r.user_id JOIN vehicles v ON v.id=r.vehicle_id WHERE r.status='pending' ORDER BY r.created_at");

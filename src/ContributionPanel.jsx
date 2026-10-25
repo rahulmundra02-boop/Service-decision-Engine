@@ -27,7 +27,7 @@ function findVin(row) {
   return String(hit?.[1] ?? "").trim().toUpperCase();
 }
 
-export default function ContributionPanel({ user }) {
+export default function ContributionPanel({ user, onUpload }) {
   const [open, setOpen] = useState(false);
   const [data, setData] = useState(null);
   const [task, setTask] = useState(null);
@@ -97,6 +97,9 @@ export default function ContributionPanel({ user }) {
     if (!task?.id || rows.length !== 50) return;
     setBusy(true); setError(""); setMessage("");
     try {
+      if (!file || typeof onUpload !== "function") throw new Error("Excel file select karein aur existing bulk upload pipeline ready hone dein.");
+      const syncResult = await onUpload(file);
+      if (!syncResult || syncResult.status !== "completed") throw new Error(syncResult?.backgroundError || "Bulk upload database sync complete nahi hua. Points award nahi kiye gaye.");
       const result = await callApi("submit-task", { taskId: task.id, rows });
       setMessage(result.pointsAwarded ? "Task complete! 1 point award hua." : "Task status update ho gaya.");
       setTask(null); setRows([]); setFile(null); if (fileRef.current) fileRef.current.value = "";

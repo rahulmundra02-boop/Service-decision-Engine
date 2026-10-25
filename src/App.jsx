@@ -6560,8 +6560,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     return outcomes.sort((a,b) => a.vin.localeCompare(b.vin));
   }
 
-  const handleExcelUpload = async (event, options = {}) => {
-    let backgroundSyncPromise = Promise.resolve(null);
+  const handleExcelUpload = async (event) => {
     const selectedFiles=Array.from(event.target.files||[]);event.target.value="";if(!selectedFiles.length)return;
     const files=selectedFiles;
     cancelProcessingRef.current=false;setError("");setUploadDiagnostic(null);setUploadBusy(true);setUploadProgress({stage:"Preparing upload",current:0,total:files.length,detail:`${files.length} file(s) selected`});
@@ -6583,7 +6582,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         // analysis or keep the upload spinner open while Neon is being updated.
         diag.status="processing";
         setUploadDiagnostic({...diag});
-        backgroundSyncPromise = (async()=>{
+        void (async()=>{
           try{
             const cutoff=await fetchEmergencyDbUploadCutoff();
             diag.cutoff=Boolean(cutoff.enabled);
@@ -6662,29 +6661,12 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
             setUploadDiagnostic({...diag});
             if(diag.status==="completed-with-errors")setError("Service data is ready for analysis, but background database sync reported an error. Check the temporary diagnostic report.");
           }
-          return diag;
         })();
       }
-      if (options.awaitDatabaseSync) {
-        if (!parsedRows.length) throw new Error("Excel mein valid service records nahi mile. Mandatory headers aur VIN values check karein.");
-        const syncResult = await backgroundSyncPromise;
-        if (!syncResult) throw new Error("Database upload ka final status nahi mila. Diagnostic status check karein.");
-        return syncResult;
-      }
       setUploadProgress({stage:"Upload complete",current:files.length,total:files.length,detail:`${parsedRows.length.toLocaleString()} rows ready for service decision; database sync continues in background`});
-    }catch(e){if(e?.name==="AbortError")setError("Upload cancelled. No new background history save was started by this upload. Any current network lookup may finish in the background.");else{setUploadMeta(null);setUploadedFiles([]);setUploadParsedRecords([]);setError(e?.message||"The Excel file could not be read.");} if(options.awaitDatabaseSync) throw e;}
+    }catch(e){if(e?.name==="AbortError")setError("Upload cancelled. No new background history save was started by this upload. Any current network lookup may finish in the background.");else{setUploadMeta(null);setUploadedFiles([]);setUploadParsedRecords([]);setError(e?.message||"The Excel file could not be read.");}}
     finally{setUploadBusy(false);cancelProcessingRef.current=false;window.setTimeout(()=>setUploadProgress(null),1800);}
   };
-
-  contributionUploadHandlerRef.current = handleExcelUpload;
-  useEffect(() => {
-    if (typeof registerContributionUpload !== "function") return undefined;
-    registerContributionUpload(async (file) => {
-      if (typeof contributionUploadHandlerRef.current !== "function") throw new Error("Bulk upload handler not ready.");
-      return contributionUploadHandlerRef.current({ target: { files: [file], value: "" } }, { awaitDatabaseSync: true });
-    });
-    return () => registerContributionUpload(null);
-  }, [registerContributionUpload]);
 
   const getAnalysisRecords = () => {
     if (uploadParsedRecords.length) {
@@ -10506,8 +10488,7 @@ function Info({ label, value }) {
 }
 
 
-function App({ registerContributionUpload }) {
-  const contributionUploadHandlerRef = useRef(null);
+function App() {
   return <AuthGate><ServiceDecisionApp /></AuthGate>;
 }
 

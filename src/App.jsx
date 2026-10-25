@@ -7487,7 +7487,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     if (!registration) { setRegistrationSearchError("Please enter a vehicle registration number."); return; }
     setRegistrationSearchBusy(true);
     try {
-      const response = await fetch("/api/save-history?registration=" + encodeURIComponent(registration), { cache: "no-store" });
+      const response = await fetchSaveHistory("/api/save-history?registration=" + encodeURIComponent(registration));
       const data = await response.json().catch(() => ({}));
       if (!response.ok || data?.success === false) throw new Error(data?.error || "Unable to search the database right now.");
       if (!data?.vehicle) { setRegistrationSearchError("Vehicle not found. The registration number may be incorrect, or the vehicle may not be available in the database."); return; }
@@ -7527,7 +7527,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     if(!registration){ setEstimateVehicleLookupMessage("Please enter Vehicle No."); return; }
     setEstimateVehicleLookupBusy(true); setEstimateVehicleLookupMessage("");
     try {
-      const response=await fetch("/api/save-history?registration="+encodeURIComponent(registration), { cache: "no-store" });
+      const response=await fetchSaveHistory("/api/save-history?registration="+encodeURIComponent(registration));
       const data=await response.json().catch(()=>({}));
       const rows=Array.isArray(data?.rows)?data.rows:[];
       const dbVehicle=data?.vehicle || rows[0] || null;

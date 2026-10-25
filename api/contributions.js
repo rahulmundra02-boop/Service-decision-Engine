@@ -140,7 +140,6 @@ export default async function handler(req, res) {
     if (!user) { await client.query("ROLLBACK"); return res.status(401).json({success:false,error:"Session expired. Please sign in again."}); }
     await client.query("SELECT pg_advisory_xact_lock(hashtext('contribution-schema-bootstrap'))");
     await ensureSchema(client);
-    await ensureSchema(client);
     const body = req.body || {};
     const action = clean(body.action);
     const ms = monthStart();

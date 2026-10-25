@@ -6150,21 +6150,36 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       : "");
 
   async function fetchEmergencyDbUploadCutoff() {
-    try {
-      const response = await fetch("/api/auth", {
-        method:"POST",
-        headers:{ "Content-Type":"application/json" },
-        body:JSON.stringify({ action:"emergency-db-upload-cutoff-settings" })
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || data?.success === false) {
-        throw new Error(data?.error || "Emergency DB upload cutoff status unavailable.");
+    let lastError = null;
+    // Retry once for transient DB connection failures, but never allow writes when
+    // the emergency cutoff status cannot be confirmed.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const response = await fetch("/api/auth", {
+          method:"POST",
+          headers:{ "Content-Type":"application/json" },
+          body:JSON.stringify({ action:"emergency-db-upload-cutoff-settings" })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data?.success === false) {
+          throw new Error(data?.error || `Emergency DB upload cutoff check failed (HTTP ${response.status}).`);
+        }
+        return {
+          enabled:data?.settings?.enabled === true,
+          statusAvailable:true,
+          error:""
+        };
+      } catch (error) {
+        lastError = error;
+        if (attempt === 0) await new Promise(resolve => window.setTimeout(resolve, 1200));
       }
-      return { enabled:data?.settings?.enabled === true, statusAvailable:true };
-    } catch (error) {
-      console.warn("Emergency DB upload cutoff status unavailable; pausing DB history save for safety.", error);
-      return { enabled:true, statusAvailable:false };
     }
+    console.warn("Emergency DB upload cutoff status unavailable; pausing Job Card database writes for safety.", lastError);
+    return {
+      enabled:true,
+      statusAvailable:false,
+      error:lastError?.message || "Emergency DB upload cutoff status unavailable."
+    };
   }
 
   async function checkNewJobCards(apiBaseUrl, jobCards) {

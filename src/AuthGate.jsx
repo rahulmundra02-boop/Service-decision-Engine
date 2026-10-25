@@ -65,6 +65,9 @@ export default function AuthGate({ children }) {
   const [showPassword, setShowPassword] = useState(false);
   const [passwordForm, setPasswordForm] = useState({ currentPassword:"", newPassword:"", confirmPassword:"" });
   const [adminOpen, setAdminOpen] = useState(false);
+  const [adminSection, setAdminSection] = useState(() => {
+    try { return new URLSearchParams(window.location.search).get("adminSection") || "management"; } catch { return "management"; }
+  });
   const adminOpenedFromProfileRef = useRef(false);
   const [adminUsers, setAdminUsers] = useState([]);
   const [customerAccessData,setCustomerAccessData]=useState({companyRequests:[],vehicleRequests:[],companies:[],customers:[]});
@@ -675,11 +678,17 @@ export default function AuthGate({ children }) {
   const loadAdminUsers = async () => {
     setAdminLoading(true);
     try {
-      const data = await api("admin-list-users", {}, localStorage.getItem(TOKEN_KEY));
-      setAdminUsers(data.users || []);
-      await loadAccountRequests();
-      setCustomerAccessData(await api("admin-customer-access-data",{},localStorage.getItem(TOKEN_KEY)));
-      await loadAdminAnalytics(analyticsUserId, analyticsRange);
+      const [usersResult, requestsResult, accessResult] = await Promise.allSettled([
+        api("admin-list-users", {}, localStorage.getItem(TOKEN_KEY)),
+        api("admin-list-account-requests", {}, localStorage.getItem(TOKEN_KEY)),
+        api("admin-customer-access-data", {}, localStorage.getItem(TOKEN_KEY))
+      ]);
+      if (usersResult.status === "fulfilled") setAdminUsers(usersResult.value.users || []);
+      else throw usersResult.reason;
+      if (requestsResult.status === "fulfilled") setAccountRequests(requestsResult.value.requests || []);
+      else setError(requestsResult.reason?.message || "Unable to load pending account requests.");
+      if (accessResult.status === "fulfilled") setCustomerAccessData(accessResult.value);
+      else setError(accessResult.reason?.message || "Unable to load customer access requests.");
     } catch (e) {
       setError(e.message || "Unable to load users.");
     } finally {
@@ -687,19 +696,46 @@ export default function AuthGate({ children }) {
     }
   };
 
+  const navigateAdminSection = (section, replace = false) => {
+    const allowed = new Set(["management","overview","users","activity","database","settings","masters"]);
+    const next = allowed.has(section) ? section : "management";
+    setAdminSection(next);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set("adminSection", next);
+      if (replace) window.history.replaceState({ ...(window.history.state || {}), serviceDecisionOverlay:"admin", adminSection:next }, "", url);
+      else window.history.pushState({ ...(window.history.state || {}), serviceDecisionOverlay:"admin", adminSection:next }, "", url);
+    } catch {}
+  };
+
   useEffect(() => {
-    if (user?.role === "admin") {
-      void loadAccountRequests();
-      if (adminOpen) {
-        loadAdminUsers();
-        loadJobCardCacheSettings();
-        loadEmergencyDbUploadCutoff();
-        loadRegistrationSearchSetting();
-        loadCampaignMeta();
-        loadPriceMasterMeta();
-      }
+    const syncSectionFromUrl = () => {
+      const section = new URLSearchParams(window.location.search).get("adminSection") || "management";
+      setAdminSection(["management","overview","users","activity","database","settings","masters"].includes(section) ? section : "management");
+    };
+    window.addEventListener("popstate", syncSectionFromUrl);
+    return () => window.removeEventListener("popstate", syncSectionFromUrl);
+  }, []);
+
+  useEffect(() => {
+    if (user?.role !== "admin") return;
+    // Keep request count fresh in the background so the Profile notification dot works
+    // even when the admin dashboard is not open.
+    void loadAccountRequests().catch(() => {});
+    if (!adminOpen) return;
+    if (adminSection === "management") void loadAdminUsers();
+    if (["overview","users","activity"].includes(adminSection)) void loadAdminAnalytics(analyticsUserId, analyticsRange);
+    if (adminSection === "database") void loadDatabaseView(dbStartDate, dbEndDate);
+    if (adminSection === "settings") {
+      void loadJobCardCacheSettings();
+      void loadEmergencyDbUploadCutoff();
+      void loadRegistrationSearchSetting();
     }
-  }, [user?.role, adminOpen, analyticsIncludeAdmins]);
+    if (adminSection === "masters") {
+      void loadCampaignMeta();
+      void loadPriceMasterMeta();
+    }
+  }, [user?.role, adminOpen, adminSection]);
 
   const reviewCustomerRequest=(requestType,requestId,decision)=>run(async()=>{
     const r=await api("admin-review-customer-request",{requestType,requestId,decision},localStorage.getItem(TOKEN_KEY));

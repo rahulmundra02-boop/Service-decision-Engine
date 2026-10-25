@@ -1604,17 +1604,8 @@ export default async function handler(req, res) {
       const visibleVehicles=vehicles.rows;
       const vehicleIds=visibleVehicles.map(v=>Number(v.id)).filter(Number.isSafeInteger);
       let scheduleRows=[];
-      if(vehicleIds.length && wantsDue){
-        const history=await client.query(
-          `SELECT jc.vehicle_id,jc.job_card_no,jc.job_date,jc.cumulative_reading,jc.cumulative_unit,
-                  jc.secondary_cumulative_reading,jc.secondary_cumulative_unit,
-                  sh.item_category,sh.part_code,sh.part_description,sh.standardized_part,sh.quantity
-           FROM job_cards jc JOIN service_history sh ON sh.job_card_id=jc.id
-           WHERE jc.vehicle_id=ANY($1::bigint[])
-           ORDER BY jc.job_date ASC NULLS LAST,jc.id ASC,sh.id ASC`,
-          [vehicleIds]
-        );
-        scheduleRows=history.rows;
+      if(vehicleIds.length){
+        // Lightweight latest odometer/date is required on Home as well as the detailed Due view.
         const latestReadings=await client.query(
           `SELECT DISTINCT ON (jc.vehicle_id) jc.vehicle_id,jc.job_card_no,jc.job_date,jc.cumulative_reading,jc.cumulative_unit,
                   jc.secondary_cumulative_reading,jc.secondary_cumulative_unit
@@ -1622,6 +1613,18 @@ export default async function handler(req, res) {
            ORDER BY jc.vehicle_id,jc.job_date DESC NULLS LAST,jc.id DESC`,
           [vehicleIds]
         );
+        if(wantsDue){
+          const history=await client.query(
+            `SELECT jc.vehicle_id,jc.job_card_no,jc.job_date,jc.cumulative_reading,jc.cumulative_unit,
+                    jc.secondary_cumulative_reading,jc.secondary_cumulative_unit,
+                    sh.item_category,sh.part_code,sh.part_description,sh.standardized_part,sh.quantity
+             FROM job_cards jc JOIN service_history sh ON sh.job_card_id=jc.id
+             WHERE jc.vehicle_id=ANY($1::bigint[])
+             ORDER BY jc.job_date ASC NULLS LAST,jc.id ASC,sh.id ASC`,
+            [vehicleIds]
+          );
+          scheduleRows=history.rows;
+        }
         for(const row of latestReadings.rows){
           scheduleRows.push({...row,item_category:"",part_code:"",part_description:"",standardized_part:"",quantity:0});
         }

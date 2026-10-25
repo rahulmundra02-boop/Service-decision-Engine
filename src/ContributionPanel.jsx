@@ -94,7 +94,7 @@ export default function ContributionPanel({ user, onUpload }) {
   }
 
   async function submitTask() {
-    if (!task?.id || rows.length !== 50) return;
+    if (!task?.id || rows.length === 0) return;
     setBusy(true); setError(""); setMessage("");
     try {
       if (!file || typeof onUpload !== "function") throw new Error("Excel file select karein aur existing bulk upload pipeline ready hone dein.");

@@ -189,6 +189,15 @@ export default async function handler(req, res) {
         await client.query("COMMIT"); return res.json({success:true,status:"Cancelled"});
       }
       if (Number(task.rows[0].attempt_count)>=3) { await client.query("ROLLBACK"); return res.status(409).json({success:false,error:"Is task ke 3 attempts complete ho chuke hain."}); }
+      await client.query("SELECT pg_advisory_xact_lock(hashtext('contribution-task-queue'))");
+      try {
+        for (const rawVin of task.rows[0].vehicle_vins || []) {
+          await client.query("INSERT INTO contribution_vehicle_reservations(vin,task_id) VALUES($1,$2)",[normVin(rawVin),taskId]);
+        }
+      } catch (reservationError) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({success:false,error:"Is task ke kuch VIN kisi doosre active task mein reserve ho chuke hain. Naya task lein."});
+      }
       await client.query("UPDATE contribution_tasks SET status='Assigned',assigned_at=NOW(),expires_at=NOW()+INTERVAL '60 minutes',submitted_at=NULL,last_error=NULL,attempt_count=attempt_count+1 WHERE id=$1",[taskId]);
       await client.query("COMMIT"); return res.json({success:true,status:"Assigned",expiresInSeconds:3600});
     }

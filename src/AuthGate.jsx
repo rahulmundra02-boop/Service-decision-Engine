@@ -1798,15 +1798,17 @@ function AdminPanel({ view = "management", onNavigate = () => {}, users, custome
           <button className="auth-secondary admin-back" onClick={onBack}>Back to Dashboard</button>
         </div>
 
-        <div className="admin-kpi-grid">
+        {view === "overview" && <div className="admin-kpi-grid">
           {metricCard("Total Users", totals.users)}
           {metricCard("Active Users", totals.active)}
           {metricCard("Total Logins", totals.logins)}
           {metricCard("Vehicles Analysed", totals.vehicles)}
           {metricCard("Excel Files", totals.files)}
           {metricCard("Activities", totals.activities)}
-        </div>
+        </div>}
 
+
+        {view === "settings" && <>
         <div className="admin-panel-card" style={{marginTop:16,padding:"18px 20px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
             <div>
@@ -1875,6 +1877,9 @@ function AdminPanel({ view = "management", onNavigate = () => {}, users, custome
           </div>
         </div>
 
+        </>}
+
+        {view === "masters" && <>
         <div className="admin-panel-card" style={{marginTop:16,padding:"18px 20px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
             <div>
@@ -1970,30 +1975,40 @@ function AdminPanel({ view = "management", onNavigate = () => {}, users, custome
           <div style={{marginTop:12,fontSize:11,color:"#6b7280"}}>Required headers: Part No, Part Description, MRP. Same Part No duplicate rows me last valid row will be used. This master will be shared by Website and Android Estimate app.</div>
         </div>
 
+        </>}
+
         <div className="admin-analytics-toolbar professional">
           <div className="admin-dashboard-scope-tabs">
             <button className={analyticsIncludeAdmins ? "active" : ""} onClick={() => { onSetAnalyticsIncludeAdmins(true); onAnalytics(null, analyticsRange); }}>All Statistics (Including Admin)</button>
             <button className={!analyticsIncludeAdmins ? "active" : ""} onClick={() => { onSetAnalyticsIncludeAdmins(false); onAnalytics(null, analyticsRange); }}>Statistics Without Admin</button>
           </div>
-          <div className="admin-view-tabs">
+          <div className="admin-view-tabs admin-route-tabs">
             {[
-              ["overview","Overview"],
+              ["management","User Management"],
+              ["overview","Analytics Overview"],
               ["users","User Insights"],
               ["activity","Activity"],
               ["database","Database View"],
-              ["management","User Management"]
+              ["settings","System Settings"],
+              ["masters","Master Data"]
             ].map(([key,label])=>
               <button key={key} className={view===key ? "active" : ""} onClick={()=>{onNavigate(key);if(key==="management"&&accountRequests.some(r=>r.status==="pending"))setTimeout(()=>document.getElementById("pending-account-requests")?.scrollIntoView({behavior:"smooth",block:"start"}),100);}}>{label}{key==="management"&&accountRequests.some(r=>r.status==="pending")&&<span className="pending-request-dot" title="Pending account requests">●</span>}</button>
             )}
           </div>
-          <div className="admin-range-tabs">
-            {[1,7,30,90].map(days=>
-              <button key={days} className={analyticsRange===days ? "active" : ""} onClick={()=>onAnalytics(analyticsUserId,days)}>
-                {days === 1 ? "Today" : `${days}D`}
-              </button>
-            )}
-          </div>
-          {analyticsLoading && <span className="admin-loading-pill">Updating...</span>}
+          {["overview","users","activity"].includes(view) && <>
+            <div className="admin-dashboard-scope-tabs">
+              <button className={analyticsIncludeAdmins ? "active" : ""} onClick={() => { onSetAnalyticsIncludeAdmins(true); onAnalytics(null, analyticsRange); }}>All Statistics (Including Admin)</button>
+              <button className={!analyticsIncludeAdmins ? "active" : ""} onClick={() => { onSetAnalyticsIncludeAdmins(false); onAnalytics(null, analyticsRange); }}>Statistics Without Admin</button>
+            </div>
+            <div className="admin-range-tabs">
+              {[1,7,30,90].map(days=>
+                <button key={days} className={analyticsRange===days ? "active" : ""} onClick={()=>onAnalytics(analyticsUserId,days)}>
+                  {days === 1 ? "Today" : `${days}D`}
+                </button>
+              )}
+            </div>
+            {analyticsLoading && <span className="admin-loading-pill">Updating...</span>}
+          </>}
         </div>
 
         {view === "overview" && (

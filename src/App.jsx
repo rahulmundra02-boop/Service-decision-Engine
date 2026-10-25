@@ -6375,31 +6375,72 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   }
 
   async function upsertVehicleMaster(vehicles) {
-    const response = await fetchSaveHistory(`${API_BASE_URL}/api/save-history`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "upsert-vehicle-master", vehicles }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || !payload?.success) {
-      throw new Error(payload?.error || `Vehicle master update failed (${response.status})`);
+    const byVin = new Map();
+    for (const vehicle of vehicles || []) {
+      const vin = String(vehicle?.vin || vehicle?.chassis || "").trim().toUpperCase();
+      if (vin) byVin.set(vin, { ...vehicle, vin });
     }
-    return payload;
+    const uniqueVehicles = [...byVin.values()];
+    const batchSize = 100;
+    const result = { requestedVehicles: uniqueVehicles.length, upsertedVehicles: 0, failedVins: [], errors: [] };
+
+    for (let offset = 0; offset < uniqueVehicles.length; offset += batchSize) {
+      const batch = uniqueVehicles.slice(offset, offset + batchSize);
+      const batchVins = batch.map(vehicle => vehicle.vin);
+      try {
+        const response = await fetchSaveHistory(`${API_BASE_URL}/api/save-history`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "upsert-vehicle-master", vehicles: batch }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload?.success || Number(payload.upsertedVehicles || 0) !== batch.length) {
+          const message = payload?.error || `Vehicle master batch failed (${response.status}); expected ${batch.length}, updated ${Number(payload.upsertedVehicles || 0)}`;
+          result.failedVins.push(...batchVins);
+          result.errors.push({ offset, count: batch.length, vins: batchVins, message });
+          continue;
+        }
+        result.upsertedVehicles += Number(payload.upsertedVehicles || 0);
+      } catch (error) {
+        result.failedVins.push(...batchVins);
+        result.errors.push({ offset, count: batch.length, vins: batchVins, message: error?.message || "Vehicle master request failed" });
+      }
+    }
+    result.failedVins = [...new Set(result.failedVins)];
+    return result;
   }
 
   async function touchVehicleRefreshTimestamps(vins) {
     const uniqueVins = [...new Set((vins || []).map(value => String(value || "").trim().toUpperCase()).filter(Boolean))];
-    if (!uniqueVins.length) return { updatedVehicles: 0 };
-    const response = await fetchSaveHistory(`${API_BASE_URL}/api/save-history`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "touch-vehicle-refresh", vins: uniqueVins }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || !payload?.success) {
-      throw new Error(payload?.error || `Vehicle timestamp update failed (${response.status})`);
+    const result = { requestedVehicles: uniqueVins.length, updatedVehicles: 0, updatedVins: [], missingVins: [], failedVins: [], errors: [] };
+    const batchSize = 100;
+
+    for (let offset = 0; offset < uniqueVins.length; offset += batchSize) {
+      const batch = uniqueVins.slice(offset, offset + batchSize);
+      try {
+        const response = await fetchSaveHistory(`${API_BASE_URL}/api/save-history`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "touch-vehicle-refresh", vins: batch }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload?.success) {
+          result.failedVins.push(...(payload?.failedVins || batch));
+          result.errors.push({ offset, count: batch.length, vins: batch, message: payload?.error || `Timestamp batch failed (${response.status})` });
+          continue;
+        }
+        result.updatedVins.push(...(payload.updatedVins || []));
+        result.missingVins.push(...(payload.missingVins || []));
+        result.updatedVehicles += Number(payload.updatedVehicles || 0);
+      } catch (error) {
+        result.failedVins.push(...batch);
+        result.errors.push({ offset, count: batch.length, vins: batch, message: error?.message || "Timestamp request failed" });
+      }
     }
-    return payload;
+    result.updatedVins = [...new Set(result.updatedVins)];
+    result.missingVins = [...new Set(result.missingVins)];
+    result.failedVins = [...new Set(result.failedVins)];
+    return result;
   }
 
   async function saveHistoryInBackground(records) {
@@ -6466,7 +6507,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       setExcelData("");setUploadedFiles(accepted);setRegistrationSearchResult(null);setUploadMeta({files:result.files,failedFiles:result.failedFiles||[],rowsBefore:result.totalRowsBeforeDedup,duplicates:result.duplicateRowsIgnored,rowsAfter:parsedRows.length,invalidRows:result.invalidRows||[]});
       setAnalysis(null);setBulkResults([]);setBulkMeta(null);setCustomerGroups([]);setSelectedCustomers([]);setUploadParsedRecords(parsedRows);
       if(parsedRows.length){const vins=new Set(parsedRows.map(r=>String(r?.vin||"").trim().toUpperCase()).filter(Boolean));setMode(vins.size>1?"bulk":"single");logUsage("Excel Upload",{fileCount:accepted.length,vehicleCount:vins.size,details:{rows:parsedRows.length,files:accepted.map(f=>f.name)}});}
-      const diag = { filesSelected: files.length, filesRead: accepted.length, filesFailed: result.failedFiles || [], rowsBeforeDedup: Number(result.totalRowsBeforeDedup || 0), duplicateRowsIgnored: Number(result.duplicateRowsIgnored || 0), parsedRows: parsedRows.length, invalidRows: result.invalidRows || [], uniqueJobCards: 0, jobCardsAlreadyInDb: 0, jobCardsSubmitted: 0, jobCardsSaved: 0, serviceLinesSaved: 0, vehicleCount: 0, vehiclesUpserted: 0, vehicleMasterError: "", cutoff: false, outcomes: [], status: "processing", startedAt: new Date().toISOString() };
+      const diag = { filesSelected: files.length, filesRead: accepted.length, filesFailed: result.failedFiles || [], rowsBeforeDedup: Number(result.totalRowsBeforeDedup || 0), duplicateRowsIgnored: Number(result.duplicateRowsIgnored || 0), parsedRows: parsedRows.length, invalidRows: result.invalidRows || [], uniqueJobCards: 0, jobCardsAlreadyInDb: 0, jobCardsSubmitted: 0, jobCardsSaved: 0, newJobCardsInserted: 0, serviceLinesSaved: 0, vehicleCount: 0, vehiclesUpserted: 0, timestampsUpdated: 0, timestampFailedVins: [], timestampErrors: [], failedVins: [], failedOperations: [], vehicleMasterError: "", cutoff: false, outcomes: [], status: "processing", startedAt: new Date().toISOString() };
       setUploadDiagnostic(diag);
       if(!parsedRows.length&&result.failedFiles?.length)setError(result.failedFiles.map(x=>`${x.name} — ${x.reason}`).join(" | "));
       if(parsedRows.length){
@@ -6481,32 +6522,45 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
           try{
             const cutoff=await fetchEmergencyDbUploadCutoff();
             diag.cutoff=Boolean(cutoff.enabled);
-            try{
-              const vehicleMasterRecords=uploadedVins.map(vin=>{
-                const vehicleRows=parsedRows.filter(record=>String(record?.vin||"").trim().toUpperCase()===vin);
-                const dateKey=value=>{
-                  const raw=String(value??"").trim();
-                  const iso=raw.match(/^(\d{4}-\d{2}-\d{2})/);
-                  if(iso)return iso[1];
-                  const parsed=new Date(value);
-                  return Number.isNaN(parsed.getTime())?"":parsed.toISOString().slice(0,10);
-                };
-                const datedRows=vehicleRows.map(record=>({record,date:dateKey(record?.date)}))
-                  .filter(item=>item.date&&String(item.record?.reg||item.record?.registration||"").trim())
-                  .sort((a,b)=>b.date.localeCompare(a.date)||normalizeJobCard(b.record?.jobCard).localeCompare(normalizeJobCard(a.record?.jobCard)));
-                const vehicle=deriveVehicle(vehicleRows);
-                const latest=datedRows[0];
-                return {...vehicle,registration:latest?(latest.record.reg||latest.record.registration):vehicle.registration,
-                  latestJobDate:latest?.date||null};
-              });
-              const masterResult=await upsertVehicleMaster(vehicleMasterRecords);
-              diag.vehiclesUpserted=Number(masterResult.upsertedVehicles||0);
-              if(diag.vehiclesUpserted<uploadedVins.length)throw new Error(`Vehicle master update count mismatch: expected ${uploadedVins.length}, updated ${diag.vehiclesUpserted}`);
-            }catch(refreshError){
-              console.error("Vehicle master upsert failed in background:",refreshError);
-              diag.vehicleMasterError=refreshError?.message||"Vehicle master upsert failed";
+            const vehicleMasterRecords=uploadedVins.map(vin=>{
+              const vehicleRows=parsedRows.filter(record=>String(record?.vin||"").trim().toUpperCase()===vin);
+              const dateKey=value=>{
+                const raw=String(value??"").trim();
+                const iso=raw.match(/^(\d{4}-\d{2}-\d{2})/);
+                if(iso)return iso[1];
+                const parsed=new Date(value);
+                return Number.isNaN(parsed.getTime())?"":parsed.toISOString().slice(0,10);
+              };
+              const datedRows=vehicleRows.map(record=>({record,date:dateKey(record?.date)}))
+                .filter(item=>item.date&&String(item.record?.reg||item.record?.registration||"").trim())
+                .sort((a,b)=>b.date.localeCompare(a.date)||normalizeJobCard(b.record?.jobCard).localeCompare(normalizeJobCard(a.record?.jobCard)));
+              const vehicle=deriveVehicle(vehicleRows);
+              const latest=datedRows[0];
+              return {...vehicle,registration:latest?(latest.record.reg||latest.record.registration):vehicle.registration,
+                latestJobDate:latest?.date||null};
+            });
+
+            // Batch the master upsert, then independently touch every uploaded VIN.
+            // This makes timestamp updates independent from browser Job Card cache/deduplication.
+            const masterResult=await upsertVehicleMaster(vehicleMasterRecords);
+            diag.vehiclesUpserted=Number(masterResult.upsertedVehicles||0);
+            if(masterResult.failedVins?.length){
+              diag.failedVins.push(...masterResult.failedVins);
+              diag.failedOperations.push(...(masterResult.errors||[]).map(error=>({operation:"vehicle-master-upsert",...error})));
+              diag.vehicleMasterError=`Vehicle Master upsert failed for ${masterResult.failedVins.length} VIN(s).`;
+              console.error("Vehicle master upsert batch errors:",masterResult.errors);
             }
-            if(cutoff.enabled){diag.status="paused";return;}
+
+            const timestampResult=await touchVehicleRefreshTimestamps(uploadedVins);
+            diag.timestampsUpdated=Number(timestampResult.updatedVehicles||0);
+            diag.timestampFailedVins=[...new Set([...(timestampResult.failedVins||[]),...(timestampResult.missingVins||[])])];
+            diag.timestampErrors=timestampResult.errors||[];
+            if(diag.timestampFailedVins.length){
+              diag.failedVins.push(...diag.timestampFailedVins);
+              diag.failedOperations.push(...diag.timestampErrors.map(error=>({operation:"timestamp-update",...error})));
+            }
+            diag.failedVins=[...new Set(diag.failedVins)];
+            if(cutoff.enabled){diag.status=diag.timestampFailedVins.length||masterResult.failedVins?.length?"completed-with-errors":"paused";return;}
             const cards=parsedRows.map(r=>normalizeJobCard(r?.jobCard)).filter(Boolean);
             const fresh=await getHybridNewJobCards(API_BASE_URL,cards,candidates=>checkNewJobCards(API_BASE_URL,candidates));
             diag.jobCardsSubmitted=fresh.size;
@@ -6515,8 +6569,9 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
             const outcomes=records.length?await saveHistoryInBackground(records):[];
             diag.outcomes=outcomes;
             diag.jobCardsSaved=outcomes.reduce((sum,item)=>sum+item.newJobCardsSaved,0);
+            diag.newJobCardsInserted=diag.jobCardsSaved;
             diag.serviceLinesSaved=outcomes.reduce((sum,item)=>sum+item.newServiceLines,0);
-            diag.status=outcomes.some(item=>item.status==="failed")||diag.vehicleMasterError?"completed-with-errors":"completed";
+            diag.status=outcomes.some(item=>item.status==="failed")||diag.vehicleMasterError||diag.timestampFailedVins.length?"completed-with-errors":"completed";
           }catch(backgroundError){
             console.error("Background database sync failed:",backgroundError);
             diag.status="completed-with-errors";
@@ -9694,6 +9749,33 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                 {(uploadMeta.invalidRows||[]).length>0&&<details style={{marginTop:7}}><summary style={{cursor:"pointer",fontWeight:700}}>Show invalid/skipped rows ({uploadMeta.invalidRows.length})</summary><ul style={{margin:"6px 0 0",paddingLeft:20}}>{uploadMeta.invalidRows.slice(0,100).map((x,i)=><li key={i}>{x.fileName||"Unknown file"} — Row {x.rowNumber}: {x.reason}</li>)}</ul>{uploadMeta.invalidRows.length>100&&<div>Showing first 100 rows.</div>}</details>}
                 {(uploadMeta.failedFiles||[]).length>0&&<div style={{marginTop:7}}><b>Failed files:</b> {uploadMeta.failedFiles.map(x=>x.name).join(", ")}</div>}
               </div>}
+              {uploadDiagnostic && (
+                <div className="no-print" style={{marginTop:10,padding:"10px 12px",border:"1px solid #cbd5e1",borderRadius:8,background:"var(--panel-bg, #f8fafc)",fontSize:12}}>
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",fontWeight:800}}>
+                    <span>Database Upload Diagnostic</span>
+                    <span className={uploadDiagnostic.status==="completed"?"status-pill green":uploadDiagnostic.status==="completed-with-errors"?"status-pill red":"status-pill blue"}>{uploadDiagnostic.status||"processing"}</span>
+                    <button type="button" className="excel-button compact" onClick={()=>{
+                      const blob=new Blob([JSON.stringify(uploadDiagnostic,null,2)],{type:"application/json"});
+                      const url=URL.createObjectURL(blob);const link=document.createElement("a");
+                      link.href=url;link.download="service-decision-upload-diagnostic.json";link.click();
+                      window.setTimeout(()=>URL.revokeObjectURL(url),1000);
+                    }}>Download Diagnostic JSON</button>
+                  </div>
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:8}}>
+                    <span className="status-pill">Unique vehicles: {Number(uploadDiagnostic.vehicleCount||0).toLocaleString()}</span>
+                    <span className="status-pill">Vehicle Master inserted/updated: {Number(uploadDiagnostic.vehiclesUpserted||0).toLocaleString()}</span>
+                    <span className="status-pill">Timestamps updated: {Number(uploadDiagnostic.timestampsUpdated||0).toLocaleString()}</span>
+                    <span className="status-pill">Existing Job Cards: {Number(uploadDiagnostic.jobCardsAlreadyInDb||0).toLocaleString()}</span>
+                    <span className="status-pill">New Job Cards inserted: {Number(uploadDiagnostic.newJobCardsInserted||uploadDiagnostic.jobCardsSaved||0).toLocaleString()}</span>
+                    <span className="status-pill">Service lines inserted: {Number(uploadDiagnostic.serviceLinesSaved||0).toLocaleString()}</span>
+                    <span className="status-pill">Failed VINs: {(uploadDiagnostic.failedVins||[]).length.toLocaleString()}</span>
+                  </div>
+                  {(uploadDiagnostic.timestampFailedVins||[]).length>0&&<details style={{marginTop:8}} open><summary style={{cursor:"pointer",fontWeight:700}}>Timestamp failures / missing VINs ({uploadDiagnostic.timestampFailedVins.length})</summary><div style={{maxHeight:180,overflow:"auto",marginTop:6,overflowWrap:"anywhere"}}>{uploadDiagnostic.timestampFailedVins.join(", ")}</div></details>}
+                  {(uploadDiagnostic.failedOperations||[]).length>0&&<details style={{marginTop:8}}><summary style={{cursor:"pointer",fontWeight:700}}>Failed operations ({uploadDiagnostic.failedOperations.length})</summary><pre style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere",maxHeight:180,overflow:"auto"}}>{JSON.stringify(uploadDiagnostic.failedOperations,null,2)}</pre></details>}
+                  {uploadDiagnostic.vehicleMasterError&&<div style={{color:"#b91c1c",marginTop:6,fontWeight:700}}>{uploadDiagnostic.vehicleMasterError}</div>}
+                  {uploadDiagnostic.timestampErrors?.length>0&&<div style={{color:"#b91c1c",marginTop:6}}>Timestamp error batches: {uploadDiagnostic.timestampErrors.length}</div>}
+                </div>
+              )}
               {mode === "single" && analysis && (
                 <div className="no-print" style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
                   <button

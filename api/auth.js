@@ -1613,7 +1613,8 @@ export default async function handler(req, res) {
            ORDER BY jc.vehicle_id,jc.job_date DESC NULLS LAST,jc.id DESC`,
           [vehicleIds]
         );
-        if(wantsDue){
+        if(section==="home"||wantsDue){
+          // Load full service history on Home once; the browser session cache reuses it in Due.
           const history=await client.query(
             `SELECT jc.vehicle_id,jc.job_card_no,jc.job_date,jc.cumulative_reading,jc.cumulative_unit,
                     jc.secondary_cumulative_reading,jc.secondary_cumulative_unit,

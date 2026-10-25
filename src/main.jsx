@@ -3,6 +3,69 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
 
+
+/*
+ * Global non-blocking network activity indicator.
+ * It observes fetch requests across AL Executive, customer and admin screens.
+ * It never disables clicks and does not replace existing page-specific loaders.
+ */
+let activeNetworkRequests = 0;
+const nativeFetch = window.fetch.bind(window);
+window.fetch = (...args) => {
+  activeNetworkRequests += 1;
+  window.dispatchEvent(new CustomEvent('service-decision:network-activity', { detail: activeNetworkRequests }));
+  return nativeFetch(...args).finally(() => {
+    activeNetworkRequests = Math.max(0, activeNetworkRequests - 1);
+    window.dispatchEvent(new CustomEvent('service-decision:network-activity', { detail: activeNetworkRequests }));
+  });
+};
+
+function GlobalNetworkActivity() {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    let showTimer = null;
+    let hideTimer = null;
+    const update = (event) => {
+      const count = Number(event.detail || 0);
+      if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+      if (count > 0) {
+        if (!showTimer && !visible) {
+          showTimer = setTimeout(() => {
+            setVisible(true);
+            showTimer = null;
+          }, 220);
+        }
+      } else {
+        if (showTimer) { clearTimeout(showTimer); showTimer = null; }
+        hideTimer = setTimeout(() => setVisible(false), 180);
+      }
+    };
+    window.addEventListener('service-decision:network-activity', update);
+    if (activeNetworkRequests > 0) update({ detail: activeNetworkRequests });
+    return () => {
+      window.removeEventListener('service-decision:network-activity', update);
+      if (showTimer) clearTimeout(showTimer);
+      if (hideTimer) clearTimeout(hideTimer);
+    };
+  }, [visible]);
+
+  if (!visible) return null;
+  return (
+    <div role="status" aria-live="polite" aria-label="Processing request" style={{
+      position:'fixed', top:'max(8px, env(safe-area-inset-top))', right:'max(8px, env(safe-area-inset-right))',
+      zIndex:2147483646, display:'flex', alignItems:'center', gap:7,
+      padding:'7px 10px', borderRadius:999, background:'rgba(18,45,67,.96)',
+      color:'#fff', boxShadow:'0 3px 12px rgba(0,0,0,.22)', fontSize:11, fontWeight:800,
+      pointerEvents:'none', userSelect:'none'
+    }}>
+      <span aria-hidden="true" style={{width:14,height:14,border:'2px solid rgba(255,255,255,.35)',borderTopColor:'#52d18a',borderRadius:'50%',display:'inline-block',boxSizing:'border-box',animation:'serviceDecisionGlobalSpin .7s linear infinite'}} />
+      Processing
+      <style>{'@keyframes serviceDecisionGlobalSpin{to{transform:rotate(360deg)}}'}</style>
+    </div>
+  );
+}
+
 function PwaInstallControl() {
   const [installPrompt, setInstallPrompt] = useState(null)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -125,6 +188,7 @@ function PwaInstallControl() {
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <App />
+    <GlobalNetworkActivity />
     <PwaInstallControl />
   </StrictMode>,
 )

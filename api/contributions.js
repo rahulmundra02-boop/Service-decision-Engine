@@ -111,7 +111,11 @@ async function dashboard(client, user) {
        FROM contribution_points_ledger WHERE user_id=$1 AND month_start=$2`, [user.id, ms]);
   const points = Number(earned.rows[0]?.earned || 0);
   const balance = Number(earned.rows[0]?.balance || 0);
-  const previousMonth = new Date(Date.UTC(Number(ms.slice(0,4)), Number(ms.slice(5,7))-1, 1)); previousMonth.setUTCMonth(previousMonth.getUTCMonth()-1); const prevMs = previousMonth.toISOString().slice(0,10);\n  const previousBalanceResult = await client.query(\n    `SELECT COALESCE(SUM(CASE WHEN entry_type IN ('earned','received','admin_adjustment') THEN points WHEN entry_type IN ('donated','used_for_eligibility','expired') THEN -points ELSE 0 END),0)::int AS balance FROM contribution_points_ledger WHERE user_id=$1 AND month_start=$2`, [user.id, prevMs]);\n  const eligibilityBalance = Number(previousBalanceResult.rows[0]?.balance || 0);\n  const eligible = user.role === "admin" || month.free_month || eligibilityBalance >= 50;
+  const previousMonth = new Date(Date.UTC(Number(ms.slice(0,4)), Number(ms.slice(5,7))-1, 1)); previousMonth.setUTCMonth(previousMonth.getUTCMonth()-1); const prevMs = previousMonth.toISOString().slice(0,10);
+  const previousBalanceResult = await client.query(
+    `SELECT COALESCE(SUM(CASE WHEN entry_type IN ('earned','received','admin_adjustment') THEN points WHEN entry_type IN ('donated','used_for_eligibility','expired') THEN -points ELSE 0 END),0)::int AS balance FROM contribution_points_ledger WHERE user_id=$1 AND month_start=$2`, [user.id, prevMs]);
+  const eligibilityBalance = Number(previousBalanceResult.rows[0]?.balance || 0);
+  const eligible = user.role === "admin" || month.free_month || eligibilityBalance >= 50;
   const task = await client.query(
     `SELECT id,status,vehicle_vins,assigned_at,expires_at,submitted_at,completed_at,attempt_count
        FROM contribution_tasks WHERE assigned_user_id=$1 AND status IN ('Assigned','Submitted','Processing','Failed','Expired')

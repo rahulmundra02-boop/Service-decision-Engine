@@ -366,7 +366,10 @@ export default function AuthGate({ children }) {
   const loadPriceMasterMeta = async () => {
     try {
       const response = await fetch("/api/save-history?priceMasterMeta=1", { cache: "no-store", headers: { Authorization: "Bearer " + (localStorage.getItem(TOKEN_KEY) || "") } });
-      const data = await response.json();
+      const raw = await response.text();
+      let data;
+      try { data = JSON.parse(raw); }
+      catch { throw new Error("Price List status request returned a server error (HTTP " + response.status + "). The upload may have completed; refresh the status before uploading again."); }
       if (!response.ok || data?.success === false) throw new Error(data?.error || "Unable to load Price List status.");
       setPriceMasterMeta({
         version:Number(data?.version || 0),
@@ -444,7 +447,10 @@ export default function AuthGate({ children }) {
             rows:batch
           })
         });
-        const data=await response.json().catch(()=>({}));
+        const raw=await response.text();
+        let data;
+        try { data=JSON.parse(raw); }
+        catch { throw new Error("Price List upload server returned an invalid response (HTTP " + response.status + "). Please refresh Price List status before retrying."); }
         if(!response.ok || data?.success===false) throw new Error(data?.error || "Price List upload failed.");
         setPriceMasterUploadMessage(
           "Uploading Price List… " +
@@ -456,12 +462,15 @@ export default function AuthGate({ children }) {
         }
       }
       await loadPriceMasterMeta();
-      const latest=await fetch("/api/save-history?priceMaster=1");
-      const latestData=await latest.json().catch(()=>({}));
+      const latest=await fetch("/api/save-history?priceMasterMeta=1", {cache:"no-store",headers:{Authorization:"Bearer " + (localStorage.getItem(TOKEN_KEY) || "")}});
+      const latestRaw=await latest.text();
+      let latestData;
+      try { latestData=JSON.parse(latestRaw); }
+      catch { latestData=null; }
       setPriceMasterUploadMessage(
         rows.length.toLocaleString("en-IN") +
         " parts uploaded successfully. Price List Version " +
-        Number(latestData?.version || 0) + "."
+        Number(latestData?.version || priceMasterMeta?.version || 0) + "."
       );
     } catch(e) {
       setPriceMasterUploadError(e.message || "Price List upload failed.");

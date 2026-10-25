@@ -41,8 +41,15 @@ CREATE TABLE IF NOT EXISTS contribution_task_vehicles (
   vin TEXT NOT NULL,
   PRIMARY KEY (task_id, vin)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS uq_contribution_active_vehicle
-  ON contribution_task_vehicles (UPPER(TRIM(vin)));
+
+-- Active reservations are kept separately so completed/cancelled task history
+-- does not permanently block a VIN from future eligibility.
+CREATE TABLE IF NOT EXISTS contribution_vehicle_reservations (
+  vin TEXT PRIMARY KEY,
+  task_id UUID NOT NULL REFERENCES contribution_tasks(id) ON DELETE CASCADE,
+  reserved_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (task_id, vin)
+);
 
 CREATE TABLE IF NOT EXISTS contribution_points_ledger (
   id BIGSERIAL PRIMARY KEY,

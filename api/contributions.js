@@ -100,6 +100,7 @@ async function ensureSchema(client) {
 
 async function dashboard(client, user) {
   const ms = monthStart();
+    await client.query("INSERT INTO contribution_months(month_start,month_end,target_points,free_month) VALUES($1,$2,50,FALSE) ON CONFLICT(month_start) DO NOTHING", [ms, monthEnd(ms)]);
   await client.query(
     `INSERT INTO contribution_months(month_start,month_end,target_points,free_month)
      VALUES($1,$2,50,FALSE) ON CONFLICT(month_start) DO NOTHING`, [ms, monthEnd(ms)]);
@@ -135,9 +136,11 @@ export default async function handler(req, res) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await ensureSchema(client);
     const user = await auth(client, req);
     if (!user) { await client.query("ROLLBACK"); return res.status(401).json({success:false,error:"Session expired. Please sign in again."}); }
+    await client.query("SELECT pg_advisory_xact_lock(hashtext('contribution-schema-bootstrap'))");
+    await ensureSchema(client);
+    await ensureSchema(client);
     const body = req.body || {};
     const action = clean(body.action);
     const ms = monthStart();
@@ -253,7 +256,7 @@ export default async function handler(req, res) {
       if (!/^\d{10}$/.test(receiverMobile) || !Number.isInteger(points) || points<1 || points>50) {
         await client.query("ROLLBACK"); return res.status(400).json({success:false,error:"Registered 10-digit mobile aur valid points enter karein."});
       }
-      const receiver = await client.query("SELECT id FROM app_users WHERE regexp_replace(COALESCE(mobile,''),'\D','','g') IN ($1,$2) AND status='active' LIMIT 1",[receiverMobile,`91${receiverMobile}`]);
+      const receiver = await client.query("SELECT id FROM app_users WHERE regexp_replace(COALESCE(mobile,''),'\\\\D','','g') IN ($1,$2) AND status='active' LIMIT 1",[receiverMobile,`91${receiverMobile}`]);
       if (!receiver.rows[0]) { await client.query("ROLLBACK"); return res.status(404).json({success:false,error:"Is mobile se active registered account nahi mila."}); }
       if (String(receiver.rows[0].id)===String(user.id)) { await client.query("ROLLBACK"); return res.status(400).json({success:false,error:"Apne account ko points donate nahi kar sakte."}); }
       const d = await dashboard(client,user);

@@ -9780,12 +9780,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                   <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",fontWeight:800}}>
                     <span>Database Upload Diagnostic</span>
                     <span className={uploadDiagnostic.status==="completed"?"status-pill green":uploadDiagnostic.status==="completed-with-errors"?"status-pill red":"status-pill blue"}>{uploadDiagnostic.status||"processing"}</span>
-                    <button type="button" className="excel-button compact" onClick={()=>{
-                      const blob=new Blob([JSON.stringify(uploadDiagnostic,null,2)],{type:"application/json"});
-                      const url=URL.createObjectURL(blob);const link=document.createElement("a");
-                      link.href=url;link.download="service-decision-upload-diagnostic.json";link.click();
-                      window.setTimeout(()=>URL.revokeObjectURL(url),1000);
-                    }}>Download Diagnostic JSON</button>
+                    
                   </div>
                   <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:8}}>
                     <span className="status-pill">Unique vehicles: {Number(uploadDiagnostic.vehicleCount||0).toLocaleString()}</span>

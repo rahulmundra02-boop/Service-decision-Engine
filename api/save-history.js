@@ -5,7 +5,12 @@ import { Pool } from "pg";
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL || process.env.DATABASE_URL1,
   ssl: { rejectUnauthorized: false },
-  max: 4,
+  // Neon session-mode pool is limited to 15 total clients across serverless instances.
+  // One connection per function plus a short idle timeout prevents pool exhaustion.
+  max: 1,
+  idleTimeoutMillis: 1000,
+  connectionTimeoutMillis: 8000,
+  allowExitOnIdle: true,
 });
 
 function normalizeJobCard(value) {

@@ -1696,6 +1696,20 @@ function AdminPanel({ view = "management", onNavigate = () => {}, users, custome
   const [reviewCompanySearch, setReviewCompanySearch] = useState("");
   const [showOtherCompanies, setShowOtherCompanies] = useState(false);
 
+  const loadTimestampPage = async (offset = timestampPage) => {
+    setTimestampLoading(true); setTimestampError("");
+    try { const data = await api("admin-vehicle-timestamp-list", { offset }, localStorage.getItem(TOKEN_KEY)); setTimestampRows(data.rows || []); setTimestampTotal(Number(data.total || 0)); setTimestampPage(Number(data.offset || 0)); }
+    catch (e) { setTimestampError(e.message || "Unable to load vehicle timestamp list."); }
+    finally { setTimestampLoading(false); }
+  };
+  const copyVinList = async (values, label) => {
+    const text = (values || []).map(v => String(typeof v === "string" ? v : v?.vin || "").trim()).filter(Boolean).join("\n");
+    if (!text) { setTimestampError("There are no chassis/VIN numbers to copy."); return; }
+    try { await navigator.clipboard.writeText(text); setTimestampCopied(label); setTimeout(() => setTimestampCopied(""), 2200); }
+    catch { try { const el=document.createElement("textarea");el.value=text;el.style.position="fixed";el.style.opacity="0";document.body.appendChild(el);el.select();const ok=document.execCommand("copy");el.remove();if(!ok)throw new Error("copy failed");setTimestampCopied(label);setTimeout(()=>setTimestampCopied(""),2200); } catch { setTimestampError("Clipboard copy failed. Please allow clipboard access and try again."); } }
+  };
+  useEffect(() => { if (view === "management") void loadTimestampPage(0); }, [view]);
+
   const localDateString = (date = new Date()) => {
     const y = date.getFullYear();
     const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -1710,6 +1724,12 @@ function AdminPanel({ view = "management", onNavigate = () => {}, users, custome
   const [dbData, setDbData] = useState(null);
   const [dbLoading, setDbLoading] = useState(false);
   const [dbError, setDbError] = useState("");
+  const [timestampPage, setTimestampPage] = useState(0);
+  const [timestampRows, setTimestampRows] = useState([]);
+  const [timestampTotal, setTimestampTotal] = useState(0);
+  const [timestampLoading, setTimestampLoading] = useState(false);
+  const [timestampError, setTimestampError] = useState("");
+  const [timestampCopied, setTimestampCopied] = useState("");
   const loadDatabaseView = async (startDate = dbStartDate, endDate = dbEndDate) => {
     setDbLoading(true);
     setDbError("");
@@ -2179,10 +2199,31 @@ function AdminPanel({ view = "management", onNavigate = () => {}, users, custome
               <h4>Pending Vehicle Requests ({customerAccessData.vehicleRequests.length})</h4><div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>User</th><th>Email</th><th>VIN / Chassis</th><th>Requested</th><th>Action</th></tr></thead><tbody>
               {customerAccessData.vehicleRequests.map(r=><tr key={r.id}><td>{r.person_name}</td><td>{r.email}</td><td>{r.vin}</td><td>{new Date(r.created_at).toLocaleString()}</td><td><div className="admin-row-actions"><button onClick={()=>onReviewCustomerRequest("vehicle",r.id,"approve")}>Approve</button><button onClick={()=>onReviewCustomerRequest("vehicle",r.id,"reject")}>Reject</button></div></td></tr>)}
               {!customerAccessData.vehicleRequests.length&&<tr><td colSpan="5" className="admin-empty">No pending vehicle requests.</td></tr>}</tbody></table></div>
-              <h4>Customer Timestamp / History Update Requests ({(customerAccessData.timestampRequests||[]).length})</h4>
-              <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Customer</th><th>Email</th><th>Registration</th><th>VIN / Chassis</th><th>Last DB Refresh</th><th>Requested</th></tr></thead><tbody>
-              {(customerAccessData.timestampRequests||[]).map(r=><tr key={r.id}><td>{r.person_name}</td><td>{r.email}</td><td>{r.registration||"—"}</td><td>{r.vin}</td><td>{r.last_refreshed_at?new Date(r.last_refreshed_at).toLocaleString():"Unavailable"}</td><td>{new Date(r.created_at).toLocaleString()}</td></tr>)}
-              {!(customerAccessData.timestampRequests||[]).length&&<tr><td colSpan="6" className="admin-empty">No pending timestamp update requests.</td></tr>}</tbody></table></div>
+               <div className="admin-users-header" style={{marginTop:16,alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                 <h4 style={{margin:0}}>Customer Timestamp / History Update Requests ({(customerAccessData.timestampRequests||[]).length})</h4>
+                 <button type="button" className="auth-secondary admin-refresh" style={{width:"auto"}} onClick={()=>void copyVinList(customerAccessData.timestampRequests||[],"requests")} disabled={!(customerAccessData.timestampRequests||[]).length}>Copy All Chassis</button>
+               </div>
+               {timestampCopied==="requests" && <div className="admin-panel-card-sub" role="status">Chassis/VIN numbers copied.</div>}
+               <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Customer</th><th>Email</th><th>Registration</th><th>VIN / Chassis</th><th>Last DB Refresh</th><th>Requested</th></tr></thead><tbody>
+               {(customerAccessData.timestampRequests||[]).map(r=><tr key={r.id}><td>{r.person_name}</td><td>{r.email}</td><td>{r.registration||"—"}</td><td>{r.vin}</td><td>{r.last_refreshed_at?new Date(r.last_refreshed_at).toLocaleString():"Unavailable"}</td><td>{new Date(r.created_at).toLocaleString()}</td></tr>)}
+               {!(customerAccessData.timestampRequests||[]).length&&<tr><td colSpan="6" className="admin-empty">No pending timestamp update requests.</td></tr>}</tbody></table></div>
+
+               <div className="admin-users-header" style={{marginTop:22,alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                 <h4 style={{margin:0}}>Vehicle Database Timestamp List</h4>
+                 <button type="button" className="auth-secondary admin-refresh" style={{width:"auto"}} onClick={()=>void copyVinList(timestampRows,"page")} disabled={!timestampRows.length}>Copy 50 Chassis</button>
+               </div>
+               <div className="admin-panel-card-sub">Oldest to newest by last timestamp update. Showing {timestampRows.length ? timestampPage+1 : 0}–{Math.min(timestampPage+timestampRows.length,timestampTotal)} of {timestampTotal.toLocaleString("en-IN")}.</div>
+               {timestampCopied==="page" && <div className="admin-panel-card-sub" role="status">Visible chassis/VIN numbers copied.</div>}
+               {timestampError && <div className="admin-error" role="alert" style={{marginTop:8}}>{timestampError}</div>}
+               <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>VIN / Chassis</th><th>Last Timestamp Update</th></tr></thead><tbody>
+                 {timestampRows.map((r,i)=><tr key={r.vin+"-"+i}><td>{r.vin}</td><td>{r.last_refreshed_at?new Date(r.last_refreshed_at).toLocaleString():"Never updated"}</td></tr>)}
+                 {!timestampRows.length&&<tr><td colSpan="2" className="admin-empty">{timestampLoading?"Loading vehicle timestamp list…":"No vehicles found."}</td></tr>}
+               </tbody></table></div>
+               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,marginTop:10,flexWrap:"wrap"}}>
+                 <button type="button" className="auth-secondary" style={{width:"auto"}} onClick={()=>void loadTimestampPage(Math.max(0,timestampPage-50))} disabled={timestampLoading||timestampPage===0}>← Previous 50</button>
+                 <span className="admin-panel-card-sub">Page {Math.floor(timestampPage/50)+1} of {Math.max(1,Math.ceil(timestampTotal/50))}</span>
+                 <button type="button" className="auth-secondary" style={{width:"auto"}} onClick={()=>void loadTimestampPage(timestampPage+50)} disabled={timestampLoading||timestampPage+50>=timestampTotal}>Next 50 →</button>
+               </div>
               <h4>Direct Vehicle Assignment</h4><div className="admin-inline-assign"><select value={directVehicleForm.userId} onChange={e=>setDirectVehicleForm(v=>({...v,userId:e.target.value}))}><option value="">Select customer</option>{customerAccessData.customers.map(c=><option key={c.id} value={c.id}>{c.person_name} · {c.email}</option>)}</select><input value={directVehicleForm.vin} onChange={e=>setDirectVehicleForm(v=>({...v,vin:e.target.value.toUpperCase()}))} placeholder="VIN / chassis number"/><button className="auth-primary" style={{width:"auto",marginTop:0}} disabled={loading||!directVehicleForm.userId||!directVehicleForm.vin.trim()} onClick={onAssignCustomerVehicle}>Assign Vehicle</button></div>
             </div>
             <div className="admin-grid admin-management-grid">

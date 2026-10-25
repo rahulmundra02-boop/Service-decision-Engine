@@ -6148,7 +6148,28 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       bulkColumnWidths: normalizeWidthMap({ ...defaultBulkWidths, ...(preferences.bulkColumnWidths || {}) }, bulkWidthKeys),
     };
   };
+  const servicePreferenceDefaults = { engineOil:true, gearOil:true, axleOil:true, hubGreasing:true, defFilter:true, defInlineFilter:true };
   const [dashboardPrefs, setDashboardPrefs] = useState(() => normalizeDashboardPrefs(user?.preferences || {}));
+  const customerPrefs = {
+    bsviOnly: Boolean(dashboardPrefs.bsviOnly),
+    serviceAggregates: { ...servicePreferenceDefaults, ...(dashboardPrefs.serviceAggregates || {}) }
+  };
+  const [prefsNotice, setPrefsNotice] = useState("");
+  const [showResetPrefsConfirm, setShowResetPrefsConfirm] = useState(false);
+  const servicePreferenceLabels = { engineOil:"Engine Oil", gearOil:"Gear Oil", axleOil:"Axle Oil", hubGreasing:"Hub Greasing", defFilter:"DEF Filter", defInlineFilter:"DEF Inline Filter" };
+  const saveCustomerPreference = async (patch) => {
+    const next = normalizeDashboardPrefs({ ...dashboardPrefs, ...patch });
+    await persistDashboardPrefs(next);
+    setPrefsNotice("Preferences saved.");
+    window.setTimeout(() => setPrefsNotice(""), 2200);
+  };
+  const setAggregatePreference = (key, checked) => saveCustomerPreference({
+    serviceAggregates: { ...customerPrefs.serviceAggregates, [key]: checked }
+  });
+  const resetCustomerPreferences = () => saveCustomerPreference({
+    bsviOnly:false,
+    serviceAggregates:{ ...servicePreferenceDefaults }
+  });
   const changeDashboardTheme = (theme) => { const nextTheme = String(theme || "blue"); void persistDashboardPrefs({ ...dashboardPrefs, theme: nextTheme }); };
   useEffect(() => { setDashboardPrefs(normalizeDashboardPrefs(user?.preferences || {})); }, [user?.id, user?.preferences]);
   const singleTableColumns = dashboardPrefs.singleColumns;
@@ -7136,9 +7157,31 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     return lists;
   }, [bulkResults]);
 
+  const bsviEligible = item => {
+    const sale = item?.vehicle?.sale ? new Date(item.vehicle.sale) : null;
+    return Boolean(sale && !Number.isNaN(sale.getTime()) && sale > new Date("2020-04-01T00:00:00"));
+  };
+  const customerFilteredResults = useMemo(() => {
+    const eligible = customerPrefs.bsviOnly ? bulkResults.filter(bsviEligible) : bulkResults;
+    const aggregateKeys = Object.entries(customerPrefs.serviceAggregates).filter(([,enabled])=>!enabled).map(([key])=>key);
+    if (!aggregateKeys.length) return eligible;
+    return eligible.map(item => {
+      const services = (item.services || []).filter(service => {
+        const s = String(service).toLowerCase();
+        if (customerPrefs.serviceAggregates.engineOil === false && /engine oil/.test(s)) return false;
+        if (customerPrefs.serviceAggregates.gearOil === false && /gear oil/.test(s)) return false;
+        if (customerPrefs.serviceAggregates.axleOil === false && /axle oil/.test(s)) return false;
+        if (customerPrefs.serviceAggregates.hubGreasing === false && /hub greas/.test(s)) return false;
+        if (customerPrefs.serviceAggregates.defFilter === false && /def filter/.test(s) && !/inline/.test(s)) return false;
+        if (customerPrefs.serviceAggregates.defInlineFilter === false && /def inline filter/.test(s)) return false;
+        return true;
+      });
+      return { ...item, services, dueCount: services.length };
+    });
+  }, [bulkResults, customerPrefs.bsviOnly, JSON.stringify(customerPrefs.serviceAggregates)]);
   const bulkSummaryRows = useMemo(() => {
     const search = bulkSearch.trim().toLowerCase();
-    const rows = bulkResults
+    const rows = customerFilteredResults
       .filter(item => bulkQuickFilter === "all" || (Array.isArray(item.services) && item.services.length > 0))
       .filter(item => {
         if (!search) return true;
@@ -7170,7 +7213,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     });
 
     return sorted;
-  }, [bulkResults, bulkFilterSelections, bulkTableSort, bulkSearch, bulkQuickFilter]);
+  }, [customerFilteredResults, bulkFilterSelections, bulkTableSort, bulkSearch, bulkQuickFilter]);
 
   const openBulkFilterMenu = (key, event) => {
     event.preventDefault();
@@ -9752,7 +9795,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
 
           <div className="excel-ribbon no-print">
             <div className="excel-tabs">
-              <div className={"excel-tab " + (mode === "home" ? "active" : "")} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("home"); }}> <span className="nav-icon">🏠</span>Home</div>
+              <div className={"excel-tab " + (mode === "home" ? "active" : "")} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("home"); }}> <span className="nav-icon">🏠</span>Summary</div>
               <div className={`excel-tab ${mode === "registration-search" ? "active" : ""}`} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setAnalysis(null); setRegistrationSearchResult(null); setEstimateOpen(false); setMode("registration-search"); setRegistrationSearchError(""); }}> <span className="nav-icon">🚛</span>Search by Registration No.</div>
               <div className={"excel-tab " + (mode === "single" ? "active" : "")} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("single"); setError(""); setBulkResults([]); setBulkMeta(null); }}> <span className="nav-icon">🚚</span>Single Vehicle</div>
               <div className={`excel-tab ${mode === "bulk" ? "active" : ""}`} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("bulk"); setError(""); setAnalysis(null); }}> <span className="nav-icon">📊</span>Bulk Vehicle</div>
@@ -9925,6 +9968,29 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
               <WarrantyTagPanel user={user} onBack={() => setMode("home")} />
             ) : mode === "document-scanner" ? (
               <DocumentScanner onBack={() => setMode("home")} />
+            ) : mode === "profile" ? (
+              <>
+                <section style={{padding:16,marginBottom:14,border:"1px solid var(--border,#d1d5db)",borderRadius:10}}>
+                  <div className="section-title">Preferences</div>
+                  <label style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",fontWeight:700}}>
+                    <input type="checkbox" checked={customerPrefs.bsviOnly} onChange={e=>void saveCustomerPreference({bsviOnly:e.target.checked})}/>
+                    BSVI Only <span className="small-note">(Sale date after 01-Apr-2020)</span>
+                  </label>
+                  <div style={{fontWeight:700,margin:"12px 0 6px"}}>Service Aggregates</div>
+                  {Object.entries(servicePreferenceLabels).map(([key,label])=><label key={key} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0"}}>
+                    <input type="checkbox" checked={customerPrefs.serviceAggregates[key] !== false} onChange={e=>void setAggregatePreference(key,e.target.checked)}/>{label}
+                  </label>)}
+                  {prefsNotice && <div role="status" style={{color:"#15803d",marginTop:8}}>{prefsNotice}</div>}
+                  <button className="excel-button" style={{marginTop:12}} onClick={()=>setShowResetPrefsConfirm(true)}>Reset Preferences</button>
+                  {showResetPrefsConfirm && <div role="dialog" aria-modal="true" style={{position:"fixed",inset:0,zIndex:10000,background:"rgba(0,0,0,.45)",display:"grid",placeItems:"center",padding:16}}>
+                    <div style={{background:"var(--panel,#fff)",color:"var(--text,#111827)",borderRadius:12,padding:20,maxWidth:420,width:"100%"}}>
+                      <h3>⚠️ Reset all preferences?</h3><p>This restores BSVI Only to OFF and selects all service aggregates. Your saved preferences will be replaced.</p>
+                      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}><button className="excel-button" onClick={()=>setShowResetPrefsConfirm(false)}>Cancel</button><button className="excel-button green" onClick={()=>{setShowResetPrefsConfirm(false);void resetCustomerPreferences();}}>Reset Preferences</button></div>
+                    </div>
+                  </div>}
+                </section>
+                <ProfileSection user={user} onOpenProfile={onOpenProfile} onOpenAdmin={onOpenAdmin} onChangePassword={onChangePassword} onLogout={onLogout} />
+              </>
             ) : mode === "profile" ? (
               <ProfileSection user={user} onOpenProfile={onOpenProfile} onOpenAdmin={onOpenAdmin} onChangePassword={onChangePassword} onLogout={onLogout} />
             ) : mode === "registration-search" ? (
@@ -10193,12 +10259,12 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                   {customerGroups.map(group=>{const dueVehicles=group.vehicles.filter(v=>v.services.length>0);return <div className="bulk-card" key={group.id}><div className="bulk-card-head"><div className="action-row"><strong>{group.name}</strong><span className="small-note">{group.vehicles.length} vehicles · {dueVehicles.length} due</span><span className="spacer"/><button className="excel-button no-print" onClick={()=>copyCustomerSummary(group, user?.dealerName, user?.preferences || {})}>Copy WhatsApp Summary</button><button className="excel-button no-print" onClick={()=>printCustomerReport(group,true)}>Print Detailed PDF</button></div></div></div>})}
 
                   <div className="bulk-overview-grid">
-                    <button type="button" className={"bulk-overview-card bulk-overview-card-button " + (bulkQuickFilter === "all" ? "active" : "")} onClick={() => setBulkQuickFilter("all")}><span>Total Vehicles</span><strong>{bulkResults.length}</strong><small>Show all vehicles</small></button>
+                    <button type="button" className={"bulk-overview-card bulk-overview-card-button " + (bulkQuickFilter === "all" ? "active" : "")} onClick={() => setBulkQuickFilter("all")}><span>Total Vehicles</span><strong>{customerFilteredResults.length}</strong><small>Show all vehicles</small></button>
                     <button type="button" className={"bulk-overview-card bulk-overview-card-button " + (bulkQuickFilter === "due" ? "active" : "")} onClick={() => setBulkQuickFilter("due")}><span>Service Due</span><strong>{bulkResults.filter(item => item.services?.length > 0).length}</strong><small>Show due vehicles</small></button>
-                    <button type="button" className={"bulk-overview-card bulk-overview-card-button " + (bulkQuickFilter === "due" ? "active" : "")} onClick={() => setBulkQuickFilter("due")}><span>Due Services</span><strong>{bulkResults.reduce((sum,item)=>sum + (item.services?.length || 0),0)}</strong><small>Show due service items</small></button>
+                    <button type="button" className={"bulk-overview-card bulk-overview-card-button " + (bulkQuickFilter === "due" ? "active" : "")} onClick={() => setBulkQuickFilter("due")}><span>Due Services</span><strong>{customerFilteredResults.reduce((sum,item)=>sum + (item.services?.length || 0),0)}</strong><small>Show due service items</small></button>
                     <div className="bulk-overview-card"><span>Currently Shown</span><strong>{bulkSummaryRows.length}</strong><small>After search / Excel filters</small></div>
                   </div>
-                  <div className="section-title">Service Summary</div>
+                  <div className="section-title">Summary</div>
                   <div className="bulk-control-labels no-print"><span>Search</span><span>Excel Filter / Sort</span><span>Export</span></div>
                   <div className="action-row no-print" style={{margin:"6px 0"}}>
                     <input className="excel-input bulk-search-input" value={bulkSearch} onChange={e=>setBulkSearch(e.target.value)} placeholder="Search VIN, Reg. No., Customer, Model or Service..." aria-label="Search bulk vehicle summary" />
@@ -10261,7 +10327,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                         {bulkSummaryRows.map((item,index) => (
                           <tr key={item.vin || index}>
                             <td style={tableColumnStyle("bulk","serial")}>{index + 1}</td>
-                            {isBulkColumnVisible("customerName") && <td style={tableColumnStyle("bulk","customerName")}>{item.vehicle.customerName || "-"}</td>}{isBulkColumnVisible("vin") && <td style={tableColumnStyle("bulk","vin")}><button type="button" onClick={() => openBulkVehicleDetail(item)} style={{border:0,background:"transparent",padding:0,color:"#2563eb",textDecoration:"underline",cursor:"pointer",font: "inherit",fontWeight:700}} title="Open vehicle single analysis">{item.vin || item.vehicle.vin || "-"}</button></td>}{isBulkColumnVisible("reg") && <td style={tableColumnStyle("bulk","reg")}>{item.vehicle.reg || "-"}</td>}{isBulkColumnVisible("saleDate") && <td style={tableColumnStyle("bulk","saleDate")}>{item.vehicle.sale ? formatDateShort(item.vehicle.sale) : "-"}</td>}{isBulkColumnVisible("model") && <td style={tableColumnStyle("bulk","model")}>{item.vehicle.model || "-"}</td>}{isBulkColumnVisible("currentReading") && <td style={tableColumnStyle("bulk","currentReading")}>{item.running?.current ? `${formatNumber(item.running.current)} ${item.running.unit || getTargetUnit(item.vehicle)}` : "-"}</td>}{isBulkColumnVisible("services") && <td style={tableColumnStyle("bulk","services")}>{item.services.join(", ")}</td>}
+                            {isBulkColumnVisible("customerName") && <td style={tableColumnStyle("bulk","customerName")}>{item.vehicle.customerName || "-"}</td>}{isBulkColumnVisible("vin") && <td style={tableColumnStyle("bulk","vin")}><button type="button" onClick={() => openBulkVehicleDetail(item)} style={{border:0,background:"transparent",padding:0,color:"#2563eb",textDecoration:"underline",cursor:"pointer",font: "inherit",fontWeight:700}} title="Open vehicle single analysis">{item.vin || item.vehicle.vin || "-"}</button></td>}{isBulkColumnVisible("reg") && <td style={tableColumnStyle("bulk","reg")}><button type="button" onClick={() => openBulkVehicleDetail(item)} style={{border:0,background:"transparent",padding:0,color:"#2563eb",textDecoration:"underline",cursor:"pointer",font:"inherit",fontWeight:700}} title="View vehicle service details">{item.vehicle.reg || "-"}</button></td>}{isBulkColumnVisible("saleDate") && <td style={tableColumnStyle("bulk","saleDate")}>{item.vehicle.sale ? formatDateShort(item.vehicle.sale) : "-"}</td>}{isBulkColumnVisible("model") && <td style={tableColumnStyle("bulk","model")}>{item.vehicle.model || "-"}</td>}{isBulkColumnVisible("currentReading") && <td style={tableColumnStyle("bulk","currentReading")}>{item.running?.current ? `${formatNumber(item.running.current)} ${item.running.unit || getTargetUnit(item.vehicle)}` : "-"}</td>}{isBulkColumnVisible("services") && <td style={tableColumnStyle("bulk","services")}>{item.services.join(", ")}</td>}
                           </tr>
                         ))}
                         {!bulkSummaryRows.length && (

@@ -23,7 +23,7 @@ function fmtDate(value) {
 }
 function findVin(row) {
   const entries = Object.entries(row || {});
-  const hit = entries.find(([key]) => /^(vin|chassis|chassis number|vehicle identification number|vehicle identification no\.?|vin number)$/i.test(String(key).trim()));
+  const hit = entries.find(([key]) => /vin|chassis|vehicle identification/i.test(String(key).trim()));
   return String(hit?.[1] ?? "").trim().toUpperCase();
 }
 

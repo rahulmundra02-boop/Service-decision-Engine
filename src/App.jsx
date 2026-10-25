@@ -6646,7 +6646,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
             diag.jobCardsSaved=outcomes.reduce((sum,item)=>sum+item.newJobCardsSaved,0);
             diag.newJobCardsInserted=diag.jobCardsSaved;
             diag.serviceLinesSaved=outcomes.reduce((sum,item)=>sum+item.newServiceLines,0);
-            diag.status=outcomes.some(item=>item.status==="failed")||diag.vehicleMasterError||diag.timestampFailedVins.length?"completed-with-errors":"completed";
+            diag.status=outcomes.some(item=>item.status==="failed"||item.status==="partial")||diag.vehicleMasterError||diag.timestampFailedVins.length?"completed-with-errors":"completed";
           }catch(backgroundError){
             console.error("Background database sync failed:",backgroundError);
             diag.status="completed-with-errors";

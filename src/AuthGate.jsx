@@ -1116,7 +1116,7 @@ export default function AuthGate({ children }) {
           onChangePassword={()=>{ setProfileOpen(false); setShowPassword(true); setError(""); setMessage(""); }}
           onLogout={logout}
           isAdmin={user.role === "admin"}
-          onAdmin={()=>{ adminOpenedFromProfileRef.current = true; try { window.history.pushState({ ...(window.history.state || {}), serviceDecisionOverlay: "admin" }, "", window.location.href); } catch {} setAdminOpen(true); setError(""); setMessage(""); }}
+          onAdmin={()=>{ adminOpenedFromProfileRef.current = true; setAdminSection("management"); try { const u=new URL(window.location.href); u.searchParams.set("adminSection","management"); window.history.pushState({ ...(window.history.state || {}), serviceDecisionOverlay:"admin", adminSection:"management" }, "", u); } catch {} setAdminOpen(true); setError(""); setMessage(""); }}
         />
       )}
 
@@ -1170,6 +1170,8 @@ export default function AuthGate({ children }) {
 
       {adminOpen && user.role === "admin" ? (
         <AdminPanel
+          view={adminSection}
+          onNavigate={navigateAdminSection}
           users={adminUsers}
           customerAccessData={customerAccessData}
           directVehicleForm={directVehicleForm}
@@ -1187,7 +1189,7 @@ export default function AuthGate({ children }) {
           onRefresh={loadAdminUsers}
           onReset={resetUserPassword}
           onToggleStatus={toggleUserStatus}
-          onBack={()=>{setAdminOpen(false);setProfileOpen(false);adminOpenedFromProfileRef.current=false;setError("");setMessage("");Promise.resolve().then(()=>window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:"profile"}})));}}
+          onBack={()=>{setAdminOpen(false);setProfileOpen(false);adminOpenedFromProfileRef.current=false;setError("");setMessage("");try{const u=new URL(window.location.href);u.searchParams.delete("adminSection");window.history.pushState({...(window.history.state||{}),serviceDecisionOverlay:null},"",u);}catch{}Promise.resolve().then(()=>window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:"profile"}})));}}
           analytics={adminAnalytics}
           analyticsUserId={analyticsUserId}
           analyticsRange={analyticsRange}
@@ -1217,7 +1219,7 @@ export default function AuthGate({ children }) {
       ) : cloneElement(children, {
         user,
         onOpenProfile: openProfile,
-        onOpenAdmin: () => { adminOpenedFromProfileRef.current = false; try { window.history.pushState({ ...(window.history.state || {}), serviceDecisionOverlay: "admin" }, "", window.location.href); } catch {} setAdminOpen(true); setError(""); setMessage(""); },
+        onOpenAdmin: () => { adminOpenedFromProfileRef.current = false; setAdminSection("management"); try { const u=new URL(window.location.href); u.searchParams.set("adminSection","management"); window.history.pushState({ ...(window.history.state || {}), serviceDecisionOverlay:"admin", adminSection:"management" }, "", u); } catch {} setAdminOpen(true); setError(""); setMessage(""); },
         onChangePassword: () => { setShowPassword(true); setError(""); setMessage(""); },
         onLogout: logout,
       })}
@@ -1689,9 +1691,8 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading, onChang
   {signatureOpen && <SignaturePad initialValue={form.signature} onUse={v=>{setForm({...form,signature:v});setSignatureOpen(false);}} onClose={()=>setSignatureOpen(false)}/>}
   </div>;
 }
-function AdminPanel({ users, customerAccessData={companyRequests:[],vehicleRequests:[],companies:[],customers:[]}, directVehicleForm, setDirectVehicleForm, onReviewCustomerRequest, onAssignCustomerVehicle, accountRequests = [], onReviewAccountRequest, onRefreshAccountRequests, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, registrationSearchEnabled, onRegistrationSearchSetting, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel, priceMasterMeta, priceMasterUploadBusy, priceMasterUploadMessage, priceMasterUploadError, onUploadPriceMasterExcel }) {
+function AdminPanel({ view = "management", onNavigate = () => {}, users, customerAccessData={companyRequests:[],vehicleRequests:[],companies:[],customers:[]}, directVehicleForm, setDirectVehicleForm, onReviewCustomerRequest, onAssignCustomerVehicle, accountRequests = [], onReviewAccountRequest, onRefreshAccountRequests, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, registrationSearchEnabled, onRegistrationSearchSetting, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel, priceMasterMeta, priceMasterUploadBusy, priceMasterUploadMessage, priceMasterUploadError, onUploadPriceMasterExcel }) {
   const analyticsDetailRef = useRef(null);
-  const [view, setView] = useState("overview");
   const [reviewRequest, setReviewRequest] = useState(null);
   const [reviewCompanyIds, setReviewCompanyIds] = useState([]);
   const [reviewCompanySearch, setReviewCompanySearch] = useState("");
@@ -1982,7 +1983,7 @@ function AdminPanel({ users, customerAccessData={companyRequests:[],vehicleReque
               ["database","Database View"],
               ["management","User Management"]
             ].map(([key,label])=>
-              <button key={key} className={view===key ? "active" : ""} onClick={()=>{setView(key);if(key==="management"&&accountRequests.some(r=>r.status==="pending"))setTimeout(()=>document.getElementById("pending-account-requests")?.scrollIntoView({behavior:"smooth",block:"start"}),100);}}>{label}{key==="management"&&accountRequests.some(r=>r.status==="pending")&&<span className="pending-request-dot" title="Pending account requests">●</span>}</button>
+              <button key={key} className={view===key ? "active" : ""} onClick={()=>{onNavigate(key);if(key==="management"&&accountRequests.some(r=>r.status==="pending"))setTimeout(()=>document.getElementById("pending-account-requests")?.scrollIntoView({behavior:"smooth",block:"start"}),100);}}>{label}{key==="management"&&accountRequests.some(r=>r.status==="pending")&&<span className="pending-request-dot" title="Pending account requests">●</span>}</button>
             )}
           </div>
           <div className="admin-range-tabs">

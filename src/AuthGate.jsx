@@ -694,7 +694,7 @@ export default function AuthGate({ children }) {
   };
 
   const navigateAdminSection = (section, replace = false) => {
-    const allowed = new Set(["management","overview","users","activity","database","settings","masters"]);
+    const allowed = new Set(["management","overview","users","activity","database","settings","masters","timestamps"]);
     const next = allowed.has(section) ? section : "management";
     setAdminSection(next);
     try {

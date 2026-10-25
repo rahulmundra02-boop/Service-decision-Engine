@@ -160,7 +160,7 @@ export default function ContributionPanel({ user, onUpload }) {
           {file && <p className="contribution-help">File: {file.name} · {rows.length} unique VINs found</p>}
           <p className="contribution-help">Note: Submit se pehle file ka data portal ke existing Bulk Vehicle upload se database mein save hona chahiye. Points sirf tab milenge jab sabhi 50 VIN ki Job Card history verify ho.</p>
           <div className="contribution-actions">
-            <button type="button" disabled={busy || rows.length !== 50 || seconds <= 0} onClick={submitTask}>{busy ? "Please wait…" : "Verify & Submit Task"}</button>
+            <button type="button" disabled={busy || rows.length === 0 || seconds <= 0} onClick={submitTask}>{busy ? "Please wait…" : "Verify & Submit Task"}</button>
             <button type="button" className="secondary" disabled={busy} onClick={() => taskAction("retry-task")}>Retry task</button>
             <button type="button" className="secondary" disabled={busy} onClick={() => taskAction("cancel-task")}>Cancel task</button>
           </div>

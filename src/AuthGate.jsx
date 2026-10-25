@@ -2,6 +2,7 @@ import { cloneElement, useEffect, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import "./AuthGate.css";
 import CustomerPortal from "./CustomerPortal";
+import ContributionPanel from "./ContributionPanel";
 
 const TOKEN_KEY = "serviceDecisionAuthToken";
 const ACTIVITY_KEY = "serviceDecisionLastActivity";
@@ -1084,6 +1085,7 @@ export default function AuthGate({ children }) {
       <div className="auth-userbar" aria-hidden="true"></div>
       {error && <div className="auth-inline-error">{error}</div>}
       {message && <div className="auth-inline-message">{message}</div>}
+      {!adminOpen && <ContributionPanel user={user} />}
 
       {showPassword && (
         <div className="auth-modal-backdrop">

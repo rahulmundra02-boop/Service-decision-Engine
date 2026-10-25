@@ -144,7 +144,7 @@ export default function ContributionPanel({ user }) {
         <div className="contribution-stats">
           <div><small>Current month</small><strong>{data.earnedPoints}/50</strong></div>
           <div><small>Available points</small><strong>{data.availablePoints}</strong></div>
-          <div><small>Next month eligibility</small><strong>{data.freeMonth ? "Free month" : data.adminExempt ? "Exempt" : data.nextMonthBalance >= 50 ? "Eligible" : `${data.nextMonthBalance}/50`}</strong></div>
+          <div><small>Next month eligibility</small><strong>{data.freeMonth ? "Free month" : data.adminExempt ? "Exempt" : data.earnedPoints >= 50 ? "Eligible" : `${data.earnedPoints}/50`}</strong></div>
         </div>
         <div className="contribution-progress"><span style={{ width: `${progress}%` }} /></div>
         <p className="contribution-help">{data.adminExempt ? "Admin accounts contribution target aur account inactivation se exempt hain." : data.freeMonth ? "November 2026 mein sabhi existing accounts ke liye access free hai. November ke earned points December eligibility ke liye count honge." : "Har successfully verified task = 1 point. Agle month ki eligibility ke liye pichhle month ke 50 points zaroori hain. Extra points month-end par expire honge."}</p>

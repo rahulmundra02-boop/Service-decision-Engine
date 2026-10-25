@@ -6668,9 +6668,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       if (options.awaitDatabaseSync) {
         if (!parsedRows.length) throw new Error("Excel mein valid service records nahi mile. Mandatory headers aur VIN values check karein.");
         const syncResult = await backgroundSyncPromise;
-        if (!syncResult || syncResult.status !== "completed") {
-          throw new Error(syncResult?.backgroundError || "Database upload complete nahi hua. Diagnostic status check karein; points award nahi kiye gaye.");
-        }
+        if (!syncResult) throw new Error("Database upload ka final status nahi mila. Diagnostic status check karein.");
         return syncResult;
       }
       setUploadProgress({stage:"Upload complete",current:files.length,total:files.length,detail:`${parsedRows.length.toLocaleString()} rows ready for service decision; database sync continues in background`});

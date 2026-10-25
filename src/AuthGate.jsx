@@ -724,7 +724,6 @@ export default function AuthGate({ children }) {
     if (user?.role !== "admin" || !adminOpen) return;
     if (adminSection === "management") void loadAdminUsers();
     if (["overview","users","activity"].includes(adminSection)) void loadAdminAnalytics(analyticsUserId, analyticsRange);
-    if (adminSection === "database") void loadDatabaseView(dbStartDate, dbEndDate);
     if (adminSection === "settings") {
       void loadJobCardCacheSettings();
       void loadEmergencyDbUploadCutoff();
@@ -1807,6 +1806,36 @@ function AdminPanel({ view = "management", onNavigate = () => {}, users, custome
         </div>}
 
 
+        <div className="admin-analytics-toolbar professional">
+          <div className="admin-view-tabs admin-route-tabs">
+            {[
+              ["management","User Management"],
+              ["overview","Analytics Overview"],
+              ["users","User Insights"],
+              ["activity","Activity"],
+              ["database","Database View"],
+              ["settings","System Settings"],
+              ["masters","Master Data"]
+            ].map(([key,label])=>
+              <button key={key} className={view===key ? "active" : ""} onClick={()=>{onNavigate(key);if(key==="management"&&accountRequests.some(r=>r.status==="pending"))setTimeout(()=>document.getElementById("pending-account-requests")?.scrollIntoView({behavior:"smooth",block:"start"}),100);}}>{label}{key==="management"&&accountRequests.some(r=>r.status==="pending")&&<span className="pending-request-dot" title="Pending account requests">●</span>}</button>
+            )}
+          </div>
+          {["overview","users","activity"].includes(view) && <>
+            <div className="admin-dashboard-scope-tabs">
+              <button className={analyticsIncludeAdmins ? "active" : ""} onClick={() => { onSetAnalyticsIncludeAdmins(true); onAnalytics(null, analyticsRange); }}>All Statistics (Including Admin)</button>
+              <button className={!analyticsIncludeAdmins ? "active" : ""} onClick={() => { onSetAnalyticsIncludeAdmins(false); onAnalytics(null, analyticsRange); }}>Statistics Without Admin</button>
+            </div>
+            <div className="admin-range-tabs">
+              {[1,7,30,90].map(days=>
+                <button key={days} className={analyticsRange===days ? "active" : ""} onClick={()=>onAnalytics(analyticsUserId,days)}>
+                  {days === 1 ? "Today" : `${days}D`}
+                </button>
+              )}
+            </div>
+            {analyticsLoading && <span className="admin-loading-pill">Updating...</span>}
+          </>}
+        </div>
+
         {view === "settings" && <>
         <div className="admin-panel-card" style={{marginTop:16,padding:"18px 20px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
@@ -1976,35 +2005,8 @@ function AdminPanel({ view = "management", onNavigate = () => {}, users, custome
 
         </>}
 
-        <div className="admin-analytics-toolbar professional">
-          <div className="admin-view-tabs admin-route-tabs">
-            {[
-              ["management","User Management"],
-              ["overview","Analytics Overview"],
-              ["users","User Insights"],
-              ["activity","Activity"],
-              ["database","Database View"],
-              ["settings","System Settings"],
-              ["masters","Master Data"]
-            ].map(([key,label])=>
-              <button key={key} className={view===key ? "active" : ""} onClick={()=>{onNavigate(key);if(key==="management"&&accountRequests.some(r=>r.status==="pending"))setTimeout(()=>document.getElementById("pending-account-requests")?.scrollIntoView({behavior:"smooth",block:"start"}),100);}}>{label}{key==="management"&&accountRequests.some(r=>r.status==="pending")&&<span className="pending-request-dot" title="Pending account requests">●</span>}</button>
-            )}
-          </div>
-          {["overview","users","activity"].includes(view) && <>
-            <div className="admin-dashboard-scope-tabs">
-              <button className={analyticsIncludeAdmins ? "active" : ""} onClick={() => { onSetAnalyticsIncludeAdmins(true); onAnalytics(null, analyticsRange); }}>All Statistics (Including Admin)</button>
-              <button className={!analyticsIncludeAdmins ? "active" : ""} onClick={() => { onSetAnalyticsIncludeAdmins(false); onAnalytics(null, analyticsRange); }}>Statistics Without Admin</button>
-            </div>
-            <div className="admin-range-tabs">
-              {[1,7,30,90].map(days=>
-                <button key={days} className={analyticsRange===days ? "active" : ""} onClick={()=>onAnalytics(analyticsUserId,days)}>
-                  {days === 1 ? "Today" : `${days}D`}
-                </button>
-              )}
-            </div>
-            {analyticsLoading && <span className="admin-loading-pill">Updating...</span>}
-          </>}
-        </div>
+
+
 
         {view === "overview" && (
           <>

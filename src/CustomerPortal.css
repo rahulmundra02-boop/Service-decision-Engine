@@ -153,3 +153,139 @@
 .customer-loading-spinner{width:52px;height:52px;box-sizing:border-box;border:5px solid rgba(255,255,255,.25);border-top-color:#52d18a;border-right-color:#52d18a;border-radius:50%;animation:customerPortalSpin .8s linear infinite}
 @keyframes customerPortalSpin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.customer-loading-spinner{animation-duration:1.8s}}
+
+
+/* Customer portal compact sticky navigation and denser layout */
+/* Keep the portal's top identity and primary navigation visible while scrolling. */
+.customer-portal-header{
+  position:sticky;
+  top:0;
+  z-index:120;
+  background:#f3f6fa;
+  padding:5px 8px 7px;
+  margin-bottom:5px;
+  gap:8px;
+}
+.customer-brand-head{padding:4px 0 6px;margin:0;border-bottom:0;gap:7px}
+.customer-brand-mark{width:28px;height:28px;border-radius:6px;font-size:11px}
+.customer-brand-head strong{font-size:13px;line-height:1.2}
+.customer-brand-head span{font-size:9px;margin-top:1px}
+.customer-eyebrow{font-size:8px;letter-spacing:.8px}
+.customer-portal h1{font-size:18px;margin:2px 0}
+.customer-portal-header p{font-size:10px;margin:2px 0}
+.customer-desktop-nav{
+  position:sticky;
+  top:62px;
+  z-index:119;
+  background:#f3f6fa;
+  padding:4px 0 6px;
+  margin-bottom:5px;
+  gap:4px;
+}
+.customer-portal button{
+  font-size:10px;
+  padding:4px 6px;
+  border-radius:5px;
+  line-height:1.2;
+}
+.customer-desktop-nav button{font-size:10px;padding:5px 7px}
+.customer-nav-count,.customer-heading-count{min-width:15px;height:15px;padding:0 3px;font-size:9px}
+.customer-kpis{gap:6px;margin-bottom:8px}
+.customer-kpis>div{padding:8px}
+.customer-kpis span{font-size:10px}
+.customer-kpis strong{font-size:17px;margin-top:3px}
+.customer-card{padding:10px;margin-bottom:8px;border-radius:8px}
+.customer-card h2{font-size:14px}
+.customer-card p{font-size:10px;margin:3px 0}
+.customer-inline-form{gap:5px;margin:7px 0}
+.customer-inline-form input,.customer-inline-form select{min-width:0;padding:5px 7px;font-size:10px}
+.customer-status-summary{
+  position:sticky;
+  top:112px;
+  z-index:80;
+  background:#f3f6fa;
+  padding:4px 0;
+  margin:6px 0 8px;
+  gap:4px;
+}
+.customer-status-summary button{padding:5px 6px;min-height:0;border-radius:7px}
+.customer-status-summary span{font-size:9px}
+.customer-status-summary strong{font-size:16px;margin-top:2px}
+.customer-vehicle-service-cards{gap:8px;margin:8px 0}
+.customer-vehicle-service-card{padding:7px;border-radius:8px}
+.customer-vehicle-service-head{gap:6px;padding:0 0 5px;align-items:flex-start}
+.customer-vehicle-service-head>div:first-child strong{font-size:12px}
+.customer-vehicle-service-head span{font-size:9px;margin-top:2px}
+.customer-vehicle-service-head small{font-size:8px}
+.customer-vehicle-service-head>div:last-child strong{font-size:10px;margin-top:2px}
+.customer-vehicle-service-head .customer-reading-edit{padding:3px 5px;font-size:10px;width:100px;box-sizing:border-box}
+.customer-history-request-row{margin:0 0 5px!important;padding:4px 0!important;gap:5px!important}
+.customer-history-request-row small{font-size:9px}
+.customer-history-request-row strong{font-size:10px}
+.customer-history-request-row .customer-timestamp-compact{font-size:9px!important;padding:4px 5px!important;max-width:140px!important}
+.customer-history-request-action small{font-size:8px}
+.customer-vehicle-service-card .customer-due-table th,
+.customer-vehicle-service-card .customer-due-table td{padding:4px 5px;font-size:10px}
+.customer-vehicle-service-card .customer-status-pill{font-size:8px;padding:2px 4px}
+.customer-profile-grid{gap:7px;padding:9px 0}
+.customer-profile-timestamp-cards{gap:5px;margin:7px 0}
+.customer-profile-timestamp-cards>div{padding:7px}
+.customer-profile-timestamp-cards strong{font-size:16px}
+.customer-profile-timestamp-cards span{font-size:10px}
+.customer-access-actions{gap:3px}
+.customer-access-actions button{font-size:9px!important;padding:3px 5px!important}
+.customer-portal .customer-home-table,
+.customer-portal .customer-home-table td,
+.customer-portal .customer-home-table th{font-size:inherit}
+@media(max-width:760px){
+  .customer-portal{padding:5px 6px 80px!important}
+  .customer-portal-header{
+    top:0;
+    padding:4px 5px 5px;
+    margin:0 auto 3px;
+    flex-direction:row;
+    align-items:center;
+    gap:5px;
+  }
+  .customer-brand-head{gap:5px;padding:2px 0}
+  .customer-brand-mark{width:23px;height:23px;font-size:9px}
+  .customer-brand-head strong{font-size:11px}
+  .customer-brand-head span{font-size:8px}
+  .customer-eyebrow{font-size:7px;letter-spacing:.5px}
+  .customer-portal h1{font-size:14px;margin:1px 0}
+  .customer-portal-header p{font-size:9px;margin:1px 0}
+  .customer-header-actions{gap:3px}
+  .customer-header-actions button{font-size:9px;padding:3px 4px}
+  .customer-desktop-nav{display:none}
+  .customer-portal button{font-size:10px;padding:4px 5px}
+  .customer-card{padding:7px;margin-bottom:6px}
+  .customer-card h2{font-size:12px}
+  .customer-card p{font-size:9px}
+  .customer-inline-form{gap:4px;margin:5px 0}
+  .customer-inline-form input,.customer-inline-form select{padding:5px;font-size:10px}
+  .customer-status-summary{
+    top:45px;
+    grid-template-columns:repeat(5,minmax(0,1fr));
+    gap:3px;
+    margin:4px 0 6px;
+    padding:4px 0;
+  }
+  .customer-status-summary button{padding:4px 2px;min-height:43px;border-radius:5px}
+  .customer-status-summary span{font-size:7px;line-height:1.1}
+  .customer-status-summary strong{font-size:12px;margin-top:2px}
+  .customer-vehicle-service-cards{gap:6px;margin:6px 0}
+  .customer-vehicle-service-card{padding:6px}
+  .customer-vehicle-service-head{gap:4px;padding-bottom:4px}
+  .customer-vehicle-service-head>div:first-child strong{font-size:11px}
+  .customer-vehicle-service-head span{font-size:8px}
+  .customer-vehicle-service-head small{font-size:7px}
+  .customer-vehicle-service-head>div:last-child strong{font-size:9px}
+  .customer-vehicle-service-head .customer-reading-edit{width:82px;padding:3px;font-size:9px}
+  .customer-history-request-row{padding:3px 0!important;margin-bottom:4px!important}
+  .customer-history-request-row small{font-size:8px}
+  .customer-history-request-row strong{font-size:9px}
+  .customer-history-request-row .customer-timestamp-compact{font-size:8px!important;padding:3px 4px!important;max-width:125px!important}
+  .customer-history-request-action small{font-size:7px}
+  .customer-profile-grid{padding:7px 0;gap:5px}
+  .customer-profile-timestamp-cards>div{padding:6px}
+}

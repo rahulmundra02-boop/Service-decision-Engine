@@ -111,7 +111,7 @@ async function dashboard(client, user) {
        FROM contribution_points_ledger WHERE user_id=$1 AND month_start=$2`, [user.id, ms]);
   const points = Number(earned.rows[0]?.earned || 0);
   const balance = Number(earned.rows[0]?.balance || 0);
-  const eligible = user.role === "admin" || month.free_month || balance >= 50;
+  const previousMonth = new Date(Date.UTC(Number(ms.slice(0,4)), Number(ms.slice(5,7))-1, 1)); previousMonth.setUTCMonth(previousMonth.getUTCMonth()-1); const prevMs = previousMonth.toISOString().slice(0,10);\n  const previousBalanceResult = await client.query(\n    `SELECT COALESCE(SUM(CASE WHEN entry_type IN ('earned','received','admin_adjustment') THEN points WHEN entry_type IN ('donated','used_for_eligibility','expired') THEN -points ELSE 0 END),0)::int AS balance FROM contribution_points_ledger WHERE user_id=$1 AND month_start=$2`, [user.id, prevMs]);\n  const eligibilityBalance = Number(previousBalanceResult.rows[0]?.balance || 0);\n  const eligible = user.role === "admin" || month.free_month || eligibilityBalance >= 50;
   const task = await client.query(
     `SELECT id,status,vehicle_vins,assigned_at,expires_at,submitted_at,completed_at,attempt_count
        FROM contribution_tasks WHERE assigned_user_id=$1 AND status IN ('Assigned','Submitted','Processing')
@@ -159,7 +159,7 @@ export default async function handler(req, res) {
       if (existing.rows[0]) { await client.query("COMMIT"); return res.json({success:true,task:existing.rows[0],existing:true}); }
       const vehicles = await client.query(`SELECT v.vin FROM vehicles v
         WHERE NULLIF(TRIM(v.vin),'') IS NOT NULL
-          AND v.last_refreshed_at <= NOW()-INTERVAL '7 days'
+          AND v.last_refreshed_at IS NOT NULL AND v.last_refreshed_at <= NOW()-INTERVAL '7 days'
           AND NOT EXISTS(SELECT 1 FROM contribution_vehicle_reservations r WHERE UPPER(TRIM(r.vin))=UPPER(TRIM(v.vin)))
         ORDER BY v.last_refreshed_at ASC NULLS FIRST, v.vin ASC
         LIMIT 1000`);

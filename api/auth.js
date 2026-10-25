@@ -1570,11 +1570,16 @@ export default async function handler(req, res) {
       const user=await getUserByToken(client,authToken(req));
       if(!user){await client.query("ROLLBACK");return res.status(401).json({success:false,error:"Session expired."});}
       if(user.user_type!=="al_customer"){await client.query("ROLLBACK");return res.status(403).json({success:false,error:"Customer portal access required."});}
-      const companies=await client.query("SELECT cc.id,cc.name FROM customer_user_companies uc JOIN customer_companies cc ON cc.id=uc.company_id WHERE uc.user_id=$1 ORDER BY cc.name",[user.id]);
-      const allCompanies=await client.query("SELECT id,name FROM customer_companies ORDER BY name LIMIT 5000");
-      const companyRequests=await client.query("SELECT r.id,r.company_id,c.name AS company_name,r.status,r.created_at FROM customer_company_requests r JOIN customer_companies c ON c.id=r.company_id WHERE r.user_id=$1 ORDER BY r.created_at DESC",[user.id]);
-      const vehicleRequests=await client.query("SELECT id,vin,status,created_at FROM customer_vehicle_requests WHERE user_id=$1 ORDER BY created_at DESC",[user.id]);
-      const timestampRequests=await client.query("SELECT r.id,r.vehicle_id,r.vin,r.created_at,v.last_refreshed_at FROM customer_timestamp_update_requests r JOIN vehicles v ON v.id=r.vehicle_id WHERE r.user_id=$1 AND r.status='pending' AND (v.last_refreshed_at IS NULL OR v.last_refreshed_at < r.created_at) ORDER BY r.created_at DESC",[user.id]);
+      const section=String(body.section||"home");
+      const wantsFleet=section==="fleet";
+      const wantsProfile=section==="profile";
+      const wantsDue=section==="due";
+      const wantsAccountMeta=wantsFleet||wantsProfile;
+      const companies=wantsAccountMeta?await client.query("SELECT cc.id,cc.name FROM customer_user_companies uc JOIN customer_companies cc ON cc.id=uc.company_id WHERE uc.user_id=$1 ORDER BY cc.name",[user.id]):{rows:[]};
+      const allCompanies=wantsFleet?await client.query("SELECT id,name FROM customer_companies ORDER BY name LIMIT 5000"):{rows:[]};
+      const companyRequests=wantsAccountMeta?await client.query("SELECT r.id,r.company_id,c.name AS company_name,r.status,r.created_at FROM customer_company_requests r JOIN customer_companies c ON c.id=r.company_id WHERE r.user_id=$1 ORDER BY r.created_at DESC",[user.id]):{rows:[]};
+      const vehicleRequests=wantsAccountMeta?await client.query("SELECT id,vin,status,created_at FROM customer_vehicle_requests WHERE user_id=$1 ORDER BY created_at DESC",[user.id]):{rows:[]};
+      const timestampRequests=(section==="home"||wantsDue||wantsProfile)?await client.query("SELECT r.id,r.vehicle_id,r.vin,r.created_at,v.last_refreshed_at FROM customer_timestamp_update_requests r JOIN vehicles v ON v.id=r.vehicle_id WHERE r.user_id=$1 AND r.status='pending' AND (v.last_refreshed_at IS NULL OR v.last_refreshed_at < r.created_at) ORDER BY r.created_at DESC",[user.id]):{rows:[]};
       const pageSize=500;
       const requestedPage=Number(body.page);
       const page=Number.isSafeInteger(requestedPage)&&requestedPage>=1?Math.min(requestedPage,100000):1;
@@ -1599,7 +1604,7 @@ export default async function handler(req, res) {
       const visibleVehicles=vehicles.rows;
       const vehicleIds=visibleVehicles.map(v=>Number(v.id)).filter(Number.isSafeInteger);
       let scheduleRows=[];
-      if(vehicleIds.length){
+      if(vehicleIds.length && wantsDue){
         const history=await client.query(
           `SELECT jc.vehicle_id,jc.job_card_no,jc.job_date,jc.cumulative_reading,jc.cumulative_unit,
                   jc.secondary_cumulative_reading,jc.secondary_cumulative_unit,

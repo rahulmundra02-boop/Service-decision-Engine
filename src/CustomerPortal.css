@@ -328,3 +328,20 @@
   .customer-global-brand-copy p{font-size:9px!important}
   .customer-desktop-nav{display:none!important}
 }
+
+/* Customer status filters: compact cards with unmistakable multi-select state. */
+.customer-status-summary{gap:6px!important;margin:8px 0 10px!important}
+.customer-status-summary button{position:relative!important;min-height:54px!important;padding:7px 9px!important;border-radius:8px!important;text-align:left!important;transition:border-color .12s,box-shadow .12s,transform .12s}
+.customer-status-summary span{font-size:10px!important;line-height:1.15!important}
+.customer-status-summary strong{font-size:20px!important;margin-top:3px!important;line-height:1.05!important}
+.customer-status-summary button.selected{border:2px solid #176b4b!important;box-shadow:inset 0 0 0 1px #176b4b,0 0 0 2px #176b4b22!important;transform:translateY(-1px);padding-top:16px!important}
+.customer-status-summary button.selected:after{content:"✓ SELECTED";position:absolute;top:3px;right:6px;font-size:8px;font-weight:800;line-height:1;color:#176b4b;letter-spacing:.2px}
+.customer-status-summary button:focus-visible{outline:2px solid #176b4b!important;outline-offset:2px}
+@media(max-width:760px){
+ .customer-status-summary{gap:3px!important;margin:5px 0 7px!important}
+ .customer-status-summary button{min-height:38px!important;padding:5px 3px!important;border-radius:5px!important;text-align:center!important}
+ .customer-status-summary span{font-size:7px!important;line-height:1.05!important}
+ .customer-status-summary strong{font-size:12px!important;margin-top:2px!important}
+ .customer-status-summary button.selected{padding-top:12px!important}
+ .customer-status-summary button.selected:after{top:2px;right:2px;left:2px;text-align:center;font-size:6px}
+}

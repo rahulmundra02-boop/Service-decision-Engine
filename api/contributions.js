@@ -230,11 +230,15 @@ export default async function handler(req, res) {
       // Points are awarded only if every assigned VIN has stored service history.
       const verified = await client.query(`SELECT COUNT(DISTINCT UPPER(TRIM(v.vin)))::int AS n
         FROM vehicles v WHERE UPPER(TRIM(v.vin))=ANY($1::text[])
-        AND EXISTS(SELECT 1 FROM job_cards j WHERE j.vehicle_id=v.id)`, [task.vehicle_vins.map(normVin)]);
+        AND EXISTS(SELECT 1 FROM job_cards j WHERE j.vehicle_id=v.id)
+        AND EXISTS(SELECT 1 FROM vehicle_upload_events e
+          WHERE UPPER(TRIM(e.vin))=UPPER(TRIM(v.vin))
+            AND e.event_type='history-upload'
+            AND e.created_at >= $2 AND e.created_at <= NOW())`, [task.vehicle_vins.map(normVin),task.assigned_at]);
       if (Number(verified.rows[0]?.n || 0) !== 50) {
-        await client.query("UPDATE contribution_tasks SET status='Failed',last_error='Not all 50 VINs have saved Job Card history' WHERE id=$1",[taskId]);
+        await client.query("UPDATE contribution_tasks SET status='Failed',last_error='Not all 50 VINs had a successful history save during this task' WHERE id=$1",[taskId]);
         await client.query("DELETE FROM contribution_vehicle_reservations WHERE task_id=$1",[taskId]);
-        await client.query("COMMIT"); return res.status(422).json({success:false,error:"50 mein se sabhi VIN ki Job Card history database mein verify nahi hui. Points nahi mile; upload sahi karke retry karein."});
+        await client.query("COMMIT"); return res.status(422).json({success:false,error:"Sabhi 50 VINs ki Job Card history is task ke dauran successfully database mein save nahi hui. Valid rows save rahengi, lekin point nahi mila. Task retry karein."});
       }
       await client.query("UPDATE contribution_tasks SET status='Completed',submitted_at=NOW(),completed_at=NOW(),last_error=NULL WHERE id=$1",[taskId]);
       await client.query("DELETE FROM contribution_vehicle_reservations WHERE task_id=$1",[taskId]);

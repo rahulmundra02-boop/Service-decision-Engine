@@ -7593,7 +7593,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     // Do not let an older browser cache silently override the current MRP.
     setManualPartLookupBusy(prev => ({...prev,[id]:true}));
     try {
-      const response = await fetch("/api/save-history?partNo=" + encodeURIComponent(code) + "&_ts=" + Date.now(), {cache:"no-store"});
+      const response = await fetch("/api/save-history?priceMasterPart=1&partNo=" + encodeURIComponent(code) + "&_ts=" + Date.now(), {cache:"no-store"});
       const data = await response.json().catch(() => ({}));
 
       if (data?.part?.mrp > 0 || data?.part?.rateInclGst > 0) {

@@ -9618,7 +9618,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
             max-width: 100% !important;
           }
         }
-        .single-history-wrap::after {
+        .single-history-wrap::before {
           content: "Swipe left or right to view all service-history columns";
           display: block;
           padding: 7px 9px;
@@ -9630,7 +9630,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
           white-space: normal;
         }
         @media (min-width: 801px) {
-          .single-history-wrap::after { display: none; }
+          .single-history-wrap::before { display: none; }
         }
         @media (max-width: 800px) {
           .single-note-grid {

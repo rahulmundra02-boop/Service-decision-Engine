@@ -2401,13 +2401,11 @@ function isH6Model(model){
   return false;
 }
 function matchesServicePart(value, serviceName) {
-  const text = String(value || '').trim().toUpperCase().replace(/\\s+/g, ' ');
-  const expected = String(serviceName || '').trim().toUpperCase().replace(/\\s+/g, ' ');
-  // Service history must match the standardized part name exactly. Partial
-  // matching can count ENGINE OIL FILTER as ENGINE OIL and inflate oil litres.
-  // Companion filters are validated separately by serviceBase().
-  if (!text || !expected) return false;
-  return text === expected;
+  const text = String(value || '').toUpperCase();
+  // Steering Oil Filter is a required companion part, never the Steering Oil
+  // replacement itself.
+  if (serviceName === 'STEERING OIL') return text.includes(serviceName) && !text.includes('FILTER');
+  return text === serviceName || text.includes(serviceName);
 }
 const CLUTCH_OIL_PART_CODES = ["CFD99991","CLA99994","U9999995","U9999999","U9999996"];
 
@@ -2662,7 +2660,7 @@ function decideAggregate(records, vehicle, running, key, analysisDate, decisionB
       running.current,
       base,
       80000,
-      12,
+      18,
       analysisDate,
       sale,
       running.mode,
@@ -2791,30 +2789,19 @@ function freeService(records,vehicle,running,analysisDate,decisionBasis = "AUTO"
   // Normal vehicles retain the existing KM/time windows.
   if(!useHours){
     const checks=[
-      ['1ST FREE SERVICE',17000,23000,5,7,'1st free service'],
-      ['2ND FREE SERVICE',37000,43000,11,13,'2nd free service'],
-      ['3RD FREE SERVICE',57000,63000,17,19,'3rd free service']
+      ['1ST FREE SERVICE',37000,43000,5,7,'1st free service'],
+      ['2ND FREE SERVICE',77000,83000,11,13,'2nd free service'],
+      ['3RD FREE SERVICE',117000,123000,17,19,'3rd free service']
     ];
     for(const [name,min,max,mn,mx,label] of checks){
-      // Only treat an explicit free-service history entry as completed.
-      // Broad includes() can suppress a due service if unrelated text happens
-      // to contain the service label.
-      if(records.some(r => {
-        const text = String(r.standardizedPart || r.part || r.partDescription || '').toUpperCase().replace(/\\s+/g,' ').trim();
-        return text === name || text === name.replace(/ FREE SERVICE$/,' FREE SERVICE');
-      })) continue;
+      if(records.some(r=>String(r.standardizedPart||'').toUpperCase().includes(name))) continue;
       const ageMax=monthsAfter(vehicle.sale,mx), ageMin=monthsAfter(vehicle.sale,mn);
       if (decisionBasis === "TIME_ONLY") {
         if (analysisDate >= ageMin && analysisDate <= ageMax) return label;
         continue;
       }
-      // A free service is eligible when either its KM window or its time
-      // window is reached, provided neither eligibility window has expired.
-      const kmWindowOpen = running.current <= max;
-      const timeWindowOpen = analysisDate <= ageMax;
-      const kmReached = running.current >= min && kmWindowOpen;
-      const timeReached = analysisDate >= ageMin && timeWindowOpen;
-      if ((kmReached || timeReached) && kmWindowOpen && timeWindowOpen) return label;
+      if(running.current>max || analysisDate>ageMax) continue;
+      if(running.current>=min || analysisDate>=ageMin) return label;
     }
     return '';
   }

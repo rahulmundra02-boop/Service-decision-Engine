@@ -10074,19 +10074,10 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                         const additionalItems = (analysis.decision.additionalServices || []).filter(name => !String(name).toLowerCase().includes('free service'));
                         const complimentaryItems = additionalItems.filter(name => /wheel alignment|body building check ?up/i.test(String(name)));
                         const otherAdditionalItems = additionalItems.filter(name => !/wheel alignment|body building check ?up/i.test(String(name)));
-                        const names = [...aggregateNames, ...otherAdditionalItems];
-                        const freeSectionItems = [...freeServiceItems, ...complimentaryItems];
-                        return (
-                          <>
-                            {names.length ? names.map(name => <span className="due-chip" key={name}>{name}</span>) : <div className="no-due">No aggregate service to be completed at the current reading.</div>}
-                            {freeSectionItems.length > 0 && (
-                              <div className="free-service-output" style={{width:'100%',marginTop:12}}>
-                                <div className="section-title" style={{marginBottom:8}}>Free service</div>
-                                {freeSectionItems.map(name => <span className="due-chip" key={name}>{name}</span>)}
-                              </div>
-                            )}
-                          </>
-                        );
+                        const names = [...aggregateNames, ...otherAdditionalItems, ...freeServiceItems, ...complimentaryItems];
+                        return names.length
+                          ? names.map(name => <span className="due-chip" key={name}>{name}</span>)
+                          : <div className="no-due">No service to be completed at the current reading.</div>;
                       })() : <div className="single-empty-state"><b>No vehicle analysis yet</b><span>Upload the DMS Excel file to start the service decision.</span><button className="excel-button green no-print" onClick={() => document.getElementById("excel-file-input")?.click()}>Upload Excel &amp; Start</button></div>}
                     </div>
                   </div>

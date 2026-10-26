@@ -5,7 +5,9 @@ import { Pool } from "pg";
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL || process.env.DATABASE_URL1,
   ssl: { rejectUnauthorized: false },
-  max: 4,
+  // Serverless instances share a small Supabase/Neon pooler session limit.
+  // Keep one DB connection per function instance to avoid exhausting pool_size.
+  max: 1,
 });
 
 function normalizeJobCard(value) {

@@ -6695,7 +6695,12 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
 
   const runContributionUpload = async (file, taskVins) => {
     if(!file) return {success:false,error:"Excel file select karein."};
-    return await handleExcelUpload({target:{files:[file],value:""}},{waitForDatabase:true,taskVins});
+    try {
+      const result = await handleExcelUpload({target:{files:[file],value:""}},{waitForDatabase:true,taskVins});
+      return result || {success:false,error:"No valid vehicle history rows were processed."};
+    } catch (error) {
+      return {success:false,error:error?.message || "Vehicle history upload failed."};
+    }
   };
   const getAnalysisRecords = () => {
     if (uploadParsedRecords.length) {

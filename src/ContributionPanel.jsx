@@ -37,6 +37,7 @@ export default function ContributionPanel({ user, onUpload }) {
   const [seconds, setSeconds] = useState(0);
   const [file, setFile] = useState(null);
   const [rows, setRows] = useState([]);
+  const [pasteText, setPasteText] = useState("");
   const [donation, setDonation] = useState({ mobile: "", points: "1" });
   const [donateBusy, setDonateBusy] = useState(false);
   const fileRef = useRef(null);
@@ -85,24 +86,52 @@ export default function ContributionPanel({ user, onUpload }) {
       const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const parsed = XLSX.utils.sheet_to_json(sheet, { defval: "" });
-      const cleaned = parsed.map(row => ({ ...row, vin: findVin(row) })).filter(row => row.vin);
+      const assigned = new Set((task?.vehicle_vins || []).map(v => String(v).trim().toUpperCase()));
+      const cleaned = parsed.map(row => ({ ...row, vin: findVin(row) })).filter(row => row.vin && (!assigned.size || assigned.has(row.vin)));
       const unique = new Map(cleaned.map(row => [row.vin, row]));
       setRows([...unique.values()]);
-      if (unique.size !== 50) setError(`File mein ${unique.size} unique VIN mile. Exactly 50 assigned VINs hone chahiye.`);
-      else setMessage("50 unique VIN mile. Ensure karein ki is file ka data portal ke Bulk Vehicle upload pipeline se save ho chuka hai, phir task submit karein.");
+      setPasteText("");
+      if (unique.size !== 50) setMessage(`${unique.size}/50 assigned VIN rows mile. Valid rows database mein save honge; sabhi 50 VIN ki Job Card history verify hone par hi point milega.`);
+      else setMessage("50 assigned VIN rows mile. Submit karne par existing database history pipeline chalegi.");
     } catch { setError("Excel file read nahi hui. XLS/XLSX file try karein."); }
+  }
+
+  function readPaste(value) {
+    setPasteText(value); setFile(null); setRows([]); setError(""); setMessage("");
+    if (fileRef.current) fileRef.current.value = "";
+    if (!value.trim()) return;
+    try {
+      const matrix = value.trim().split(/\r?\n/).map(line => line.split("\t"));
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(matrix), "Pasted Data");
+      const parsed = XLSX.utils.sheet_to_json(workbook.Sheets["Pasted Data"], { defval: "" });
+      const assigned = new Set((task?.vehicle_vins || []).map(v => String(v).trim().toUpperCase()));
+      const cleaned = parsed.map(row => ({ ...row, vin: findVin(row) })).filter(row => row.vin && (!assigned.size || assigned.has(row.vin)));
+      const unique = new Map(cleaned.map(row => [row.vin, row]));
+      setRows([...unique.values()]);
+      if (unique.size !== 50) setMessage(`${unique.size}/50 assigned VIN rows pasted. Valid rows will still be saved; points require verified history for all 50 VINs.`);
+      else setMessage("50 assigned VIN rows pasted. Submit to run the existing database history pipeline.");
+    } catch { setError("Pasted Excel data read nahi hua. Header row ke saath tab-separated cells paste karein."); }
   }
 
   async function submitTask() {
     if (!task?.id || rows.length === 0) return;
     setBusy(true); setError(""); setMessage("");
     try {
-      if (!file || typeof onUpload !== "function") throw new Error("Excel file select karein aur existing bulk upload pipeline ready hone dein.");
-      const syncResult = await onUpload(file);
+      if ((!file && !pasteText.trim()) || typeof onUpload !== "function") throw new Error("Excel file select karein ya header ke saath Excel cells paste karein.");
+      let uploadFile = file;
+      if (!uploadFile && pasteText.trim()) {
+        const matrix = pasteText.trim().split(/\r?\n/).map(line => line.split("\t"));
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(matrix), "Pasted Data");
+        const bytes = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+        uploadFile = new File([bytes], "contribution-paste.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      }
+      const syncResult = await onUpload(uploadFile, task.vehicle_vins || []);
       if (!syncResult) throw new Error("Bulk upload pipeline ka final status nahi mila.");
-      const result = await callApi("submit-task", { taskId: task.id, rows });
+      const result = await callApi("submit-task", { taskId: task.id, rows: (task.vehicle_vins || []).map(vin => ({ vin })) });
       setMessage(result.pointsAwarded ? "Task complete! 1 point award hua." : "Task status update ho gaya.");
-      setTask(null); setRows([]); setFile(null); if (fileRef.current) fileRef.current.value = "";
+      setTask(null); setRows([]); setFile(null); setPasteText(""); if (fileRef.current) fileRef.current.value = "";
       await refresh();
     } catch (e) { setError(e.message); await refresh(); }
     finally { setBusy(false); }
@@ -114,7 +143,7 @@ export default function ContributionPanel({ user, onUpload }) {
     try {
       await callApi(action, { taskId: task.id });
       setMessage(action === "cancel-task" ? "Task cancel ho gaya." : "Retry start ho gaya. Timer reset: 60 minutes.");
-      setRows([]); setFile(null); if (fileRef.current) fileRef.current.value = "";
+      setRows([]); setFile(null); setPasteText(""); if (fileRef.current) fileRef.current.value = "";
       await refresh();
     } catch (e) { setError(e.message); }
     finally { setBusy(false); }
@@ -157,8 +186,10 @@ export default function ContributionPanel({ user, onUpload }) {
           <details><summary>Assigned 50 VINs dekhein</summary><div className="contribution-vins">{(task.vehicle_vins || []).map(v => <code key={v}>{v}</code>)}</div></details>
           <label className="contribution-label">Bulk upload Excel file select karein (XLS/XLSX)</label>
           <input ref={fileRef} type="file" accept=".xlsx,.xls,.xlsm" onChange={e => readFile(e.target.files?.[0])} />
-          {file && <p className="contribution-help">File: {file.name} · {rows.length} unique VINs found</p>}
-          <p className="contribution-help">Note: Submit se pehle file ka data portal ke existing Bulk Vehicle upload se database mein save hona chahiye. Points sirf tab milenge jab sabhi 50 VIN ki Job Card history verify ho.</p>
+          <label className="contribution-label" htmlFor="contribution-paste-data">Ya Excel se header samet rows copy karke yahan paste karein</label>
+          <textarea id="contribution-paste-data" className="contribution-paste" value={pasteText} onChange={e => readPaste(e.target.value)} placeholder="Header row + Excel rows yahan paste karein (Ctrl+C / Ctrl+V)" rows={4} />
+          {(file || pasteText.trim()) && <p className="contribution-help">{file ? `File: ${file.name}` : "Pasted Excel data"} · {rows.length}/50 assigned VIN rows found</p>}
+          <p className="contribution-help">Submit existing Bulk Vehicle upload parser aur database history pipeline chalata hai. Partial valid rows bhi save honge, lekin point sirf tab milega jab sabhi 50 assigned VINs ki Job Card history database mein verify ho.</p>
           <div className="contribution-actions">
             <button type="button" disabled={busy || rows.length === 0 || seconds <= 0} onClick={submitTask}>{busy ? "Please wait…" : "Verify & Submit Task"}</button>
             <button type="button" className="secondary" disabled={busy} onClick={() => taskAction("retry-task")}>Retry task</button>

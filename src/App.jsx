@@ -7655,6 +7655,30 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     () => validateEstimateAggregateSelection({ selectedServices: estimateSelectedServices, parts: estimateParts }),
     [estimateSelectedServices, estimateParts]
   );
+
+  // Refresh missing estimate rates when entering the estimate screen. This
+  // covers estimates already in client/session state, not only newly prepared
+  // estimates, and keeps aggregate validation in sync with the refreshed rates.
+  useEffect(() => {
+    if (estimateStage !== "estimate" || !Array.isArray(estimateParts) || !estimateParts.length) return;
+    if (!estimateParts.some(item => item?.type === "part" && !(Number(item.rate) > 0))) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const refreshed = await hydrateEstimatePriceMaster(estimateParts);
+        if (cancelled || !Array.isArray(refreshed)) return;
+        const hasNewRate = refreshed.some((item, index) =>
+          item?.type === "part" &&
+          !(Number(estimateParts[index]?.rate) > 0) &&
+          Number(item?.rate) > 0
+        );
+        if (hasNewRate) setEstimateParts(refreshed.filter(item => item?.type === "part"));
+      } catch (error) {
+        console.error("Estimate Price Master refresh failed:", error);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [estimateStage]);
   function downloadXlsxBlob(workbook, fileName) {
     try {
       // Let SheetJS handle browser download directly. This avoids failures

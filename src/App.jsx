@@ -10072,14 +10072,17 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                           ? [freeService.replace(/^1st free service$/i,'1st Free Service').replace(/^2nd free service$/i,'2nd Free Service').replace(/^3rd free service$/i,'3rd Free Service')]
                           : [];
                         const additionalItems = (analysis.decision.additionalServices || []).filter(name => !String(name).toLowerCase().includes('free service'));
-                        const names = [...aggregateNames, ...additionalItems];
+                        const complimentaryItems = additionalItems.filter(name => /wheel alignment|body building check ?up/i.test(String(name)));
+                        const otherAdditionalItems = additionalItems.filter(name => !/wheel alignment|body building check ?up/i.test(String(name)));
+                        const names = [...aggregateNames, ...otherAdditionalItems];
+                        const freeSectionItems = [...freeServiceItems, ...complimentaryItems];
                         return (
                           <>
-                            {names.length ? names.map(name => <span className="due-chip" key={name}>{name}</span>) : <div className="no-due">No service to be completed at the current reading.</div>}
-                            {freeServiceItems.length > 0 && (
+                            {names.length ? names.map(name => <span className="due-chip" key={name}>{name}</span>) : <div className="no-due">No aggregate service to be completed at the current reading.</div>}
+                            {freeSectionItems.length > 0 && (
                               <div className="free-service-output" style={{width:'100%',marginTop:12}}>
                                 <div className="section-title" style={{marginBottom:8}}>Free service</div>
-                                {freeServiceItems.map(name => <span className="due-chip" key={name}>{name}</span>)}
+                                {freeSectionItems.map(name => <span className="due-chip" key={name}>{name}</span>)}
                               </div>
                             )}
                           </>

@@ -6688,6 +6688,17 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
           return {success:true,status:diag.status,diagnostic:diag};
         }
       }
+      if (contributionOptions.waitForDatabase && !parsedRows.length) {
+        const emptyDiag = {
+          filesSelected: selectedFiles.length, filesRead: accepted.length, repeatedFilesSkipped,
+          filesFailed: result.failedFiles || [], rowsBeforeDedup: Number(result.totalRowsBeforeDedup || 0),
+          duplicateRowsIgnored: Number(result.duplicateRowsIgnored || 0), parsedRows: 0,
+          invalidRows: result.invalidRows || [], jobCardsSaved: 0, status: "failed",
+          outcomes: [], startedAt: new Date().toISOString(), finishedAt: new Date().toISOString()
+        };
+        setUploadDiagnostic(emptyDiag);
+        return {success:false,status:"failed",error:"Excel mein valid assigned vehicle history rows nahi mile.",diagnostic:emptyDiag};
+      }
       setUploadProgress({stage:"Upload complete",current:files.length,total:files.length,detail:`${parsedRows.length.toLocaleString()} rows ready for service decision; database sync continues in background`});
     }catch(e){if(e?.name==="AbortError")setError("Upload cancelled. No new background history save was started by this upload. Any current network lookup may finish in the background.");else{setUploadMeta(null);setUploadedFiles([]);setUploadParsedRecords([]);setError(e?.message||"The Excel file could not be read.");}}
     finally{setUploadBusy(false);cancelProcessingRef.current=false;window.setTimeout(()=>setUploadProgress(null),1800);}

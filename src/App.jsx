@@ -9,6 +9,7 @@ import { autoTable } from "jspdf-autotable";
 import "./App.css";
 import DocumentScanner from "./DocumentScanner.jsx";
 import AuthGate from "./AuthGate.jsx";
+import ContributionPanel from "./ContributionPanel.jsx";
 import { validateEstimateAggregateSelection } from "./estimateAggregateValidation.js";
 
 async function fetchSaveHistory(url, init = {}) {
@@ -6560,14 +6561,24 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     return outcomes.sort((a,b) => a.vin.localeCompare(b.vin));
   }
 
-  const handleExcelUpload = async (event) => {
-    const selectedFiles=Array.from(event.target.files||[]);event.target.value="";if(!selectedFiles.length)return;
+  const handleExcelUpload = async (event, contributionOptions = {}) => {
+    const selectedFiles=Array.from(event.target.files||[]);event.target.value="";if(!selectedFiles.length)return contributionOptions.waitForDatabase ? { success:false, error:"No Excel file selected." } : undefined;
     const files=selectedFiles;
     cancelProcessingRef.current=false;setError("");setUploadDiagnostic(null);setUploadBusy(true);setUploadProgress({stage:"Preparing upload",current:0,total:files.length,detail:`${files.length} file(s) selected`});
     try{
       const result=await parseExcelFiles(files,{onProgress:setUploadProgress,isCancelled:()=>cancelProcessingRef.current});
       if(cancelProcessingRef.current){const e=new Error("Upload cancelled.");e.name="AbortError";throw e;}
-      const parsedRows=result.records||[],accepted=files.filter(f=>result.files.includes(f.name));
+      const accepted=files.filter(f=>result.files.includes(f.name));
+      let parsedRows=result.records||[];
+      const taskVins=Array.isArray(contributionOptions.taskVins)?[...new Set(contributionOptions.taskVins.map(v=>String(v||"").trim().toUpperCase()).filter(Boolean))]:[];
+      if(contributionOptions.waitForDatabase && taskVins.length){
+        const assignedSet=new Set(taskVins);
+        parsedRows=parsedRows.filter(record=>assignedSet.has(String(record?.vin||record?.chassis||"").trim().toUpperCase()));
+        const found=new Set(parsedRows.map(record=>String(record?.vin||record?.chassis||"").trim().toUpperCase()).filter(Boolean));
+        const missing=taskVins.filter(v=>!found.has(v));
+        if(missing.length) throw new Error("Uploaded Excel mein assigned "+taskVins.length+" VINs mein se "+missing.length+" VIN nahi mile: "+missing.slice(0,5).join(", ")+(missing.length>5?"…":""));
+        if(found.size!==50) throw new Error("Task ke liye exactly 50 assigned VINs chahiye; "+found.size+" unique VIN mile.");
+      }
       setExcelData("");setUploadedFiles(accepted);setRegistrationSearchResult(null);setUploadMeta({files:result.files,failedFiles:result.failedFiles||[],rowsBefore:result.totalRowsBeforeDedup,duplicates:result.duplicateRowsIgnored,rowsAfter:parsedRows.length,invalidRows:result.invalidRows||[]});
       setAnalysis(null);setBulkResults([]);setBulkMeta(null);setCustomerGroups([]);setSelectedCustomers([]);setUploadParsedRecords(parsedRows);
       if(parsedRows.length){const vins=new Set(parsedRows.map(r=>String(r?.vin||"").trim().toUpperCase()).filter(Boolean));setMode(vins.size>1?"bulk":"single");logUsage("Excel Upload",{fileCount:accepted.length,vehicleCount:vins.size,details:{rows:parsedRows.length,files:accepted.map(f=>f.name)}});}
@@ -6582,7 +6593,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         // analysis or keep the upload spinner open while Neon is being updated.
         diag.status="processing";
         setUploadDiagnostic({...diag});
-        void (async()=>{
+        const databaseSyncPromise=(async()=>{
           try{
             const cutoff=await fetchEmergencyDbUploadCutoff();
             diag.cutoff=Boolean(cutoff.enabled);
@@ -6662,10 +6673,22 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
             if(diag.status==="completed-with-errors")setError("Service data is ready for analysis, but background database sync reported an error. Check the temporary diagnostic report.");
           }
         })();
+        if(contributionOptions.waitForDatabase) {
+          await databaseSyncPromise;
+          if(diag.status!=="completed") return {success:false,status:diag.status,error:diag.backgroundError||diag.vehicleMasterError||"Database history sync completed with errors.",diagnostic:diag};
+          return {success:true,status:diag.status,diagnostic:diag};
+        }
       }
       setUploadProgress({stage:"Upload complete",current:files.length,total:files.length,detail:`${parsedRows.length.toLocaleString()} rows ready for service decision; database sync continues in background`});
     }catch(e){if(e?.name==="AbortError")setError("Upload cancelled. No new background history save was started by this upload. Any current network lookup may finish in the background.");else{setUploadMeta(null);setUploadedFiles([]);setUploadParsedRecords([]);setError(e?.message||"The Excel file could not be read.");}}
     finally{setUploadBusy(false);cancelProcessingRef.current=false;window.setTimeout(()=>setUploadProgress(null),1800);}
+  };
+
+  const runContributionUpload = async (file, taskVins) => {
+    if(!file) throw new Error("Excel file select karein.");
+    const result=await handleExcelUpload({target:{files:[file],value:""}},{waitForDatabase:true,taskVins});
+    if(!result?.success) throw new Error(result?.error||"Existing bulk upload pipeline se database sync verify nahi hua.");
+    return result;
   };
 
   const getAnalysisRecords = () => {
@@ -9911,6 +9934,8 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
 
           <main className="excel-sheet">
             {mode === "home" ? (
+              <>
+              <ContributionPanel user={user} onUpload={runContributionUpload} />
               <PortalHome user={user} theme={dashboardPrefs.theme || "blue"} onThemeChange={changeDashboardTheme} hasAnalysis={Boolean(analysis)} bulkResults={bulkResults}
                 onSearchRegistration={registration => { const value = String(registration || "").replace(/\s+/g, "").trim().toUpperCase(); setRegistrationSearchInput(value); setRegistrationSearchError(""); void searchVehicleByRegistration(value); }}
                 registrationSearchError={registrationSearchError}
@@ -9921,6 +9946,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                 onClear={clear}
                 onOpenSavedEstimate={openSavedEstimate}
               />
+              </>
             ) : mode === "warranty-tags" ? (
               <WarrantyTagPanel user={user} onBack={() => setMode("home")} />
             ) : mode === "document-scanner" ? (

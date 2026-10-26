@@ -135,7 +135,7 @@ export default function ContributionPanel({ user, onUpload }) {
       setUploadSummary({
         filesSelected: Number(diag.filesSelected || 0),
         filesRead: Number(diag.filesRead || 0),
-        repeatedFilesSkipped: Math.max(0, Number(diag.filesSelected || 0) - Number(diag.filesRead || 0) - (Array.isArray(diag.filesFailed) ? diag.filesFailed.length : 0)),
+        repeatedFilesSkipped: Number(diag.repeatedFilesSkipped || 0),
         rowsReady: Number(diag.parsedRows || 0),
         duplicateRowsIgnored: Number(diag.duplicateRowsIgnored || 0),
         invalidRows: Array.isArray(diag.invalidRows) ? diag.invalidRows.length : 0,

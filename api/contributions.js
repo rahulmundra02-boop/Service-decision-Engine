@@ -38,7 +38,7 @@ async function auth(client, req) {
     const m = Number(parts.find(p => p.type === "month").value);
     const currentMonth = `${y}-${String(m).padStart(2,"0")}-01`;
     if (currentMonth >= "2026-12-01") {
-      await client.query("SELECT pg_advisory_xact_lock(hashtext($1)::bigint)", [`monthly-contribution-access:${user.id}:${currentMonth}`]);
+      // The primary key plus ON CONFLICT below makes the monthly check idempotent without lock-order deadlocks.
       const checked = await client.query("SELECT eligible FROM contribution_access_checks WHERE user_id=$1 AND month_start=$2", [user.id,currentMonth]);
       if (!checked.rows[0]) {
         const previousMonth = new Date(Date.UTC(y,m-2,1)).toISOString().slice(0,7)+"-01";

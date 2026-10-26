@@ -603,7 +603,7 @@ tr:last-child td { border-bottom:0; }
     min-width: 100% !important;
     max-width: none !important;
   }
-  .single-history-wrap::after {
+  .single-history-wrap::before {
     content: "Swipe left or right to view all service-history columns";
     display: block;
     padding: 7px 9px;
@@ -619,5 +619,5 @@ tr:last-child td { border-bottom:0; }
     width: 100% !important;
     max-width: 100% !important;
   }
-  .single-history-wrap::after { display: none !important; }
+  .single-history-wrap::before { display: none !important; }
 }

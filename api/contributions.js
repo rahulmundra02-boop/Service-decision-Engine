@@ -183,11 +183,17 @@ export default async function handler(req, res) {
       const existing = await client.query(`SELECT id,status,vehicle_vins,assigned_at,expires_at FROM contribution_tasks
         WHERE assigned_user_id=$1 AND status IN ('Assigned','Submitted','Processing') ORDER BY created_at DESC LIMIT 1 FOR UPDATE`, [user.id]);
       if (existing.rows[0]) { await client.query("COMMIT"); return res.json({success:true,task:existing.rows[0],existing:true}); }
-      const vehicles = await client.query(`SELECT v.vin FROM vehicles v
+      const vehicles = await client.query(`SELECT v.vin,
+          (SELECT MAX(e.created_at) FROM vehicle_upload_events e
+            WHERE UPPER(TRIM(e.vin))=UPPER(TRIM(v.vin)) AND e.event_type='history-upload') AS last_history_upload
+        FROM vehicles v
         WHERE NULLIF(TRIM(v.vin),'') IS NOT NULL
-          AND v.last_refreshed_at IS NOT NULL AND v.last_refreshed_at <= NOW()-INTERVAL '7 days'
+          AND EXISTS(SELECT 1 FROM vehicle_upload_events e
+            WHERE UPPER(TRIM(e.vin))=UPPER(TRIM(v.vin)) AND e.event_type='history-upload')
+          AND (SELECT MAX(e.created_at) FROM vehicle_upload_events e
+            WHERE UPPER(TRIM(e.vin))=UPPER(TRIM(v.vin)) AND e.event_type='history-upload') <= NOW()-INTERVAL '7 days'
           AND NOT EXISTS(SELECT 1 FROM contribution_vehicle_reservations r WHERE UPPER(TRIM(r.vin))=UPPER(TRIM(v.vin)))
-        ORDER BY v.last_refreshed_at ASC NULLS FIRST, v.vin ASC
+        ORDER BY last_history_upload ASC, UPPER(TRIM(v.vin)) ASC
         LIMIT 1000`);
       const eligible = [];
       const seen = new Set();

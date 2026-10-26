@@ -28,9 +28,34 @@ async function auth(client, req) {
   const r = await client.query(
     `SELECT u.id,u.role,u.status,u.mobile,u.person_name,u.email,s.last_seen_at
        FROM auth_sessions s JOIN app_users u ON u.id=s.user_id
-      WHERE s.token_hash=$1 AND s.expires_at>NOW() AND u.status='active'
+      WHERE s.token_hash=$1 AND s.expires_at>NOW()
       LIMIT 1`, [hash(token)]);
-  if (!r.rows[0]) return null;
+  if (!r.rows[0] || r.rows[0].status !== "active") return null;
+  const user = r.rows[0];
+  if (user.role !== "admin") {
+    const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit" }).formatToParts(new Date());
+    const y = Number(parts.find(p => p.type === "year").value);
+    const m = Number(parts.find(p => p.type === "month").value);
+    const currentMonth = `${y}-${String(m).padStart(2,"0")}-01`;
+    if (currentMonth >= "2026-12-01") {
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1)::bigint)", [`monthly-contribution-access:${user.id}:${currentMonth}`]);
+      const checked = await client.query("SELECT eligible FROM contribution_access_checks WHERE user_id=$1 AND month_start=$2", [user.id,currentMonth]);
+      if (!checked.rows[0]) {
+        const previousMonth = new Date(Date.UTC(y,m-2,1)).toISOString().slice(0,7)+"-01";
+        const balanceResult = await client.query(`SELECT COALESCE(SUM(CASE
+          WHEN entry_type IN ('earned','received','admin_adjustment') THEN points
+          WHEN entry_type IN ('donated','used_for_eligibility','expired') THEN -points ELSE 0 END),0)::int AS balance
+          FROM contribution_points_ledger WHERE user_id=$1 AND month_start=$2`, [user.id,previousMonth]);
+        const eligible = Number(balanceResult.rows[0]?.balance || 0) >= 50;
+        await client.query("INSERT INTO contribution_access_checks(user_id,month_start,eligible) VALUES($1,$2,$3) ON CONFLICT(user_id,month_start) DO NOTHING", [user.id,currentMonth,eligible]);
+        if (!eligible) {
+          await client.query("UPDATE app_users SET status='inactive' WHERE id=$1 AND status='active'", [user.id]);
+          await client.query("DELETE FROM auth_sessions WHERE user_id=$1", [user.id]);
+          return null;
+        }
+      }
+    }
+  }
   const seen = r.rows[0].last_seen_at ? new Date(r.rows[0].last_seen_at).getTime() : 0;
   if (!seen || Date.now() - seen > 12 * 60 * 60 * 1000) {
     await client.query("DELETE FROM auth_sessions WHERE token_hash=$1", [hash(token)]);

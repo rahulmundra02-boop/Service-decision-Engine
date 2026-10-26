@@ -5524,7 +5524,20 @@ function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResu
       <form className="home-registration-check" onSubmit={event => { event.preventDefault(); onSearchRegistration(homeRegistration); }}>
         <div className="home-registration-copy"><strong>Schedule Service Check by Registration No.</strong><span>Enter the vehicle registration number to view its service decision.</span></div>
         <div className="home-registration-controls"><input className="excel-input" value={homeRegistration} onChange={event => setHomeRegistration(event.target.value.toUpperCase())} placeholder="e.g. GJ12CV0462" aria-label="Vehicle registration number" autoComplete="off" /><button className="excel-button green" type="submit">Submit</button></div>
-        {registrationSearchError && <div className="registration-search-error home-registration-error" role="alert">{registrationSearchError}</div>}
+        {registrationSearchError && (
+          <div className="registration-search-error home-registration-error" role="alert">
+            <strong style={{display:"block",marginBottom:6}}>Service Check Error Report</strong>
+            <div><b>Registration No.:</b> {homeRegistration.trim().toUpperCase() || "Not entered"}</div>
+            <div style={{marginTop:4}}><b>Error:</b> {registrationSearchError}</div>
+            {/EMAXCONN|max clients reached|pool_size/i.test(registrationSearchError) && (
+              <div style={{marginTop:8,padding:8,borderRadius:6,background:"rgba(255,255,255,.65)",textAlign:"left"}}>
+                <b>Likely cause:</b> Database connection pool is full; the request could not obtain a PostgreSQL connection.
+                <br/><b>Required check:</b> Inspect active sessions, connection release/timeout handling and pool configuration.
+              </div>
+            )}
+            <div style={{marginTop:6,fontSize:12,opacity:.85}}>Please take a screenshot of this complete report when sharing the issue. No decision result was generated from this failed request.</div>
+          </div>
+        )}
       </form>
       <div className="portal-kpi-grid">
         <div className="portal-kpi"><span>Vehicles in Current Upload</span><strong>{totalVehicles}</strong><small>Current session</small></div>

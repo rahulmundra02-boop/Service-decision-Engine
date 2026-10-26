@@ -9605,10 +9605,18 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
           touch-action: pan-x pan-y !important;
           overscroll-behavior-x: contain;
         }
-        .single-history-wrap > .single-service-summary {
-          width: max-content !important;
-          min-width: 100% !important;
-          max-width: none !important;
+        @media (max-width: 800px) {
+          .single-history-wrap > .single-service-summary {
+            width: max-content !important;
+            min-width: 100% !important;
+            max-width: none !important;
+          }
+        }
+        @media (min-width: 801px) {
+          .single-history-wrap > .single-service-summary {
+            width: 100% !important;
+            max-width: 100% !important;
+          }
         }
         .single-history-wrap::after {
           content: "Swipe left or right to view all service-history columns";

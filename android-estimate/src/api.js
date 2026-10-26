@@ -2,7 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 
 export const API_BASE_URL = 'https://service-decision-engine.vercel.app';
-export const PRICE_MASTER_API_URL = 'https://service-decision-engine-git-v12-ui-testing-service-decision.vercel.app';
+// Use Stable's proxy for price lookups so it can check Beta first and fall back to Stable's own Price Master when a part is missing.
+export const PRICE_MASTER_API_URL = API_BASE_URL;
 
 const TOKEN_KEY = 'service_estimate_auth_token';
 const USER_KEY = 'service_estimate_user';

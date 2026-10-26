@@ -2796,14 +2796,25 @@ function freeService(records,vehicle,running,analysisDate,decisionBasis = "AUTO"
       ['3RD FREE SERVICE',57000,63000,17,19,'3rd free service']
     ];
     for(const [name,min,max,mn,mx,label] of checks){
-      if(records.some(r=>String(r.standardizedPart||'').toUpperCase().includes(name))) continue;
+      // Only treat an explicit free-service history entry as completed.
+      // Broad includes() can suppress a due service if unrelated text happens
+      // to contain the service label.
+      if(records.some(r => {
+        const text = String(r.standardizedPart || r.part || r.partDescription || '').toUpperCase().replace(/\\s+/g,' ').trim();
+        return text === name || text === name.replace(/ FREE SERVICE$/,' FREE SERVICE');
+      })) continue;
       const ageMax=monthsAfter(vehicle.sale,mx), ageMin=monthsAfter(vehicle.sale,mn);
       if (decisionBasis === "TIME_ONLY") {
         if (analysisDate >= ageMin && analysisDate <= ageMax) return label;
         continue;
       }
-      if(running.current>max || analysisDate>ageMax) continue;
-      if(running.current>=min || analysisDate>=ageMin) return label;
+      // A free service is eligible when either its KM window or its time
+      // window is reached, provided neither eligibility window has expired.
+      const kmWindowOpen = running.current <= max;
+      const timeWindowOpen = analysisDate <= ageMax;
+      const kmReached = running.current >= min && kmWindowOpen;
+      const timeReached = analysisDate >= ageMin && timeWindowOpen;
+      if ((kmReached || timeReached) && kmWindowOpen && timeWindowOpen) return label;
     }
     return '';
   }

@@ -5494,7 +5494,7 @@ function WarrantyTagPanel({user,onBack}){
     })}</div>}
   </>;
 }
-function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResults, savedEstimates, savedEstimatesLoading, onOpenSavedEstimate, onSearchRegistration, registrationSearchError, registrationSearchBusy }) {
+function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResults, savedEstimates, savedEstimatesLoading, onOpenSavedEstimate, onSearchRegistration, registrationSearchError, registrationSearchBusy, registrationSearchReport }) {
   const [homeRegistration, setHomeRegistration] = useState("");
   const dueVehicles = (bulkResults || []).filter(item => Array.isArray(item?.services) && item.services.length > 0).length;
   const totalVehicles = (bulkResults || []).length;
@@ -5524,18 +5524,21 @@ function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResu
       <form className="home-registration-check" onSubmit={event => { event.preventDefault(); onSearchRegistration(homeRegistration); }}>
         <div className="home-registration-copy"><strong>Schedule Service Check by Registration No.</strong><span>Enter the vehicle registration number to view its service decision.</span></div>
         <div className="home-registration-controls"><input className="excel-input" value={homeRegistration} onChange={event => setHomeRegistration(event.target.value.toUpperCase())} placeholder="e.g. GJ12CV0462" aria-label="Vehicle registration number" autoComplete="off" disabled={registrationSearchBusy} /><button className="excel-button green home-registration-submit" type="submit" disabled={registrationSearchBusy} aria-busy={registrationSearchBusy}>{registrationSearchBusy && <span className="estimate-spinner" aria-hidden="true" />}<span>{registrationSearchBusy ? "Searching..." : "Submit"}</span></button></div>
-        {registrationSearchError && (
-          <div className="registration-search-error home-registration-error" role="alert">
-            <strong style={{display:"block",marginBottom:6}}>Service Check Error Report</strong>
-            <div><b>Registration No.:</b> {homeRegistration.trim().toUpperCase() || "Not entered"}</div>
-            <div style={{marginTop:4}}><b>Error:</b> {registrationSearchError}</div>
-            {/EMAXCONN|max clients reached|pool_size/i.test(registrationSearchError) && (
-              <div style={{marginTop:8,padding:8,borderRadius:6,background:"rgba(255,255,255,.65)",textAlign:"left"}}>
-                <b>Likely cause:</b> Database connection pool is full; the request could not obtain a PostgreSQL connection.
-                <br/><b>Required check:</b> Inspect active sessions, connection release/timeout handling and pool configuration.
-              </div>
-            )}
-            <div style={{marginTop:6,fontSize:12,opacity:.85}}>Please take a screenshot of this complete report when sharing the issue. No decision result was generated from this failed request.</div>
+        {registrationSearchReport && (
+          <div className={"registration-search-error home-registration-error " + (registrationSearchReport.status === "SUCCESS" ? "registration-search-report-success" : registrationSearchReport.status === "SEARCHING" ? "registration-search-report-pending" : "")} role="status" aria-live="polite">
+            <strong style={{display:"block",marginBottom:6}}>Service Check Diagnostic Report</strong>
+            <div><b>Registration No.:</b> {registrationSearchReport.registration || homeRegistration.trim().toUpperCase() || "Not entered"}</div>
+            <div><b>Status:</b> {registrationSearchReport.status}</div>
+            <div><b>Request ID:</b> {registrationSearchReport.requestId || "Unavailable"}</div>
+            <div><b>Request started:</b> {registrationSearchReport.startedAt ? new Date(registrationSearchReport.startedAt).toLocaleString("en-IN") : "Unavailable"}</div>
+            <div><b>Request ended:</b> {registrationSearchReport.endedAt === "Request in progress" ? registrationSearchReport.endedAt : (registrationSearchReport.endedAt ? new Date(registrationSearchReport.endedAt).toLocaleString("en-IN") : "Unavailable")}</div>
+            <div><b>HTTP/API status:</b> {registrationSearchReport.httpStatus || "Unavailable"}</div>
+            {registrationSearchReport.returnedRows != null && <div><b>History rows returned:</b> {registrationSearchReport.returnedRows}</div>}
+            {registrationSearchReport.error && <div><b>Actual error:</b> {registrationSearchReport.error}</div>}
+            <div><b>Error category:</b> {registrationSearchReport.category || "Pending"}</div>
+            <div><b>Likely cause:</b> {registrationSearchReport.likelyCause || "Not determined"}</div>
+            <div><b>Next diagnostic step:</b> {registrationSearchReport.nextStep || "Wait for the request to finish."}</div>
+            <div style={{marginTop:6,fontSize:12,opacity:.85}}>Take a screenshot of this report if the search fails. No credentials or secrets are displayed.</div>
           </div>
         )}
       </form>
@@ -5642,6 +5645,8 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   const [registrationSearchBusy, setRegistrationSearchBusy] = useState(false);
   const [registrationSearchError, setRegistrationSearchError] = useState("");
   const [registrationSearchResult, setRegistrationSearchResult] = useState(null);
+  const [registrationSearchReport, setRegistrationSearchReport] = useState(null);
+  const registrationSearchLockRef = useRef(false);
   const [registrationHistoryMode, setRegistrationHistoryMode] = useState("schedule");
   const navigationPopRef = useRef(false);
   const clearCurrentDataRef = useRef(null);
@@ -7673,17 +7678,38 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   }
 
   async function searchVehicleByRegistration(inputOverride) {
+    if (registrationSearchLockRef.current) return;
     const registration = String(inputOverride ?? registrationSearchInput ?? "").replace(/\s+/g, "").trim().toUpperCase();
     setRegistrationSearchInput(registration);
     setRegistrationSearchError("");
     setRegistrationSearchResult(null);
-    if (!registration) { setRegistrationSearchError("Please enter a vehicle registration number."); return; }
+    if (!registration) {
+      const now = new Date().toISOString();
+      setRegistrationSearchError("Please enter a vehicle registration number.");
+      setRegistrationSearchReport({ registration: "Not entered", requestId: "not-started", startedAt: now, endedAt: now, status: "VALIDATION FAILED", httpStatus: "Not sent", error: "Please enter a vehicle registration number.", category: "Input validation", likelyCause: "Registration number was empty.", nextStep: "Enter a valid vehicle registration number and submit again." });
+      return;
+    }
+    registrationSearchLockRef.current = true;
+    const started = new Date();
+    const requestId = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : ("reg-" + started.getTime() + "-" + Math.random().toString(36).slice(2, 8));
+    let httpStatus = "No response";
     setRegistrationSearchBusy(true);
+    setRegistrationSearchReport({ registration, requestId, startedAt: started.toISOString(), endedAt: "Request in progress", status: "SEARCHING", httpStatus, error: "", category: "In progress", likelyCause: "Not determined yet.", nextStep: "Wait for the database lookup to finish." });
+    const finishReport = (details) => setRegistrationSearchReport({ registration, requestId, startedAt: started.toISOString(), endedAt: new Date().toISOString(), httpStatus, ...details });
     try {
-      const response = await fetchSaveHistory("/api/save-history?registration=" + encodeURIComponent(registration));
+      const response = await fetchSaveHistory("/api/save-history?registration=" + encodeURIComponent(registration), { headers: { "X-Request-ID": requestId } });
+      httpStatus = String(response.status) + (response.statusText ? " " + response.statusText : "");
       const data = await response.json().catch(() => ({}));
-      if (!response.ok || data?.success === false) throw new Error(data?.error || "Unable to search the database right now.");
-      if (!data?.vehicle) { setRegistrationSearchError("Vehicle not found. The registration number may be incorrect, or the vehicle may not be available in the database."); return; }
+      if (!response.ok || data?.success === false) {
+        const message = data?.error || ("Request failed with HTTP " + response.status + ".");
+        throw Object.assign(new Error(message), { httpStatus: response.status, requestId });
+      }
+      if (!data?.vehicle) {
+        const message = "Vehicle not found. The registration number may be incorrect, or the vehicle may not be available in the database.";
+        setRegistrationSearchError(message);
+        finishReport({ status: "NO RECORD FOUND", error: message, category: "No matching vehicle", likelyCause: "No vehicle record matched this registration number in the database.", nextStep: "Check the registration number and confirm the vehicle exists in the uploaded database history." });
+        return;
+      }
       const records = (Array.isArray(data.rows) ? data.rows : []).map((row, index) => ({
         rowNumber: index + 1, jobCard: String(row.job_card_no || ""), date: parseDate(row.job_date), reading: 0, unit: "",
         cumulative: parseNumber(row.cumulative_reading), cumulativeUnit: String(row.cumulative_unit || ""),
@@ -7697,10 +7723,20 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         checkInDate: null, vin: String(row.vin || data.vehicle.vin || ""), driverPhone: String(row.driver_phone || ""),
         serviceContactPhone: String(row.service_contact_person_phone || ""), repairType: String(row.repair_type || ""), source: "Database Registration Search"
       }));
-      if (!records.length) { setRegistrationSearchError("Vehicle exists in the database, but no service history records are available to calculate a decision."); return; }
+      if (!records.length) {
+        const message = "Vehicle exists in the database, but no service history records are available to calculate a decision.";
+        setRegistrationSearchError(message);
+        finishReport({ status: "NO HISTORY", error: message, category: "Missing service history", likelyCause: "The vehicle record was returned without history rows.", nextStep: "Verify that service history for this registration has been uploaded and linked to the vehicle." });
+        return;
+      }
       const vehicle = deriveVehicle(records);
       const running = deriveRunningReading(records, vehicle);
-      if (!running?.last || !(running.current > 0)) { setRegistrationSearchError("Vehicle history was found, but a usable cumulative KM/HRS reading is missing. The Decision Engine cannot safely determine services due."); return; }
+      if (!running?.last || !(running.current > 0)) {
+        const message = "Vehicle history was found, but a usable cumulative KM/HRS reading is missing. The Decision Engine cannot safely determine services due.";
+        setRegistrationSearchError(message);
+        finishReport({ status: "INCOMPLETE DATA", error: message, category: "Missing reading", likelyCause: "The returned history has no usable cumulative KM/HRS reading.", nextStep: "Check the latest job-card cumulative reading and unit in the database. No decision was generated." });
+        return;
+      }
       const visits = aggregateHistory(records);
       const decision = calculateDecisions(records, vehicle, running);
       setDecisionBasis(running?.unit === "HRS" ? "HRS" : "KM");
@@ -7709,9 +7745,25 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       setRegistrationSearchResult({ ...data, searchedRegistration: registration });
       setEstimateOpen(false);
       setMode("single");
+      finishReport({ status: "SUCCESS", error: "", category: "Completed", likelyCause: "No request error detected.", nextStep: "Review the vehicle service decision and service-history details.", returnedRows: records.length });
       logUsage("Registration Database Service Analysis", { mode: "single", vehicleCount: 1, vin: String(vehicle?.vin || "").trim().toUpperCase(), details: { source: "database", rows: records.length, serviceCount: (decision?.services || []).length } });
-    } catch (error) { setRegistrationSearchError(error?.message || "Unable to load vehicle service history. Please try again."); }
-    finally { setRegistrationSearchBusy(false); }
+    } catch (error) {
+      const message = error?.message || "Unable to load vehicle service history. Please try again.";
+      setRegistrationSearchError(message);
+      const status = error?.httpStatus || httpStatus;
+      const isPoolError = /EMAXCONN|max clients reached|pool_size|too many clients|connection.*(timeout|refused|terminated)/i.test(message);
+      finishReport({
+        status: "FAILED",
+        httpStatus: String(status),
+        error: message,
+        category: isPoolError ? "Database connection capacity / connection failure" : (error?.name === "TypeError" ? "Network or fetch failure" : "API / request failure"),
+        likelyCause: isPoolError ? "Likely database connection pool exhaustion or an upstream session limit. This message alone does not prove a connection leak." : (error?.name === "TypeError" ? "Likely network interruption, blocked request, or unavailable API endpoint." : "The API rejected or failed this request. Check the returned error and server logs."),
+        nextStep: isPoolError ? "Inspect Supabase/Postgres active sessions and pooler mode, check API connection creation/release paths and query timeouts, then compare request concurrency with the configured pool size." : "Check the HTTP status, request/network logs and server-side API logs using the request ID. Do not share database credentials."
+      });
+    } finally {
+      registrationSearchLockRef.current = false;
+      setRegistrationSearchBusy(false);
+    }
   }
 
   async function lookupEstimateVehicle() {
@@ -9541,9 +9593,36 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
           accent-color: #2f9e44;
         }
         .single-history-wrap {
+          display: block !important;
+          width: 100% !important;
+          max-width: 100% !important;
+          min-width: 0 !important;
           max-height: none !important;
           height: auto !important;
-          overflow: visible !important;
+          overflow-x: auto !important;
+          overflow-y: visible !important;
+          -webkit-overflow-scrolling: touch !important;
+          touch-action: pan-x pan-y !important;
+          overscroll-behavior-x: contain;
+        }
+        .single-history-wrap > .single-service-summary {
+          width: max-content !important;
+          min-width: 100% !important;
+          max-width: none !important;
+        }
+        .single-history-wrap::after {
+          content: "Swipe left or right to view all service-history columns";
+          display: block;
+          padding: 7px 9px;
+          font-size: 11px;
+          font-weight: 700;
+          color: #475569;
+          background: #f1f5f9;
+          border-top: 1px solid #cbd5e1;
+          white-space: normal;
+        }
+        @media (min-width: 801px) {
+          .single-history-wrap::after { display: none; }
         }
         @media (max-width: 800px) {
           .single-note-grid {
@@ -9976,6 +10055,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                 onSearchRegistration={registration => { const value = String(registration || "").replace(/\s+/g, "").trim().toUpperCase(); setRegistrationSearchInput(value); setRegistrationSearchError(""); void searchVehicleByRegistration(value); }}
                 registrationSearchError={registrationSearchError}
                 registrationSearchBusy={registrationSearchBusy}
+                registrationSearchReport={registrationSearchReport}
                 savedEstimates={savedEstimates}
                 savedEstimatesLoading={savedEstimatesLoading}
                 onNavigate={(nextMode) => { if (nextMode === "estimate") { if (analysis) void openEstimate(); else openStandaloneEstimate(); } else setMode(nextMode); }}
@@ -10220,7 +10300,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                     </label>
                   </div>
                 </div>
-                <div className="history-wrap single-history-wrap" style={{maxHeight:"none",height:"auto",width:"100%",maxWidth:"100%",overflowX:"auto",overflowY:"visible",WebkitOverflowScrolling:"touch",touchAction:"pan-x"}}>
+                <div className="history-wrap single-history-wrap" style={{display:"block",maxHeight:"none",height:"auto",width:"100%",maxWidth:"100%",minWidth:0,overflowX:"auto",overflowY:"visible",WebkitOverflowScrolling:"touch",touchAction:"pan-x pan-y",overscrollBehaviorX:"contain"}}>
                   <table className="history-table single-service-summary dashboard-resizable-table"><thead><tr>
 {singleTableColumns.map((key,index) => (
   <th key={key} style={tableColumnStyle("single",key)}>

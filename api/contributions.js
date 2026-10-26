@@ -209,6 +209,18 @@ export default async function handler(req, res) {
       return res.json({success:true,task,existing:false});
     }
 
+    if (action === "fail-task") {
+      const taskId = clean(body.taskId);
+      const reason = clean(body.reason)?.slice(0,500) || "Upload/database verification failed";
+      const task = await client.query("SELECT id,status FROM contribution_tasks WHERE id=$1 AND assigned_user_id=$2 FOR UPDATE",[taskId,user.id]);
+      if (!task.rows[0] || task.rows[0].status !== "Assigned") {
+        await client.query("ROLLBACK"); return res.status(409).json({success:false,error:"Task already changed status; refresh and check task result."});
+      }
+      await client.query("UPDATE contribution_tasks SET status='Failed',last_error=$2 WHERE id=$1",[taskId,reason]);
+      await client.query("DELETE FROM contribution_vehicle_reservations WHERE task_id=$1",[taskId]);
+      await client.query("COMMIT"); return res.json({success:true,status:"Failed"});
+    }
+
     if (action === "cancel-task" || action === "retry-task") {
       const taskId = clean(body.taskId);
       const task = await client.query("SELECT * FROM contribution_tasks WHERE id=$1 AND assigned_user_id=$2 FOR UPDATE",[taskId,user.id]);

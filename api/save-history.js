@@ -149,6 +149,8 @@ async function requireAdminForPriceMaster(client, req) {
 }
 
 export default async function handler(req, res) {
+  const requestId = String(req.headers?.["x-request-id"] || "").replace(/[^a-zA-Z0-9._-]/g, "").slice(0, 100) || crypto.randomUUID();
+  res.setHeader("X-Request-ID", requestId);
   if (req.method === "GET") {
     const token = String(req.headers?.authorization || "").replace(/^Bearer\s+/i, "").trim();
     if (!token) return res.status(401).json({success:false,error:"Authentication required."});
@@ -334,8 +336,9 @@ export default async function handler(req, res) {
       "GBX130","RAX145","STH110","AIR165Z","WHL165A"
     ];
 
-    const client = await pool.connect();
+    let client = null;
     try {
+      client = await pool.connect();
     // Compact mobile master lookup: return only the service-part descriptions requested by the app.
     // The Android app keeps this catalog locally and only asks for codes it is still missing.
     const serviceCatalogFlag = String(req.query?.serviceCatalog || "") === "1";
@@ -776,9 +779,9 @@ export default async function handler(req, res) {
         modelRows, globalPartRates:rateResult.rows
       });
     } catch (error) {
-      console.error("Read History Error:", error);
-      return res.status(500).json({ success:false,error:error?.message||"Service history read failed" });
-    } finally { client.release(); }
+      console.error("Read History Error:", { requestId, error: error?.message || String(error), code: error?.code || null });
+      return res.status(500).json({ success:false, error:error?.message || "Service history read failed", requestId });
+    } finally { if (client) client.release(); }
   }
   if (req.method !== "POST") {
     res.setHeader("Allow", "GET, POST");

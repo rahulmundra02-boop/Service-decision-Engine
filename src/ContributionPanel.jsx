@@ -154,7 +154,7 @@ export default function ContributionPanel({ user, onUpload }) {
     e.preventDefault(); setDonateBusy(true); setError(""); setMessage("");
     try {
       const normalizedMobile = donation.mobile.replace(/\D/g, "").replace(/^91(?=\d{10}$)/, "");
-      if (!recipientPreview || recipientPreview.mobile !== donation.mobile || String(recipientPreview.normalizedMobile) !== normalizedMobile) {
+      if (!recipientPreview || recipientPreview.requestedMobile !== donation.mobile || String(recipientPreview.normalizedMobile) !== normalizedMobile) {
         const result = await callApi("lookup-recipient", { mobile: donation.mobile });
         setRecipientPreview({ ...result.recipient, normalizedMobile, requestedMobile: donation.mobile });
         setMessage("Recipient ka naam verify karein. Confirm karne ke baad hi points transfer honge.");

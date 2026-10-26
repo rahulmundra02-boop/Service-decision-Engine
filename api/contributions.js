@@ -249,14 +249,25 @@ export default async function handler(req, res) {
       return res.json({success:true,status:"Completed",pointsAwarded:1,dashboard:data});
     }
 
+    if (action === "lookup-recipient") {
+      const receiverMobile = clean(body.mobile).replace(/\D/g,"").replace(/^91(?=\d{10}$)/,"");
+      if (!/^\d{10}$/.test(receiverMobile)) { await client.query("ROLLBACK"); return res.status(400).json({success:false,error:"Registered 10-digit mobile enter karein."}); }
+      const receiver = await client.query("SELECT id,person_name,mobile FROM app_users WHERE right(regexp_replace(COALESCE(mobile,''),'[^0-9]','','g'),10)=$1 AND status='active' LIMIT 1",[receiverMobile]);
+      if (!receiver.rows[0]) { await client.query("ROLLBACK"); return res.status(404).json({success:false,error:"Is mobile se active registered account nahi mila."}); }
+      if (String(receiver.rows[0].id)===String(user.id)) { await client.query("ROLLBACK"); return res.status(400).json({success:false,error:"Apne account ko points donate nahi kar sakte."}); }
+      await client.query("COMMIT"); return res.json({success:true,recipient:{id:receiver.rows[0].id,name:receiver.rows[0].person_name,mobile:receiver.rows[0].mobile}});
+    }
+
     if (action === "donate-points") {
       const receiverMobile = clean(body.mobile).replace(/\D/g,"").replace(/^91(?=\d{10}$)/,"");
       const points = Number(body.points);
       if (!/^\d{10}$/.test(receiverMobile) || !Number.isInteger(points) || points<1 || points>50) {
         await client.query("ROLLBACK"); return res.status(400).json({success:false,error:"Registered 10-digit mobile aur valid points enter karein."});
       }
-      const receiver = await client.query("SELECT id FROM app_users WHERE right(regexp_replace(COALESCE(mobile,''),'[^0-9]','','g'),10)=$1 AND status='active' LIMIT 1",[receiverMobile]);
+      await client.query("SELECT pg_advisory_xact_lock($1::bigint)", [user.id]);
+      const receiver = await client.query("SELECT id,person_name FROM app_users WHERE right(regexp_replace(COALESCE(mobile,''),'[^0-9]','','g'),10)=$1 AND status='active' LIMIT 1",[receiverMobile]);
       if (!receiver.rows[0]) { await client.query("ROLLBACK"); return res.status(404).json({success:false,error:"Is mobile se active registered account nahi mila."}); }
+      if (String(receiver.rows[0].id)!==String(body.receiverId) || clean(body.confirmedName)!==clean(receiver.rows[0].person_name)) { await client.query("ROLLBACK"); return res.status(409).json({success:false,error:"Recipient name/mobile confirmation mismatch. Pehle recipient dobara verify karein."}); }
       if (String(receiver.rows[0].id)===String(user.id)) { await client.query("ROLLBACK"); return res.status(400).json({success:false,error:"Apne account ko points donate nahi kar sakte."}); }
       const d = await dashboard(client,user);
       if (d.availablePoints < points) { await client.query("ROLLBACK"); return res.status(409).json({success:false,error:"Itne available points nahi hain."}); }

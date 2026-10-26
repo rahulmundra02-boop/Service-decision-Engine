@@ -10093,6 +10093,111 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                 </div>
 
 
+                {analysis && (() => {
+                  const fsRecords = Array.isArray(analysis.records) ? analysis.records : [];
+                  const fsDecisionRecords = getServiceDecisionRecords(fsRecords);
+                  const fsModel = String(analysis.vehicle?.model || "");
+                  const fsIsCngException = isGB2822G50HCoModel(fsModel);
+                  const fsIsTipper = isTipperModel(fsModel);
+                  const fsBasis = decisionBasis === "AUTO"
+                    ? (fsIsTipper ? "HRS" : "KM")
+                    : getEffectiveDecisionBasis(analysis.vehicle, decisionBasis);
+                  const fsUseHours = !fsIsCngException && fsBasis === "HRS";
+                  const fsCurrent = fsIsCngException
+                    ? deriveRunningReadingForBasis(fsRecords, analysis.vehicle, "KM").current
+                    : Number(analysis.running?.current || 0);
+                  const fsUnit = fsIsCngException ? "KM" : (fsUseHours ? "HRS" : "KM");
+                  const fsAnalysisDate = new Date();
+                  fsAnalysisDate.setHours(0,0,0,0);
+                  const fsChecks = fsIsCngException
+                    ? [
+                        ["1ST FREE SERVICE",17000,23000,5,7,"1st Free Service"],
+                        ["2ND FREE SERVICE",37000,43000,11,13,"2nd Free Service"],
+                        ["3RD FREE SERVICE",57000,63000,17,19,"3rd Free Service"]
+                      ]
+                    : fsUseHours
+                      ? (String(fsModel).toUpperCase().includes("RMC")
+                        ? [
+                            ["1ST FREE SERVICE",440,560,2,4,"1st Free Service"],
+                            ["2ND FREE SERVICE",940,1060,5,7,"2nd Free Service"],
+                            ["3RD FREE SERVICE",1440,1560,8,10,"3rd Free Service"]
+                          ]
+                        : [
+                            ["1ST FREE SERVICE",440,560,2,4,"1st Free Service"],
+                            ["2ND FREE SERVICE",940,1060,5,7,"2nd Free Service"],
+                            ["3RD FREE SERVICE",1940,2060,8,10,"3rd Free Service"]
+                          ])
+                      : [
+                          ["1ST FREE SERVICE",37000,43000,5,7,"1st Free Service"],
+                          ["2ND FREE SERVICE",77000,83000,11,13,"2nd Free Service"],
+                          ["3RD FREE SERVICE",117000,123000,17,19,"3rd Free Service"]
+                        ];
+                  const fsChecksReport = fsChecks.map(([key,min,max,mn,mx,label]) => {
+                    const completed = fsDecisionRecords.filter(r => String(r.standardizedPart || "").toUpperCase().includes(key));
+                    const startDate = analysis.vehicle?.sale ? monthsAfter(analysis.vehicle.sale,mn) : null;
+                    const endDate = analysis.vehicle?.sale ? monthsAfter(analysis.vehicle.sale,mx) : null;
+                    const readingOver = fsCurrent > max;
+                    const timeOver = !!endDate && fsAnalysisDate > endDate;
+                    const readingInRange = fsCurrent >= min && fsCurrent <= max;
+                    const timeInRange = !!startDate && !!endDate && fsAnalysisDate >= startDate && fsAnalysisDate <= endDate;
+                    let reason = "Not triggered: neither reading nor time reached the lower limit.";
+                    if (completed.length) reason = "Skipped: matching completed-service text found in standardizedPart.";
+                    else if (readingOver) reason = "Lapsed: current reading is above the upper limit.";
+                    else if (timeOver) reason = "Lapsed: today's date is after the time-window upper limit.";
+                    else if (readingInRange || timeInRange) reason = "Eligible: reading or time is in range.";
+                    else if (fsCurrent > max && timeOver) reason = "Lapsed: both upper limits crossed.";
+                    return {key,min,max,mn,mx,label,completed,startDate,endDate,readingOver,timeOver,readingInRange,timeInRange,reason};
+                  });
+                  const fsMatchingRows = fsDecisionRecords.filter(r => /FREE SERVICE/i.test(String(r.standardizedPart || "") + " " + String(r.part || "") + " " + String(r.partDescription || "")));
+                  const fsDateText = d => d instanceof Date && !Number.isNaN(d.getTime()) ? formatDate(d) : "Missing";
+                  const fsReadingText = r => {
+                    const val = r?.cumulative ?? r?.secondaryCumulativeReading ?? r?.odometer ?? "";
+                    const unit = r?.cumulativeUnit || r?.secondaryCumulativeUnit || "";
+                    return val === "" || val == null ? "No reading" : `${formatNumber(val)} ${unit}`.trim();
+                  };
+                  return (
+                    <section className="no-print" style={{marginTop:12,padding:12,border:"2px solid #0f766e",borderRadius:10,background:"#f0fdfa",color:"#12343b",fontSize:13,lineHeight:1.45,overflowWrap:"anywhere"}}>
+                      <div style={{fontSize:16,fontWeight:900,marginBottom:6}}>Free Service Diagnostic Report · Beta</div>
+                      <div style={{marginBottom:10}}>Ye report calculation ko affect nahi karti. Ismein wahi records aur conditions dikh rahi hain jo Free Service decision ko affect kar sakti hain.</div>
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(135px,1fr))",gap:7}}>
+                        {[
+                          ["Model",fsModel||"Missing"],
+                          ["Sale Date",fsDateText(analysis.vehicle?.sale)],
+                          ["Analysis Date",fsDateText(fsAnalysisDate)],
+                          ["Running Reading",`${formatNumber(fsCurrent)} ${fsUnit}`],
+                          ["Decision Basis",fsBasis],
+                          ["Tipper/RMC Model",fsIsTipper?"Yes":"No"],
+                          ["Special CNG Rule",fsIsCngException?"Yes":"No"],
+                          ["Excel vehicle rows",fsRecords.length],
+                          ["Rows accepted by service engine",fsDecisionRecords.length],
+                          ["Rows filtered out",fsRecords.length-fsDecisionRecords.length],
+                          ["Calculated Free Service",String(analysis.decision?.freeService||"EMPTY")],
+                          ["Final displayed service names",(analysis.services||getDueServiceNames(analysis.decision)||[]).join(", ")||"None"]
+                        ].map(([label,value])=><div key={label} style={{padding:8,border:"1px solid #99c9c5",borderRadius:7,background:"#fff",minWidth:0}}><div style={{fontSize:11,fontWeight:800,color:"#426466"}}>{label}</div><div style={{fontWeight:800,overflowWrap:"anywhere"}}>{String(value)}</div></div>)}
+                      </div>
+                      <div style={{fontSize:15,fontWeight:900,margin:"14px 0 6px"}}>Each Free Service eligibility check</div>
+                      <div style={{display:"grid",gap:8}}>
+                        {fsChecksReport.map(item=><div key={item.key} style={{padding:9,border:"1px solid #99c9c5",borderRadius:8,background:"#fff"}}>
+                          <div style={{fontWeight:900,fontSize:14}}>{item.label}</div>
+                          <div>Reading range: {formatNumber(item.min)}–{formatNumber(item.max)} {fsUnit}. Current: {formatNumber(fsCurrent)} {fsUnit}.</div>
+                          <div>Time range: {item.mn}–{item.mx} months after sale. {fsDateText(item.startDate)} to {fsDateText(item.endDate)}.</div>
+                          <div>Reading in range: <b>{item.readingInRange?"YES":"NO"}</b> · Time in range: <b>{item.timeInRange?"YES":"NO"}</b></div>
+                          <div>Reading upper limit crossed: <b>{item.readingOver?"YES":"NO"}</b> · Time upper limit crossed: <b>{item.timeOver?"YES":"NO"}</b></div>
+                          <div>Matching completed-history rows: <b>{item.completed.length}</b></div>
+                          <div style={{fontWeight:900,marginTop:3,color:item.reason.startsWith("Eligible")?"#166534":item.reason.startsWith("Lapsed")||item.reason.startsWith("Skipped")?"#b91c1c":"#92400e"}}>{item.reason}</div>
+                          {item.completed.length>0&&<ul style={{margin:"4px 0 0",paddingLeft:18}}>{item.completed.slice(0,10).map((r,i)=><li key={i}>{r.standardizedPart||"(no standardizedPart)"} · {r.part||r.partDescription||""} · {fsDateText(r.date)} · {fsReadingText(r)}</li>)}</ul>}
+                        </div>)}
+                      </div>
+                      <div style={{fontSize:15,fontWeight:900,margin:"14px 0 6px"}}>Free Service text found in accepted history</div>
+                      {fsMatchingRows.length===0
+                        ? <div style={{padding:8,background:"#fff",borderRadius:7}}>No accepted history row contains “Free Service” in standardizedPart, part, or partDescription.</div>
+                        : <div style={{display:"grid",gap:6}}>{fsMatchingRows.slice(0,30).map((r,i)=><div key={i} style={{padding:7,border:"1px solid #cbd5e1",borderRadius:6,background:"#fff"}}><b>{r.standardizedPart||"(standardizedPart empty)"}</b><div>Part: {r.part||"—"} · Description: {r.partDescription||"—"}</div><div>Job card: {r.jobCard||r.jobCardNo||"—"} · Date: {fsDateText(r.date)} · Reading: {fsReadingText(r)}</div></div>)}</div>}
+                      <div style={{fontSize:15,fontWeight:900,margin:"14px 0 6px"}}>First 20 accepted service-history rows</div>
+                      <div style={{display:"grid",gap:6}}>{fsDecisionRecords.slice(0,20).map((r,i)=><div key={i} style={{padding:7,border:"1px solid #cbd5e1",borderRadius:6,background:"#fff"}}><b>{r.standardizedPart||"(standardizedPart empty)"}</b><div>Part: {r.part||"—"} · Description: {r.partDescription||"—"}</div><div>Job card: {r.jobCard||r.jobCardNo||"—"} · Date: {fsDateText(r.date)} · Reading: {fsReadingText(r)}</div></div>)}</div>
+                    </section>
+                  );
+                })()}
+
                 {(() => {
                   const activeCampaigns = getActiveCampaignGroups(campaigns);
                   if (campaignLoading) {

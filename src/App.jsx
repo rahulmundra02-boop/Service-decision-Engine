@@ -6694,12 +6694,9 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   };
 
   const runContributionUpload = async (file, taskVins) => {
-    if(!file) throw new Error("Excel file select karein.");
-    const result=await handleExcelUpload({target:{files:[file],value:""}},{waitForDatabase:true,taskVins});
-    if(!result?.success) throw new Error(result?.error||"Existing bulk upload pipeline se database sync verify nahi hua.");
-    return result;
+    if(!file) return {success:false,error:"Excel file select karein."};
+    return await handleExcelUpload({target:{files:[file],value:""}},{waitForDatabase:true,taskVins});
   };
-
   const getAnalysisRecords = () => {
     if (uploadParsedRecords.length) {
       return {

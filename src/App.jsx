@@ -7751,14 +7751,15 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       const message = error?.message || "Unable to load vehicle service history. Please try again.";
       setRegistrationSearchError(message);
       const status = error?.httpStatus || httpStatus;
-      const isPoolError = /EMAXCONN|max clients reached|pool_size|too many clients|connection.*(timeout|refused|terminated)/i.test(message);
+      const isConnectionTimeout = /timeout exceeded when trying to connect|connection.*timeout|connect.*timed out|ETIMEDOUT/i.test(message);
+      const isPoolError = /EMAXCONN|max clients reached|pool_size|too many clients/i.test(message);
       finishReport({
         status: "FAILED",
         httpStatus: String(status),
         error: message,
-        category: isPoolError ? "Database connection capacity / connection failure" : (error?.name === "TypeError" ? "Network or fetch failure" : "API / request failure"),
-        likelyCause: isPoolError ? "Likely database connection pool exhaustion or an upstream session limit. This message alone does not prove a connection leak." : (error?.name === "TypeError" ? "Likely network interruption, blocked request, or unavailable API endpoint." : "The API rejected or failed this request. Check the returned error and server logs."),
-        nextStep: isPoolError ? "Inspect Supabase/Postgres active sessions and pooler mode, check API connection creation/release paths and query timeouts, then compare request concurrency with the configured pool size." : "Check the HTTP status, request/network logs and server-side API logs using the request ID. Do not share database credentials."
+        category: isPoolError ? "Database connection pool capacity" : (isConnectionTimeout ? "Database connection timeout" : (error?.name === "TypeError" ? "Network or fetch failure" : "API / request failure")),
+        likelyCause: isPoolError ? "Likely database connection pool exhaustion or an upstream session limit. This message alone does not prove a connection leak." : (isConnectionTimeout ? "The API timed out while opening a database connection. Possible causes include an unreachable database/pooler endpoint, exhausted upstream sessions, or transient network delay. Logs are needed to distinguish them." : (error?.name === "TypeError" ? "Likely network interruption, blocked request, or unavailable API endpoint." : "The API rejected or failed this request. Check the returned error and server logs.")),
+        nextStep: (isPoolError || isConnectionTimeout) ? "Check Supabase Postgres/Supavisor logs at the request time, active sessions and pooler mode. Verify the DATABASE_URL host/port is reachable from Vercel, inspect connection acquisition/release and timeout settings, and compare concurrent requests with pool limits. Do not share database credentials." : "Check the HTTP status, request/network logs and server-side API logs using the request ID. Do not share database credentials."
       });
     } finally {
       registrationSearchLockRef.current = false;

@@ -6562,8 +6562,18 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   }
 
   const handleExcelUpload = async (event, contributionOptions = {}) => {
-    const selectedFiles=Array.from(event.target.files||[]);event.target.value="";if(!selectedFiles.length)return contributionOptions.waitForDatabase ? { success:false, error:"No Excel file selected." } : undefined;
-    const files=selectedFiles;
+    const selectedFiles=Array.from(event.target.files||[]);event.target.value="";
+    if(!selectedFiles.length)return contributionOptions.waitForDatabase ? { success:false, error:"No Excel file selected." } : undefined;
+    seenUploadSignaturesRef.current.clear();
+    let repeatedFilesSkipped=0;
+    const files=[];
+    for(const file of selectedFiles){
+      const signature=`${file.name}|${file.size}|${file.lastModified}`;
+      if(seenUploadSignaturesRef.current.has(signature)){repeatedFilesSkipped++;continue;}
+      seenUploadSignaturesRef.current.add(signature);
+      files.push(file);
+    }
+    if(!files.length)return contributionOptions.waitForDatabase ? { success:false, error:"Repeated files were skipped." } : undefined;
     cancelProcessingRef.current=false;setError("");setUploadDiagnostic(null);setUploadBusy(true);setUploadProgress({stage:"Preparing upload",current:0,total:files.length,detail:`${files.length} file(s) selected`});
     try{
       const result=await parseExcelFiles(files,{onProgress:setUploadProgress,isCancelled:()=>cancelProcessingRef.current});
@@ -6578,10 +6588,10 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         parsedRows=parsedRows.filter(record=>assignedSet.has(String(record?.vin||record?.chassis||"").trim().toUpperCase()));
         if(!parsedRows.length) throw new Error("Excel mein assigned task ke kisi VIN ka valid history row nahi mila.");
       }
-      setExcelData("");setUploadedFiles(accepted);setRegistrationSearchResult(null);setUploadMeta({files:result.files,failedFiles:result.failedFiles||[],rowsBefore:result.totalRowsBeforeDedup,duplicates:result.duplicateRowsIgnored,rowsAfter:parsedRows.length,invalidRows:result.invalidRows||[]});
+      setExcelData("");setUploadedFiles(accepted);setRegistrationSearchResult(null);setUploadMeta({files:result.files,failedFiles:result.failedFiles||[],rowsBefore:result.totalRowsBeforeDedup,duplicates:result.duplicateRowsIgnored,rowsAfter:parsedRows.length,invalidRows:result.invalidRows||[],repeatedFilesSkipped});
       setAnalysis(null);setBulkResults([]);setBulkMeta(null);setCustomerGroups([]);setSelectedCustomers([]);setUploadParsedRecords(parsedRows);
       if(parsedRows.length){const vins=new Set(parsedRows.map(r=>String(r?.vin||"").trim().toUpperCase()).filter(Boolean));setMode(vins.size>1?"bulk":"single");logUsage("Excel Upload",{fileCount:accepted.length,vehicleCount:vins.size,details:{rows:parsedRows.length,files:accepted.map(f=>f.name)}});}
-      const diag = { filesSelected: files.length, filesRead: accepted.length, filesFailed: result.failedFiles || [], rowsBeforeDedup: Number(result.totalRowsBeforeDedup || 0), duplicateRowsIgnored: Number(result.duplicateRowsIgnored || 0), parsedRows: parsedRows.length, invalidRows: result.invalidRows || [], uniqueJobCards: 0, jobCardsAlreadyInDb: 0, jobCardsSubmitted: 0, jobCardsSaved: 0, newJobCardsInserted: 0, serviceLinesSaved: 0, vehicleCount: 0, vehiclesUpserted: 0, timestampsUpdated: 0, timestampFailedVins: [], timestampErrors: [], failedVins: [], failedOperations: [], vehicleMasterError: "", cutoff: false, cutoffStatusAvailable: false, cutoffCheckError: "", outcomes: [], status: "processing", startedAt: new Date().toISOString() };
+      const diag = { filesSelected: selectedFiles.length, filesRead: accepted.length, repeatedFilesSkipped, filesFailed: result.failedFiles || [], rowsBeforeDedup: Number(result.totalRowsBeforeDedup || 0), duplicateRowsIgnored: Number(result.duplicateRowsIgnored || 0), parsedRows: parsedRows.length, invalidRows: result.invalidRows || [], uniqueJobCards: 0, jobCardsAlreadyInDb: 0, jobCardsSubmitted: 0, jobCardsSaved: 0, newJobCardsInserted: 0, serviceLinesSaved: 0, vehicleCount: 0, vehiclesUpserted: 0, timestampsUpdated: 0, timestampFailedVins: [], timestampErrors: [], failedVins: [], failedOperations: [], vehicleMasterError: "", cutoff: false, cutoffStatusAvailable: false, cutoffCheckError: "", outcomes: [], status: "processing", startedAt: new Date().toISOString() };
       setUploadDiagnostic(diag);
       if(!parsedRows.length&&result.failedFiles?.length)setError(result.failedFiles.map(x=>`${x.name} — ${x.reason}`).join(" | "));
       if(parsedRows.length){
@@ -9856,6 +9866,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                   <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:8}}>
                     <span className="status-pill">Files selected: {Number(uploadDiagnostic.filesSelected||0).toLocaleString()}</span>
                     <span className="status-pill">Files read: {Number(uploadDiagnostic.filesRead||0).toLocaleString()}</span>
+                    <span className="status-pill">Repeated files skipped: {Number(uploadDiagnostic.repeatedFilesSkipped||0).toLocaleString()}</span>
                     <span className="status-pill">Rows before dedup: {Number(uploadDiagnostic.rowsBeforeDedup||0).toLocaleString()}</span>
                     <span className="status-pill">Duplicate rows skipped: {Number(uploadDiagnostic.duplicateRowsIgnored||0).toLocaleString()}</span>
                     <span className="status-pill">Parsed rows: {Number(uploadDiagnostic.parsedRows||0).toLocaleString()}</span>

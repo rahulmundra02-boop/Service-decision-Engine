@@ -205,6 +205,13 @@ async function ensureSchema(client) {
     ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS ip_address TEXT;
     ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS user_agent TEXT;
     CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id);
+    CREATE TABLE IF NOT EXISTS contribution_access_checks (
+      user_id BIGINT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+      month_start DATE NOT NULL,
+      eligible BOOLEAN NOT NULL,
+      checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY(user_id,month_start)
+    );
 
     CREATE TABLE IF NOT EXISTS user_activity (
       id BIGSERIAL PRIMARY KEY,
@@ -302,6 +309,40 @@ async function bootstrapAdmin(client) {
 const lastActivityWriteByUser = new Map();
 const LAST_ACTIVITY_WRITE_INTERVAL_MS = 5 * 60 * 1000;
 
+async function enforceMonthlyContributionAccess(client, user) {
+  if (!user || user.role === "admin") return true;
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+  const y = Number(parts.find(p => p.type === "year").value);
+  const m = Number(parts.find(p => p.type === "month").value);
+  const currentMonth = `${y}-${String(m).padStart(2,"0")}-01`;
+  // The contribution cycle begins after the free November 2026 month.
+  // Do not change existing access before December 2026.
+  if (currentMonth < "2026-12-01") return true;
+  await client.query("SELECT pg_advisory_xact_lock(hashtext($1)::bigint)", [`monthly-contribution-access:${user.id}:${currentMonth}`]);
+  const existing = await client.query("SELECT eligible FROM contribution_access_checks WHERE user_id=$1 AND month_start=$2", [user.id,currentMonth]);
+  if (existing.rows[0]) return true; // Admin reactivation remains effective for the rest of this month.
+  const previousDate = new Date(Date.UTC(y, m - 2, 1));
+  const previousMonth = previousDate.toISOString().slice(0,7)+"-01";
+  let balance = 0;
+  const ledgerExists = await client.query("SELECT to_regclass('public.contribution_points_ledger') AS table_name");
+  if (ledgerExists.rows[0]?.table_name) {
+    const result = await client.query(`SELECT COALESCE(SUM(CASE
+      WHEN entry_type IN ('earned','received','admin_adjustment') THEN points
+      WHEN entry_type IN ('donated','used_for_eligibility','expired') THEN -points
+      ELSE 0 END),0)::int AS balance
+      FROM contribution_points_ledger WHERE user_id=$1 AND month_start=$2`, [user.id,previousMonth]);
+    balance = Number(result.rows[0]?.balance || 0);
+  }
+  const eligible = balance >= 50;
+  await client.query("INSERT INTO contribution_access_checks(user_id,month_start,eligible) VALUES($1,$2,$3) ON CONFLICT(user_id,month_start) DO NOTHING", [user.id,currentMonth,eligible]);
+  if (!eligible) {
+    await client.query("UPDATE app_users SET status='inactive' WHERE id=$1 AND status='active'", [user.id]);
+    await client.query("DELETE FROM auth_sessions WHERE user_id=$1", [user.id]);
+    return false;
+  }
+  return true;
+}
+
 async function getUserByToken(client, token) {
   if (!token) return null;
   const tokenHash = hashValue(token);
@@ -316,6 +357,7 @@ async function getUserByToken(client, token) {
     [tokenHash]
   );
   if (!result.rows[0]) return null;
+  if (!(await enforceMonthlyContributionAccess(client, result.rows[0]))) return null;
   if (/service estimate android/i.test(clean(result.rows[0].device_name))) {
     await client.query("DELETE FROM auth_sessions WHERE token_hash=$1", [tokenHash]);
     return null;
@@ -587,6 +629,10 @@ export default async function handler(req, res) {
       }
 
       const user = found.rows[0];
+      if (user.status === "active" && !(await enforceMonthlyContributionAccess(client, user))) {
+        await client.query("COMMIT");
+        return res.status(403).json({ success:false, error:"Monthly contribution target complete nahi hua. Account inactive kar diya gaya hai; administrator se contact karein." });
+      }
       if (user.status !== "active") {
         await client.query("ROLLBACK");
         return res.status(403).json({ success:false, error:"This account is inactive. Please contact the administrator." });

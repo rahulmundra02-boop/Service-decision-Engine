@@ -6573,11 +6573,10 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       const taskVins=Array.isArray(contributionOptions.taskVins)?[...new Set(contributionOptions.taskVins.map(v=>String(v||"").trim().toUpperCase()).filter(Boolean))]:[];
       if(contributionOptions.waitForDatabase && taskVins.length){
         const assignedSet=new Set(taskVins);
+        // Only assigned vehicles are sent through the existing history pipeline. Partial valid rows are still saved;
+        // the backend independently withholds the point unless all 50 assigned VINs have saved Job Card history.
         parsedRows=parsedRows.filter(record=>assignedSet.has(String(record?.vin||record?.chassis||"").trim().toUpperCase()));
-        const found=new Set(parsedRows.map(record=>String(record?.vin||record?.chassis||"").trim().toUpperCase()).filter(Boolean));
-        const missing=taskVins.filter(v=>!found.has(v));
-        if(missing.length) throw new Error("Uploaded Excel mein assigned "+taskVins.length+" VINs mein se "+missing.length+" VIN nahi mile: "+missing.slice(0,5).join(", ")+(missing.length>5?"…":""));
-        if(found.size!==50) throw new Error("Task ke liye exactly 50 assigned VINs chahiye; "+found.size+" unique VIN mile.");
+        if(!parsedRows.length) throw new Error("Excel mein assigned task ke kisi VIN ka valid history row nahi mila.");
       }
       setExcelData("");setUploadedFiles(accepted);setRegistrationSearchResult(null);setUploadMeta({files:result.files,failedFiles:result.failedFiles||[],rowsBefore:result.totalRowsBeforeDedup,duplicates:result.duplicateRowsIgnored,rowsAfter:parsedRows.length,invalidRows:result.invalidRows||[]});
       setAnalysis(null);setBulkResults([]);setBulkMeta(null);setCustomerGroups([]);setSelectedCustomers([]);setUploadParsedRecords(parsedRows);

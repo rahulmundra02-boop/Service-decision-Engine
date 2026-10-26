@@ -7477,7 +7477,9 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     for (const item of parts) {
       const code = normalizePartCode(item.partNo);
       const master = priceMaster.parts?.[code];
-      if (master?.mrp > 0 || master?.description) {
+      // A cached description alone is not a valid price. If MRP is zero/missing,
+      // force a live Price List Master lookup instead of leaving the estimate rate at 0.
+      if (Number(master?.mrp || 0) > 0) {
         masterMap.set(code, master);
       } else {
         missingCodes.push(code);

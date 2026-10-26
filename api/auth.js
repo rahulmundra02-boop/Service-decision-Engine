@@ -1,11 +1,29 @@
 import { Pool } from "pg";
 import crypto from "crypto";
 
+const configuredDatabaseUrl = process.env.DATABASE_URL || process.env.DATABASE_URL1 || "";
+function getAuthDatabaseUrl(value) {
+  // Supabase session-mode pooling is limited to 15 clients across serverless
+  // instances. Prefer transaction-mode pooling for auth requests when the
+  // configured URL uses Supabase's pooler host and session port.
+  try {
+    const url = new URL(value);
+    if (url.hostname.endsWith(".pooler.supabase.com") && url.port === "5432") {
+      url.port = "6543";
+      url.searchParams.set("pgbouncer", "true");
+    }
+    return url.toString();
+  } catch {
+    return value;
+  }
+}
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || process.env.DATABASE_URL1,
+  connectionString: getAuthDatabaseUrl(configuredDatabaseUrl),
   ssl: { rejectUnauthorized: false },
-  // Keep each serverless auth instance to one DB connection; the session pool is limited to 15 clients.
+  // Keep each serverless auth instance to one connection as an additional safeguard.
   max: 1,
+  idleTimeoutMillis: 10000,
+  connectionTimeoutMillis: 8000,
 });
 
 const SESSION_DAYS = 0.5;

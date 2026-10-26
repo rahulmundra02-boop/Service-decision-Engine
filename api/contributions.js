@@ -144,13 +144,10 @@ async function dashboard(client, user) {
        FROM contribution_tasks WHERE assigned_user_id=$1 AND status IN ('Assigned','Submitted','Processing','Failed','Expired')
        ORDER BY created_at DESC LIMIT 1`, [user.id]);
   const next = nextMonthStart(ms);
-  const prior = await client.query(
-    `SELECT COALESCE(SUM(CASE WHEN entry_type IN ('earned','received','admin_adjustment') THEN points
-      WHEN entry_type IN ('donated','used_for_eligibility','expired') THEN -points ELSE 0 END),0)::int AS balance
-     FROM contribution_points_ledger WHERE user_id=$1 AND month_start=$2`, [user.id, next]);
   return { monthStart: ms, monthEnd: month.month_end, freeMonth: month.free_month, target: 50, earnedPoints: points,
     availablePoints: balance, eligible, adminExempt: user.role === "admin", nextMonthStart: next,
-    nextMonthBalance: Number(prior.rows[0]?.balance || 0), activeTask: task.rows[0] || null };
+    // Current month net balance (earned/received minus donated/expired) determines next month's access.
+    nextMonthBalance: balance, activeTask: task.rows[0] || null };
 }
 
 export default async function handler(req, res) {

@@ -38,6 +38,7 @@ export default function ContributionPanel({ user, onUpload }) {
   const [file, setFile] = useState(null);
   const [rows, setRows] = useState([]);
   const [pasteText, setPasteText] = useState("");
+  const [uploadSummary, setUploadSummary] = useState(null);
   const [donation, setDonation] = useState({ mobile: "", points: "1" });
   const [donateBusy, setDonateBusy] = useState(false);
   const [recipientPreview, setRecipientPreview] = useState(null);
@@ -130,6 +131,17 @@ export default function ContributionPanel({ user, onUpload }) {
       }
       const syncResult = await onUpload(uploadFile, task.vehicle_vins || []);
       if (!syncResult) throw new Error("Bulk upload pipeline ka final status nahi mila.");
+      const diag = syncResult.diagnostic || {};
+      setUploadSummary({
+        filesSelected: Number(diag.filesSelected || 0),
+        filesRead: Number(diag.filesRead || 0),
+        repeatedFilesSkipped: Math.max(0, Number(diag.filesSelected || 0) - Number(diag.filesRead || 0) - (Array.isArray(diag.filesFailed) ? diag.filesFailed.length : 0)),
+        rowsReady: Number(diag.parsedRows || 0),
+        duplicateRowsIgnored: Number(diag.duplicateRowsIgnored || 0),
+        invalidRows: Array.isArray(diag.invalidRows) ? diag.invalidRows.length : 0,
+        savedHistoryRows: Number(diag.jobCardsSaved || 0),
+        status: diag.status || "completed"
+      });
       const result = await callApi("submit-task", { taskId: task.id, rows: (task.vehicle_vins || []).map(vin => ({ vin })) });
       setMessage(result.pointsAwarded ? "Task complete! 1 point award hua." : "Task status update ho gaya.");
       setTask(null); setRows([]); setFile(null); setPasteText(""); if (fileRef.current) fileRef.current.value = "";
@@ -198,6 +210,7 @@ export default function ContributionPanel({ user, onUpload }) {
           <textarea id="contribution-paste-data" className="contribution-paste" value={pasteText} onChange={e => readPaste(e.target.value)} placeholder="Header row + Excel rows yahan paste karein (Ctrl+C / Ctrl+V)" rows={4} />
           {(file || pasteText.trim()) && <p className="contribution-help">{file ? `File: ${file.name}` : "Pasted Excel data"} · {rows.length}/50 assigned VIN rows found</p>}
           <p className="contribution-help">Submit existing Bulk Vehicle upload parser aur database history pipeline chalata hai. Partial valid rows bhi save honge, lekin point sirf tab milega jab sabhi 50 assigned VINs ki Job Card history database mein verify ho.</p>
+          {uploadSummary && <div className="contribution-upload-summary" role="status"><strong>Upload summary · {uploadSummary.status}</strong><div><span>Files read: {uploadSummary.filesRead}/{uploadSummary.filesSelected}</span><span>Repeated files skipped: {uploadSummary.repeatedFilesSkipped}</span><span>Rows ready: {uploadSummary.rowsReady}</span><span>Duplicate rows ignored: {uploadSummary.duplicateRowsIgnored}</span><span>Invalid rows: {uploadSummary.invalidRows}</span><span>New Job Cards saved: {uploadSummary.savedHistoryRows}</span></div></div>}
           <div className="contribution-actions">
             <button type="button" disabled={busy || rows.length === 0 || seconds <= 0} onClick={submitTask}>{busy ? "Please wait…" : "Verify & Submit Task"}</button>
             <button type="button" className="secondary" disabled={busy} onClick={() => taskAction("retry-task")}>Retry task</button>

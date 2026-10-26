@@ -192,6 +192,36 @@ export default async function handler(req, res) {
         let sourceData;
         try { sourceData = JSON.parse(sourceText); }
         catch { return res.status(502).json({success:false,error:"Beta Price Master returned a non-JSON response (HTTP " + sourceResponse.status + ")."}); }
+        // For individual part-rate lookups, do not let a stale/missing Beta
+        // master record block Stable's own Price Master. Beta remains the
+        // preferred source; Stable's local master is a safe fallback.
+        if (priceMasterPartFlag && partNo && !(sourceResponse.ok && sourceData?.success && sourceData?.part && Number(sourceData.part.mrp) > 0)) {
+          let fallbackClient = null;
+          try {
+            fallbackClient = await pool.connect();
+            await ensurePriceMasterSchema(fallbackClient);
+            const fallback = await fallbackClient.query(
+              "SELECT part_no,description,mrp FROM part_price_master WHERE UPPER(REPLACE(part_no,' ',''))=UPPER(REPLACE($1,' ','')) LIMIT 1",
+              [partNo]
+            );
+            const row = fallback.rows[0] || null;
+            if (row && row.mrp !== null && Number(row.mrp) > 0) {
+              return res.status(200).json({
+                success: true,
+                source: "Stable Price Master Fallback",
+                part: {
+                  partNo: row.part_no,
+                  description: row.description || "",
+                  mrp: Number(row.mrp)
+                }
+              });
+            }
+          } catch (fallbackError) {
+            console.error("Stable local Price Master fallback failed:", fallbackError);
+          } finally {
+            if (fallbackClient) fallbackClient.release();
+          }
+        }
         return res.status(sourceResponse.status).json(sourceData);
       } catch (error) {
         console.error("Stable Price Master proxy failed:", error);

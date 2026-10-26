@@ -181,7 +181,8 @@ export default function ContributionPanel({ user, onUpload }) {
   if (!user || user.userType === "al_customer") return null;
   const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
   const ss = String(seconds % 60).padStart(2, "0");
-  const progress = Math.min(100, ((data?.earnedPoints || 0) / 50) * 100);
+  const progress = Math.min(100, ((data?.nextMonthBalance || 0) / 50) * 100);
+  const targetReached = Number(data?.nextMonthBalance || 0) >= 50;
 
   return <section className="contribution-shell" aria-label="Monthly contribution">
     <button className="contribution-summary" type="button" onClick={() => setOpen(v => !v)} aria-expanded={open}>
@@ -196,9 +197,9 @@ export default function ContributionPanel({ user, onUpload }) {
         <div className="contribution-stats">
           <div><small>Current month</small><strong>{data.earnedPoints}/50</strong></div>
           <div><small>Available points</small><strong>{data.availablePoints}</strong></div>
-          <div><small>Next month eligibility</small><strong>{data.freeMonth ? "Free month" : data.adminExempt ? "Exempt" : data.earnedPoints >= 50 ? "Eligible" : `${data.earnedPoints}/50`}</strong></div>
+          <div><small>Next month eligibility</small><strong>{data.adminExempt ? "Exempt" : data.freeMonth ? "Free month" : targetReached ? "Eligible" : `${data.nextMonthBalance || 0}/50`}</strong></div>
         </div>
-        <div className="contribution-progress"><span style={{ width: `${progress}%` }} /></div>
+        <div className={`contribution-progress ${targetReached ? "complete" : ""}`}><span style={{ width: `${progress}%` }} /></div><div className={`contribution-cup ${targetReached ? "complete" : ""}`} aria-live="polite"><span aria-hidden="true">{targetReached ? "🏆" : "🥤"}</span><strong>{targetReached ? "50-point target complete" : `${data.nextMonthBalance || 0}/50 points toward next month`}</strong></div>
         <p className="contribution-help">{data.adminExempt ? "Admin accounts contribution target aur account inactivation se exempt hain." : data.freeMonth ? "November 2026 mein sabhi existing accounts ke liye access free hai. November ke earned points December eligibility ke liye count honge." : "Har successfully verified task = 1 point. Agle month ki eligibility ke liye pichhle month ke 50 points zaroori hain. Extra points month-end par expire honge."}</p>
         {tutorialUrl ? <a className="contribution-tutorial" href={tutorialUrl} target="_blank" rel="noreferrer">Contribution tutorial video dekhein ↗</a> : <p className="contribution-help">Tutorial video link abhi configure nahi hai.</p>}
         {task ? <div className="contribution-task">

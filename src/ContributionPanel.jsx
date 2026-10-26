@@ -140,8 +140,12 @@ export default function ContributionPanel({ user, onUpload }) {
         duplicateRowsIgnored: Number(diag.duplicateRowsIgnored || 0),
         invalidRows: Array.isArray(diag.invalidRows) ? diag.invalidRows.length : 0,
         savedHistoryRows: Number(diag.jobCardsSaved || 0),
-        status: diag.status || "completed"
+        status: diag.status || (syncResult.success === false ? "failed" : "completed")
       });
+      if (syncResult.success === false) {
+        await callApi("fail-task", { taskId: task.id, reason: syncResult.error || "History upload/database sync failed" }).catch(() => {});
+        throw new Error(syncResult.error || "Existing bulk upload pipeline se database sync verify nahi hua.");
+      }
       const result = await callApi("submit-task", { taskId: task.id, rows: (task.vehicle_vins || []).map(vin => ({ vin })) });
       setMessage(result.pointsAwarded ? "Task complete! 1 point award hua." : "Task status update ho gaya.");
       setTask(null); setRows([]); setFile(null); setPasteText(""); if (fileRef.current) fileRef.current.value = "";

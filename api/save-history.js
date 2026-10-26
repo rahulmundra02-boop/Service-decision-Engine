@@ -2,12 +2,26 @@ import crypto from "crypto";
 
 import { Pool } from "pg";
 
+const configuredDatabaseUrl = process.env.DATABASE_URL || process.env.DATABASE_URL1 || "";
+function getDatabaseUrl(value) {
+  // Match Stable: Supabase session-pooler connections on port 5432 can exhaust
+  // the shared 15-client session limit under Vercel serverless concurrency.
+  // Use Supavisor transaction pooling on port 6543 for this API when applicable.
+  try {
+    const url = new URL(value);
+    if (url.hostname.endsWith(".pooler.supabase.com") && url.port === "5432") {
+      url.port = "6543";
+      url.searchParams.set("pgbouncer", "true");
+    }
+    return url.toString();
+  } catch {
+    return value;
+  }
+}
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || process.env.DATABASE_URL1,
+  connectionString: getDatabaseUrl(configuredDatabaseUrl),
   ssl: { rejectUnauthorized: false },
-  // Each Vercel serverless instance owns a separate pool. The upstream session-mode
-  // pooler has a 15-client cap, so keep this API instance to one client and release
-  // idle sockets quickly instead of allowing each warm instance to reserve four.
+  // Keep each Vercel serverless instance's local pool small.
   max: 1,
   idleTimeoutMillis: 1000,
   connectionTimeoutMillis: 8000,

@@ -5494,7 +5494,7 @@ function WarrantyTagPanel({user,onBack}){
     })}</div>}
   </>;
 }
-function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResults, savedEstimates, savedEstimatesLoading, onOpenSavedEstimate, onSearchRegistration, registrationSearchError }) {
+function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResults, savedEstimates, savedEstimatesLoading, onOpenSavedEstimate, onSearchRegistration, registrationSearchError, registrationSearchBusy }) {
   const [homeRegistration, setHomeRegistration] = useState("");
   const dueVehicles = (bulkResults || []).filter(item => Array.isArray(item?.services) && item.services.length > 0).length;
   const totalVehicles = (bulkResults || []).length;
@@ -5523,7 +5523,7 @@ function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResu
       </div>
       <form className="home-registration-check" onSubmit={event => { event.preventDefault(); onSearchRegistration(homeRegistration); }}>
         <div className="home-registration-copy"><strong>Schedule Service Check by Registration No.</strong><span>Enter the vehicle registration number to view its service decision.</span></div>
-        <div className="home-registration-controls"><input className="excel-input" value={homeRegistration} onChange={event => setHomeRegistration(event.target.value.toUpperCase())} placeholder="e.g. GJ12CV0462" aria-label="Vehicle registration number" autoComplete="off" /><button className="excel-button green" type="submit">Submit</button></div>
+        <div className="home-registration-controls"><input className="excel-input" value={homeRegistration} onChange={event => setHomeRegistration(event.target.value.toUpperCase())} placeholder="e.g. GJ12CV0462" aria-label="Vehicle registration number" autoComplete="off" disabled={registrationSearchBusy} /><button className="excel-button green home-registration-submit" type="submit" disabled={registrationSearchBusy} aria-busy={registrationSearchBusy}>{registrationSearchBusy && <span className="estimate-spinner" aria-hidden="true" />}<span>{registrationSearchBusy ? "Searching..." : "Submit"}</span></button></div>
         {registrationSearchError && (
           <div className="registration-search-error home-registration-error" role="alert">
             <strong style={{display:"block",marginBottom:6}}>Service Check Error Report</strong>
@@ -9975,6 +9975,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
               <PortalHome user={user} theme={dashboardPrefs.theme || "blue"} onThemeChange={changeDashboardTheme} hasAnalysis={Boolean(analysis)} bulkResults={bulkResults}
                 onSearchRegistration={registration => { const value = String(registration || "").replace(/\s+/g, "").trim().toUpperCase(); setRegistrationSearchInput(value); setRegistrationSearchError(""); void searchVehicleByRegistration(value); }}
                 registrationSearchError={registrationSearchError}
+                registrationSearchBusy={registrationSearchBusy}
                 savedEstimates={savedEstimates}
                 savedEstimatesLoading={savedEstimatesLoading}
                 onNavigate={(nextMode) => { if (nextMode === "estimate") { if (analysis) void openEstimate(); else openStandaloneEstimate(); } else setMode(nextMode); }}

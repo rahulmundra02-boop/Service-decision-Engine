@@ -90,7 +90,7 @@ const statusRows=useMemo(()=>{
   const is5525_39=/\b5525\s*\/\s*39\b/.test(model),is5525N_39=/\b5525N\s*\/\s*39\b/.test(model);
   const isWheelModel=wheelPattern.test(model)||is5525_39||is5525N_39;
   if(isWheelModel){
-   const wheelSpecs=isHours&&!isRmc?[[1,750,4],[2,1250,5],[3,1750,6],[4,2060,7]]:[[1,10000,4],[2,20000,5],[3,30000,6],[4,40000,7]];
+   const wheelSpecs=isHours&&!isRmc?[[1,750,6],[2,1250,6],[3,1750,6],[4,2060,6]]:[[1,10000,6],[2,20000,6],[3,30000,6],[4,40000,6]];
    for(const [n,target,months] of wheelSpecs){
     const name="Wheel Alignment Service-"+n;
     const alias=n===1?["WHEEL ALIGNMENT 1ST","WHEEL ALIGNMENT - 1"]:n===2?["WHEEL ALIGNMENT 2ND","WHEEL ALIGNMENT - 2"]:n===3?["WHEEL ALIGNMENT 3RD","WHEEL ALIGNMENT - 3"]:["WHEEL ALIGNMENT 4TH","WHEEL ALIGNMENT - 4"];

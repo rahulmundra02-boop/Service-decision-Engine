@@ -51,6 +51,7 @@ async function auth(client, req) {
         if (!eligible) {
           await client.query("UPDATE app_users SET status='inactive' WHERE id=$1 AND status='active'", [user.id]);
           await client.query("DELETE FROM auth_sessions WHERE user_id=$1", [user.id]);
+          await client.query("COMMIT");
           return null;
         }
       }

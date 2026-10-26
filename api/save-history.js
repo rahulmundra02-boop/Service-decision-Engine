@@ -5,8 +5,13 @@ import { Pool } from "pg";
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL || process.env.DATABASE_URL1,
   ssl: { rejectUnauthorized: false },
-  // Match the known-working Stable branch connection pool configuration.
-  max: 4,
+  // Each Vercel serverless instance owns a separate pool. The upstream session-mode
+  // pooler has a 15-client cap, so keep this API instance to one client and release
+  // idle sockets quickly instead of allowing each warm instance to reserve four.
+  max: 1,
+  idleTimeoutMillis: 1000,
+  connectionTimeoutMillis: 8000,
+  allowExitOnIdle: true,
 });
 
 function normalizeJobCard(value) {

@@ -214,7 +214,7 @@ export default function ContributionPanel({ user, onUpload }) {
           {uploadSummary && <div className="contribution-upload-summary" role="status"><strong>Upload summary · {uploadSummary.status}</strong><div><span>Files read: {uploadSummary.filesRead}/{uploadSummary.filesSelected}</span><span>Repeated files skipped: {uploadSummary.repeatedFilesSkipped}</span><span>Rows ready: {uploadSummary.rowsReady}</span><span>Duplicate rows ignored: {uploadSummary.duplicateRowsIgnored}</span><span>Invalid rows: {uploadSummary.invalidRows}</span><span>New Job Cards saved: {uploadSummary.savedHistoryRows}</span></div></div>}
           <div className="contribution-actions">
             <button type="button" disabled={busy || rows.length === 0 || seconds <= 0} onClick={submitTask}>{busy ? "Please wait…" : "Verify & Submit Task"}</button>
-            <button type="button" className="secondary" disabled={busy} onClick={() => taskAction("retry-task")}>Retry task</button>
+            <button type="button" className="secondary" disabled={busy || !["Failed","Expired"].includes(task.status)} title={["Failed","Expired"].includes(task.status) ? "Start another 60-minute attempt" : "Retry is available after the task fails or expires"} onClick={() => taskAction("retry-task")}>Retry task</button>
             <button type="button" className="secondary" disabled={busy} onClick={() => taskAction("cancel-task")}>Cancel task</button>
           </div>
         </div> : <button type="button" className="contribution-primary" disabled={busy || (!data.eligible && !data.adminExempt)} onClick={startTask}>{busy ? "Please wait…" : "Get 50-VIN Task"}</button>}

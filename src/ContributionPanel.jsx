@@ -40,6 +40,7 @@ export default function ContributionPanel({ user, onUpload }) {
   const [pasteText, setPasteText] = useState("");
   const [donation, setDonation] = useState({ mobile: "", points: "1" });
   const [donateBusy, setDonateBusy] = useState(false);
+  const [recipientPreview, setRecipientPreview] = useState(null);
   const fileRef = useRef(null);
 
   const refresh = useCallback(async () => {
@@ -152,9 +153,16 @@ export default function ContributionPanel({ user, onUpload }) {
   async function donate(e) {
     e.preventDefault(); setDonateBusy(true); setError(""); setMessage("");
     try {
-      const result = await callApi("donate-points", { mobile: donation.mobile, points: Number(donation.points) });
-      setMessage(result.message); setDonation({ mobile: "", points: "1" }); await refresh();
-    } catch (e) { setError(e.message); }
+      const normalizedMobile = donation.mobile.replace(/\D/g, "").replace(/^91(?=\d{10}$)/, "");
+      if (!recipientPreview || recipientPreview.mobile !== donation.mobile || String(recipientPreview.normalizedMobile) !== normalizedMobile) {
+        const result = await callApi("lookup-recipient", { mobile: donation.mobile });
+        setRecipientPreview({ ...result.recipient, normalizedMobile, requestedMobile: donation.mobile });
+        setMessage("Recipient ka naam verify karein. Confirm karne ke baad hi points transfer honge.");
+      } else {
+        const result = await callApi("donate-points", { mobile: donation.mobile, points: Number(donation.points), receiverId: recipientPreview.id, confirmedName: recipientPreview.name });
+        setMessage(result.message); setDonation({ mobile: "", points: "1" }); setRecipientPreview(null); await refresh();
+      }
+    } catch (e) { setError(e.message); setRecipientPreview(null); }
     finally { setDonateBusy(false); }
   }
 
@@ -198,7 +206,7 @@ export default function ContributionPanel({ user, onUpload }) {
         </div> : <button type="button" className="contribution-primary" disabled={busy || (!data.eligible && !data.adminExempt)} onClick={startTask}>{busy ? "Please wait…" : "Get 50-VIN Task"}</button>}
         <form className="contribution-donate" onSubmit={donate}>
           <strong>Donate points to a registered user</strong>
-          <div className="contribution-donate-fields"><input aria-label="Registered mobile number" inputMode="numeric" maxLength={13} placeholder="Registered mobile number" value={donation.mobile} onChange={e=>setDonation(v=>({...v,mobile:e.target.value}))} required /><input aria-label="Points to donate" type="number" min="1" max="50" value={donation.points} onChange={e=>setDonation(v=>({...v,points:e.target.value}))} required /><button type="submit" disabled={donateBusy}>{donateBusy ? "Sending…" : "Donate"}</button></div>
+          <div className="contribution-donate-fields"><input aria-label="Registered mobile number" inputMode="numeric" maxLength={13} placeholder="Registered mobile number" value={donation.mobile} onChange={e=>{setDonation(v=>({...v,mobile:e.target.value}));setRecipientPreview(null);}} required /><input aria-label="Points to donate" type="number" min="1" max="50" value={donation.points} onChange={e=>setDonation(v=>({...v,points:e.target.value}))} required /><button type="submit" disabled={donateBusy}>{donateBusy ? "Please wait…" : recipientPreview && recipientPreview.requestedMobile === donation.mobile ? "Confirm & Donate" : "Verify Recipient"}</button></div>{recipientPreview && recipientPreview.requestedMobile === donation.mobile && <p className="contribution-help">Recipient: <strong>{recipientPreview.name || "Name not available"}</strong> · Mobile: {recipientPreview.mobile || donation.mobile}. Confirm name before tapping “Confirm &amp; Donate”.</p>}
         </form>
       </>}
     </div>}

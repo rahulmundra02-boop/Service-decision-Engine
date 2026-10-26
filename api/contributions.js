@@ -100,10 +100,7 @@ async function ensureSchema(client) {
 
 async function dashboard(client, user) {
   const ms = monthStart();
-    await client.query("INSERT INTO contribution_months(month_start,month_end,target_points,free_month) VALUES($1,$2,50,FALSE) ON CONFLICT(month_start) DO NOTHING", [ms, monthEnd(ms)]);
-  await client.query(
-    `INSERT INTO contribution_months(month_start,month_end,target_points,free_month)
-     VALUES($1,$2,50,FALSE) ON CONFLICT(month_start) DO NOTHING`, [ms, monthEnd(ms)]);
+  await client.query("INSERT INTO contribution_months(month_start,month_end,target_points,free_month) VALUES($1,$2,50,FALSE) ON CONFLICT(month_start) DO NOTHING", [ms, monthEnd(ms)]);
   const month = (await client.query("SELECT * FROM contribution_months WHERE month_start=$1", [ms])).rows[0];
   const earned = await client.query(
     `SELECT COALESCE(SUM(CASE WHEN entry_type IN ('earned','received','admin_adjustment') THEN points

@@ -2401,11 +2401,13 @@ function isH6Model(model){
   return false;
 }
 function matchesServicePart(value, serviceName) {
-  const text = String(value || '').toUpperCase();
-  // Steering Oil Filter is a required companion part, never the Steering Oil
-  // replacement itself.
-  if (serviceName === 'STEERING OIL') return text.includes(serviceName) && !text.includes('FILTER');
-  return text === serviceName || text.includes(serviceName);
+  const text = String(value || '').trim().toUpperCase().replace(/\\s+/g, ' ');
+  const expected = String(serviceName || '').trim().toUpperCase().replace(/\\s+/g, ' ');
+  // Service history must match the standardized part name exactly. Partial
+  // matching can count ENGINE OIL FILTER as ENGINE OIL and inflate oil litres.
+  // Companion filters are validated separately by serviceBase().
+  if (!text || !expected) return false;
+  return text === expected;
 }
 const CLUTCH_OIL_PART_CODES = ["CFD99991","CLA99994","U9999995","U9999999","U9999996"];
 
@@ -2660,7 +2662,7 @@ function decideAggregate(records, vehicle, running, key, analysisDate, decisionB
       running.current,
       base,
       80000,
-      18,
+      12,
       analysisDate,
       sale,
       running.mode,

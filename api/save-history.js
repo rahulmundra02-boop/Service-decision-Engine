@@ -2,12 +2,27 @@ import crypto from "crypto";
 
 import { Pool } from "pg";
 
+const configuredDatabaseUrl = process.env.DATABASE_URL || process.env.DATABASE_URL1 || "";
+function getDatabaseUrl(value) {
+  // Supabase session pooling has a shared 15-client limit. Use transaction
+  // pooling for serverless requests when the configured URL is session mode.
+  try {
+    const url = new URL(value);
+    if (url.hostname.endsWith(".pooler.supabase.com") && url.port === "5432") {
+      url.port = "6543";
+      url.searchParams.set("pgbouncer", "true");
+    }
+    return url.toString();
+  } catch {
+    return value;
+  }
+}
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || process.env.DATABASE_URL1,
+  connectionString: getDatabaseUrl(configuredDatabaseUrl),
   ssl: { rejectUnauthorized: false },
-  // Serverless instances share a small Supabase/Neon pooler session limit.
-  // Keep one DB connection per function instance to avoid exhausting pool_size.
   max: 1,
+  idleTimeoutMillis: 10000,
+  connectionTimeoutMillis: 8000,
 });
 
 function normalizeJobCard(value) {

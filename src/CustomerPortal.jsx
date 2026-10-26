@@ -109,6 +109,7 @@ const statusRows=useMemo(()=>{
  }
  return rows;
 },[vehicles,readingEdits]);
+const visibleStatusRows=useMemo(()=>statusRows.filter(r=>{const aggregateEnabled=r.key.startsWith("schedule:")||r.key.startsWith("additional:")?true:portalPrefs.serviceAggregates[r.key]!==false;const vehicleEnabled=!portalPrefs.bsviOnly||bsviVehicles.some(v=>v.id===r.vehicle.id);return aggregateEnabled&&vehicleEnabled;}),[statusRows,portalPrefs.serviceAggregates,portalPrefs.bsviOnly,bsviVehicles]);
 const statusCounts=useMemo(()=>({"Lapsed":visibleStatusRows.filter(x=>x.status==="Lapsed").length,"Due":visibleStatusRows.filter(x=>x.status==="Due").length,"Nearly Due":visibleStatusRows.filter(x=>x.status==="Nearly Due").length,"No Due":visibleStatusRows.filter(x=>x.status==="No Due").length}),[visibleStatusRows]);
 const dueVehicleIds=useMemo(()=>new Set(visibleStatusRows.filter(r=>["Lapsed","Due","Nearly Due"].includes(r.status)).map(r=>r.vehicle.id)),[visibleStatusRows]);
 const summaryDueCount=filteredVehicles.filter(v=>dueVehicleIds.has(v.id)).length;

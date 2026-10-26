@@ -10206,7 +10206,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                     </label>
                   </div>
                 </div>
-                <div className="history-wrap single-history-wrap" style={{maxHeight:"none",height:"auto",overflow:"visible"}}>
+                <div className="history-wrap single-history-wrap" style={{maxHeight:"none",height:"auto",width:"100%",maxWidth:"100%",overflowX:"auto",overflowY:"visible",WebkitOverflowScrolling:"touch",touchAction:"pan-x"}}>
                   <table className="history-table single-service-summary dashboard-resizable-table"><thead><tr>
 {singleTableColumns.map((key,index) => (
   <th key={key} style={tableColumnStyle("single",key)}>

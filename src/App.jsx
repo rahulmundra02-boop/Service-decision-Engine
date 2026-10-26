@@ -7506,7 +7506,19 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
 
     return items.map(item => {
       if (item?.type !== "part") return item;
-      const master = masterMap.get(normalizePartCode(item.partNo));
+      const code = normalizePartCode(item.partNo);
+      // CLOTH is a dealership hardcoded estimate item; use the agreed GST-inclusive rate.
+      if (code === "CLOTH") {
+        return {
+          ...item,
+          partNo: "CLOTH",
+          description: "CLOTH",
+          baseRate: 42.37,
+          rate: 50,
+          source: "Hardcoded rate"
+        };
+      }
+      const master = masterMap.get(code);
       if (!master) return item;
       return {
         ...item,

@@ -309,7 +309,7 @@ async function bootstrapAdmin(client) {
 const lastActivityWriteByUser = new Map();
 const LAST_ACTIVITY_WRITE_INTERVAL_MS = 5 * 60 * 1000;
 
-async function enforceMonthlyContributionAccess(client, user) {
+async function enforceMonthlyContributionAccess(client, user, { commitOnDenied = false } = {}) {
   if (!user || user.role === "admin") return true;
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
   const y = Number(parts.find(p => p.type === "year").value);
@@ -338,6 +338,7 @@ async function enforceMonthlyContributionAccess(client, user) {
   if (!eligible) {
     await client.query("UPDATE app_users SET status='inactive' WHERE id=$1 AND status='active'", [user.id]);
     await client.query("DELETE FROM auth_sessions WHERE user_id=$1", [user.id]);
+    if (commitOnDenied) await client.query("COMMIT");
     return false;
   }
   return true;
@@ -357,7 +358,7 @@ async function getUserByToken(client, token) {
     [tokenHash]
   );
   if (!result.rows[0]) return null;
-  if (!(await enforceMonthlyContributionAccess(client, result.rows[0]))) return null;
+  if (!(await enforceMonthlyContributionAccess(client, result.rows[0], { commitOnDenied: true }))) return null;
   if (/service estimate android/i.test(clean(result.rows[0].device_name))) {
     await client.query("DELETE FROM auth_sessions WHERE token_hash=$1", [tokenHash]);
     return null;

@@ -550,3 +550,74 @@ tr:last-child td { border-bottom:0; }
     touch-action: pan-x pan-y;
   }
 }
+
+
+/* Registration lookup feedback: visible spinner and compact, screenshot-friendly report. */
+.estimate-spinner {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  margin-right: 7px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  vertical-align: -2px;
+  animation: registration-search-spin .7s linear infinite;
+  flex: 0 0 auto;
+}
+@keyframes registration-search-spin {
+  to { transform: rotate(360deg); }
+}
+.home-registration-submit:disabled {
+  cursor: progress;
+  opacity: .88;
+}
+.home-registration-error {
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+  text-align: left;
+}
+.registration-search-report-success {
+  color: #166534;
+  border-color: #86c99a;
+  background: #f0fdf4;
+}
+.registration-search-report-pending {
+  color: #854d0e;
+  border-color: #e6c36a;
+  background: #fffbeb;
+}
+@media (max-width: 800px) {
+  .single-history-wrap {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow-x: auto !important;
+    overflow-y: visible !important;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: pan-x pan-y !important;
+    overscroll-behavior-x: contain;
+  }
+  .single-history-wrap > .single-service-summary {
+    width: max-content !important;
+    min-width: 100% !important;
+    max-width: none !important;
+  }
+  .single-history-wrap::after {
+    content: "Swipe left or right to view all service-history columns";
+    display: block;
+    padding: 7px 9px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #475569;
+    background: #f1f5f9;
+    border-top: 1px solid #cbd5e1;
+  }
+}
+@media (min-width: 801px) {
+  .single-history-wrap > .single-service-summary {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+  .single-history-wrap::after { display: none !important; }
+}

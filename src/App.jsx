@@ -379,7 +379,7 @@ const PART_STANDARDIZATION = {
   'P5104720': 'Fuel Filter Kit',
   'P5105703': 'Fuel Filter Kit',
   'P7A00042': 'Fuel Filter Kit',
-  'GBA99991': 'Gear Oil',
+  'GBA99991': 'Axle Oil',
   'G9999994': 'Gear Oil',
   'G9999995': 'Gear Oil',
   'G9999998': 'Gear Oil',
@@ -3533,8 +3533,8 @@ const ESTIMATE_STANDARD_PARTS = {
 
 const ESTIMATE_REFERENCE_PARTS = {
   engineOil: ["EN699991", "F7A01500"],
-  gearOil: ["GBA99991", "G9999994"],
-  axleOil: ["GB6A9991", "GB699991"],
+  gearOil: ["G9999994"],
+  axleOil: ["GB699991"],
   steeringOil: ["PSB99994", "PD600391"],
   clutchOil: ["CFD99991", "CLA99994", "U9999995", "U9999999", "U9999996"],
   defInline: ["XFM00800"],
@@ -4462,7 +4462,9 @@ function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows =
         if (item) {
           // Keep the actual historical part number when a family fallback was
           // required. Exact reference matches remain unchanged.
-          item.partNo = actualPartCode;
+          // Axle oil has one canonical estimate part number. Historical aliases
+          // GB6A9991 and GBA99991 must not change the displayed part number.
+          item.partNo = serviceKey === "axleOil" ? "GB699991" : actualPartCode;
           if (!item.description) item.description = standard;
           result.push(applyGlobalPartRate(item));
         }

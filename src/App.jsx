@@ -2791,9 +2791,9 @@ function freeService(records,vehicle,running,analysisDate,decisionBasis = "AUTO"
   // Normal vehicles retain the existing KM/time windows.
   if(!useHours){
     const checks=[
-      ['1ST FREE SERVICE',37000,43000,5,7,'1st free service'],
-      ['2ND FREE SERVICE',77000,83000,11,13,'2nd free service'],
-      ['3RD FREE SERVICE',117000,123000,17,19,'3rd free service']
+      ['1ST FREE SERVICE',17000,23000,5,7,'1st free service'],
+      ['2ND FREE SERVICE',37000,43000,11,13,'2nd free service'],
+      ['3RD FREE SERVICE',57000,63000,17,19,'3rd free service']
     ];
     for(const [name,min,max,mn,mx,label] of checks){
       if(records.some(r=>String(r.standardizedPart||'').toUpperCase().includes(name))) continue;
@@ -10068,14 +10068,22 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                         const freeService = String(analysis.decision.freeService || '').trim();
                         const isFirstFreeService = /^1st free service$/i.test(freeService);
                         const showFreeService = !!freeService && (isFirstFreeService || aggregateNames.length > 0);
-                        const names = [
-                          ...aggregateNames,
-                          ...(showFreeService
-                            ? [freeService.replace(/^1st free service$/i,'1st Free Service').replace(/^2nd free service$/i,'2nd Free Service').replace(/^3rd free service$/i,'3rd Free Service')]
-                            : []),
-                          ...(analysis.decision.additionalServices || []).filter(name => !String(name).toLowerCase().includes('free service'))
-                        ];
-                        return names.length ? names.map(name => <span className="due-chip" key={name}>{name}</span>) : <div className="no-due">No service to be completed at the current reading.</div>;
+                        const freeServiceItems = showFreeService
+                          ? [freeService.replace(/^1st free service$/i,'1st Free Service').replace(/^2nd free service$/i,'2nd Free Service').replace(/^3rd free service$/i,'3rd Free Service')]
+                          : [];
+                        const additionalItems = (analysis.decision.additionalServices || []).filter(name => !String(name).toLowerCase().includes('free service'));
+                        const names = [...aggregateNames, ...additionalItems];
+                        return (
+                          <>
+                            {names.length ? names.map(name => <span className="due-chip" key={name}>{name}</span>) : <div className="no-due">No service to be completed at the current reading.</div>}
+                            {freeServiceItems.length > 0 && (
+                              <div className="free-service-output" style={{width:'100%',marginTop:12}}>
+                                <div className="section-title" style={{marginBottom:8}}>Free service</div>
+                                {freeServiceItems.map(name => <span className="due-chip" key={name}>{name}</span>)}
+                              </div>
+                            )}
+                          </>
+                        );
                       })() : <div className="single-empty-state"><b>No vehicle analysis yet</b><span>Upload the DMS Excel file to start the service decision.</span><button className="excel-button green no-print" onClick={() => document.getElementById("excel-file-input")?.click()}>Upload Excel &amp; Start</button></div>}
                     </div>
                   </div>

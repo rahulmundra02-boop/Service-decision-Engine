@@ -172,6 +172,39 @@ export default async function handler(req, res) {
     const isBetaPriceMasterSource = requestHost.includes("git-v12-ui-testing");
     const isPriceMasterRead = priceMasterFlag || priceMasterMetaFlag || priceMasterChunkFlag || (priceMasterPartFlag && partNo);
     const hasPriceMasterAuth = Boolean(String(req.headers?.authorization || "").replace(/^Bearer\\s+/i, "").trim());
+    // Stable estimate rate lookups must use Stable's own Price List Master.
+    // Do not proxy individual part lookups to Beta: a stale Beta record can
+    // override a valid Stable rate and leave estimate lines priced at zero.
+    if (!isBetaPriceMasterSource && priceMasterPartFlag && partNo) {
+      let stablePriceClient = null;
+      try {
+        stablePriceClient = await pool.connect();
+        await ensurePriceMasterSchema(stablePriceClient);
+        const stablePriceResult = await stablePriceClient.query(
+          "SELECT part_no,description,mrp FROM part_price_master WHERE UPPER(REPLACE(TRIM(part_no),' ',''))=$1 LIMIT 1",
+          [partNo]
+        );
+        const stablePriceRow = stablePriceResult.rows[0] || null;
+        if (!stablePriceRow || stablePriceRow.mrp === null || Number(stablePriceRow.mrp) <= 0) {
+          return res.status(404).json({success:false,error:"Part not found or rate missing in Stable Price List Master.",partNo});
+        }
+        return res.status(200).json({
+          success:true,
+          source:"Stable Price List Master",
+          part:{
+            partNo:stablePriceRow.part_no,
+            description:stablePriceRow.description || "",
+            mrp:Number(stablePriceRow.mrp)
+          }
+        });
+      } catch (stablePriceError) {
+        console.error("Stable Price Master part lookup failed:", stablePriceError);
+        return res.status(500).json({success:false,error:"Unable to read Stable Price List Master."});
+      } finally {
+        if (stablePriceClient) stablePriceClient.release();
+      }
+    }
+
     if (isPriceMasterRead && !isBetaPriceMasterSource) {
       const params = new URLSearchParams();
       if (priceMasterMetaFlag) params.set("priceMasterMeta", "1");

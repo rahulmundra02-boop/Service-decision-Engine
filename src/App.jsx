@@ -10064,12 +10064,12 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                           .filter(([,key]) => analysis.decision.result[key])
                           .map(([name]) => name);
                         const freeService = String(analysis.decision.freeService || '').trim();
-                        // Use the same eligibility/gating function as Summary so a
-                        // free service listed in Summary is not hidden on the vehicle card.
-                        const summaryServiceNames = getDueServiceNames(analysis.decision);
-                        const normalizedFreeService = freeService.replace(/^1st free service$/i,'1st Free Service').replace(/^2nd free service$/i,'2nd Free Service').replace(/^3rd free service$/i,'3rd Free Service');
-                        const freeServiceItems = freeService && summaryServiceNames.some(name => String(name).toLowerCase() === normalizedFreeService.toLowerCase())
-                          ? [normalizedFreeService]
+                        // Match Stable's Customer Output eligibility rule.
+                        // The decision engine has already determined whether the free service is due.
+                        const isFirstFreeService = /^1st free service$/i.test(freeService);
+                        const showFreeService = !!freeService && (isFirstFreeService || aggregateNames.length > 0);
+                        const freeServiceItems = showFreeService
+                          ? [freeService.replace(/^1st free service$/i,'1st Free Service').replace(/^2nd free service$/i,'2nd Free Service').replace(/^3rd free service$/i,'3rd Free Service')]
                           : [];
                         const additionalItems = (analysis.decision.additionalServices || []).filter(name => !String(name).toLowerCase().includes('free service'));
                         const complimentaryItems = additionalItems.filter(name => /wheel alignment|body building check ?up/i.test(String(name)));

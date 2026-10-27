@@ -798,7 +798,13 @@ export default async function handler(req, res) {
         modelRows, globalPartRates:rateResult.rows
       });
     } catch (error) {
-      console.error("Read History Error:", { requestId, error: error?.message || String(error), code: error?.code || null });
+      let databaseEndpoint = { source: process.env.DATABASE_URL ? "DATABASE_URL" : (process.env.DATABASE_URL1 ? "DATABASE_URL1" : "missing"), host: null, port: null };
+      try {
+        const endpoint = new URL(getDatabaseUrl(configuredDatabaseUrl));
+        databaseEndpoint.host = endpoint.hostname;
+        databaseEndpoint.port = endpoint.port || (endpoint.protocol === "postgres:" || endpoint.protocol === "postgresql:" ? "5432(default)" : "unknown");
+      } catch {}
+      console.error("Read History Error:", { requestId, error: error?.message || String(error), code: error?.code || null, databaseEndpoint });
       return res.status(500).json({ success:false, error:error?.message || "Service history read failed", requestId });
     } finally { if (client) client.release(); }
   }

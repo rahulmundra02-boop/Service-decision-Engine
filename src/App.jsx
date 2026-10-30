@@ -8741,10 +8741,17 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     }
   };
 
+  const pageIsProcessing = registrationSearchBusy || uploadBusy || analysisBusy || screenshotBusy;
+
   return (
     <>
       <style>{`
         * { box-sizing: border-box; }
+        @keyframes sdeSpin { to { transform: rotate(360deg); } }
+        .sde-processing-indicator { position: fixed; top: 10px; right: 12px; z-index: 99999; display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; border-radius: 999px; background: #17365d; color: #fff; font-size: 12px; font-weight: 700; box-shadow: 0 2px 10px rgba(0,0,0,.18); pointer-events: none; }
+        .sde-processing-spinner { width: 13px; height: 13px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: sdeSpin .75s linear infinite; flex: 0 0 auto; }
+        .sde-button-spinner { display: inline-block; width: 12px; height: 12px; margin-right: 7px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; vertical-align: -2px; animation: sdeSpin .75s linear infinite; }
+
         body { margin: 0; background: #d9e2f3; font-family: Calibri, Arial, sans-serif; color: #1f1f1f; }
         .excel-app { min-height: 100vh; background: #d9e2f3; }
         .table-width-compact { min-width:560px !important; }.table-width-normal { min-width:760px !important; }.table-width-wide { min-width:100% !important;}
@@ -9782,6 +9789,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         }
       `}
       </style>
+      {pageIsProcessing && <div className="sde-processing-indicator" role="status" aria-live="polite"><span className="sde-processing-spinner" />Processing</div>}
 
 
 
@@ -10058,7 +10066,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                   <label htmlFor="registration-search-input">Vehicle Registration Number</label>
                   <div className="registration-search-row">
                     <input id="registration-search-input" className="excel-input" value={registrationSearchInput} onChange={e => setRegistrationSearchInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter") void searchVehicleByRegistration(); }} placeholder="e.g. GJ12CV0462" autoComplete="off" />
-                    <button className="excel-button green" onClick={() => void searchVehicleByRegistration()} disabled={registrationSearchBusy}>{registrationSearchBusy ? "Searching..." : "Search Vehicle"}</button>
+                    <button className="excel-button green" onClick={() => void searchVehicleByRegistration()} disabled={registrationSearchBusy}>{registrationSearchBusy && <span className="sde-button-spinner" aria-hidden="true" />}{registrationSearchBusy ? "Searching..." : "Search Vehicle"}</button>
                   </div>
                   <div className="registration-search-warning">Only vehicles available in the database can be displayed.</div>
                   {registrationSearchError && <div className="registration-search-error" role="alert">{registrationSearchError}</div>}

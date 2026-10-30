@@ -636,18 +636,16 @@ export default function AuthGate({ children }) {
   };
 
   useEffect(() => {
-    if (user?.role === "admin") {
-      void loadAccountRequests();
-      if (adminOpen) {
-        loadAdminUsers();
-        loadJobCardCacheSettings();
-        loadEmergencyDbUploadCutoff();
-        loadRegistrationSearchSetting();
-        loadCampaignMeta();
-        loadPriceMasterMeta();
-      }
-    }
-  }, [user?.role, adminOpen, analyticsIncludeAdmins]);
+    if (user?.role !== "admin") return;
+    const section = window.location.pathname.split("/")[2] || "overview";
+    if (!adminOpen) { void loadAccountRequests(); return; }
+    if (section === "users") { void loadAdminUsers(); return; }
+    if (section === "cache") { void loadJobCardCacheSettings(); return; }
+    if (section === "masters") { void loadCampaignMeta(); void loadPriceMasterMeta(); return; }
+    if (section === "system") { void loadEmergencyDbUploadCutoff(); void loadRegistrationSearchSetting(); return; }
+    if (section === "uploads") { void loadAccountRequests(); return; }
+    if (section === "analytics" || section === "overview" || section === "database") void loadAdminAnalytics(analyticsUserId, analyticsRange);
+  }, [user?.role, adminOpen, analyticsIncludeAdmins, adminSection]);
 
   const createUser = () => run(async () => {
     if (!adminForm.userId && adminForm.password.length < 8) {
@@ -1482,7 +1480,35 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading, onChang
 }
 function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRefreshAccountRequests, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, registrationSearchEnabled, onRegistrationSearchSetting, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel, priceMasterMeta, priceMasterUploadBusy, priceMasterUploadMessage, priceMasterUploadError, onUploadPriceMasterExcel }) {
   const analyticsDetailRef = useRef(null);
-  const [view, setView] = useState("overview");
+  const adminSectionFromPath = () => {
+    const part = window.location.pathname.split("/")[2] || "overview";
+    return ["overview","cache","database","uploads","masters","system","analytics","users"].includes(part) ? part : "overview";
+  };
+  const [adminSection, setAdminSection] = useState(adminSectionFromPath);
+  const [view, setView] = useState(() => {
+    const part = window.location.pathname.split("/")[2];
+    return part === "database" ? "database" : part === "uploads" ? "uploads" : part === "users" ? "management" : "overview";
+  });
+  useEffect(() => {
+    const syncSection = () => {
+      const part = adminSectionFromPath(); setAdminSection(part);
+      if (part === "database") setView("database");
+      else if (part === "uploads") setView("uploads");
+      else if (part === "users") setView("management");
+      else if (part === "analytics" || part === "overview") setView("overview");
+    };
+    window.addEventListener("popstate", syncSection);
+    return () => window.removeEventListener("popstate", syncSection);
+  }, []);
+  const goAdminSection = (section) => {
+    const next = "/admin/" + section;
+    if (window.location.pathname !== next) window.history.pushState({ ...(window.history.state || {}), serviceDecisionAdminSection: section }, "", next);
+    setAdminSection(section);
+    if (section === "database") setView("database");
+    else if (section === "uploads") setView("uploads");
+    else if (section === "users") setView("management");
+    else setView("overview");
+  };
   const localDateString = (date = new Date()) => {
     const y = date.getFullYear();
     const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -1601,16 +1627,22 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           <button className="auth-secondary admin-back" onClick={onBack}>Back to Dashboard</button>
         </div>
 
-        <div className="admin-kpi-grid">
+        <nav className="admin-category-nav" aria-label="Admin categories">
+          {[
+            ["overview","Dashboard"],["cache","Cache Control"],["database","Database"],["uploads","Upload Monitor"],
+            ["masters","Masters"],["system","System Controls"],["analytics","Analytics"],["users","User Management"]
+          ].map(([key,label]) => <button key={key} type="button" className={adminSection===key?"active":""} onClick={()=>goAdminSection(key)}>{label}</button>)}
+        </nav>
+        {adminSection === "overview" && <div className="admin-kpi-grid">
           {metricCard("Total Users", totals.users)}
           {metricCard("Active Users", totals.active)}
           {metricCard("Total Logins", totals.logins)}
           {metricCard("Vehicles Analysed", totals.vehicles)}
           {metricCard("Excel Files", totals.files)}
           {metricCard("Activities", totals.activities)}
-        </div>
+        </div>}
 
-        <div className="admin-panel-card" style={{marginTop:16,padding:"18px 20px"}}>
+        {adminSection === "cache" && <div className="admin-panel-card" style={{marginTop:12,padding:"18px 20px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
             <div>
               <div className="admin-panel-card-title">Job Card Browser Cache</div>
@@ -1622,23 +1654,18 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
               <span>{jobCardCacheSettings?.enabled !== false ? "ON" : "OFF"}</span>
             </label>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:12,marginTop:16}}>
-            <div><div className="admin-panel-card-sub">Cache Rebuild Interval</div>
-              <select value={Number(jobCardCacheSettings?.intervalHours || 24)} onChange={e=>onJobCardCacheSettings({intervalHours:Number(e.target.value)})} style={{marginTop:6,width:"100%",padding:"9px 10px",borderRadius:8,border:"1px solid #d7dce3"}}>
-                {[6,12,24,48,168].map(v=><option key={v} value={v}>{v===168?"7 Days":v+" Hours"}</option>)}
-              </select>
-            </div>
-            <div><div className="admin-panel-card-sub">Last Global Index Update</div><strong>{jobCardCacheSettings?.lastRebuildAt ? new Date(jobCardCacheSettings.lastRebuildAt).toLocaleString("en-IN") : "Not yet rebuilt"}</strong></div>
-            <div><div className="admin-panel-card-sub">Next Rebuild (scheduler checks daily)</div><strong>{jobCardCacheSettings?.nextRebuildAt ? new Date(jobCardCacheSettings.nextRebuildAt).toLocaleString("en-IN") : "—"}</strong></div><div style={{gridColumn:"1 / -1"}}><div className="admin-panel-card-sub">Last Automatic Check / Rebuild</div><strong>{jobCardCacheSettings?.lastAutoRebuildAt ? new Date(jobCardCacheSettings.lastAutoRebuildAt).toLocaleString("en-IN") : "Scheduler has not completed a rebuild yet"}</strong>{jobCardCacheSettings?.lastAutoRebuildError && <div style={{color:"#b91c1c",fontWeight:700,marginTop:4}}>Last automatic rebuild error: {jobCardCacheSettings.lastAutoRebuildError}</div>}</div>
-            <div><div className="admin-panel-card-sub">Cached Job Cards</div><strong>{Number(jobCardCacheSettings?.cachedJobCards || 0).toLocaleString("en-IN")}</strong></div>
+          <div className="admin-cache-metrics">
+            <div className="admin-cache-metric"><span>Current Database Job Cards</span><strong>{Number(jobCardCacheSettings?.currentDatabaseJobCards ?? jobCardCacheSettings?.cachedJobCards ?? 0).toLocaleString("en-IN")}</strong></div>
+            <div className="admin-cache-metric"><span>Job Cards in Last Cache Build</span><strong>{Number(jobCardCacheSettings?.cachedJobCards ?? 0).toLocaleString("en-IN")}</strong><small>{jobCardCacheSettings?.lastRebuildAt ? "Built " + new Date(jobCardCacheSettings.lastRebuildAt).toLocaleString("en-IN") : "No successful build recorded"}</small></div>
+            <div className="admin-cache-metric"><span>Last Automatic Rebuild</span><strong>{jobCardCacheSettings?.lastAutoRebuildAt ? new Date(jobCardCacheSettings.lastAutoRebuildAt).toLocaleString("en-IN") : "Not recorded"}</strong>{jobCardCacheSettings?.lastAutoRebuildError && <small className="admin-cache-error">{jobCardCacheSettings.lastAutoRebuildError}</small>}</div>
           </div>
-          <div style={{display:"flex",gap:10,marginTop:16,flexWrap:"wrap"}}>
-            <button className="auth-primary" onClick={()=>onJobCardCacheSettings({operation:"rebuild"})}>Rebuild Cache Now</button>
-            <button className="auth-secondary" onClick={()=>onJobCardCacheSettings({operation:"reset"})}>Clear Cache Policy</button>
+          <div className="admin-cache-actions">
+            <button className="auth-primary" disabled={Boolean(jobCardCacheSettings?.rebuilding)} onClick={()=>onJobCardCacheSettings({operation:"rebuild"})}>Build Cache Now</button>
+            <button className="auth-secondary" onClick={()=>onJobCardCacheSettings({operation:"refresh"})}>Refresh Counts</button>
           </div>
-        </div>
+        </div>}
 
-        <div className="admin-panel-card" style={{marginTop:16,padding:"18px 20px",border:"1px solid #cbd5e1"}}>
+        {adminSection === "system" && <div className="admin-panel-card" style={{marginTop:12,padding:"18px 20px",border:"1px solid #cbd5e1"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
             <div>
               <div className="admin-panel-card-title">Registration Number Service Search</div>
@@ -1676,9 +1703,9 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           <div style={{marginTop:12,padding:"10px 12px",borderRadius:8,background:emergencyDbUploadCutoff ? "#fee2e2" : "#ecfdf5",color:emergencyDbUploadCutoff ? "#991b1b" : "#166534",fontWeight:700}}>
             {emergencyDbUploadCutoff ? "Emergency mode ON: Excel upload + Service Decision remain available, but history persistence is paused." : "Normal mode: new Excel Job Cards are saved using the hybrid browser-cache + Neon duplicate-check system."}
           </div>
-        </div>
+        </div>}
 
-        <div className="admin-panel-card" style={{marginTop:16,padding:"18px 20px"}}>
+        {adminSection === "masters" && <div className="admin-panel-card" style={{marginTop:12,padding:"18px 20px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
             <div>
               <div className="admin-panel-card-title">Vehicle Campaign Master</div>
@@ -1771,9 +1798,9 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           </div>
           {(priceMasterUploadMessage || priceMasterUploadError) && <div style={{marginTop:12,padding:"10px 12px",borderRadius:8,background:priceMasterUploadError?"#fff1f2":"#ecfdf5",color:priceMasterUploadError?"#b91c1c":"#166534",fontWeight:700}}>{priceMasterUploadError||priceMasterUploadMessage}</div>}
           <div style={{marginTop:12,fontSize:11,color:"#6b7280"}}>Required headers: Part No, Part Description, MRP. Same Part No duplicate rows me last valid row will be used. This master will be shared by Website and Android Estimate app.</div>
-        </div>
+        </div>}
 
-        <div className="admin-analytics-toolbar professional">
+        {(adminSection === "overview" || adminSection === "analytics" || adminSection === "database" || adminSection === "uploads" || adminSection === "users") && <div className="admin-analytics-toolbar professional">
           <div className="admin-dashboard-scope-tabs">
             <button className={analyticsIncludeAdmins ? "active" : ""} onClick={() => { onSetAnalyticsIncludeAdmins(true); onAnalytics(null, analyticsRange); }}>All Statistics (Including Admin)</button>
             <button className={!analyticsIncludeAdmins ? "active" : ""} onClick={() => { onSetAnalyticsIncludeAdmins(false); onAnalytics(null, analyticsRange); }}>Statistics Without Admin</button>
@@ -2078,6 +2105,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           </div>
         )}
 
+        </div>
         <div className="admin-note">Passwords are stored as secure hashes. Analytics record account activity and usage events; passwords are never stored in activity logs.</div>
       </div>
     </div>

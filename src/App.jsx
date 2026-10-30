@@ -9899,8 +9899,8 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
 
           <input id="excel-file-input" className="no-print" type="file" accept=".xlsx,.xls,.xlsm,.csv" multiple style={{display:"none"}} onChange={handleExcelUpload} disabled={uploadBusy} />
 
-          {mode !== "home" && mode !== "warranty-tags" && mode !== "document-scanner" && mode !== "profile" && (
-            {mode !== "single" && mode !== "bulk" && <div className="no-print" style={{margin:"8px 0",padding:"9px 12px",border:"1px solid #d6a84f",borderRadius:8,background:"rgba(240,180,41,.08)",fontSize:12}}>
+          {mode !== "home" && mode !== "warranty-tags" && mode !== "document-scanner" && mode !== "profile" && mode !== "single" && mode !== "bulk" && (
+            <div className="no-print" style={{margin:"8px 0",padding:"9px 12px",border:"1px solid #d6a84f",borderRadius:8,background:"rgba(240,180,41,.08)",fontSize:12}}>
               <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontWeight:700}}>
                 <input type="checkbox" checked={testBypassJobCardCache} onChange={e=>setTestBypassJobCardCache(e.target.checked)} disabled={uploadBusy} />
                 TEST ONLY: Bypass Job Card cache for next Excel upload (compare with cache ON)
@@ -9910,7 +9910,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
               <button type="button" style={{marginTop:8,marginLeft:8,padding:"7px 10px",fontWeight:700,background:"#166534",color:"#fff",border:"1px solid #166534",borderRadius:4}} onClick={async()=>{setBrowserCacheError("");setBrowserCacheReport(null);try{setBrowserCacheError("Rebuilding browser cache: downloading Job Card index pages…");await clearJobCardIndex();await syncJobCardIndex("");const policy=await fetchJobCardCachePolicy();await updateJobCardIndexMeta({globalVersion:Number(policy.version||0),syncedAt:Date.now()});setBrowserCacheError("Cache rebuild complete. Verifying against database…");const report=await compareBrowserJobCardCacheWithDatabase("");setBrowserCacheReport(report);setBrowserCacheError("");}catch(e){setBrowserCacheError(e?.message||"Cache rebuild failed");}}}>Rebuild Browser Cache & Compare</button>
               {browserCacheError && <div style={{color:"#b91c1c",marginTop:6}}>{browserCacheError}</div>}
               {browserCacheReport && <div style={{marginTop:8,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(155px,1fr))",gap:8}}>{[["Browser cache entries",browserCacheReport.entries],["Browser unique Job Cards",browserCacheReport.unique],["Database unique Job Cards",browserCacheReport.databaseUnique],["Missing from browser",browserCacheReport.missingCount],["Extra in browser",browserCacheReport.extraCount],["Last processed DB ID",browserCacheReport.lastId]].map(([label,value])=><div key={label} style={{padding:"7px 8px",borderRadius:6,background:"rgba(127,127,127,.08)"}}><div style={{opacity:.75}}>{label}</div><strong>{Number(value||0).toLocaleString()}</strong></div>)}<span>Browser cache last sync: {browserCacheReport.syncedAt ? new Date(browserCacheReport.syncedAt).toLocaleString() : "Not recorded"}</span><span>Compared: {new Date(browserCacheReport.comparisonCompletedAt||browserCacheReport.checkedAt).toLocaleString()}</span>{browserCacheReport.missingExamples?.length>0&&<div style={{gridColumn:"1/-1"}}><b>First missing Job Cards:</b> {browserCacheReport.missingExamples.join(", ")}</div>}{browserCacheReport.extraExamples?.length>0&&<div style={{gridColumn:"1/-1"}}><b>First extra Job Cards:</b> {browserCacheReport.extraExamples.join(", ")}</div>}</div>}
-            </div>}
+            </div>
           )}
           {uploadDiagnostic && (
             <details className="no-print" open={true} style={{margin:"8px 0 12px",padding:"10px 12px",border:"1px solid #94a3b8",borderRadius:8,fontSize:12}}>

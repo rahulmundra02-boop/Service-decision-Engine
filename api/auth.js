@@ -443,6 +443,27 @@ function authToken(req) {
   return clean(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
 }
 
+async function ensurePendingVehicleUploadsSchema(client) {
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS pending_vehicle_uploads (
+      vin TEXT PRIMARY KEY,
+      registration TEXT,
+      customer_name TEXT,
+      model TEXT,
+      expected_job_cards JSONB NOT NULL DEFAULT '[]'::jsonb,
+      expected_lines JSONB NOT NULL DEFAULT '[]'::jsonb,
+      status TEXT NOT NULL DEFAULT 'queued',
+      error_message TEXT,
+      source TEXT,
+      uploaded_by TEXT,
+      first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_attempt_at TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await client.query("CREATE INDEX IF NOT EXISTS idx_pending_vehicle_uploads_status_updated ON pending_vehicle_uploads(status, updated_at DESC)");
+}
+
 async function requireAdmin(client, req) {
   const user = await getUserByToken(client, authToken(req));
   if (!user) return { error: "Session expired.", status: 401 };
@@ -736,6 +757,22 @@ export default async function handler(req, res) {
       return res.json({success:true,message:"Password changed successfully."});
     }
 
+
+    if (action === "admin-pending-vehicle-uploads") {
+      const admin = await requireAdmin(client, req);
+      if (admin.error) {
+        await client.query("ROLLBACK");
+        return res.status(admin.status).json({success:false,error:admin.error});
+      }
+      await ensurePendingVehicleUploadsSchema(client);
+      const result = await client.query(
+        "SELECT vin,registration,customer_name,model,status,error_message,source,uploaded_by,first_seen_at,last_attempt_at,updated_at, " +
+        "jsonb_array_length(expected_job_cards) AS expected_job_cards_count, jsonb_array_length(expected_lines) AS expected_lines_count " +
+        "FROM pending_vehicle_uploads ORDER BY updated_at DESC, vin ASC"
+      );
+      await client.query("COMMIT");
+      return res.json({success:true,uploads:result.rows});
+    }
 
     if (action === "admin-database-view") {
       const admin = await requireAdmin(client, req);

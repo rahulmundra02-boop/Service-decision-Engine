@@ -5610,6 +5610,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   const [testBypassJobCardCache, setTestBypassJobCardCache] = useState(false);
   const [browserCacheReport, setBrowserCacheReport] = useState(null);
   const [browserCacheError, setBrowserCacheError] = useState("");
+  const [diagnosticReportText, setDiagnosticReportText] = useState("");
   const [analysisBusy, setAnalysisBusy] = useState(false);
   const cancelProcessingRef = useRef(false);
   const seenUploadSignaturesRef = useRef(new Set());
@@ -9762,6 +9763,79 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
               {uploadDiagnostic.vehicleMasterError && <div style={{color:"#b91c1c",fontWeight:700,marginTop:8}}>Vehicle master error: {uploadDiagnostic.vehicleMasterError}</div>}
               {uploadDiagnostic.backgroundError && <div style={{color:"#b91c1c",fontWeight:700,marginTop:8}}>Upload error: {uploadDiagnostic.backgroundError}</div>}
               {uploadDiagnostic.outcomes?.length > 0 && <div style={{overflowX:"auto",marginTop:10}}><table className="history-table" style={{minWidth:520}}><thead><tr><th>Registration / VIN</th><th>Rows</th><th>Job Cards</th><th>Saved</th><th>Lines</th><th>Status / Error</th></tr></thead><tbody>{uploadDiagnostic.outcomes.map((item,i)=><tr key={item.vin||i}><td>{item.registration || item.vin}</td><td>{item.inputRows}</td><td>{item.uniqueJobCards}</td><td>{item.newJobCardsSaved}</td><td>{item.newServiceLines}</td><td style={{color:item.status==="failed"?"#b91c1c":"inherit"}}>{item.status}{item.message ? " — "+item.message : ""}</td></tr>)}</tbody></table></div>}
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}>
+                <button type="button" onClick={()=>{
+                  const d=uploadDiagnostic||{};
+                  const cache=browserCacheReport||{};
+                  const lines=[
+                    "SERVICE DECISION ENGINE — DETAILED EXCEL UPLOAD DIAGNOSTIC",
+                    "Generated at: "+new Date().toISOString(),
+                    "Website: "+window.location.href,
+                    "Build/branch: Beta v1.2-ui-testing",
+                    "",
+                    "1. FILE PARSING",
+                    "Upload started: "+(d.startedAt||"N/A"),
+                    "Upload finished: "+(d.finishedAt||"Still processing / not recorded"),
+                    "Status: "+(d.status||"N/A"),
+                    "Files selected: "+(d.filesSelected??"N/A"),
+                    "Files read successfully: "+(d.filesRead??"N/A"),
+                    "Files failed: "+((d.filesFailed||[]).length),
+                    "File names: "+((uploadMeta?.files||[]).join(", ")||"Not recorded"),
+                    "Rows before duplicate removal: "+(d.rowsBeforeDedup??uploadMeta?.rowsBefore??"N/A"),
+                    "Duplicate rows ignored: "+(d.duplicateRowsIgnored??uploadMeta?.duplicates??"N/A"),
+                    "Parsed rows: "+(d.parsedRows??"N/A"),
+                    "Invalid rows: "+((d.invalidRows||[]).length),
+                    "Vehicles/VINs detected: "+(d.vehicleCount??"N/A"),
+                    "Unique Job Cards in upload: "+(d.uniqueJobCards??"N/A"),
+                    "",
+                    "2. VEHICLE MASTER UPDATE (runs independently of Job Card duplicate check)",
+                    "Vehicles reported updated: "+(d.vehiclesUpserted??"N/A"),
+                    "Vehicle master error: "+(d.vehicleMasterError||"None reported"),
+                    "Emergency DB cutoff active: "+(d.cutoff===true?"YES":d.cutoff===false?"NO":"Unknown"),
+                    "",
+                    "3. JOB CARD DEDUPLICATION AND HISTORY SAVE",
+                    "Cache mode: "+(d.cacheMode||"N/A"),
+                    "Job Cards treated as already in DB: "+(d.jobCardsAlreadyInDb??"N/A"),
+                    "Job Cards submitted as new: "+(d.jobCardsSubmitted??"N/A"),
+                    "Job Cards saved: "+(d.jobCardsSaved??"N/A"),
+                    "Service history lines saved: "+(d.serviceLinesSaved??"N/A"),
+                    "Background error: "+(d.backgroundError||"None reported"),
+                    "",
+                    "4. PER-VEHICLE SAVE RESULTS",
+                    ...((d.outcomes||[]).map((x,i)=>(i+1)+". VIN="+(x.vin||"N/A")+" | Registration="+(x.registration||"N/A")+" | Input rows="+(x.inputRows??0)+" | Unique Job Cards="+(x.uniqueJobCards??0)+" | New Job Cards saved="+(x.newJobCardsSaved??0)+" | Duplicate Job Cards="+(x.duplicateJobCards??0)+" | Service lines saved="+(x.newServiceLines??0)+" | Status="+(x.status||"N/A")+" | Error="+(x.message||"None"))),
+                    "",
+                    "5. BROWSER JOB CARD CACHE VS DATABASE",
+                    "Browser cache entries: "+(cache.entries??"Not checked"),
+                    "Browser unique Job Cards: "+(cache.unique??"Not checked"),
+                    "Database unique Job Cards: "+(cache.databaseUnique??"Not checked"),
+                    "Missing from browser cache: "+(cache.missingCount??"Not checked"),
+                    "Extra in browser cache: "+(cache.extraCount??"Not checked"),
+                    "Last processed database ID: "+(cache.lastId??"Not checked"),
+                    "Browser cache last sync: "+(cache.syncedAt?new Date(cache.syncedAt).toISOString():"Not recorded"),
+                    "Cache comparison completed: "+(cache.comparisonCompletedAt?new Date(cache.comparisonCompletedAt).toISOString():"Not checked"),
+                    "First missing Job Cards: "+((cache.missingExamples||[]).join(", ")||"None / not checked"),
+                    "First extra Job Cards: "+((cache.extraExamples||[]).join(", ")||"None / not checked"),
+                    "",
+                    "6. FILE READ ERRORS",
+                    ...((d.filesFailed||[]).map(x=>(x.name||"Unknown file")+": "+(x.reason||"Unknown reason"))),
+                    "",
+                    "7. INVALID ROW DETAILS (up to 500 rows)",
+                    JSON.stringify((d.invalidRows||[]).slice(0,500),null,2),
+                    "",
+                    "8. NOTES",
+                    "Vehicle master upsert is intended to run before Job Card deduplication, so vehicle name/model/registration/VIN updates should not depend on whether Job Cards are already present.",
+                    "A per-vehicle History save error means that vehicle's history transaction rolled back; verify its Job Cards and service lines in the database before retrying.",
+                    "This report contains diagnostic data for this upload and the latest cache comparison visible in this browser."
+                  ];
+                  setDiagnosticReportText(lines.join("\\n"));
+                }} style={{padding:"8px 12px",fontWeight:700}}>Generate Detailed Text Report</button>
+                <button type="button" disabled={!diagnosticReportText} onClick={async()=>{
+                  try { await navigator.clipboard.writeText(diagnosticReportText); setBrowserCacheError("Detailed report copied. Paste it into ChatGPT."); }
+                  catch { setBrowserCacheError("Clipboard permission blocked. Select the report text below and copy it manually."); }
+                }} style={{padding:"8px 12px",fontWeight:700}}>Copy Report</button>
+              </div>
+              {diagnosticReportText && <textarea readOnly value={diagnosticReportText} aria-label="Detailed upload diagnostic report" style={{width:"100%",minHeight:260,marginTop:8,padding:10,boxSizing:"border-box",fontFamily:"monospace",fontSize:12,whiteSpace:"pre",overflow:"auto"}} />}
+
               {uploadDiagnostic.invalidRows?.length > 0 && <details style={{marginTop:8}}><summary>Invalid rows ({uploadDiagnostic.invalidRows.length})</summary><pre style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{JSON.stringify(uploadDiagnostic.invalidRows.slice(0,100),null,2)}</pre></details>}
               {uploadDiagnostic.filesFailed?.length > 0 && <div style={{marginTop:8}}>Files not read: {uploadDiagnostic.filesFailed.map(x=>x.name+" — "+x.reason).join(" | ")}</div>}
               {uploadDiagnostic.finishedAt && <div style={{marginTop:8,opacity:.7}}>Finished: {new Date(uploadDiagnostic.finishedAt).toLocaleString()}</div>}

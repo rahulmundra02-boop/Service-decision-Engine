@@ -21,4 +21,6 @@ jobs:
             --retry 2 --retry-delay 10 \
             -X POST \
             -H "Authorization: Bearer $CACHE_CRON_SECRET" \
-            "https://service-decision-engine-git-v12-ui-testing-service-decision.vercel.app/api/cron-job-card-cache"
+            -H "Content-Type: application/json" \
+            --data '{"action":"cron-job-card-cache"}' \
+            "https://service-decision-engine-git-v12-ui-testing-service-decision.vercel.app/api/auth"

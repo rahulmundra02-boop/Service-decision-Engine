@@ -24,4 +24,4 @@ jobs:
             -H "Content-Type: application/json" \
             -H "X-Cache-Cron-Action: cron-job-card-cache" \
             --data '{"action":"cron-job-card-cache"}' \
-            "https://service-decision-engine-git-v12-ui-testing-service-decision.vercel.app/api/auth"
+            "https://service-decision-engine-50lelyvkl-service-decision.vercel.app/api/auth"

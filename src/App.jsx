@@ -3114,7 +3114,9 @@ async function buildBulkAnalysisProgressive(records, considerKmVehicles = [], on
   for(let i=0;i<entries.length;i++){
     if(isCancelled()){const e=new Error("Analysis cancelled by user.");e.name="AbortError";throw e;}
     const [vin,rows]=entries[i];onProgress({stage:"Calculating service decisions",current:i,total:entries.length,detail:`Vehicle ${i+1} of ${entries.length}: ${vin}`});
-    await new Promise(resolve=>setTimeout(resolve,0));
+    // Intentionally limit bulk analysis to at most 5 unique chassis per second.
+    // 100 unique chassis therefore take at least 20 seconds.
+    await new Promise(resolve=>setTimeout(resolve,200));
     if(isCancelled()){const e=new Error("Analysis cancelled by user.");e.name="AbortError";throw e;}
     try{const one=buildBulkAnalysis(rows,considerKmVehicles);allResults.push(...one);highRunningVehicles.push(...(one.highRunningVehicles||[]));}catch(e){failedVehicles.push({vin,reason:e?.message||"Decision calculation failed"});}
     onProgress({stage:"Calculating service decisions",current:i+1,total:entries.length,detail:`Processed ${i+1} / ${entries.length} vehicles`});

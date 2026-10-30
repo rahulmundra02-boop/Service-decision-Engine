@@ -1275,12 +1275,16 @@ async function addJobCardsToBrowserIndex(jobCards, lastId = null) {
   return state;
 }
 
-async function syncJobCardIndex(apiBaseUrl) {
+async function syncJobCardIndex(apiBaseUrl, options = {}) {
   if (jobCardIndexSyncPromise) return jobCardIndexSyncPromise;
 
   jobCardIndexSyncPromise = (async () => {
-    const state = await loadJobCardIndexFromBrowser();
-    let afterId = Number(state.lastId || 0);
+    // A rebuild must start at the beginning. Reusing an old lastId silently
+    // skips older Job Cards when the local IndexedDB was cleared or incomplete.
+    if (options.fullRebuild) await clearJobCardIndex();
+    let afterId = options.fullRebuild ? 0 : Number((await loadJobCardIndexFromBrowser()).lastId || 0);
+    let pageCount = 0;
+    let lastSeenId = afterId;
 
     while (true) {
       const response = await fetch(`${apiBaseUrl}/api/save-history`, {
@@ -1292,31 +1296,31 @@ async function syncJobCardIndex(apiBaseUrl) {
           limit: JOB_CARD_INDEX_PAGE_SIZE,
         }),
       });
-
       let payload = null;
       try { payload = await response.json(); } catch { payload = null; }
-
       if (!response.ok || !payload?.success) {
         throw new Error(payload?.error || `Job Card index sync failed (${response.status})`);
       }
 
       const rows = Array.isArray(payload.jobCards) ? payload.jobCards : [];
-      const pageJobCards = rows.map(row => normalizeJobCard(row?.jobCardNo)).filter(Boolean);
-      const pageLastId = Number(
-        payload.nextAfterId || rows[rows.length - 1]?.id || afterId
-      );
-
-      await addJobCardsToBrowserIndex(pageJobCards, pageLastId);
+      if (!rows.length) break;
+      const pageLastId = Number(payload.nextAfterId || rows[rows.length - 1]?.id || 0);
+      if (!(pageLastId > afterId) || pageLastId <= lastSeenId && pageCount > 0) {
+        throw new Error("Job Card cache download stopped because the database cursor did not advance.");
+      }
+      await addJobCardsToBrowserIndex(rows.map(row => normalizeJobCard(row?.jobCardNo)).filter(Boolean), pageLastId);
       afterId = pageLastId;
-
-      if (!payload.hasMore || !rows.length) break;
+      lastSeenId = pageLastId;
+      pageCount++;
+      if (!payload.hasMore) break;
     }
 
-    return jobCardIndexMemory;
+    const verified = await inspectJobCardIndexInBrowser();
+    if (!verified.unique) throw new Error("Job Card cache download returned zero records. Cache was not marked as built.");
+    return {...verified, pagesDownloaded:pageCount};
   })().finally(() => {
     jobCardIndexSyncPromise = null;
   });
-
   return jobCardIndexSyncPromise;
 }
 
@@ -1390,20 +1394,20 @@ async function ensureJobCardCacheFreshInBackground(apiBaseUrl = "") {
       // Do not rebuild based on age. Rebuild only when empty, globally requested,
       // or the database/browser count differs by at least 1,000 Job Cards.
       if (!browserCount || versionChanged || countDifference >= 1000) {
-        await clearJobCardIndex();
-        await syncJobCardIndex(apiBaseUrl);
+        const downloaded = await syncJobCardIndex(apiBaseUrl, {fullRebuild:true});
+        const verified = await inspectJobCardIndexInBrowser();
+        const actualBrowserCount = Number(verified.unique || 0);
+        const remainingDifference = Math.abs(databaseCount - actualBrowserCount);
+        // Never mark a partial or empty cache as current. Keep the old version
+        // so the next page open retries the rebuild.
+        if (!actualBrowserCount || remainingDifference >= 1000) {
+          throw new Error(`Cache verification failed. Database: ${databaseCount.toLocaleString()}, browser: ${actualBrowserCount.toLocaleString()}, difference: ${remainingDifference.toLocaleString()}.`);
+        }
         await updateJobCardIndexMeta({
           globalVersion:Number(policy.version || 0),
           syncedAt:Date.now()
         });
-        const verified = await loadJobCardIndexFromBrowser();
-        const remainingDifference = Math.abs(databaseCount - Number(verified.jobCards?.size || 0));
-        if (remainingDifference >= 1000) {
-          console.warn("Job Card cache rebuild completed but count still differs from database.", {
-            databaseCount, browserCount:Number(verified.jobCards?.size || 0), remainingDifference
-          });
-        }
-        return { rebuilt:true, databaseCount, browserCount:Number(verified.jobCards?.size || 0), remainingDifference };
+        return { rebuilt:true, databaseCount, browserCount:actualBrowserCount, remainingDifference, pagesDownloaded:downloaded.pagesDownloaded };
       }
       return { rebuilt:false, databaseCount, browserCount, countDifference };
     } catch (error) {

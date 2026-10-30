@@ -517,7 +517,7 @@ export default async function handler(req, res) {
   // because the separate cron function route was returning Vercel NOT_FOUND.
   if (req.method === "POST") {
     const cronBody = typeof req.body === "string" ? (() => { try { return JSON.parse(req.body); } catch { return {}; } })() : (req.body || {});
-    if (clean(cronBody.action) === "cron-job-card-cache") {
+    if (clean(cronBody.action || req.query?.action || req.headers["x-cache-cron-action"]) === "cron-job-card-cache") {
       const cronSecret = process.env.CRON_SECRET;
       if (!cronSecret || String(req.headers.authorization || "") !== `Bearer ${cronSecret}`) {
         return res.status(401).json({ success: false, error: "Unauthorized cron request." });

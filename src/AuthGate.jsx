@@ -1837,10 +1837,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
             {[
               ["overview","Overview"],
               ["users","User Insights"],
-              ["activity","Activity"],
-              ["database","Database View"],
-              ["uploads","Failed Vehicle Uploads"],
-              ["management","User Management"]
+              ["activity","Activity"]
             ].map(([key,label])=>
               <button key={key} className={view===key ? "active" : ""} onClick={()=>setView(key)}>{label}</button>
             )}
@@ -1975,7 +1972,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           </>
         )}
 
-        {(adminSection === "database" || (adminSection === "analytics" && view === "database")) && (
+        {adminSection === "database" && (
           <>
             <div className="admin-section-title">Database View</div>
             <div className="admin-panel-card" style={{marginBottom:16}}>
@@ -2016,7 +2013,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           </>
         )}
 
-        {(adminSection === "users" || (adminSection === "analytics" && view === "management")) && (
+        {adminSection === "users" && (
           <>
             <div className="admin-section-title">User Management</div>
             <div className="admin-grid admin-management-grid">
@@ -2076,7 +2073,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           </>
         )}
 
-        {(adminSection === "uploads" || (adminSection === "analytics" && view === "uploads")) && (
+        {adminSection === "uploads" && (
           <section>
             <div className="admin-section-title">Failed / Incomplete Vehicle Uploads</div>
             <div className="admin-panel-card" style={{marginBottom:16}}>

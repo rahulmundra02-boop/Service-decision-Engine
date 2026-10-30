@@ -10011,7 +10011,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
           )}
 
           <div className="mobile-work-actions no-print">
-            {mode !== "home" && mode !== "warranty-tags" && mode !== "document-scanner" && mode !== "profile" && (
+            {mode !== "home" && mode !== "warranty-tags" && mode !== "document-scanner" && mode !== "profile" && mode !== "single" && mode !== "bulk" && (
               <>
                 <button className="mobile-work-action" onClick={() => document.getElementById("excel-file-input")?.click()} disabled={uploadBusy}>Upload Excel</button>
                 <button className="mobile-work-action" onClick={clear}>Clear</button>

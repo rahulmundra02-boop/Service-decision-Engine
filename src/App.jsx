@@ -6397,7 +6397,8 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
             }
             if(cutoff.enabled){diag.status="paused";return;}
             const cards=parsedRows.map(r=>normalizeJobCard(r?.jobCard)).filter(Boolean);
-            const fresh=await getHybridNewJobCards(API_BASE_URL,cards,candidates=>checkNewJobCards(API_BASE_URL,candidates));
+            // Database upload must use the live DB duplicate check, not the browser job-card cache. A stale cache can incorrectly classify unsaved history as already stored.
+            const fresh=await checkNewJobCards(API_BASE_URL,allJobCards);
             diag.jobCardsSubmitted=fresh.size;
             diag.jobCardsAlreadyInDb=Math.max(0,allJobCards.length-fresh.size);
             const records=parsedRows.filter(r=>{const jc=normalizeJobCard(r?.jobCard);return !!jc&&fresh.has(jc);});

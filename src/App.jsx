@@ -1334,15 +1334,13 @@ async function getHybridNewJobCards(apiBaseUrl, jobCards, checkNewJobCardsFn) {
       return checkNewJobCardsFn(uniqueJobCards);
     }
 
+    // Check data/version freshness, not elapsed time. The same rule is also
+    // checked in the background for every browser with the portal open.
+    await ensureJobCardCacheFreshInBackground(apiBaseUrl);
     let state = await loadJobCardIndexFromBrowser();
-    const intervalMs = Math.max(1, Number(policy.intervalHours || 24)) * 60 * 60 * 1000;
-    const cacheAge = state.syncedAt ? Date.now() - state.syncedAt : Number.POSITIVE_INFINITY;
     const versionChanged = Number(state.globalVersion || 0) !== Number(policy.version || 0);
-    const intervalExpired = cacheAge >= intervalMs;
-
-    // Rebuild when the admin changed the global cache version or this browser's
-    // own cache has reached the configured interval.
-    if (!state.jobCards.size || versionChanged || intervalExpired) {
+    const countDifference = Math.abs(Number(policy.cachedJobCards || 0) - Number(state.jobCards?.size || 0));
+    if (!state.jobCards.size || versionChanged || countDifference >= 1000) {
       await clearJobCardIndex();
       await syncJobCardIndex(apiBaseUrl);
       state = await updateJobCardIndexMeta({
@@ -1374,6 +1372,49 @@ async function getHybridNewJobCards(apiBaseUrl, jobCards, checkNewJobCardsFn) {
   }
 }
 
+
+// Data-driven Job Card cache maintenance. Each open browser checks the shared
+// database count/version and rebuilds its own IndexedDB when it is stale.
+let jobCardCacheMaintenancePromise = null;
+async function ensureJobCardCacheFreshInBackground(apiBaseUrl = "") {
+  if (jobCardCacheMaintenancePromise) return jobCardCacheMaintenancePromise;
+  jobCardCacheMaintenancePromise = (async () => {
+    try {
+      const policy = await fetchJobCardCachePolicy();
+      if (policy.enabled === false) return { skipped:true, reason:"cache-disabled" };
+      const state = await loadJobCardIndexFromBrowser();
+      const browserCount = Number(state.jobCards?.size || 0);
+      const databaseCount = Number(policy.cachedJobCards || 0);
+      const countDifference = Math.abs(databaseCount - browserCount);
+      const versionChanged = Number(state.globalVersion || 0) !== Number(policy.version || 0);
+      // Do not rebuild based on age. Rebuild only when empty, globally requested,
+      // or the database/browser count differs by at least 1,000 Job Cards.
+      if (!browserCount || versionChanged || countDifference >= 1000) {
+        await clearJobCardIndex();
+        await syncJobCardIndex(apiBaseUrl);
+        await updateJobCardIndexMeta({
+          globalVersion:Number(policy.version || 0),
+          syncedAt:Date.now()
+        });
+        const verified = await loadJobCardIndexFromBrowser();
+        const remainingDifference = Math.abs(databaseCount - Number(verified.jobCards?.size || 0));
+        if (remainingDifference >= 1000) {
+          console.warn("Job Card cache rebuild completed but count still differs from database.", {
+            databaseCount, browserCount:Number(verified.jobCards?.size || 0), remainingDifference
+          });
+        }
+        return { rebuilt:true, databaseCount, browserCount:Number(verified.jobCards?.size || 0), remainingDifference };
+      }
+      return { rebuilt:false, databaseCount, browserCount, countDifference };
+    } catch (error) {
+      // Cache maintenance must never block normal portal usage; upload validation
+      // retains its existing central database fallback if the cache is unavailable.
+      console.warn("Background Job Card cache check failed:", error);
+      return { error:error?.message || "Background cache check failed" };
+    }
+  })().finally(() => { jobCardCacheMaintenancePromise = null; });
+  return jobCardCacheMaintenancePromise;
+}
 
 function makeHistoryRowKey(record) {
   const date = record?.date ? formatDate(record.date) : "";
@@ -5573,6 +5614,24 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   const cancelProcessingRef = useRef(false);
   const seenUploadSignaturesRef = useRef(new Set());
   const [estimateOpen, setEstimateOpen] = useState(false);
+
+  useEffect(() => {
+    // First check on portal open, then re-check data counts while this browser
+    // remains open. Hidden tabs also receive the check; visibility return checks
+    // immediately. Closed browsers rebuild on their next visit.
+    void ensureJobCardCacheFreshInBackground("");
+    const timer = window.setInterval(() => {
+      void ensureJobCardCacheFreshInBackground("");
+    }, 5 * 60 * 1000);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void ensureJobCardCacheFreshInBackground("");
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
 
   useEffect(() => {
     const handleMobileNavigation = (event) => {

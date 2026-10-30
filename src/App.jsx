@@ -9899,7 +9899,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
 
           <input id="excel-file-input" className="no-print" type="file" accept=".xlsx,.xls,.xlsm,.csv" multiple style={{display:"none"}} onChange={handleExcelUpload} disabled={uploadBusy} />
 
-          {mode !== "home" && mode !== "warranty-tags" && mode !== "document-scanner" && mode !== "profile" && mode !== "single" && mode !== "bulk" && (
+          {mode !== "home" && mode !== "warranty-tags" && mode !== "document-scanner" && mode !== "profile" && mode !== "single" && mode !== "bulk" && mode !== "estimate" && mode !== "registration-search" && (
             <div className="no-print" style={{margin:"8px 0",padding:"9px 12px",border:"1px solid #d6a84f",borderRadius:8,background:"rgba(240,180,41,.08)",fontSize:12}}>
               <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontWeight:700}}>
                 <input type="checkbox" checked={testBypassJobCardCache} onChange={e=>setTestBypassJobCardCache(e.target.checked)} disabled={uploadBusy} />

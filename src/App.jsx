@@ -6458,11 +6458,24 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         customerName: vehicle.customerName || latest.customerName || "",
         model: vehicle.model || latest.model || "",
         expectedJobCards: [...new Set(rows.map(row => normalizeJobCard(row?.jobCard || row?.jobCardNo)).filter(Boolean))],
-        expectedLines: rows.filter(row => normalizeJobCard(row?.jobCard || row?.jobCardNo)).map(row => ({
-          jobCard: row.jobCard || row.jobCardNo, itemCategory: row.itemCategory, partCode: row.partCode,
-          part: row.part || row.partDescription, standardizedPart: row.standardizedPart,
-          repairTypeLine: row.repairTypeLine, faultCode: row.faultCode || row.complaintCode,
-        })),
+        expectedLines: (() => {
+          const normalizeText = value => String(value ?? "").trim().toUpperCase().replace(/\\s+/g, " ");
+          const counts = new Map();
+          for (const row of rows) {
+            const jobCard = normalizeJobCard(row?.jobCard || row?.jobCardNo);
+            if (!jobCard) continue;
+            const category = normalizeText(row.itemCategory);
+            const partCode = normalizeText(row.partCode).replace(/\\s+/g, "");
+            const identity = partCode
+              ? category + "|CODE:" + partCode
+              : [category, normalizeText(row.part || row.partDescription), normalizeText(row.standardizedPart), normalizeText(row.repairTypeLine), normalizeText(row.faultCode || row.complaintCode)].join("|");
+            const key = jobCard + "|" + identity;
+            const existing = counts.get(key);
+            if (existing) existing.count++;
+            else counts.set(key, { jobCard, identity, count:1 });
+          }
+          return [...counts.values()];
+        })(),
       };
     });
     if (!vehicles.length) throw new Error("No valid chassis numbers were found to register for upload tracking.");

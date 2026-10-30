@@ -118,6 +118,27 @@ function serviceLineIdentityFromDb(row = {}) {
   ].join("|");
 }
 
+async function ensureVehicleUploadTrackingSchema(client) {
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS pending_vehicle_uploads (
+      vin TEXT PRIMARY KEY,
+      registration TEXT,
+      customer_name TEXT,
+      model TEXT,
+      expected_job_cards JSONB NOT NULL DEFAULT '[]'::jsonb,
+      expected_lines JSONB NOT NULL DEFAULT '[]'::jsonb,
+      status TEXT NOT NULL DEFAULT 'queued',
+      error_message TEXT,
+      source TEXT,
+      uploaded_by TEXT,
+      first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_attempt_at TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await client.query("CREATE INDEX IF NOT EXISTS idx_pending_vehicle_uploads_status_updated ON pending_vehicle_uploads(status, updated_at DESC)");
+}
+
 async function ensurePriceMasterSchema(client) {
   await client.query(`
     CREATE TABLE IF NOT EXISTS part_price_master (
@@ -982,6 +1003,100 @@ export default async function handler(req, res) {
         success: false,
         error: error?.message || "Job Card index sync failed"
       });
+    } finally {
+      client.release();
+    }
+  }
+
+  if (["register-vehicle-upload-batch","update-vehicle-upload-status","verify-vehicle-upload"].includes(body.action)) {
+    const client = await pool.connect();
+    try {
+      await ensureVehicleUploadTrackingSchema(client);
+      if (body.action === "register-vehicle-upload-batch") {
+        const vehicles = Array.isArray(body.vehicles) ? body.vehicles : [];
+        if (!vehicles.length) return res.status(400).json({success:false,error:"No chassis were supplied for tracking."});
+        let registered = 0;
+        for (const item of vehicles) {
+          const vin = String(item?.vin || "").trim().toUpperCase();
+          if (!vin) continue;
+          const jobCards = [...new Set((Array.isArray(item.expectedJobCards) ? item.expectedJobCards : []).map(normalizeJobCard).filter(Boolean))];
+          const expectedLines = (Array.isArray(item.expectedLines) ? item.expectedLines : []).map(line => ({
+            jobCard: normalizeJobCard(line?.jobCard),
+            identity: serviceLineIdentityFromRecord(line || {})
+          })).filter(line => line.jobCard);
+          await client.query(
+            "INSERT INTO pending_vehicle_uploads (vin,registration,customer_name,model,expected_job_cards,expected_lines,status,error_message,source,uploaded_by,first_seen_at,last_attempt_at,updated_at) " +
+            "VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,'queued',NULL,$7,$8,NOW(),NULL,NOW()) " +
+            "ON CONFLICT (vin) DO UPDATE SET registration=COALESCE(NULLIF(EXCLUDED.registration,''),pending_vehicle_uploads.registration), " +
+            "customer_name=COALESCE(NULLIF(EXCLUDED.customer_name,''),pending_vehicle_uploads.customer_name), " +
+            "model=COALESCE(NULLIF(EXCLUDED.model,''),pending_vehicle_uploads.model), expected_job_cards=EXCLUDED.expected_job_cards, " +
+            "expected_lines=EXCLUDED.expected_lines,status='queued',error_message=NULL,source=EXCLUDED.source,uploaded_by=EXCLUDED.uploaded_by,updated_at=NOW()",
+            [vin,String(item.registration||""),String(item.customerName||""),String(item.model||""),JSON.stringify(jobCards),JSON.stringify(expectedLines),String(body.source||"excel-upload"),String(body.uploadedBy||"")]
+          );
+          registered++;
+        }
+        return res.status(200).json({success:true,registered});
+      }
+      const vin = String(body.vin || "").trim().toUpperCase();
+      if (!vin) return res.status(400).json({success:false,error:"Chassis number is required."});
+      if (body.action === "update-vehicle-upload-status") {
+        const status = ["queued","processing","verification_pending","failed"].includes(String(body.status)) ? String(body.status) : "failed";
+        const result = await client.query(
+          "UPDATE pending_vehicle_uploads SET status=$1,error_message=$2,last_attempt_at=NOW(),updated_at=NOW() WHERE vin=$3 RETURNING vin",
+          [status, body.error ? String(body.error).slice(0,2000) : null, vin]
+        );
+        return res.status(200).json({success:true,updated:result.rowCount||0});
+      }
+
+      const tracked = await client.query("SELECT expected_job_cards,expected_lines FROM pending_vehicle_uploads WHERE vin=$1 LIMIT 1",[vin]);
+      if (!tracked.rows[0]) return res.status(200).json({success:true,verified:false,reason:"tracking_entry_missing"});
+      await client.query("UPDATE pending_vehicle_uploads SET status='verification_pending',error_message=NULL,last_attempt_at=NOW(),updated_at=NOW() WHERE vin=$1",[vin]);
+      const expectedJobCards = Array.isArray(tracked.rows[0].expected_job_cards) ? tracked.rows[0].expected_job_cards : [];
+      const expectedLines = Array.isArray(tracked.rows[0].expected_lines) ? tracked.rows[0].expected_lines : [];
+      const vehicleResult = await client.query("SELECT id FROM vehicles WHERE UPPER(TRIM(vin))=$1 LIMIT 1",[vin]);
+      if (!vehicleResult.rows[0]) {
+        await client.query("UPDATE pending_vehicle_uploads SET status='failed',error_message='Vehicle Master record is missing.',updated_at=NOW() WHERE vin=$1",[vin]);
+        return res.status(200).json({success:true,verified:false,reason:"vehicle_missing"});
+      }
+      const jcResult = await client.query(
+        "SELECT id,job_card_no FROM job_cards WHERE vehicle_id=$1 AND UPPER(TRIM(job_card_no))=ANY($2::text[])",
+        [vehicleResult.rows[0].id,expectedJobCards]
+      );
+      const foundCards = new Set(jcResult.rows.map(row=>normalizeJobCard(row.job_card_no)));
+      const missingCards = expectedJobCards.filter(number=>!foundCards.has(normalizeJobCard(number)));
+      if (missingCards.length) {
+        const error = "Missing Job Cards: " + missingCards.slice(0,20).join(", ") + (missingCards.length>20?"…":"");
+        await client.query("UPDATE pending_vehicle_uploads SET status='failed',error_message=$1,updated_at=NOW() WHERE vin=$2",[error,vin]);
+        return res.status(200).json({success:true,verified:false,reason:"job_cards_missing",missingJobCards:missingCards.length});
+      }
+      const cardIds = jcResult.rows.map(row=>row.id);
+      const serviceResult = cardIds.length ? await client.query(
+        "SELECT sh.job_card_id,sh.item_category,sh.part_code,sh.part_description,sh.standardized_part,sh.repair_line_item_type,sh.complaint_code " +
+        "FROM service_history sh WHERE sh.job_card_id=ANY($1::int[]) ORDER BY sh.id",
+        [cardIds]
+      ) : {rows:[]};
+      const identityCounts = new Map();
+      for (const row of serviceResult.rows) {
+        const key = normalizeJobCard(jcResult.rows.find(j=>Number(j.id)===Number(row.job_card_id))?.job_card_no) + "|" + serviceLineIdentityFromDb(row);
+        identityCounts.set(key,(identityCounts.get(key)||0)+1);
+      }
+      const requiredCounts = new Map();
+      for (const line of expectedLines) {
+        const key = normalizeJobCard(line.jobCard) + "|" + String(line.identity||"");
+        requiredCounts.set(key,(requiredCounts.get(key)||0)+1);
+      }
+      const missingLines = [];
+      for (const [key,count] of requiredCounts) if ((identityCounts.get(key)||0)<count) missingLines.push({key,missing:count-(identityCounts.get(key)||0)});
+      if (missingLines.length) {
+        const error = "Line Items incomplete: " + missingLines.length + " expected line(s) not found.";
+        await client.query("UPDATE pending_vehicle_uploads SET status='failed',error_message=$1,updated_at=NOW() WHERE vin=$2",[error,vin]);
+        return res.status(200).json({success:true,verified:false,reason:"line_items_missing",missingLines:missingLines.length});
+      }
+      await client.query("DELETE FROM pending_vehicle_uploads WHERE vin=$1",[vin]);
+      return res.status(200).json({success:true,verified:true,removed:true});
+    } catch (error) {
+      console.error("Vehicle upload tracker action failed:",error);
+      return res.status(500).json({success:false,error:error?.message||"Vehicle upload tracking failed."});
     } finally {
       client.release();
     }

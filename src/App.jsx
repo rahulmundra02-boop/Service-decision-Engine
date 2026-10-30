@@ -2418,8 +2418,8 @@ function getLastMatching(records, keywords) {
 }
 
 const DECISION_RULES = {
-  coolant: [320000,36,15], gearOil:[160000,18,6], hubGrease:[80000,12,3],
-  axleOil:[200000,24,12], clutchOil:[80000,18,0.5], steeringOil:[160000,24,1],
+  coolant: [320000,36,15], gearOil:[1300000,18,6], hubGrease:[80000,12,3],
+  axleOil:[200000,24,12], clutchOil:[80000,18,0.5], steeringOil:[1300000,24,1],
   airFilter:[80000,12,0], fuelFilter:[80000,12,0], defFilter:[120000,18,0],
   apdaFilter:[200000,24,1], defInline:[80000,12,1]
 };
@@ -2706,7 +2706,7 @@ function decideAggregate(records, vehicle, running, key, analysisDate, decisionB
     // recorded on the same job card. Entries from separate job cards must not
     // be paired together.
     const base=steeringOilServiceBase(records, vehicle);
-    return useHours ? dueByHours(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),4000,24,analysisDate,sale) : dueNormalWithSale(running.current,base,160000,24,analysisDate,sale,running.mode,vehicle);
+    return useHours ? dueByHours(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),4000,24,analysisDate,sale) : dueNormalWithSale(running.current,base,1300000,24,analysisDate,sale,running.mode,vehicle);
   }
   if (key === 'clutchOil') {
     const base = clutchOilServiceBase(records, vehicle);
@@ -5629,7 +5629,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
 
     const checkAndBuildCache = async () => {
       if (stopped || document.visibilityState === "hidden") {
-        retryTimer = window.setTimeout(checkAndBuildCache, 60000);
+        retryTimer = window.setTimeout(checkAndBuildCache, 300000);
         return;
       }
       try {
@@ -5668,7 +5668,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         if (!stopped) setBrowserCacheError("Automatic cache download failed: " + (error?.message || "Unknown error") + ". Retrying in 60 seconds.");
         console.error("Automatic Job Card cache build failed; retry scheduled:", error);
       }
-      if (!stopped) retryTimer = window.setTimeout(checkAndBuildCache, 60000);
+      if (!stopped) retryTimer = window.setTimeout(checkAndBuildCache, 300000);
     };
 
     void checkAndBuildCache();

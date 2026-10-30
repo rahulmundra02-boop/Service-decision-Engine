@@ -1684,7 +1684,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           </div>
           <div className="admin-cache-metrics">
             <div className="admin-cache-metric"><span>Current Database Job Cards</span><strong>{Number(jobCardCacheSettings?.currentDatabaseJobCards ?? jobCardCacheSettings?.cachedJobCards ?? 0).toLocaleString("en-IN")}</strong></div>
-            <div className="admin-cache-metric"><span>Job Cards Queued for Cache Rebuild</span><strong>{Number(jobCardCacheSettings?.cachedJobCards ?? 0).toLocaleString("en-IN")}</strong><small>{jobCardCacheSettings?.lastRebuildAt ? "Rebuild requested " + new Date(jobCardCacheSettings.lastRebuildAt).toLocaleString("en-IN") : "No rebuild requested"}</small></div>
+            <div className="admin-cache-metric"><span>Job Cards Queued for Cache Rebuild</span><strong>{Number(jobCardCacheSettings?.cachedJobCards || jobCardCacheSettings?.currentDatabaseJobCards || 0).toLocaleString("en-IN")}</strong><small>{jobCardCacheSettings?.lastRebuildAt ? "Rebuild requested " + new Date(jobCardCacheSettings.lastRebuildAt).toLocaleString("en-IN") : "No rebuild requested"}</small></div>
             <div className="admin-cache-metric"><span>Last Automatic Rebuild</span><strong>{jobCardCacheSettings?.lastAutoRebuildAt ? new Date(jobCardCacheSettings.lastAutoRebuildAt).toLocaleString("en-IN") : "Not recorded"}</strong>{jobCardCacheSettings?.lastAutoRebuildError && <small className="admin-cache-error">{jobCardCacheSettings.lastAutoRebuildError}</small>}</div>
           </div>
           <div className="admin-cache-actions">

@@ -9827,7 +9827,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                     "A per-vehicle History save error means that vehicle's history transaction rolled back; verify its Job Cards and service lines in the database before retrying.",
                     "This report contains diagnostic data for this upload and the latest cache comparison visible in this browser."
                   ];
-                  setDiagnosticReportText(lines.join("\\n"));
+                  setDiagnosticReportText(lines.join("\n"));
                 }} style={{padding:"8px 12px",fontWeight:700}}>Generate Detailed Text Report</button>
                 <button type="button" disabled={!diagnosticReportText} onClick={async()=>{
                   try { await navigator.clipboard.writeText(diagnosticReportText); setBrowserCacheError("Detailed report copied. Paste it into ChatGPT."); }

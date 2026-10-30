@@ -1674,7 +1674,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
             <div>
               <div className="admin-panel-card-title">Job Card Browser Cache</div>
-              <div className="admin-panel-card-sub">Central Neon index + browser IndexedDB cache control</div>
+              <div className="admin-panel-card-sub">Central Neon Job Card index and browser IndexedDB rebuild control</div>
             </div>
             <label style={{display:"flex",alignItems:"center",gap:8,fontWeight:700}}>
               <span>Cache System</span>
@@ -1684,7 +1684,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           </div>
           <div className="admin-cache-metrics">
             <div className="admin-cache-metric"><span>Current Database Job Cards</span><strong>{Number(jobCardCacheSettings?.currentDatabaseJobCards ?? jobCardCacheSettings?.cachedJobCards ?? 0).toLocaleString("en-IN")}</strong></div>
-            <div className="admin-cache-metric"><span>Job Cards in Last Cache Build</span><strong>{Number(jobCardCacheSettings?.cachedJobCards ?? 0).toLocaleString("en-IN")}</strong><small>{jobCardCacheSettings?.lastRebuildAt ? "Built " + new Date(jobCardCacheSettings.lastRebuildAt).toLocaleString("en-IN") : "No successful build recorded"}</small></div>
+            <div className="admin-cache-metric"><span>Job Cards Queued for Cache Rebuild</span><strong>{Number(jobCardCacheSettings?.cachedJobCards ?? 0).toLocaleString("en-IN")}</strong><small>{jobCardCacheSettings?.lastRebuildAt ? "Rebuild requested " + new Date(jobCardCacheSettings.lastRebuildAt).toLocaleString("en-IN") : "No rebuild requested"}</small></div>
             <div className="admin-cache-metric"><span>Last Automatic Rebuild</span><strong>{jobCardCacheSettings?.lastAutoRebuildAt ? new Date(jobCardCacheSettings.lastAutoRebuildAt).toLocaleString("en-IN") : "Not recorded"}</strong>{jobCardCacheSettings?.lastAutoRebuildError && <small className="admin-cache-error">{jobCardCacheSettings.lastAutoRebuildError}</small>}</div>
           </div>
           <div className="admin-cache-actions">

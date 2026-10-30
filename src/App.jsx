@@ -5633,13 +5633,40 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         return;
       }
       try {
+        const current = await inspectJobCardIndexInBrowser();
+        if (stopped) return;
+
+        // Empty local storage must trigger an explicit full download. Do not
+        // let a stale/disabled maintenance policy silently skip first-time setup.
+        if (Number(current.unique || 0) === 0) {
+          setBrowserCacheError("Automatic Job Card cache download started…");
+          const downloaded = await syncJobCardIndex("", { fullRebuild: true });
+          const policy = await fetchJobCardCachePolicy();
+          await updateJobCardIndexMeta({
+            globalVersion: Number(policy.version || 0),
+            syncedAt: Date.now()
+          });
+          const verified = await inspectJobCardIndexInBrowser();
+          if (stopped) return;
+          if (Number(verified.unique || 0) === 0) {
+            throw new Error("Automatic cache download finished with zero Job Cards.");
+          }
+          setBrowserCacheError("");
+          console.info("Automatic Job Card cache download verified:", {
+            uniqueJobCards: verified.unique,
+            pagesDownloaded: downloaded.pagesDownloaded
+          });
+          return;
+        }
+
         await ensureJobCardCacheFreshInBackground("");
         const state = await inspectJobCardIndexInBrowser();
         if (stopped) return;
         if (Number(state.unique || 0) > 0) return;
-        console.warn("Job Card browser cache is still empty; automatic retry scheduled.");
+        throw new Error("Automatic cache check completed but the browser cache is still empty.");
       } catch (error) {
-        console.warn("Automatic Job Card cache build failed; retry scheduled:", error);
+        if (!stopped) setBrowserCacheError("Automatic cache download failed: " + (error?.message || "Unknown error") + ". Retrying in 60 seconds.");
+        console.error("Automatic Job Card cache build failed; retry scheduled:", error);
       }
       if (!stopped) retryTimer = window.setTimeout(checkAndBuildCache, 60000);
     };

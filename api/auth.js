@@ -443,6 +443,27 @@ function authToken(req) {
   return clean(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
 }
 
+async function ensurePendingVehicleUploadsSchema(client) {
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS pending_vehicle_uploads (
+      vin TEXT PRIMARY KEY,
+      registration TEXT,
+      customer_name TEXT,
+      model TEXT,
+      expected_job_cards JSONB NOT NULL DEFAULT '[]'::jsonb,
+      expected_lines JSONB NOT NULL DEFAULT '[]'::jsonb,
+      status TEXT NOT NULL DEFAULT 'queued',
+      error_message TEXT,
+      source TEXT,
+      uploaded_by TEXT,
+      first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_attempt_at TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await client.query("CREATE INDEX IF NOT EXISTS idx_pending_vehicle_uploads_status_updated ON pending_vehicle_uploads(status, updated_at DESC)");
+}
+
 async function requireAdmin(client, req) {
   const user = await getUserByToken(client, authToken(req));
   if (!user) return { error: "Session expired.", status: 401 };
@@ -513,6 +534,46 @@ async function createOrUpdateUser(client, body) {
 }
 
 export default async function handler(req, res) {
+  // Private scheduled cache refresh. This uses the existing deployed auth function
+  // because the separate cron function route was returning Vercel NOT_FOUND.
+  if (req.method === "POST") {
+    const cronBody = typeof req.body === "string" ? (() => { try { return JSON.parse(req.body); } catch { return {}; } })() : (req.body || {});
+    if (clean(cronBody.action || req.query?.action || req.headers["x-cache-cron-action"]) === "cron-job-card-cache") {
+      const cronSecret = process.env.CRON_SECRET;
+      if (!cronSecret || String(req.headers.authorization || "") !== `Bearer ${cronSecret}`) {
+        return res.status(401).json({ success: false, error: "Unauthorized cron request." });
+      }
+      const cronClient = await pool.connect();
+      try {
+        await cronClient.query("BEGIN");
+        const settingResult = await cronClient.query("SELECT setting_value FROM app_settings WHERE setting_key='job_card_cache' LIMIT 1 FOR UPDATE");
+        const current = settingResult.rows[0]?.setting_value || { enabled: true, intervalHours: 24, version: 1, lastRebuildAt: null };
+        const now = new Date();
+        const intervalHours = Math.max(1, Number(current.intervalHours || 24));
+        const lastRebuildMs = current.lastRebuildAt ? new Date(current.lastRebuildAt).getTime() : 0;
+        const due = current.enabled !== false && (!lastRebuildMs || now.getTime() >= lastRebuildMs + intervalHours * 3600000);
+        if (!due) {
+          const nextRebuildAt = lastRebuildMs ? new Date(lastRebuildMs + intervalHours * 3600000).toISOString() : null;
+          const updated = { ...current, lastAutoRebuildAt: now.toISOString(), lastAutoRebuildError: null };
+          await cronClient.query("UPDATE app_settings SET setting_value=$1::jsonb, updated_at=NOW() WHERE setting_key='job_card_cache'", [JSON.stringify(updated)]);
+          await cronClient.query("COMMIT");
+          return res.status(200).json({ success: true, rebuilt: false, reason: current.enabled === false ? "cache_disabled" : "not_due", nextRebuildAt });
+        }
+        const countResult = await cronClient.query("SELECT COUNT(DISTINCT UPPER(TRIM(job_card_no)))::int AS count FROM job_cards WHERE job_card_no IS NOT NULL AND TRIM(job_card_no)<>''");
+        const completedAt = now.toISOString();
+        const updated = { ...current, enabled: current.enabled !== false, intervalHours, version: Number(current.version || 0) + 1, lastRebuildAt: completedAt, lastAutoRebuildAt: completedAt, lastAutoRebuildError: null, cachedJobCards: Number(countResult.rows[0]?.count || 0) };
+        await cronClient.query("INSERT INTO app_settings (setting_key,setting_value,updated_at) VALUES ('job_card_cache',$1::jsonb,NOW()) ON CONFLICT (setting_key) DO UPDATE SET setting_value=EXCLUDED.setting_value,updated_at=NOW()", [JSON.stringify(updated)]);
+        await cronClient.query("COMMIT");
+        return res.status(200).json({ success: true, rebuilt: true, completedAt, nextRebuildAt: new Date(now.getTime() + intervalHours * 3600000).toISOString(), cachedJobCards: updated.cachedJobCards, version: updated.version });
+      } catch (error) {
+        try { await cronClient.query("ROLLBACK"); } catch {}
+        console.error("Scheduled Job Card cache refresh failed:", error);
+        return res.status(500).json({ success: false, error: "Scheduled cache refresh failed." });
+      } finally {
+        cronClient.release();
+      }
+    }
+  }
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return res.status(405).json({ success:false, error:"Method not allowed" });
@@ -696,6 +757,22 @@ export default async function handler(req, res) {
       return res.json({success:true,message:"Password changed successfully."});
     }
 
+
+    if (action === "admin-pending-vehicle-uploads") {
+      const admin = await requireAdmin(client, req);
+      if (admin.error) {
+        await client.query("ROLLBACK");
+        return res.status(admin.status).json({success:false,error:admin.error});
+      }
+      await ensurePendingVehicleUploadsSchema(client);
+      const result = await client.query(
+        "SELECT vin,registration,customer_name,model,status,error_message,source,uploaded_by,first_seen_at,last_attempt_at,updated_at, " +
+        "jsonb_array_length(expected_job_cards) AS expected_job_cards_count, jsonb_array_length(expected_lines) AS expected_lines_count " +
+        "FROM pending_vehicle_uploads ORDER BY updated_at DESC, vin ASC"
+      );
+      await client.query("COMMIT");
+      return res.json({success:true,uploads:result.rows});
+    }
 
     if (action === "admin-database-view") {
       const admin = await requireAdmin(client, req);
@@ -1261,8 +1338,11 @@ export default async function handler(req, res) {
           version: Number(settings.version || 1),
           lastRebuildAt,
           lastAutoRebuildAt: settings.lastAutoRebuildAt || null,
+          lastAutoRebuildError: settings.lastAutoRebuildError || null,
           nextRebuildAt,
-          cachedJobCards: Number(countResult.rows[0]?.count || 0),
+          currentDatabaseJobCards: Number(countResult.rows[0]?.count || 0),
+          cachedJobCards: Number(settings.cachedJobCards || 0),
+          rebuilding: false,
           updatedAt: result.rows[0]?.updated_at || null
         }
       });
@@ -1351,11 +1431,15 @@ export default async function handler(req, res) {
       const shouldRebuild = operation === "rebuild" || operation === "reset";
       const version = shouldRebuild ? Number(current.version || 0) + 1 : Number(current.version || 1);
       const lastRebuildAt = shouldRebuild ? new Date().toISOString() : (current.lastRebuildAt || null);
+      const rebuildCountResult = shouldRebuild ? await client.query(
+        "SELECT COUNT(DISTINCT UPPER(TRIM(job_card_no)))::int AS count FROM job_cards WHERE job_card_no IS NOT NULL AND TRIM(job_card_no)<>''"
+      ) : null;
+      const cachedJobCards = shouldRebuild ? Number(rebuildCountResult.rows[0]?.count || 0) : Number(current.cachedJobCards || 0);
       await client.query(
         "INSERT INTO app_settings (setting_key,setting_value,updated_at) " +
         "VALUES ('job_card_cache',$1::jsonb,NOW()) " +
         "ON CONFLICT (setting_key) DO UPDATE SET setting_value=EXCLUDED.setting_value,updated_at=NOW()",
-        [JSON.stringify({enabled,intervalHours,version,lastRebuildAt})]
+        [JSON.stringify({...current,enabled,intervalHours,version,lastRebuildAt,cachedJobCards,lastAutoRebuildError:shouldRebuild ? null : (current.lastAutoRebuildError || null)})]
       );
       const countResult = await client.query(
         "SELECT COUNT(DISTINCT UPPER(TRIM(job_card_no)))::int AS count FROM job_cards WHERE job_card_no IS NOT NULL AND TRIM(job_card_no)<>''"
@@ -1369,7 +1453,8 @@ export default async function handler(req, res) {
           version,
           lastRebuildAt,
           nextRebuildAt:new Date(new Date(lastRebuildAt).getTime()+intervalHours*60*60*1000).toISOString(),
-          cachedJobCards:Number(countResult.rows[0]?.count || 0),
+          currentDatabaseJobCards:Number(countResult.rows[0]?.count || 0),
+          cachedJobCards,
           updatedAt:new Date().toISOString()
         },
         message: operation === "reset" ? "Job Card cache policy reset and all browser caches marked for rebuild." : "Job Card cache policy updated and all browser caches marked for rebuild."

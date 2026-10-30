@@ -1153,7 +1153,43 @@ async function loadJobCardIndexFromBrowser() {
 
 
 
-async function inspectJobCardIndexInBrowser() { const db = await openJobCardIndexDb(); try { return await new Promise((resolve,reject)=>{ const tx=db.transaction([JOB_CARD_INDEX_STORE,JOB_CARD_INDEX_META_STORE],"readonly"); const keys=tx.objectStore(JOB_CARD_INDEX_STORE).getAllKeys(); const meta=tx.objectStore(JOB_CARD_INDEX_META_STORE).get(JOB_CARD_INDEX_META_KEY); tx.oncomplete=()=>{const all=(keys.result||[]).map(normalizeJobCard).filter(Boolean);resolve({entries:all.length,unique:new Set(all).size,lastId:Number(meta.result?.lastId||0),globalVersion:Number(meta.result?.globalVersion||0),syncedAt:Number(meta.result?.syncedAt||0),checkedAt:Date.now()});};tx.onerror=()=>reject(tx.error||new Error("Cache read failed"));}); } finally { db.close(); } }
+async function inspectJobCardIndexInBrowser() {
+  const db = await openJobCardIndexDb();
+  try {
+    return await new Promise((resolve,reject)=>{
+      const tx=db.transaction([JOB_CARD_INDEX_STORE,JOB_CARD_INDEX_META_STORE],"readonly");
+      const keys=tx.objectStore(JOB_CARD_INDEX_STORE).getAllKeys();
+      const meta=tx.objectStore(JOB_CARD_INDEX_META_STORE).get(JOB_CARD_INDEX_META_KEY);
+      tx.oncomplete=()=>{
+        const all=[...new Set((keys.result||[]).map(normalizeJobCard).filter(Boolean))];
+        resolve({entries:(keys.result||[]).length,unique:all.length,jobCards:all,lastId:Number(meta.result?.lastId||0),globalVersion:Number(meta.result?.globalVersion||0),syncedAt:Number(meta.result?.syncedAt||0),checkedAt:Date.now()});
+      };
+      tx.onerror=()=>reject(tx.error||new Error("Cache read failed"));
+    });
+  } finally { db.close(); }
+}
+
+async function compareBrowserJobCardCacheWithDatabase(apiBaseUrl = "") {
+  const browser = await inspectJobCardIndexInBrowser();
+  const dbCards = new Set();
+  let afterId = 0;
+  while (true) {
+    const response = await fetch(`${apiBaseUrl}/api/save-history`, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({action:"get-job-card-index",afterId,limit:JOB_CARD_INDEX_PAGE_SIZE})
+    });
+    const payload = await response.json().catch(()=>null);
+    if (!response.ok || !payload?.success) throw new Error(payload?.error || `Database index fetch failed (${response.status})`);
+    const rows = Array.isArray(payload.jobCards) ? payload.jobCards : [];
+    for (const row of rows) { const no=normalizeJobCard(row?.jobCardNo); if(no) dbCards.add(no); }
+    afterId=Number(payload.nextAfterId || rows[rows.length-1]?.id || afterId);
+    if (!payload.hasMore || !rows.length) break;
+  }
+  const localCards = new Set(browser.jobCards || []);
+  const missing = [...dbCards].filter(card=>!localCards.has(card));
+  const extra = [...localCards].filter(card=>!dbCards.has(card));
+  return {...browser,databaseUnique:dbCards.size,missingCount:missing.length,extraCount:extra.length,missingExamples:missing.slice(0,20),extraExamples:extra.slice(0,20),comparisonCompletedAt:Date.now()};
+}
 
 async function updateJobCardIndexMeta(meta = {}) {
   const state = jobCardIndexMemory || { jobCards:new Set(), lastId:0, globalVersion:0, syncedAt:0 };
@@ -9652,9 +9688,9 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                 TEST ONLY: Bypass Job Card cache for next Excel upload (compare with cache ON)
               </label>
               <div style={{marginTop:4,opacity:.85}}>Unchecked = cache enabled (normal mode). Checked = live database duplicate check for this upload only; may use more Vercel Function calls. Change applies to the next upload.</div>
-              <button type="button" style={{marginTop:8,padding:"7px 10px",fontWeight:700}} onClick={async()=>{setBrowserCacheError("");try{setBrowserCacheReport(await inspectJobCardIndexInBrowser());}catch(e){setBrowserCacheError(e?.message||"Cache read failed");}}}>Check current browser cache count</button>
+              <button type="button" style={{marginTop:8,padding:"7px 10px",fontWeight:700}} onClick={async()=>{setBrowserCacheError("");setBrowserCacheReport(null);try{setBrowserCacheError("Comparing browser cache with the full database index…");const report=await compareBrowserJobCardCacheWithDatabase("");setBrowserCacheReport(report);setBrowserCacheError("");}catch(e){setBrowserCacheError(e?.message||"Cache comparison failed");}}}>Compare browser cache with database</button>
               {browserCacheError && <div style={{color:"#b91c1c",marginTop:6}}>{browserCacheError}</div>}
-              {browserCacheReport && <div style={{marginTop:8,display:"flex",gap:12,flexWrap:"wrap"}}><b>Browser cache entries: {browserCacheReport.entries.toLocaleString()}</b><b>Unique Job Cards: {browserCacheReport.unique.toLocaleString()}</b><span>Last ID: {browserCacheReport.lastId.toLocaleString()}</span><span>Last sync: {browserCacheReport.syncedAt ? new Date(browserCacheReport.syncedAt).toLocaleString() : "Not recorded"}</span><span>Checked: {new Date(browserCacheReport.checkedAt).toLocaleString()}</span></div>}
+              {browserCacheReport && <div style={{marginTop:8,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(155px,1fr))",gap:8}}>{[["Browser cache entries",browserCacheReport.entries],["Browser unique Job Cards",browserCacheReport.unique],["Database unique Job Cards",browserCacheReport.databaseUnique],["Missing from browser",browserCacheReport.missingCount],["Extra in browser",browserCacheReport.extraCount],["Last processed DB ID",browserCacheReport.lastId]].map(([label,value])=><div key={label} style={{padding:"7px 8px",borderRadius:6,background:"rgba(127,127,127,.08)"}}><div style={{opacity:.75}}>{label}</div><strong>{Number(value||0).toLocaleString()}</strong></div>)}<span>Browser cache last sync: {browserCacheReport.syncedAt ? new Date(browserCacheReport.syncedAt).toLocaleString() : "Not recorded"}</span><span>Compared: {new Date(browserCacheReport.comparisonCompletedAt||browserCacheReport.checkedAt).toLocaleString()}</span>{browserCacheReport.missingExamples?.length>0&&<div style={{gridColumn:"1/-1"}}><b>First missing Job Cards:</b> {browserCacheReport.missingExamples.join(", ")}</div>}{browserCacheReport.extraExamples?.length>0&&<div style={{gridColumn:"1/-1"}}><b>First extra Job Cards:</b> {browserCacheReport.extraExamples.join(", ")}</div>}</div>}
             </div>
           )}
           {uploadDiagnostic && (

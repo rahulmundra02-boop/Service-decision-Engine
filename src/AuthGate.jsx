@@ -1657,11 +1657,11 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
 
         <nav className="admin-category-nav" aria-label="Admin categories">
           {[
-            ["overview","Dashboard"],["cache","Cache Control"],["database","Database"],["uploads","Upload Monitor"],
+            ["cache","Cache Control"],["database","Database"],["uploads","Upload Monitor"],
             ["masters","Masters"],["system","System Controls"],["analytics","Analytics"],["users","User Management"]
           ].map(([key,label]) => <button key={key} type="button" className={adminSection===key?"active":""} onClick={()=>goAdminSection(key)}>{label}</button>)}
         </nav>
-        {adminSection === "overview" && <div className="admin-kpi-grid">
+        {adminSection === "analytics" && <div className="admin-kpi-grid">
           {metricCard("Total Users", totals.users)}
           {metricCard("Active Users", totals.active)}
           {metricCard("Total Logins", totals.logins)}
@@ -1828,7 +1828,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           <div style={{marginTop:12,fontSize:11,color:"#6b7280"}}>Required headers: Part No, Part Description, MRP. Same Part No duplicate rows me last valid row will be used. This master will be shared by Website and Android Estimate app.</div>
         </div></>}
 
-        {(adminSection === "overview" || adminSection === "analytics" || adminSection === "database" || adminSection === "uploads" || adminSection === "users") && <><div className="admin-analytics-toolbar professional">
+        {(adminSection === "analytics" || adminSection === "database" || adminSection === "uploads" || adminSection === "users") && <>{adminSection === "analytics" && <div className="admin-analytics-toolbar professional">
           <div className="admin-dashboard-scope-tabs">
             <button className={analyticsIncludeAdmins ? "active" : ""} onClick={() => { onSetAnalyticsIncludeAdmins(true); onAnalytics(null, analyticsRange); }}>All Statistics (Including Admin)</button>
             <button className={!analyticsIncludeAdmins ? "active" : ""} onClick={() => { onSetAnalyticsIncludeAdmins(false); onAnalytics(null, analyticsRange); }}>Statistics Without Admin</button>
@@ -1853,9 +1853,9 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
             )}
           </div>
           {analyticsLoading && <span className="admin-loading-pill">Updating...</span>}
-        </div>
+        </div>}
 
-        {view === "overview" && (
+        {adminSection === "analytics" && view === "overview" && (
           <>
             <div className="admin-section-title">Vehicle Productivity Overview</div>
             <div className="admin-dashboard-grid">
@@ -1899,7 +1899,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           </>
         )}
 
-        {view === "users" && (
+        {adminSection === "analytics" && view === "users" && (
           <>
             <div className="admin-section-title">User Insights</div>
             <div className="admin-dashboard-grid">
@@ -1936,7 +1936,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           </>
         )}
 
-        {view === "activity" && (
+        {adminSection === "analytics" && view === "activity" && (
           <>
             <div className="admin-section-title">Activity Analytics</div>
             <div className="admin-dashboard-grid">
@@ -1975,7 +1975,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           </>
         )}
 
-        {view === "database" && (
+        {(adminSection === "database" || (adminSection === "analytics" && view === "database")) && (
           <>
             <div className="admin-section-title">Database View</div>
             <div className="admin-panel-card" style={{marginBottom:16}}>
@@ -2016,7 +2016,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           </>
         )}
 
-        {view === "management" && (
+        {(adminSection === "users" || (adminSection === "analytics" && view === "management")) && (
           <>
             <div className="admin-section-title">User Management</div>
             <div className="admin-grid admin-management-grid">
@@ -2076,7 +2076,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           </>
         )}
 
-        {view === "uploads" && (
+        {(adminSection === "uploads" || (adminSection === "analytics" && view === "uploads")) && (
           <section>
             <div className="admin-section-title">Failed / Incomplete Vehicle Uploads</div>
             <div className="admin-panel-card" style={{marginBottom:16}}>

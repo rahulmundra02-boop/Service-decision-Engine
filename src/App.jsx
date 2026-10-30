@@ -2268,6 +2268,32 @@ function recordDisplayText(record) {
   return name ? `${codePrefix}${name}-${qty}` : "";
 }
 
+function hasHubGreaseFallbackForJobCard(visit, jobCard) {
+  const targetJobCard = String(jobCard || "").trim();
+  if (!targetJobCard || !Array.isArray(visit)) return false;
+
+  const sameJobRecords = visit.filter(
+    (item) => String(item?.jobCard || "").trim() === targetJobCard
+  );
+  const totalQtyForPart = (partCode) => sameJobRecords.reduce((total, item) => {
+    return normalizePartCode(item?.partCode) === partCode
+      ? total + Number(item?.qty || 0)
+      : total;
+  }, 0);
+  const hubGreaseQty = sameJobRecords.reduce((total, item) => {
+    const partText = String(
+      item?.standardizedPart || item?.partDescription || item?.part || ""
+    ).toUpperCase();
+    return partText.includes("HUB GREASE")
+      ? total + Number(item?.qty || 0)
+      : total;
+  }, 0);
+
+  return hubGreaseQty >= 2
+    && totalQtyForPart("F1721500") >= 2
+    && totalQtyForPart("FJ607400") >= 2;
+}
+
 function isCalculationEligibleLine(record, visit, vehicle, decision) {
   const text = String(record?.standardizedPart || record?.partDescription || record?.part || "").toUpperCase();
   const qty = Number(record?.qty || 0);
@@ -2328,7 +2354,7 @@ function isCalculationEligibleLine(record, visit, vehicle, decision) {
 
   if (text.includes("COOLANT")) return qty >= 15;
   if (text.includes("GEAR OIL")) return qty >= 6;
-  if (text.includes("HUB GREASE")) return qty >= 3;
+  if (text.includes("HUB GREASE")) return qty >= 3 || hasHubGreaseFallbackForJobCard(visit, jobCard);
   if (text.includes("AXLE OIL")) return qty >= 12;
   if (text.includes("CLUTCH OIL")) return qty >= 0.5;
   if (text.includes("APDA FILTER")) return qty >= 1;

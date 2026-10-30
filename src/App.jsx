@@ -6479,7 +6479,11 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       };
     });
     if (!vehicles.length) throw new Error("No valid chassis numbers were found to register for upload tracking.");
-    return updateVehicleUploadTracker("register-vehicle-upload-batch", { source: "excel-upload", uploadedBy, vehicles });
+    const result = await updateVehicleUploadTracker("register-vehicle-upload-batch", { source: "excel-upload", uploadedBy, vehicles });
+    if (Number(result.registered || 0) !== vehicles.length) {
+      throw new Error("Upload tracking list is incomplete. Expected " + vehicles.length + " chassis, registered " + Number(result.registered || 0) + ". Database upload was not started.");
+    }
+    return result;
   }
   async function touchVehicleRefreshTimestamps(vins) {
     const uniqueVins = [...new Set((vins || []).map(value => String(value || "").trim().toUpperCase()).filter(Boolean))];

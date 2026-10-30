@@ -1530,7 +1530,10 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
     }
   }, [view]);
   useEffect(() => {
-    if (view === "uploads") loadPendingVehicleUploads();
+    if (view !== "uploads") return undefined;
+    loadPendingVehicleUploads();
+    const timer = window.setInterval(loadPendingVehicleUploads, 30000);
+    return () => window.clearInterval(timer);
   }, [view]);
 
   const selected = analyticsUserId

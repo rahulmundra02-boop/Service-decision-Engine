@@ -2133,7 +2133,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           </div>
         )}
 
-        </div></>}
+        </>}
         <div className="admin-note">Passwords are stored as secure hashes. Analytics record account activity and usage events; passwords are never stored in activity logs.</div>
       </div>
     </div>

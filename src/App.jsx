@@ -5616,21 +5616,9 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   const [estimateOpen, setEstimateOpen] = useState(false);
 
   useEffect(() => {
-    // First check on portal open, then re-check data counts while this browser
-    // remains open. Hidden tabs also receive the check; visibility return checks
-    // immediately. Closed browsers rebuild on their next visit.
+    // Check cache only when this page/app is opened or refreshed.
+    // No periodic background polling.
     void ensureJobCardCacheFreshInBackground("");
-    const timer = window.setInterval(() => {
-      void ensureJobCardCacheFreshInBackground("");
-    }, 5 * 60 * 1000);
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") void ensureJobCardCacheFreshInBackground("");
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
   }, []);
 
   useEffect(() => {

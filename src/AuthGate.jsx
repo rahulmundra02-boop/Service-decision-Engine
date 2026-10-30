@@ -159,10 +159,26 @@ export default function AuthGate({ children }) {
   }, [user]);
 
   useEffect(() => {
+    const syncAdminPath = () => {
+      if (window.location.pathname.startsWith("/admin/")) {
+        setAdminOpen(true);
+        adminOpenedFromProfileRef.current = false;
+      }
+    };
+    syncAdminPath();
+    window.addEventListener("popstate", syncAdminPath);
+    return () => window.removeEventListener("popstate", syncAdminPath);
+  }, []);
+
+  useEffect(() => {
     const token = localStorage.getItem(TOKEN_KEY);
     if (!token) { setLoading(false); return; }
     api("me", {}, token)
-      .then(data => setUser(normalizeLoggedInUser(data.user)))
+      .then(data => {
+        const nextUser = normalizeLoggedInUser(data.user);
+        setUser(nextUser);
+        if (nextUser?.role === "admin" && window.location.pathname.startsWith("/admin/")) setAdminOpen(true);
+      })
       .catch(() => localStorage.removeItem(TOKEN_KEY))
       .finally(() => setLoading(false));
   }, []);
@@ -978,7 +994,7 @@ export default function AuthGate({ children }) {
           onRefresh={loadAdminUsers}
           onReset={resetUserPassword}
           onToggleStatus={toggleUserStatus}
-          onBack={()=>{setAdminOpen(false);setProfileOpen(false);adminOpenedFromProfileRef.current=false;setError("");setMessage("");Promise.resolve().then(()=>window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:"profile"}})));}}
+          onBack={()=>{setAdminOpen(false);setProfileOpen(false);adminOpenedFromProfileRef.current=false;setError("");setMessage("");try{window.history.pushState({serviceDecisionMode:"profile"},"","/profile");}catch{}Promise.resolve().then(()=>window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:"profile"}})));}}
           analytics={adminAnalytics}
           analyticsUserId={analyticsUserId}
           analyticsRange={analyticsRange}

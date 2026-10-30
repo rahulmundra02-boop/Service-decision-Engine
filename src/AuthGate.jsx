@@ -1828,7 +1828,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           <div style={{marginTop:12,fontSize:11,color:"#6b7280"}}>Required headers: Part No, Part Description, MRP. Same Part No duplicate rows me last valid row will be used. This master will be shared by Website and Android Estimate app.</div>
         </div></>}
 
-        {(adminSection === "overview" || adminSection === "analytics" || adminSection === "database" || adminSection === "uploads" || adminSection === "users") && <div className="admin-analytics-toolbar professional">
+        {(adminSection === "overview" || adminSection === "analytics" || adminSection === "database" || adminSection === "uploads" || adminSection === "users") && <><div className="admin-analytics-toolbar professional">
           <div className="admin-dashboard-scope-tabs">
             <button className={analyticsIncludeAdmins ? "active" : ""} onClick={() => { onSetAnalyticsIncludeAdmins(true); onAnalytics(null, analyticsRange); }}>All Statistics (Including Admin)</button>
             <button className={!analyticsIncludeAdmins ? "active" : ""} onClick={() => { onSetAnalyticsIncludeAdmins(false); onAnalytics(null, analyticsRange); }}>Statistics Without Admin</button>
@@ -2133,7 +2133,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           </div>
         )}
 
-        </div>}
+        </div></>}
         <div className="admin-note">Passwords are stored as secure hashes. Analytics record account activity and usage events; passwords are never stored in activity logs.</div>
       </div>
     </div>

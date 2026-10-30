@@ -5592,7 +5592,21 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   const [overrideReading, setOverrideReading] = useState("");
   const [appliedOverride, setAppliedOverride] = useState(null);
   const [decisionBasis, setDecisionBasis] = useState("AUTO");
-  const [mode, setMode] = useState("home");
+  const modeFromPath = () => {
+    const path = window.location.pathname.replace(/\\/+$/, "") || "/";
+    const routes = {
+      "/": "home",
+      "/single-vehicle": "single",
+      "/bulk-vehicle": "bulk",
+      "/warranty-tag-print": "warranty-tags",
+      "/document-scanner": "document-scanner",
+      "/profile": "profile",
+      "/registration-search": "registration-search",
+      "/estimate": "estimate"
+    };
+    return routes[path] || "home";
+  };
+  const [mode, setMode] = useState(() => modeFromPath());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [registrationSearchInput, setRegistrationSearchInput] = useState("");
   const [registrationSearchBusy, setRegistrationSearchBusy] = useState(false);
@@ -5745,13 +5759,12 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
 
   useEffect(() => {
     const handlePopState = (event) => {
-      // AuthGate owns profile/admin overlay history. Do not reset the underlying
-      // application mode when Back only moves between those overlays.
+      // AuthGate owns profile-settings/admin overlays.
       if (event?.state?.serviceDecisionOverlay) return;
       navigationPopRef.current = true;
-      const previousMode = event?.state?.serviceDecisionMode || "home";
+      const nextMode = modeFromPath();
       setEstimateOpen(false);
-      setMode(previousMode);
+      setMode(nextMode);
     };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
@@ -5762,7 +5775,22 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       navigationPopRef.current = false;
       return;
     }
-    try { window.history.pushState({ ...(window.history.state || {}), serviceDecisionMode: mode }, "", window.location.href); } catch {}
+    const routeByMode = {
+      home: "/",
+      single: "/single-vehicle",
+      bulk: "/bulk-vehicle",
+      "warranty-tags": "/warranty-tag-print",
+      "document-scanner": "/document-scanner",
+      profile: "/profile",
+      "registration-search": "/registration-search",
+      estimate: "/estimate"
+    };
+    const nextPath = routeByMode[mode] || "/";
+    if (window.location.pathname !== nextPath) {
+      try {
+        window.history.pushState({ ...(window.history.state || {}), serviceDecisionMode: mode }, "", nextPath);
+      } catch {}
+    }
   }, [mode]);
   const [estimateStage, setEstimateStage] = useState("select");
   const [estimateHistory, setEstimateHistory] = useState([]);

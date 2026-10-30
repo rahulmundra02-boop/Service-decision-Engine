@@ -1305,7 +1305,7 @@ async function syncJobCardIndex(apiBaseUrl, options = {}) {
       const rows = Array.isArray(payload.jobCards) ? payload.jobCards : [];
       if (!rows.length) break;
       const pageLastId = Number(payload.nextAfterId || rows[rows.length - 1]?.id || 0);
-      if (!(pageLastId > afterId) || pageLastId <= lastSeenId && pageCount > 0) {
+      if (!(pageLastId > afterId)) {
         throw new Error("Job Card cache download stopped because the database cursor did not advance.");
       }
       await addJobCardsToBrowserIndex(rows.map(row => normalizeJobCard(row?.jobCardNo)).filter(Boolean), pageLastId);

@@ -1261,6 +1261,7 @@ export default async function handler(req, res) {
           version: Number(settings.version || 1),
           lastRebuildAt,
           lastAutoRebuildAt: settings.lastAutoRebuildAt || null,
+          lastAutoRebuildError: settings.lastAutoRebuildError || null,
           nextRebuildAt,
           cachedJobCards: Number(countResult.rows[0]?.count || 0),
           updatedAt: result.rows[0]?.updated_at || null
@@ -1355,7 +1356,7 @@ export default async function handler(req, res) {
         "INSERT INTO app_settings (setting_key,setting_value,updated_at) " +
         "VALUES ('job_card_cache',$1::jsonb,NOW()) " +
         "ON CONFLICT (setting_key) DO UPDATE SET setting_value=EXCLUDED.setting_value,updated_at=NOW()",
-        [JSON.stringify({enabled,intervalHours,version,lastRebuildAt})]
+        [JSON.stringify({...current,enabled,intervalHours,version,lastRebuildAt,lastAutoRebuildError:shouldRebuild ? null : (current.lastAutoRebuildError || null)})]
       );
       const countResult = await client.query(
         "SELECT COUNT(DISTINCT UPPER(TRIM(job_card_no)))::int AS count FROM job_cards WHERE job_card_no IS NOT NULL AND TRIM(job_card_no)<>''"

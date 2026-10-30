@@ -1,0 +1,14 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron-job-card-cache",
+      "schedule": "0 8 * * *"
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}

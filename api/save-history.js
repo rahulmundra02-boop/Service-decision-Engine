@@ -1015,27 +1015,32 @@ export default async function handler(req, res) {
       if (body.action === "register-vehicle-upload-batch") {
         const vehicles = Array.isArray(body.vehicles) ? body.vehicles : [];
         if (!vehicles.length) return res.status(400).json({success:false,error:"No chassis were supplied for tracking."});
-        let registered = 0;
-        for (const item of vehicles) {
+        const rows = vehicles.map(item => {
           const vin = String(item?.vin || "").trim().toUpperCase();
-          if (!vin) continue;
           const jobCards = [...new Set((Array.isArray(item.expectedJobCards) ? item.expectedJobCards : []).map(normalizeJobCard).filter(Boolean))];
           const expectedLines = (Array.isArray(item.expectedLines) ? item.expectedLines : []).map(line => ({
             jobCard: normalizeJobCard(line?.jobCard),
-            identity: serviceLineIdentityFromRecord(line || {})
+            identity: String(line?.identity || serviceLineIdentityFromRecord(line || {})),
+            count: Math.max(1, Number(line?.count || 1))
           })).filter(line => line.jobCard);
-          await client.query(
-            "INSERT INTO pending_vehicle_uploads (vin,registration,customer_name,model,expected_job_cards,expected_lines,status,error_message,source,uploaded_by,first_seen_at,last_attempt_at,updated_at) " +
-            "VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,'queued',NULL,$7,$8,NOW(),NULL,NOW()) " +
-            "ON CONFLICT (vin) DO UPDATE SET registration=COALESCE(NULLIF(EXCLUDED.registration,''),pending_vehicle_uploads.registration), " +
-            "customer_name=COALESCE(NULLIF(EXCLUDED.customer_name,''),pending_vehicle_uploads.customer_name), " +
-            "model=COALESCE(NULLIF(EXCLUDED.model,''),pending_vehicle_uploads.model), expected_job_cards=EXCLUDED.expected_job_cards, " +
-            "expected_lines=EXCLUDED.expected_lines,status='queued',error_message=NULL,source=EXCLUDED.source,uploaded_by=EXCLUDED.uploaded_by,updated_at=NOW()",
-            [vin,String(item.registration||""),String(item.customerName||""),String(item.model||""),JSON.stringify(jobCards),JSON.stringify(expectedLines),String(body.source||"excel-upload"),String(body.uploadedBy||"")]
-          );
-          registered++;
-        }
-        return res.status(200).json({success:true,registered});
+          return {
+            vin, registration:String(item.registration||""), customer_name:String(item.customerName||""), model:String(item.model||""),
+            expected_job_cards:jobCards, expected_lines:expectedLines, source:String(body.source||"excel-upload"),
+            uploaded_by:String(body.uploadedBy||"")
+          };
+        }).filter(row => row.vin);
+        if (!rows.length) return res.status(400).json({success:false,error:"No valid chassis numbers were supplied."});
+        const result = await client.query(
+          "INSERT INTO pending_vehicle_uploads (vin,registration,customer_name,model,expected_job_cards,expected_lines,status,error_message,source,uploaded_by,first_seen_at,last_attempt_at,updated_at) " +
+          "SELECT vin,registration,customer_name,model,expected_job_cards,expected_lines,'queued',NULL,source,uploaded_by,NOW(),NULL,NOW() " +
+          "FROM jsonb_to_recordset($1::jsonb) AS x(vin text,registration text,customer_name text,model text,expected_job_cards jsonb,expected_lines jsonb,source text,uploaded_by text) " +
+          "ON CONFLICT (vin) DO UPDATE SET registration=COALESCE(NULLIF(EXCLUDED.registration,''),pending_vehicle_uploads.registration), " +
+          "customer_name=COALESCE(NULLIF(EXCLUDED.customer_name,''),pending_vehicle_uploads.customer_name), " +
+          "model=COALESCE(NULLIF(EXCLUDED.model,''),pending_vehicle_uploads.model), expected_job_cards=EXCLUDED.expected_job_cards, " +
+          "expected_lines=EXCLUDED.expected_lines,status='queued',error_message=NULL,source=EXCLUDED.source,uploaded_by=EXCLUDED.uploaded_by,updated_at=NOW()",
+          [JSON.stringify(rows)]
+        );
+        return res.status(200).json({success:true,registered:result.rowCount||0});
       }
       const vin = String(body.vin || "").trim().toUpperCase();
       if (!vin) return res.status(400).json({success:false,error:"Chassis number is required."});
@@ -1083,7 +1088,7 @@ export default async function handler(req, res) {
       const requiredCounts = new Map();
       for (const line of expectedLines) {
         const key = normalizeJobCard(line.jobCard) + "|" + String(line.identity||"");
-        requiredCounts.set(key,(requiredCounts.get(key)||0)+1);
+        requiredCounts.set(key,(requiredCounts.get(key)||0)+Math.max(1,Number(line.count||1)));
       }
       const missingLines = [];
       for (const [key,count] of requiredCounts) if ((identityCounts.get(key)||0)<count) missingLines.push({key,missing:count-(identityCounts.get(key)||0)});

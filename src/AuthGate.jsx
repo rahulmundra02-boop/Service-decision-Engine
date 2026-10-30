@@ -1693,7 +1693,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           </div>
         </div>}
 
-        {adminSection === "system" && <div className="admin-panel-card" style={{marginTop:12,padding:"18px 20px",border:"1px solid #cbd5e1"}}>
+        {adminSection === "system" && <><div className="admin-panel-card" style={{marginTop:12,padding:"18px 20px",border:"1px solid #cbd5e1"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
             <div>
               <div className="admin-panel-card-title">Registration Number Service Search</div>
@@ -1731,9 +1731,9 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           <div style={{marginTop:12,padding:"10px 12px",borderRadius:8,background:emergencyDbUploadCutoff ? "#fee2e2" : "#ecfdf5",color:emergencyDbUploadCutoff ? "#991b1b" : "#166534",fontWeight:700}}>
             {emergencyDbUploadCutoff ? "Emergency mode ON: Excel upload + Service Decision remain available, but history persistence is paused." : "Normal mode: new Excel Job Cards are saved using the hybrid browser-cache + Neon duplicate-check system."}
           </div>
-        </div>}
+        </div></>}
 
-        {adminSection === "masters" && <div className="admin-panel-card" style={{marginTop:12,padding:"18px 20px"}}>
+        {adminSection === "masters" && <><div className="admin-panel-card" style={{marginTop:12,padding:"18px 20px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
             <div>
               <div className="admin-panel-card-title">Vehicle Campaign Master</div>
@@ -1826,7 +1826,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           </div>
           {(priceMasterUploadMessage || priceMasterUploadError) && <div style={{marginTop:12,padding:"10px 12px",borderRadius:8,background:priceMasterUploadError?"#fff1f2":"#ecfdf5",color:priceMasterUploadError?"#b91c1c":"#166534",fontWeight:700}}>{priceMasterUploadError||priceMasterUploadMessage}</div>}
           <div style={{marginTop:12,fontSize:11,color:"#6b7280"}}>Required headers: Part No, Part Description, MRP. Same Part No duplicate rows me last valid row will be used. This master will be shared by Website and Android Estimate app.</div>
-        </div>}
+        </div></>}
 
         {(adminSection === "overview" || adminSection === "analytics" || adminSection === "database" || adminSection === "uploads" || adminSection === "users") && <div className="admin-analytics-toolbar professional">
           <div className="admin-dashboard-scope-tabs">

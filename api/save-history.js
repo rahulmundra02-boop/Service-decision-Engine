@@ -947,18 +947,6 @@ export default async function handler(req, res) {
     }
   }
 
-  // Defense-in-depth: block all DB-related POST operations while the admin emergency cutoff is active.
-  // Existing GET history remains available for estimates/history.
-  const cutoffResult = await pool.query(
-    "SELECT setting_value FROM app_settings WHERE setting_key='emergency_db_upload_cutoff' LIMIT 1"
-  );
-  if (cutoffResult.rows[0]?.setting_value?.enabled === true) {
-    return res.status(503).json({
-      success:false,
-      error:"Emergency DB Upload Cutoff is active. Database history upload is temporarily disabled."
-    });
-  }
-
   if (body.action === "get-job-card-index") {
     const afterId = Math.max(0, Number(body.afterId || 0));
     const requestedLimit = Number(body.limit || 5000);
@@ -997,6 +985,19 @@ export default async function handler(req, res) {
     } finally {
       client.release();
     }
+  }
+
+  // The Job Card index is a read-only cache download. It must remain available
+  // even while emergency upload cutoff blocks database writes.
+  // Apply the cutoff only after the read-only get-job-card-index action above.
+  const cutoffResult = await pool.query(
+    "SELECT setting_value FROM app_settings WHERE setting_key='emergency_db_upload_cutoff' LIMIT 1"
+  );
+  if (cutoffResult.rows[0]?.setting_value?.enabled === true) {
+    return res.status(503).json({
+      success:false,
+      error:"Emergency DB Upload Cutoff is active. Database history upload is temporarily disabled."
+    });
   }
 
   if (body.action === "check-job-cards") {

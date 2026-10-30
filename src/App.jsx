@@ -5786,6 +5786,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       estimate: "/estimate"
     };
     const nextPath = routeByMode[mode] || "/";
+    if (window.location.pathname.startsWith("/admin/")) return;
     if (window.location.pathname !== nextPath) {
       try {
         window.history.pushState({ ...(window.history.state || {}), serviceDecisionMode: mode }, "", nextPath);

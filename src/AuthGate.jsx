@@ -62,6 +62,7 @@ export default function AuthGate({ children }) {
   const [showPassword, setShowPassword] = useState(false);
   const [passwordForm, setPasswordForm] = useState({ currentPassword:"", newPassword:"", confirmPassword:"" });
   const [adminOpen, setAdminOpen] = useState(false);
+  const [adminRoute, setAdminRoute] = useState(() => window.location.pathname);
   const adminOpenedFromProfileRef = useRef(false);
   const [adminUsers, setAdminUsers] = useState([]);
   const [adminLoading, setAdminLoading] = useState(false);
@@ -652,8 +653,18 @@ export default function AuthGate({ children }) {
   };
 
   useEffect(() => {
+    const syncAdminRoute = () => setAdminRoute(window.location.pathname);
+    window.addEventListener("popstate", syncAdminRoute);
+    window.addEventListener("service-decision-admin-route", syncAdminRoute);
+    return () => {
+      window.removeEventListener("popstate", syncAdminRoute);
+      window.removeEventListener("service-decision-admin-route", syncAdminRoute);
+    };
+  }, []);
+
+  useEffect(() => {
     if (user?.role !== "admin") return;
-    const section = window.location.pathname.split("/")[2] || "overview";
+    const section = adminRoute.split("/")[2] || "overview";
     if (!adminOpen) { void loadAccountRequests(); return; }
     if (section === "users") { void loadAdminUsers(); return; }
     if (section === "cache") { void loadJobCardCacheSettings(); return; }
@@ -661,7 +672,7 @@ export default function AuthGate({ children }) {
     if (section === "system") { void loadEmergencyDbUploadCutoff(); void loadRegistrationSearchSetting(); return; }
     if (section === "uploads") { void loadAccountRequests(); return; }
     if (section === "analytics" || section === "overview" || section === "database") void loadAdminAnalytics(analyticsUserId, analyticsRange);
-  }, [user?.role, adminOpen, analyticsIncludeAdmins, adminSection]);
+  }, [user?.role, adminOpen, analyticsIncludeAdmins, adminRoute]);
 
   const createUser = () => run(async () => {
     if (!adminForm.userId && adminForm.password.length < 8) {
@@ -1520,6 +1531,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
     const next = "/admin/" + section;
     if (window.location.pathname !== next) window.history.pushState({ ...(window.history.state || {}), serviceDecisionAdminSection: section }, "", next);
     setAdminSection(section);
+    window.dispatchEvent(new CustomEvent("service-decision-admin-route"));
     if (section === "database") setView("database");
     else if (section === "uploads") setView("uploads");
     else if (section === "users") setView("management");

@@ -9658,7 +9658,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
             </div>
           )}
           {uploadDiagnostic && (
-            <details className="no-print" open={uploadDiagnostic.status === "completed-with-errors"} style={{margin:"8px 0 12px",padding:"10px 12px",border:"1px solid #94a3b8",borderRadius:8,fontSize:12}}>
+            <details className="no-print" open={true} style={{margin:"8px 0 12px",padding:"10px 12px",border:"1px solid #94a3b8",borderRadius:8,fontSize:12}}>
               <summary style={{cursor:"pointer",fontWeight:800}}>Excel Upload / Job Card Cache Diagnostic — {uploadDiagnostic.status}</summary>
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(145px,1fr))",gap:8,marginTop:10}}>
                 {[

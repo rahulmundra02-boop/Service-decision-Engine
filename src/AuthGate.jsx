@@ -1608,7 +1608,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
               </select>
             </div>
             <div><div className="admin-panel-card-sub">Last Global Index Update</div><strong>{jobCardCacheSettings?.lastRebuildAt ? new Date(jobCardCacheSettings.lastRebuildAt).toLocaleString("en-IN") : "Not yet rebuilt"}</strong></div>
-            <div><div className="admin-panel-card-sub">Next Rebuild</div><strong>{jobCardCacheSettings?.nextRebuildAt ? new Date(jobCardCacheSettings.nextRebuildAt).toLocaleString("en-IN") : "—"}</strong></div>
+            <div><div className="admin-panel-card-sub">Next Rebuild (scheduler checks daily)</div><strong>{jobCardCacheSettings?.nextRebuildAt ? new Date(jobCardCacheSettings.nextRebuildAt).toLocaleString("en-IN") : "—"}</strong></div><div style={{gridColumn:"1 / -1"}}><div className="admin-panel-card-sub">Last Automatic Check / Rebuild</div><strong>{jobCardCacheSettings?.lastAutoRebuildAt ? new Date(jobCardCacheSettings.lastAutoRebuildAt).toLocaleString("en-IN") : "Scheduler has not completed a rebuild yet"}</strong>{jobCardCacheSettings?.lastAutoRebuildError && <div style={{color:"#b91c1c",fontWeight:700,marginTop:4}}>Last automatic rebuild error: {jobCardCacheSettings.lastAutoRebuildError}</div>}</div>
             <div><div className="admin-panel-card-sub">Cached Job Cards</div><strong>{Number(jobCardCacheSettings?.cachedJobCards || 0).toLocaleString("en-IN")}</strong></div>
           </div>
           <div style={{display:"flex",gap:10,marginTop:16,flexWrap:"wrap"}}>

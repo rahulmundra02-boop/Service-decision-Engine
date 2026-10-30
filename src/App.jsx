@@ -6345,7 +6345,9 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     const outcomes = [];
     if (!jobs.length) return outcomes;
 
-    const concurrency = Math.min(4, jobs.length);
+    // Keep upload concurrency below the bounded server-side pool size, leaving room
+    // for the cutoff check, vehicle-master upsert and cache/index requests.
+    const concurrency = Math.min(3, jobs.length);
     let nextIndex = 0;
 
     async function worker() {

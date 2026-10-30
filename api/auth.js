@@ -513,6 +513,46 @@ async function createOrUpdateUser(client, body) {
 }
 
 export default async function handler(req, res) {
+  // Private scheduled cache refresh. This uses the existing deployed auth function
+  // because the separate cron function route was returning Vercel NOT_FOUND.
+  if (req.method === "POST") {
+    const cronBody = typeof req.body === "string" ? (() => { try { return JSON.parse(req.body); } catch { return {}; } })() : (req.body || {});
+    if (clean(cronBody.action) === "cron-job-card-cache") {
+      const cronSecret = process.env.CRON_SECRET;
+      if (!cronSecret || String(req.headers.authorization || "") !== `Bearer ${cronSecret}`) {
+        return res.status(401).json({ success: false, error: "Unauthorized cron request." });
+      }
+      const cronClient = await pool.connect();
+      try {
+        await cronClient.query("BEGIN");
+        const settingResult = await cronClient.query("SELECT setting_value FROM app_settings WHERE setting_key='job_card_cache' LIMIT 1 FOR UPDATE");
+        const current = settingResult.rows[0]?.setting_value || { enabled: true, intervalHours: 24, version: 1, lastRebuildAt: null };
+        const now = new Date();
+        const intervalHours = Math.max(1, Number(current.intervalHours || 24));
+        const lastRebuildMs = current.lastRebuildAt ? new Date(current.lastRebuildAt).getTime() : 0;
+        const due = current.enabled !== false && (!lastRebuildMs || now.getTime() >= lastRebuildMs + intervalHours * 3600000);
+        if (!due) {
+          const nextRebuildAt = lastRebuildMs ? new Date(lastRebuildMs + intervalHours * 3600000).toISOString() : null;
+          const updated = { ...current, lastAutoRebuildAt: now.toISOString(), lastAutoRebuildError: null };
+          await cronClient.query("UPDATE app_settings SET setting_value=$1::jsonb, updated_at=NOW() WHERE setting_key='job_card_cache'", [JSON.stringify(updated)]);
+          await cronClient.query("COMMIT");
+          return res.status(200).json({ success: true, rebuilt: false, reason: current.enabled === false ? "cache_disabled" : "not_due", nextRebuildAt });
+        }
+        const countResult = await cronClient.query("SELECT COUNT(DISTINCT UPPER(TRIM(job_card_no)))::int AS count FROM job_cards WHERE job_card_no IS NOT NULL AND TRIM(job_card_no)<>''");
+        const completedAt = now.toISOString();
+        const updated = { ...current, enabled: current.enabled !== false, intervalHours, version: Number(current.version || 0) + 1, lastRebuildAt: completedAt, lastAutoRebuildAt: completedAt, lastAutoRebuildError: null, cachedJobCards: Number(countResult.rows[0]?.count || 0) };
+        await cronClient.query("INSERT INTO app_settings (setting_key,setting_value,updated_at) VALUES ('job_card_cache',$1::jsonb,NOW()) ON CONFLICT (setting_key) DO UPDATE SET setting_value=EXCLUDED.setting_value,updated_at=NOW()", [JSON.stringify(updated)]);
+        await cronClient.query("COMMIT");
+        return res.status(200).json({ success: true, rebuilt: true, completedAt, nextRebuildAt: new Date(now.getTime() + intervalHours * 3600000).toISOString(), cachedJobCards: updated.cachedJobCards, version: updated.version });
+      } catch (error) {
+        try { await cronClient.query("ROLLBACK"); } catch {}
+        console.error("Scheduled Job Card cache refresh failed:", error);
+        return res.status(500).json({ success: false, error: "Scheduled cache refresh failed." });
+      } finally {
+        cronClient.release();
+      }
+    }
+  }
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return res.status(405).json({ success:false, error:"Method not allowed" });

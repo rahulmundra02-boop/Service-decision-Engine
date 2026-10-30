@@ -1340,7 +1340,9 @@ export default async function handler(req, res) {
           lastAutoRebuildAt: settings.lastAutoRebuildAt || null,
           lastAutoRebuildError: settings.lastAutoRebuildError || null,
           nextRebuildAt,
-          cachedJobCards: Number(countResult.rows[0]?.count || 0),
+          currentDatabaseJobCards: Number(countResult.rows[0]?.count || 0),
+          cachedJobCards: Number(settings.cachedJobCards || 0),
+          rebuilding: false,
           updatedAt: result.rows[0]?.updated_at || null
         }
       });
@@ -1429,11 +1431,15 @@ export default async function handler(req, res) {
       const shouldRebuild = operation === "rebuild" || operation === "reset";
       const version = shouldRebuild ? Number(current.version || 0) + 1 : Number(current.version || 1);
       const lastRebuildAt = shouldRebuild ? new Date().toISOString() : (current.lastRebuildAt || null);
+      const rebuildCountResult = shouldRebuild ? await client.query(
+        "SELECT COUNT(DISTINCT UPPER(TRIM(job_card_no)))::int AS count FROM job_cards WHERE job_card_no IS NOT NULL AND TRIM(job_card_no)<>''"
+      ) : null;
+      const cachedJobCards = shouldRebuild ? Number(rebuildCountResult.rows[0]?.count || 0) : Number(current.cachedJobCards || 0);
       await client.query(
         "INSERT INTO app_settings (setting_key,setting_value,updated_at) " +
         "VALUES ('job_card_cache',$1::jsonb,NOW()) " +
         "ON CONFLICT (setting_key) DO UPDATE SET setting_value=EXCLUDED.setting_value,updated_at=NOW()",
-        [JSON.stringify({...current,enabled,intervalHours,version,lastRebuildAt,lastAutoRebuildError:shouldRebuild ? null : (current.lastAutoRebuildError || null)})]
+        [JSON.stringify({...current,enabled,intervalHours,version,lastRebuildAt,cachedJobCards,lastAutoRebuildError:shouldRebuild ? null : (current.lastAutoRebuildError || null)})]
       );
       const countResult = await client.query(
         "SELECT COUNT(DISTINCT UPPER(TRIM(job_card_no)))::int AS count FROM job_cards WHERE job_card_no IS NOT NULL AND TRIM(job_card_no)<>''"
@@ -1447,7 +1453,8 @@ export default async function handler(req, res) {
           version,
           lastRebuildAt,
           nextRebuildAt:new Date(new Date(lastRebuildAt).getTime()+intervalHours*60*60*1000).toISOString(),
-          cachedJobCards:Number(countResult.rows[0]?.count || 0),
+          currentDatabaseJobCards:Number(countResult.rows[0]?.count || 0),
+          cachedJobCards,
           updatedAt:new Date().toISOString()
         },
         message: operation === "reset" ? "Job Card cache policy reset and all browser caches marked for rebuild." : "Job Card cache policy updated and all browser caches marked for rebuild."

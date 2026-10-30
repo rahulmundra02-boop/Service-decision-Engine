@@ -1,6 +1,9 @@
 name: Beta Job Card Cache Refresh
 
 on:
+  push:
+    paths:
+      - ".github/workflows/beta-job-card-cache.yml"
   schedule:
     - cron: "0 8 * * *"
   workflow_dispatch:

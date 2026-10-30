@@ -6430,6 +6430,44 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     return payload;
   }
 
+  async function updateVehicleUploadTracker(action, payload = {}) {
+    const response = await fetch(API_BASE_URL + "/api/save-history", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, ...payload }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data?.success) throw new Error(data?.error || ("Upload tracking failed (" + response.status + ")"));
+    return data;
+  }
+
+  async function registerVehicleUploadBatch(records, uploadedBy = "") {
+    const byVin = new Map();
+    for (const record of records || []) {
+      const vin = String(record?.vin || "").trim().toUpperCase();
+      if (!vin) continue;
+      if (!byVin.has(vin)) byVin.set(vin, []);
+      byVin.get(vin).push(record);
+    }
+    const vehicles = [...byVin.entries()].map(([vin, rows]) => {
+      const vehicle = deriveVehicle(rows);
+      const latest = [...rows].sort((a,b) => String(b?.date || "").localeCompare(String(a?.date || "")))[0] || {};
+      return {
+        vin,
+        registration: latest.reg || latest.registration || vehicle.registration || vehicle.reg || "",
+        customerName: vehicle.customerName || latest.customerName || "",
+        model: vehicle.model || latest.model || "",
+        expectedJobCards: [...new Set(rows.map(row => normalizeJobCard(row?.jobCard || row?.jobCardNo)).filter(Boolean))],
+        expectedLines: rows.filter(row => normalizeJobCard(row?.jobCard || row?.jobCardNo)).map(row => ({
+          jobCard: row.jobCard || row.jobCardNo, itemCategory: row.itemCategory, partCode: row.partCode,
+          part: row.part || row.partDescription, standardizedPart: row.standardizedPart,
+          repairTypeLine: row.repairTypeLine, faultCode: row.faultCode || row.complaintCode,
+        })),
+      };
+    });
+    if (!vehicles.length) throw new Error("No valid chassis numbers were found to register for upload tracking.");
+    return updateVehicleUploadTracker("register-vehicle-upload-batch", { source: "excel-upload", uploadedBy, vehicles });
+  }
   async function touchVehicleRefreshTimestamps(vins) {
     const uniqueVins = [...new Set((vins || []).map(value => String(value || "").trim().toUpperCase()).filter(Boolean))];
     if (!uniqueVins.length) return { updatedVehicles: 0 };
@@ -6470,7 +6508,10 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         const vehicle = deriveVehicle(vehicleRecords);
         const jobCards = [...new Set(vehicleRecords.map(record => normalizeJobCard(record?.jobCard)).filter(Boolean))];
         try {
+          await updateVehicleUploadTracker("update-vehicle-upload-status", { vin, status: "processing" }).catch(error => console.warn("Could not update upload tracker status:", error));
           const payload = await saveHistoryToBackend({ records: vehicleRecords, vehicle });
+          const verification = await updateVehicleUploadTracker("verify-vehicle-upload", { vin });
+          if (!verification?.verified) throw new Error(verification?.error || verification?.reason || "Database verification is incomplete.");
           if (Array.isArray(payload.insertedJobCardNumbers) && payload.insertedJobCardNumbers.length) {
             await addJobCardsToBrowserIndex(payload.insertedJobCardNumbers);
           }
@@ -6485,6 +6526,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         } catch (error) {
           console.error("Background history save failed:", error);
           const message = error?.message || "Unknown database error";
+          await updateVehicleUploadTracker("update-vehicle-upload-status", { vin, status: "failed", error: message }).catch(trackerError => console.warn("Could not save upload failure status:", trackerError));
           outcomes.push({
             vin, registration: vehicleRecords[0]?.reg || vehicleRecords[0]?.registration || "",
             inputRows: vehicleRecords.length, uniqueJobCards: jobCards.length,
@@ -6524,6 +6566,9 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         setUploadDiagnostic({...diag});
         void (async()=>{
           try{
+            // Persist every chassis before any vehicle-master or history writes begin.
+            // If this request fails, do not start the database upload.
+            await registerVehicleUploadBatch(parsedRows, user?.personName || user?.email || "");
             const cutoff=await fetchEmergencyDbUploadCutoff();
             diag.cutoff=Boolean(cutoff.enabled);
             try{
@@ -6560,7 +6605,9 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
               : await getHybridNewJobCards(API_BASE_URL, allJobCards, candidates => checkNewJobCards(API_BASE_URL, candidates));
             diag.jobCardsSubmitted=fresh.size;
             diag.jobCardsAlreadyInDb=Math.max(0,allJobCards.length-fresh.size);
-            const records=parsedRows.filter(r=>{const jc=normalizeJobCard(r?.jobCard);return !!jc&&fresh.has(jc);});
+            // Reconcile every uploaded line, including Job Cards already known to the DB.
+            // This lets a retry repair missing line items instead of skipping existing Job Cards.
+            const records=parsedRows.filter(r=>normalizeJobCard(r?.jobCard || r?.jobCardNo));
             const outcomes=records.length?await saveHistoryInBackground(records):[];
             diag.outcomes=outcomes;
             diag.jobCardsSaved=outcomes.reduce((sum,item)=>sum+item.newJobCardsSaved,0);

@@ -20,9 +20,13 @@ function getDatabaseUrl(value) {
 const pool = new Pool({
   connectionString: getDatabaseUrl(configuredDatabaseUrl),
   ssl: { rejectUnauthorized: false },
-  max: 1,
+  // The upload flow performs a small number of concurrent, independent VIN
+  // transactions. A single connection made the other requests wait behind a
+  // long history transaction and time out before they could even start.
+  // Keep the per-instance pool bounded while allowing those VIN requests to run.
+  max: 4,
   idleTimeoutMillis: 10000,
-  connectionTimeoutMillis: 8000,
+  connectionTimeoutMillis: 15000,
 });
 
 function normalizeJobCard(value) {

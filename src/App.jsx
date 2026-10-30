@@ -1153,6 +1153,8 @@ async function loadJobCardIndexFromBrowser() {
 
 
 
+async function inspectJobCardIndexInBrowser() { const db = await openJobCardIndexDb(); try { return await new Promise((resolve,reject)=>{ const tx=db.transaction([JOB_CARD_INDEX_STORE,JOB_CARD_INDEX_META_STORE],"readonly"); const keys=tx.objectStore(JOB_CARD_INDEX_STORE).getAllKeys(); const meta=tx.objectStore(JOB_CARD_INDEX_META_STORE).get(JOB_CARD_INDEX_META_KEY); tx.oncomplete=()=>{const all=(keys.result||[]).map(normalizeJobCard).filter(Boolean);resolve({entries:all.length,unique:new Set(all).size,lastId:Number(meta.result?.lastId||0),globalVersion:Number(meta.result?.globalVersion||0),syncedAt:Number(meta.result?.syncedAt||0),checkedAt:Date.now()});};tx.onerror=()=>reject(tx.error||new Error("Cache read failed"));}); } finally { db.close(); } }
+
 async function updateJobCardIndexMeta(meta = {}) {
   const state = jobCardIndexMemory || { jobCards:new Set(), lastId:0, globalVersion:0, syncedAt:0 };
   const next = {
@@ -5529,6 +5531,8 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   const [uploadProgress, setUploadProgress] = useState(null);
   const [uploadDiagnostic, setUploadDiagnostic] = useState(null);
   const [testBypassJobCardCache, setTestBypassJobCardCache] = useState(false);
+  const [browserCacheReport, setBrowserCacheReport] = useState(null);
+  const [browserCacheError, setBrowserCacheError] = useState("");
   const [analysisBusy, setAnalysisBusy] = useState(false);
   const cancelProcessingRef = useRef(false);
   const seenUploadSignaturesRef = useRef(new Set());
@@ -9648,6 +9652,9 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                 TEST ONLY: Bypass Job Card cache for next Excel upload (compare with cache ON)
               </label>
               <div style={{marginTop:4,opacity:.85}}>Unchecked = cache enabled (normal mode). Checked = live database duplicate check for this upload only; may use more Vercel Function calls. Change applies to the next upload.</div>
+              <button type="button" style={{marginTop:8,padding:"7px 10px",fontWeight:700}} onClick={async()=>{setBrowserCacheError("");try{setBrowserCacheReport(await inspectJobCardIndexInBrowser());}catch(e){setBrowserCacheError(e?.message||"Cache read failed");}}}>Check current browser cache count</button>
+              {browserCacheError && <div style={{color:"#b91c1c",marginTop:6}}>{browserCacheError}</div>}
+              {browserCacheReport && <div style={{marginTop:8,display:"flex",gap:12,flexWrap:"wrap"}}><b>Browser cache entries: {browserCacheReport.entries.toLocaleString()}</b><b>Unique Job Cards: {browserCacheReport.unique.toLocaleString()}</b><span>Last ID: {browserCacheReport.lastId.toLocaleString()}</span><span>Last sync: {browserCacheReport.syncedAt ? new Date(browserCacheReport.syncedAt).toLocaleString() : "Not recorded"}</span><span>Checked: {new Date(browserCacheReport.checkedAt).toLocaleString()}</span></div>}
             </div>
           )}
           {uploadDiagnostic && (

@@ -1494,6 +1494,21 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
   const [dbData, setDbData] = useState(null);
   const [dbLoading, setDbLoading] = useState(false);
   const [dbError, setDbError] = useState("");
+  const [pendingVehicleUploads, setPendingVehicleUploads] = useState([]);
+  const [pendingVehicleUploadsLoading, setPendingVehicleUploadsLoading] = useState(false);
+  const [pendingVehicleUploadsError, setPendingVehicleUploadsError] = useState("");
+  const loadPendingVehicleUploads = async () => {
+    setPendingVehicleUploadsLoading(true);
+    setPendingVehicleUploadsError("");
+    try {
+      const data = await api("admin-pending-vehicle-uploads", {}, localStorage.getItem(TOKEN_KEY));
+      setPendingVehicleUploads(Array.isArray(data?.uploads) ? data.uploads : []);
+    } catch (e) {
+      setPendingVehicleUploadsError(e.message || "Unable to load pending vehicle uploads.");
+    } finally {
+      setPendingVehicleUploadsLoading(false);
+    }
+  };
   const loadDatabaseView = async (startDate = dbStartDate, endDate = dbEndDate) => {
     setDbLoading(true);
     setDbError("");
@@ -1513,6 +1528,9 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
       const today = localDateString();
       loadDatabaseView(today, today);
     }
+  }, [view]);
+  useEffect(() => {
+    if (view === "uploads") loadPendingVehicleUploads();
   }, [view]);
 
   const selected = analyticsUserId
@@ -1763,6 +1781,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
               ["users","User Insights"],
               ["activity","Activity"],
               ["database","Database View"],
+              ["uploads","Failed Vehicle Uploads"],
               ["management","User Management"]
             ].map(([key,label])=>
               <button key={key} className={view===key ? "active" : ""} onClick={()=>setView(key)}>{label}</button>
@@ -1999,6 +2018,48 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           </>
         )}
 
+        {view === "uploads" && (
+          <section>
+            <div className="admin-section-title">Failed / Incomplete Vehicle Uploads</div>
+            <div className="admin-panel-card" style={{marginBottom:16}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                <div>
+                  <div className="admin-panel-card-title">Pending Chassis Tracker</div>
+                  <div className="admin-panel-card-sub">Only unfinished chassis appear here. A chassis is removed automatically after its Vehicle Master, expected Job Cards and Line Items pass database verification.</div>
+                </div>
+                <button className="auth-secondary admin-refresh" type="button" onClick={loadPendingVehicleUploads} disabled={pendingVehicleUploadsLoading}>
+                  {pendingVehicleUploadsLoading ? "Refreshing..." : "Refresh List"}
+                </button>
+              </div>
+              <div className="admin-kpi-grid compact" style={{marginTop:14}}>
+                {metricCard("Pending Chassis", pendingVehicleUploads.length)}
+                {metricCard("Failed", pendingVehicleUploads.filter(row=>row.status==="failed").length)}
+                {metricCard("Processing / Queued", pendingVehicleUploads.filter(row=>row.status==="processing"||row.status==="queued"||row.status==="verification_pending").length)}
+              </div>
+              {pendingVehicleUploadsError && <div style={{marginTop:12,padding:10,borderRadius:8,background:"#fff1f2",color:"#b91c1c",fontWeight:700}}>{pendingVehicleUploadsError}</div>}
+              <div className="admin-table-wrap" style={{marginTop:14}}>
+                <table className="admin-table" style={{minWidth:900}}>
+                  <thead><tr><th>Chassis Number</th><th>Registration No.</th><th>Customer</th><th>Model</th><th>Status</th><th>Expected JCs</th><th>Expected Lines</th><th>Error / Detail</th><th>Last Attempt</th></tr></thead>
+                  <tbody>
+                    {pendingVehicleUploads.map(row=><tr key={row.vin}>
+                      <td style={{fontWeight:800,whiteSpace:"nowrap"}}>{row.vin}</td>
+                      <td>{row.registration || "—"}</td>
+                      <td>{row.customer_name || "—"}</td>
+                      <td>{row.model || "—"}</td>
+                      <td><span style={{fontWeight:800,color:row.status==="failed"?"#b91c1c":row.status==="processing"?"#1d4ed8":"#92400e"}}>{String(row.status||"pending").replace(/_/g," ").toUpperCase()}</span></td>
+                      <td>{Number(row.expected_job_cards_count||0).toLocaleString("en-IN")}</td>
+                      <td>{Number(row.expected_lines_count||0).toLocaleString("en-IN")}</td>
+                      <td style={{minWidth:220,whiteSpace:"normal"}}>{row.error_message || (row.status==="processing" ? "Upload interrupted or still processing. Verify by retrying." : "Awaiting successful database verification.")}</td>
+                      <td style={{whiteSpace:"nowrap"}}>{row.last_attempt_at ? new Date(row.last_attempt_at).toLocaleString("en-IN") : "Not attempted yet"}</td>
+                    </tr>)}
+                    {!pendingVehicleUploadsLoading && !pendingVehicleUploads.length && <tr><td colSpan="9" className="admin-empty">No pending or failed vehicle uploads.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+              <div className="admin-panel-card-sub" style={{marginTop:12}}>Retry: upload the relevant DMS history Excel through Single Vehicle or Bulk Vehicle. No manual chassis entry is required.</div>
+            </div>
+          </section>
+        )}
         {selected && (
           <div ref={analyticsDetailRef} className="admin-selected-analytics">
             <div className="admin-section-title">Selected User · {selected.personName}</div>

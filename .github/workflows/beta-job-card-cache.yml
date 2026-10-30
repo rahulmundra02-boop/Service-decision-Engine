@@ -1,18 +1,15 @@
-name: Beta Job Card Cache Refresh
+name: Stable Job Card Cache Refresh
 
 on:
-  push:
-    paths:
-      - ".github/workflows/beta-job-card-cache.yml"
   schedule:
     - cron: "0 8 * * *"
   workflow_dispatch:
 
 jobs:
-  refresh-beta-cache:
+  refresh-stable-cache:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger Beta cache refresh
+      - name: Trigger Stable cache refresh
         env:
           CACHE_CRON_SECRET: ${{ secrets.BETA_CACHE_CRON_SECRET }}
         run: |
@@ -24,7 +21,4 @@ jobs:
             --retry 2 --retry-delay 10 \
             -X POST \
             -H "Authorization: Bearer $CACHE_CRON_SECRET" \
-            -H "Content-Type: application/json" \
-            -H "X-Cache-Cron-Action: cron-job-card-cache" \
-            --data '{"action":"cron-job-card-cache"}' \
-            "https://service-decision-engine-50lelyvkl-service-decision.vercel.app/api/auth"
+            "https://service-decision-engine.vercel.app/api/cron-job-card-cache"

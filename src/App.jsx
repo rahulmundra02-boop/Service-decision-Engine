@@ -5528,6 +5528,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   const [uploadParsedRecords, setUploadParsedRecords] = useState([]);
   const [uploadProgress, setUploadProgress] = useState(null);
   const [uploadDiagnostic, setUploadDiagnostic] = useState(null);
+  const [testBypassJobCardCache, setTestBypassJobCardCache] = useState(false);
   const [analysisBusy, setAnalysisBusy] = useState(false);
   const cancelProcessingRef = useRef(false);
   const seenUploadSignaturesRef = useRef(new Set());
@@ -6355,7 +6356,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       setExcelData("");setUploadedFiles(accepted);setRegistrationSearchResult(null);setUploadMeta({files:result.files,failedFiles:result.failedFiles||[],rowsBefore:result.totalRowsBeforeDedup,duplicates:result.duplicateRowsIgnored,rowsAfter:parsedRows.length,invalidRows:result.invalidRows||[]});
       setAnalysis(null);setBulkResults([]);setBulkMeta(null);setCustomerGroups([]);setSelectedCustomers([]);setUploadParsedRecords(parsedRows);
       if(parsedRows.length){const vins=new Set(parsedRows.map(r=>String(r?.vin||"").trim().toUpperCase()).filter(Boolean));setMode(vins.size>1?"bulk":"single");logUsage("Excel Upload",{fileCount:accepted.length,vehicleCount:vins.size,details:{rows:parsedRows.length,files:accepted.map(f=>f.name)}});}
-      const diag = { filesSelected: files.length, filesRead: accepted.length, filesFailed: result.failedFiles || [], rowsBeforeDedup: Number(result.totalRowsBeforeDedup || 0), duplicateRowsIgnored: Number(result.duplicateRowsIgnored || 0), parsedRows: parsedRows.length, invalidRows: result.invalidRows || [], uniqueJobCards: 0, jobCardsAlreadyInDb: 0, jobCardsSubmitted: 0, jobCardsSaved: 0, serviceLinesSaved: 0, vehicleCount: 0, vehiclesUpserted: 0, vehicleMasterError: "", cutoff: false, outcomes: [], status: "processing", startedAt: new Date().toISOString() };
+      const diag = { filesSelected: files.length, filesRead: accepted.length, filesFailed: result.failedFiles || [], rowsBeforeDedup: Number(result.totalRowsBeforeDedup || 0), duplicateRowsIgnored: Number(result.duplicateRowsIgnored || 0), parsedRows: parsedRows.length, invalidRows: result.invalidRows || [], uniqueJobCards: 0, jobCardsAlreadyInDb: 0, jobCardsSubmitted: 0, jobCardsSaved: 0, serviceLinesSaved: 0, vehicleCount: 0, vehiclesUpserted: 0, vehicleMasterError: "", cutoff: false, cacheMode: testBypassJobCardCache ? "BYPASS TEST (live DB check)" : "CACHE ENABLED", outcomes: [], status: "processing", startedAt: new Date().toISOString() };
       setUploadDiagnostic(diag);
       if(!parsedRows.length&&result.failedFiles?.length)setError(result.failedFiles.map(x=>`${x.name} — ${x.reason}`).join(" | "));
       if(parsedRows.length){
@@ -6397,8 +6398,11 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
             }
             if(cutoff.enabled){diag.status="paused";return;}
             const cards=parsedRows.map(r=>normalizeJobCard(r?.jobCard)).filter(Boolean);
-            // Database upload must use the live DB duplicate check, not the browser job-card cache. A stale cache can incorrectly classify unsaved history as already stored.
-            const fresh=await checkNewJobCards(API_BASE_URL,allJobCards);
+            // Default path uses the browser cache to reduce repeated database function calls. Enable bypass only for a controlled comparison test.
+            diag.cacheMode = testBypassJobCardCache ? "BYPASS TEST (live DB check)" : "CACHE ENABLED";
+            const fresh = testBypassJobCardCache
+              ? await checkNewJobCards(API_BASE_URL, allJobCards)
+              : await getHybridNewJobCards(API_BASE_URL, allJobCards, candidates => checkNewJobCards(API_BASE_URL, candidates));
             diag.jobCardsSubmitted=fresh.size;
             diag.jobCardsAlreadyInDb=Math.max(0,allJobCards.length-fresh.size);
             const records=parsedRows.filter(r=>{const jc=normalizeJobCard(r?.jobCard);return !!jc&&fresh.has(jc);});
@@ -9636,6 +9640,40 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
           </div>
 
           <input id="excel-file-input" className="no-print" type="file" accept=".xlsx,.xls,.xlsm,.csv" multiple style={{display:"none"}} onChange={handleExcelUpload} disabled={uploadBusy} />
+
+          {mode !== "home" && mode !== "warranty-tags" && mode !== "document-scanner" && mode !== "profile" && (
+            <div className="no-print" style={{margin:"8px 0",padding:"9px 12px",border:"1px solid #d6a84f",borderRadius:8,background:"rgba(240,180,41,.08)",fontSize:12}}>
+              <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontWeight:700}}>
+                <input type="checkbox" checked={testBypassJobCardCache} onChange={e=>setTestBypassJobCardCache(e.target.checked)} disabled={uploadBusy} />
+                TEST ONLY: Bypass Job Card cache for next Excel upload (compare with cache ON)
+              </label>
+              <div style={{marginTop:4,opacity:.85}}>Unchecked = cache enabled (normal mode). Checked = live database duplicate check for this upload only; may use more Vercel Function calls. Change applies to the next upload.</div>
+            </div>
+          )}
+          {uploadDiagnostic && (
+            <details className="no-print" open={uploadDiagnostic.status === "completed-with-errors"} style={{margin:"8px 0 12px",padding:"10px 12px",border:"1px solid #94a3b8",borderRadius:8,fontSize:12}}>
+              <summary style={{cursor:"pointer",fontWeight:800}}>Excel Upload / Job Card Cache Diagnostic — {uploadDiagnostic.status}</summary>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(145px,1fr))",gap:8,marginTop:10}}>
+                {[
+                  ["Cache mode",uploadDiagnostic.cacheMode || (testBypassJobCardCache ? "BYPASS TEST" : "CACHE ENABLED")],
+                  ["Parsed rows",uploadDiagnostic.parsedRows],
+                  ["Vehicles",uploadDiagnostic.vehicleCount],
+                  ["Unique Job Cards",uploadDiagnostic.uniqueJobCards],
+                  ["Already in DB",uploadDiagnostic.jobCardsAlreadyInDb],
+                  ["Submitted as new",uploadDiagnostic.jobCardsSubmitted],
+                  ["Vehicles updated",uploadDiagnostic.vehiclesUpserted],
+                  ["Job Cards saved",uploadDiagnostic.jobCardsSaved],
+                  ["Service lines saved",uploadDiagnostic.serviceLinesSaved]
+                ].map(([label,value])=><div key={label} style={{padding:"7px 8px",borderRadius:6,background:"rgba(127,127,127,.08)"}}><div style={{opacity:.75}}>{label}</div><strong style={{overflowWrap:"anywhere"}}>{value ?? "—"}</strong></div>)}
+              </div>
+              {uploadDiagnostic.vehicleMasterError && <div style={{color:"#b91c1c",fontWeight:700,marginTop:8}}>Vehicle master error: {uploadDiagnostic.vehicleMasterError}</div>}
+              {uploadDiagnostic.backgroundError && <div style={{color:"#b91c1c",fontWeight:700,marginTop:8}}>Upload error: {uploadDiagnostic.backgroundError}</div>}
+              {uploadDiagnostic.outcomes?.length > 0 && <div style={{overflowX:"auto",marginTop:10}}><table className="history-table" style={{minWidth:520}}><thead><tr><th>Registration / VIN</th><th>Rows</th><th>Job Cards</th><th>Saved</th><th>Lines</th><th>Status / Error</th></tr></thead><tbody>{uploadDiagnostic.outcomes.map((item,i)=><tr key={item.vin||i}><td>{item.registration || item.vin}</td><td>{item.inputRows}</td><td>{item.uniqueJobCards}</td><td>{item.newJobCardsSaved}</td><td>{item.newServiceLines}</td><td style={{color:item.status==="failed"?"#b91c1c":"inherit"}}>{item.status}{item.message ? " — "+item.message : ""}</td></tr>)}</tbody></table></div>}
+              {uploadDiagnostic.invalidRows?.length > 0 && <details style={{marginTop:8}}><summary>Invalid rows ({uploadDiagnostic.invalidRows.length})</summary><pre style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{JSON.stringify(uploadDiagnostic.invalidRows.slice(0,100),null,2)}</pre></details>}
+              {uploadDiagnostic.filesFailed?.length > 0 && <div style={{marginTop:8}}>Files not read: {uploadDiagnostic.filesFailed.map(x=>x.name+" — "+x.reason).join(" | ")}</div>}
+              {uploadDiagnostic.finishedAt && <div style={{marginTop:8,opacity:.7}}>Finished: {new Date(uploadDiagnostic.finishedAt).toLocaleString()}</div>}
+            </details>
+          )}
 
           <div className="mobile-work-actions no-print">
             {mode !== "home" && mode !== "warranty-tags" && mode !== "document-scanner" && mode !== "profile" && (

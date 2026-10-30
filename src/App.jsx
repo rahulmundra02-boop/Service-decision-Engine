@@ -5621,9 +5621,43 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   const [estimateOpen, setEstimateOpen] = useState(false);
 
   useEffect(() => {
-    // Check cache only when this page/app is opened or refreshed.
-    // No periodic background polling.
-    void ensureJobCardCacheFreshInBackground("");
+    // Automatically build this browser's IndexedDB cache after login/app load.
+    // If a transient API/network error leaves it empty, retry without requiring
+    // the user to refresh or click the diagnostic rebuild button.
+    let stopped = false;
+    let retryTimer = null;
+
+    const checkAndBuildCache = async () => {
+      if (stopped || document.visibilityState === "hidden") {
+        retryTimer = window.setTimeout(checkAndBuildCache, 60000);
+        return;
+      }
+      try {
+        await ensureJobCardCacheFreshInBackground("");
+        const state = await inspectJobCardIndexInBrowser();
+        if (stopped) return;
+        if (Number(state.unique || 0) > 0) return;
+        console.warn("Job Card browser cache is still empty; automatic retry scheduled.");
+      } catch (error) {
+        console.warn("Automatic Job Card cache build failed; retry scheduled:", error);
+      }
+      if (!stopped) retryTimer = window.setTimeout(checkAndBuildCache, 60000);
+    };
+
+    void checkAndBuildCache();
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible" && !stopped) {
+        if (retryTimer) window.clearTimeout(retryTimer);
+        void checkAndBuildCache();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      stopped = true;
+      if (retryTimer) window.clearTimeout(retryTimer);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, []);
 
   useEffect(() => {

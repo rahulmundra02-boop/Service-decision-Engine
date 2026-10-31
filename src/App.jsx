@@ -9565,7 +9565,33 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         .single-history-wrap {
           max-height: none !important;
           height: auto !important;
-          overflow: visible !important;
+          width: 100%;
+          max-width: 100%;
+          overflow-x: auto !important;
+          overflow-y: hidden !important;
+          -webkit-overflow-scrolling: touch;
+          overscroll-behavior-x: contain;
+        }
+        .single-history-wrap .single-service-summary {
+          width: 100%;
+          min-width: 760px;
+          max-width: none;
+          table-layout: fixed;
+        }
+        .single-history-wrap .single-service-summary th,
+        .single-history-wrap .single-service-summary td {
+          box-sizing: border-box;
+          min-width: 0;
+          overflow-wrap: anywhere;
+          white-space: normal;
+        }
+        @media (max-width: 760px) {
+          .single-history-wrap .single-service-summary {
+            min-width: 760px;
+          }
+          .single-history-wrap {
+            touch-action: pan-x pan-y;
+          }
         }
         @media (max-width: 800px) {
           .single-note-grid {
@@ -10309,7 +10335,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
                     </label>
                   </div>
                 </div>
-                <div className="history-wrap single-history-wrap" style={{maxHeight:"none",height:"auto",overflow:"visible"}}>
+                <div className="history-wrap single-history-wrap" style={{maxHeight:"none",height:"auto",width:"100%",maxWidth:"100%",overflowX:"auto",overflowY:"hidden"}}>
                   <table className="history-table single-service-summary dashboard-resizable-table"><thead><tr>
 {singleTableColumns.map((key,index) => (
   <th key={key} style={tableColumnStyle("single",key)}>

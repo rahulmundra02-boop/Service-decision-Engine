@@ -1095,323 +1095,6 @@ function normalizeJobCard(value) {
 }
 
 
-const JOB_CARD_INDEX_DB_NAME = "serviceDecisionJobCardIndexV1";
-const JOB_CARD_INDEX_STORE = "jobCards";
-const JOB_CARD_INDEX_META_STORE = "meta";
-const JOB_CARD_INDEX_META_KEY = "sync";
-const JOB_CARD_INDEX_PAGE_SIZE = 5000;
-let jobCardIndexMemory = null;
-let jobCardIndexSyncPromise = null;
-
-function openJobCardIndexDb() {
-  return new Promise((resolve, reject) => {
-    if (typeof window === "undefined" || !window.indexedDB) {
-      reject(new Error("IndexedDB is not available."));
-      return;
-    }
-    const request = window.indexedDB.open(JOB_CARD_INDEX_DB_NAME, 1);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(JOB_CARD_INDEX_STORE)) {
-        db.createObjectStore(JOB_CARD_INDEX_STORE, { keyPath: "jobCardNo" });
-      }
-      if (!db.objectStoreNames.contains(JOB_CARD_INDEX_META_STORE)) {
-        db.createObjectStore(JOB_CARD_INDEX_META_STORE, { keyPath: "key" });
-      }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error("Unable to open Job Card cache."));
-  });
-}
-
-async function loadJobCardIndexFromBrowser() {
-  if (jobCardIndexMemory) return jobCardIndexMemory;
-  const db = await openJobCardIndexDb();
-  const result = await new Promise((resolve, reject) => {
-    const transaction = db.transaction(
-      [JOB_CARD_INDEX_STORE, JOB_CARD_INDEX_META_STORE],
-      "readonly"
-    );
-    const store = transaction.objectStore(JOB_CARD_INDEX_STORE);
-    const metaStore = transaction.objectStore(JOB_CARD_INDEX_META_STORE);
-    const keysRequest = store.getAllKeys();
-    const metaRequest = metaStore.get(JOB_CARD_INDEX_META_KEY);
-    transaction.oncomplete = () => resolve({
-      jobCards: new Set((keysRequest.result || []).map(normalizeJobCard).filter(Boolean)),
-      lastId: Number(metaRequest.result?.lastId || 0),
-      globalVersion: Number(metaRequest.result?.globalVersion || 0),
-      syncedAt: Number(metaRequest.result?.syncedAt || 0),
-    });
-    transaction.onerror = () => reject(
-      transaction.error || new Error("Unable to read Job Card cache.")
-    );
-  });
-  db.close();
-  jobCardIndexMemory = result;
-  return result;
-}
-
-
-
-async function inspectJobCardIndexInBrowser() {
-  const db = await openJobCardIndexDb();
-  try {
-    return await new Promise((resolve,reject)=>{
-      const tx=db.transaction([JOB_CARD_INDEX_STORE,JOB_CARD_INDEX_META_STORE],"readonly");
-      const keys=tx.objectStore(JOB_CARD_INDEX_STORE).getAllKeys();
-      const meta=tx.objectStore(JOB_CARD_INDEX_META_STORE).get(JOB_CARD_INDEX_META_KEY);
-      tx.oncomplete=()=>{
-        const all=[...new Set((keys.result||[]).map(normalizeJobCard).filter(Boolean))];
-        resolve({entries:(keys.result||[]).length,unique:all.length,jobCards:all,lastId:Number(meta.result?.lastId||0),globalVersion:Number(meta.result?.globalVersion||0),syncedAt:Number(meta.result?.syncedAt||0),checkedAt:Date.now()});
-      };
-      tx.onerror=()=>reject(tx.error||new Error("Cache read failed"));
-    });
-  } finally { db.close(); }
-}
-
-async function compareBrowserJobCardCacheWithDatabase(apiBaseUrl = "") {
-  const browser = await inspectJobCardIndexInBrowser();
-  const dbCards = new Set();
-  let afterId = 0;
-  while (true) {
-    const response = await fetch(`${apiBaseUrl}/api/save-history`, {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({action:"get-job-card-index",afterId,limit:JOB_CARD_INDEX_PAGE_SIZE})
-    });
-    const payload = await response.json().catch(()=>null);
-    if (!response.ok || !payload?.success) throw new Error(payload?.error || `Database index fetch failed (${response.status})`);
-    const rows = Array.isArray(payload.jobCards) ? payload.jobCards : [];
-    for (const row of rows) { const no=normalizeJobCard(row?.jobCardNo); if(no) dbCards.add(no); }
-    afterId=Number(payload.nextAfterId || rows[rows.length-1]?.id || afterId);
-    if (!payload.hasMore || !rows.length) break;
-  }
-  const localCards = new Set(browser.jobCards || []);
-  const missing = [...dbCards].filter(card=>!localCards.has(card));
-  const extra = [...localCards].filter(card=>!dbCards.has(card));
-  return {...browser,databaseUnique:dbCards.size,missingCount:missing.length,extraCount:extra.length,missingExamples:missing.slice(0,20),extraExamples:extra.slice(0,20),comparisonCompletedAt:Date.now()};
-}
-
-async function updateJobCardIndexMeta(meta = {}) {
-  const state = jobCardIndexMemory || { jobCards:new Set(), lastId:0, globalVersion:0, syncedAt:0 };
-  const next = {
-    ...state,
-    globalVersion: Number(meta.globalVersion ?? state.globalVersion ?? 0),
-    syncedAt: Number(meta.syncedAt ?? state.syncedAt ?? 0),
-  };
-  const db = await openJobCardIndexDb();
-  await new Promise((resolve,reject)=>{
-    const transaction = db.transaction(JOB_CARD_INDEX_META_STORE,"readwrite");
-    transaction.objectStore(JOB_CARD_INDEX_META_STORE).put({
-      key:JOB_CARD_INDEX_META_KEY,
-      lastId:next.lastId,
-      globalVersion:next.globalVersion,
-      syncedAt:next.syncedAt
-    });
-    transaction.oncomplete=resolve;
-    transaction.onerror=()=>reject(transaction.error || new Error("Unable to update Job Card cache metadata."));
-  });
-  db.close();
-  jobCardIndexMemory=next;
-  return next;
-}
-
-async function clearJobCardIndex() {
-  const db = await openJobCardIndexDb();
-  await new Promise((resolve,reject)=>{
-    const transaction=db.transaction([JOB_CARD_INDEX_STORE,JOB_CARD_INDEX_META_STORE],"readwrite");
-    transaction.objectStore(JOB_CARD_INDEX_STORE).clear();
-    transaction.objectStore(JOB_CARD_INDEX_META_STORE).clear();
-    transaction.oncomplete=resolve;
-    transaction.onerror=()=>reject(transaction.error || new Error("Unable to clear Job Card cache."));
-  });
-  db.close();
-  jobCardIndexMemory={jobCards:new Set(),lastId:0,globalVersion:0,syncedAt:0};
-}
-
-async function fetchJobCardCachePolicy() {
-  const response = await fetch("/api/auth", {
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({action:"job-card-cache-settings"})
-  });
-  const payload = await response.json().catch(()=>null);
-  if (!response.ok || !payload?.success) {
-    throw new Error(payload?.error || "Job Card cache policy check failed.");
-  }
-  return payload.settings || {enabled:true,intervalHours:24,version:1,lastRebuildAt:null};
-}
-
-async function addJobCardsToBrowserIndex(jobCards, lastId = null) {
-  const normalizedJobCards = [...new Set(
-    (jobCards || []).map(normalizeJobCard).filter(Boolean)
-  )];
-  const state = jobCardIndexMemory || { jobCards: new Set(), lastId: 0 };
-  const db = await openJobCardIndexDb();
-
-  await new Promise((resolve, reject) => {
-    const transaction = db.transaction(
-      [JOB_CARD_INDEX_STORE, JOB_CARD_INDEX_META_STORE],
-      "readwrite"
-    );
-    const store = transaction.objectStore(JOB_CARD_INDEX_STORE);
-    const metaStore = transaction.objectStore(JOB_CARD_INDEX_META_STORE);
-    for (const jobCardNo of normalizedJobCards) {
-      store.put({ jobCardNo });
-      state.jobCards.add(jobCardNo);
-    }
-    const nextLastId = Number(lastId);
-    if (Number.isFinite(nextLastId) && nextLastId > state.lastId) {
-      state.lastId = nextLastId;
-    }
-    metaStore.put({ key: JOB_CARD_INDEX_META_KEY, lastId: state.lastId });
-    transaction.oncomplete = resolve;
-    transaction.onerror = () => reject(
-      transaction.error || new Error("Unable to update Job Card cache.")
-    );
-  });
-
-  db.close();
-  jobCardIndexMemory = state;
-  return state;
-}
-
-async function syncJobCardIndex(apiBaseUrl, options = {}) {
-  if (jobCardIndexSyncPromise) return jobCardIndexSyncPromise;
-
-  jobCardIndexSyncPromise = (async () => {
-    // A rebuild must start at the beginning. Reusing an old lastId silently
-    // skips older Job Cards when the local IndexedDB was cleared or incomplete.
-    if (options.fullRebuild) await clearJobCardIndex();
-    let afterId = options.fullRebuild ? 0 : Number((await loadJobCardIndexFromBrowser()).lastId || 0);
-    let pageCount = 0;
-    let lastSeenId = afterId;
-
-    while (true) {
-      const response = await fetch(`${apiBaseUrl}/api/save-history`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "get-job-card-index",
-          afterId,
-          limit: JOB_CARD_INDEX_PAGE_SIZE,
-        }),
-      });
-      let payload = null;
-      try { payload = await response.json(); } catch { payload = null; }
-      if (!response.ok || !payload?.success) {
-        throw new Error(payload?.error || `Job Card index sync failed (${response.status})`);
-      }
-
-      const rows = Array.isArray(payload.jobCards) ? payload.jobCards : [];
-      if (!rows.length) break;
-      const pageLastId = Number(payload.nextAfterId || rows[rows.length - 1]?.id || 0);
-      if (!(pageLastId > afterId)) {
-        throw new Error("Job Card cache download stopped because the database cursor did not advance.");
-      }
-      await addJobCardsToBrowserIndex(rows.map(row => normalizeJobCard(row?.jobCardNo)).filter(Boolean), pageLastId);
-      afterId = pageLastId;
-      lastSeenId = pageLastId;
-      pageCount++;
-      if (!payload.hasMore) break;
-    }
-
-    const verified = await inspectJobCardIndexInBrowser();
-    if (!verified.unique) throw new Error("Job Card cache download returned zero records. Cache was not marked as built.");
-    return {...verified, pagesDownloaded:pageCount};
-  })().finally(() => {
-    jobCardIndexSyncPromise = null;
-  });
-  return jobCardIndexSyncPromise;
-}
-
-async function getHybridNewJobCards(apiBaseUrl, jobCards, checkNewJobCardsFn) {
-  const uniqueJobCards = [...new Set(
-    (jobCards || []).map(normalizeJobCard).filter(Boolean)
-  )];
-  if (!uniqueJobCards.length) return new Set();
-
-  try {
-    const policy = await fetchJobCardCachePolicy();
-
-    // Cache OFF = bypass browser cache and use Neon directly.
-    if (policy.enabled === false) {
-      return checkNewJobCardsFn(uniqueJobCards);
-    }
-
-    // Check data/version freshness, not elapsed time. The same rule is also
-    // checked in the background for every browser with the portal open.
-    await ensureJobCardCacheFreshInBackground(apiBaseUrl);
-    let state = await loadJobCardIndexFromBrowser();
-    const versionChanged = Number(state.globalVersion || 0) !== Number(policy.version || 0);
-    // Full rebuild only on first use or after scheduled/admin version changes.
-    if (!state.jobCards.size || versionChanged) {
-      await clearJobCardIndex();
-      await syncJobCardIndex(apiBaseUrl, {fullRebuild:true});
-      state = await updateJobCardIndexMeta({
-        globalVersion:Number(policy.version || 0),
-        syncedAt:Date.now()
-      });
-    }
-
-    const cached = state.jobCards || new Set();
-    const candidates = uniqueJobCards.filter(jobCard => !cached.has(jobCard));
-    // Cache hits are authoritative. Query Neon only for unknown Job Cards.
-    if (!candidates.length) return new Set();
-
-    const confirmedNewJobCards = await checkNewJobCardsFn(candidates);
-
-    // Cache only cards confirmed to already exist in Neon. Newly identified
-    // cards are added after their database save succeeds.
-    const confirmedExisting = candidates.filter(jobCard => !confirmedNewJobCards.has(jobCard));
-    if (confirmedExisting.length) await addJobCardsToBrowserIndex(confirmedExisting);
-    return confirmedNewJobCards;
-  } catch (error) {
-    console.warn("Hybrid Job Card cache unavailable; using central check:", error);
-    return checkNewJobCardsFn(uniqueJobCards);
-  }
-}
-
-
-// Data-driven Job Card cache maintenance. Each open browser checks the shared
-// database count/version and rebuilds its own IndexedDB when it is stale.
-let jobCardCacheMaintenancePromise = null;
-async function ensureJobCardCacheFreshInBackground(apiBaseUrl = "") {
-  if (jobCardCacheMaintenancePromise) return jobCardCacheMaintenancePromise;
-  jobCardCacheMaintenancePromise = (async () => {
-    try {
-      const policy = await fetchJobCardCachePolicy();
-      if (policy.enabled === false) return { skipped:true, reason:"cache-disabled" };
-      const state = await loadJobCardIndexFromBrowser();
-      const browserCount = Number(state.jobCards?.size || 0);
-      const databaseCount = Number(policy.currentDatabaseJobCards ?? policy.cachedJobCards ?? 0);
-      const versionChanged = Number(state.globalVersion || 0) !== Number(policy.version || 0);
-      // Scheduled/admin version changes control rebuilds, not row-count drift.
-      if (!browserCount || versionChanged) {
-        const downloaded = await syncJobCardIndex(apiBaseUrl, {fullRebuild:true});
-        const verified = await inspectJobCardIndexInBrowser();
-        const actualBrowserCount = Number(verified.unique || 0);
-        const remainingDifference = Math.abs(databaseCount - actualBrowserCount);
-        // Do not mark an incomplete cache current. Retry on the next check.
-        if (!actualBrowserCount || remainingDifference >= 1000) {
-          throw new Error(`Cache verification failed. Database: ${databaseCount.toLocaleString()}, browser: ${actualBrowserCount.toLocaleString()}, difference: ${remainingDifference.toLocaleString()}.`);
-        }
-        await updateJobCardIndexMeta({
-          globalVersion:Number(policy.version || 0),
-          syncedAt:Date.now()
-        });
-        return { rebuilt:true, databaseCount, browserCount:actualBrowserCount, remainingDifference, pagesDownloaded:downloaded.pagesDownloaded };
-      }
-      return { rebuilt:false, databaseCount, browserCount, countDifference };
-    } catch (error) {
-      // Cache maintenance must never block normal portal usage; upload validation
-      // retains its existing central database fallback if the cache is unavailable.
-      console.warn("Background Job Card cache check failed:", error);
-      return { error:error?.message || "Background cache check failed" };
-    }
-  })().finally(() => { jobCardCacheMaintenancePromise = null; });
-  return jobCardCacheMaintenancePromise;
-}
-
 function makeHistoryRowKey(record) {
   const date = record?.date ? formatDate(record.date) : "";
   const vin = normalizePartCode(record?.vin);
@@ -5492,7 +5175,6 @@ function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResu
   const savedCount = Array.isArray(savedEstimates) ? savedEstimates.length : 0;
   const cards = [
     { key:"single", icon:"🚚", title:"Single Vehicle", text:"Check one vehicle service history, service requirements and completed work." },
-    { key:"registration-search", icon:"🚛", title:"Search by Registration No.", text:"Check the latest service decision using a vehicle registration number." },
     { key:"bulk", icon:"📊", title:"Bulk Vehicle", text:"Analyse multiple vehicles and prepare customer-wise service due summaries." },
     { key:"estimate", icon:"🧾", title:"Prepare Estimate", text:"Open the existing Service Estimate module and prepare a vehicle estimate." },
     { key:"warranty-tags", icon:"🏷️", title:"Warranty Tag Print", text:"Generate and print warranty tags from Billed JC Claim Statement + Jobcard Summary." },
@@ -5512,11 +5194,6 @@ function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResu
           <button className="excel-button" onClick={onClear}>Clear</button>
         </div>
       </div>
-      <form className="home-registration-check" onSubmit={event => { event.preventDefault(); onSearchRegistration(homeRegistration); }}>
-        <div className="home-registration-copy"><strong>Schedule Service Check by Registration No.</strong><span>Enter the vehicle registration number to view its service decision.</span></div>
-        <div className="home-registration-controls"><input className="excel-input" value={homeRegistration} onChange={event => setHomeRegistration(event.target.value.toUpperCase())} placeholder="e.g. GJ12CV0462" aria-label="Vehicle registration number" autoComplete="off" /><button className="excel-button green" type="submit">Submit</button></div>
-        {registrationSearchError && <div className="registration-search-error home-registration-error" role="alert">{registrationSearchError}</div>}
-      </form>
       <div className="portal-kpi-grid">
         <div className="portal-kpi"><span>Vehicles in Current Upload</span><strong>{totalVehicles}</strong><small>Current session</small></div>
         <div className="portal-kpi"><span>Due Vehicles</span><strong>{dueVehicles}</strong><small>Current upload</small></div>
@@ -5645,81 +5322,16 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   const [uploadParsedRecords, setUploadParsedRecords] = useState([]);
   const [uploadProgress, setUploadProgress] = useState(null);
   const [uploadDiagnostic, setUploadDiagnostic] = useState(null);
-  const [testBypassJobCardCache, setTestBypassJobCardCache] = useState(false);
-  const [browserCacheReport, setBrowserCacheReport] = useState(null);
-  const [browserCacheError, setBrowserCacheError] = useState("");
+  const testBypassJobCardCache = false;
+  
+  
   const [diagnosticReportText, setDiagnosticReportText] = useState("");
   const [analysisBusy, setAnalysisBusy] = useState(false);
   const cancelProcessingRef = useRef(false);
   const seenUploadSignaturesRef = useRef(new Set());
   const [estimateOpen, setEstimateOpen] = useState(false);
 
-  useEffect(() => {
-    // Automatically build this browser's IndexedDB cache after login/app load.
-    // If a transient API/network error leaves it empty, retry without requiring
-    // the user to refresh or click the diagnostic rebuild button.
-    let stopped = false;
-    let retryTimer = null;
-
-    const checkAndBuildCache = async () => {
-      if (stopped || document.visibilityState === "hidden") {
-        retryTimer = window.setTimeout(checkAndBuildCache, 300000);
-        return;
-      }
-      try {
-        const current = await inspectJobCardIndexInBrowser();
-        if (stopped) return;
-
-        // Empty local storage must trigger an explicit full download. Do not
-        // let a stale/disabled maintenance policy silently skip first-time setup.
-        if (Number(current.unique || 0) === 0) {
-          setBrowserCacheError("Automatic Job Card cache download started…");
-          const downloaded = await syncJobCardIndex("", { fullRebuild: true });
-          const policy = await fetchJobCardCachePolicy();
-          await updateJobCardIndexMeta({
-            globalVersion: Number(policy.version || 0),
-            syncedAt: Date.now()
-          });
-          const verified = await inspectJobCardIndexInBrowser();
-          if (stopped) return;
-          if (Number(verified.unique || 0) === 0) {
-            throw new Error("Automatic cache download finished with zero Job Cards.");
-          }
-          setBrowserCacheError("");
-          console.info("Automatic Job Card cache download verified:", {
-            uniqueJobCards: verified.unique,
-            pagesDownloaded: downloaded.pagesDownloaded
-          });
-          return;
-        }
-
-        await ensureJobCardCacheFreshInBackground("");
-        const state = await inspectJobCardIndexInBrowser();
-        if (stopped) return;
-        if (Number(state.unique || 0) > 0) return;
-        throw new Error("Automatic cache check completed but the browser cache is still empty.");
-      } catch (error) {
-        if (!stopped) setBrowserCacheError("Automatic cache download failed: " + (error?.message || "Unknown error") + ". Retrying in 60 seconds.");
-        console.error("Automatic Job Card cache build failed; retry scheduled:", error);
-      }
-      if (!stopped) retryTimer = window.setTimeout(checkAndBuildCache, 300000);
-    };
-
-    void checkAndBuildCache();
-    const handleVisibility = () => {
-      if (document.visibilityState === "visible" && !stopped) {
-        if (retryTimer) window.clearTimeout(retryTimer);
-        void checkAndBuildCache();
-      }
-    };
-    document.addEventListener("visibilitychange", handleVisibility);
-
-    return () => {
-      stopped = true;
-      if (retryTimer) window.clearTimeout(retryTimer);
-      document.removeEventListener("visibilitychange", handleVisibility);
-    };
-  }, []);
+  // Job Card browser cache is retired. Upload analysis uses the current Excel only.;
 
   useEffect(() => {
     const handleMobileNavigation = (event) => {
@@ -6415,131 +6027,79 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     );
   }
 
-  const DATABASE_UPLOAD_MAX_BODY_BYTES = 900000;
-
-  function splitDatabasePayloadChunks(items, buildPayload, maxBytes = DATABASE_UPLOAD_MAX_BODY_BYTES) {
-    const encoder = new TextEncoder();
-    const chunks = [];
-    let current = [];
-    for (const item of items || []) {
-      const candidate = [...current, item];
-      const candidateBytes = encoder.encode(JSON.stringify(buildPayload(candidate))).length;
-      if (current.length && candidateBytes > maxBytes) {
-        chunks.push(current);
-        current = [item];
-        const singleBytes = encoder.encode(JSON.stringify(buildPayload(current))).length;
-        if (singleBytes > maxBytes) {
-          throw new Error("A single vehicle database payload exceeds the safe request size (" + singleBytes.toLocaleString() + " bytes).");
-        }
-      } else {
-        current = candidate;
-        if (candidateBytes > maxBytes) {
-          throw new Error("A single vehicle database payload exceeds the safe request size (" + candidateBytes.toLocaleString() + " bytes).");
-        }
-      }
-    }
-    if (current.length) chunks.push(current);
-    return chunks;
-  }
-
-  async function postDatabaseJson(url, body, label) {
-    const retryableStatuses = new Set([408, 425, 429, 500, 502, 503, 504]);
-    let lastError = null;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      try {
-        const response = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || !payload?.success) {
-          const error = new Error(payload?.error || (label + " failed (" + response.status + ")"));
-          error.status = response.status;
-          throw error;
-        }
-        return payload;
-      } catch (error) {
-        lastError = error;
-        const status = Number(error?.status || 0);
-        const retryable = !status || retryableStatuses.has(status);
-        if (!retryable || attempt === 2) throw error;
-        await new Promise(resolve => window.setTimeout(resolve, 500 * (attempt + 1)));
-      }
-    }
-    throw lastError || new Error(label + " failed.");
-  }
-
   async function saveHistoryToBackend({ records, vehicle }) {
-    const body = {
-      records: (records || []).map(({ customerVoice, codifiedCustomerVoice, repairType, rate, netValue, ...record }) => {
-        const dateOnly = value => {
-          if (value instanceof Date && !Number.isNaN(value.getTime())) {
-            return String(value.getFullYear()).padStart(4, "0") + "-" +
-              String(value.getMonth() + 1).padStart(2, "0") + "-" +
-              String(value.getDate()).padStart(2, "0");
-          }
-          const text = String(value ?? "").trim();
-          const iso = text.match(/^(\d{4}-\d{2}-\d{2})/);
-          if (iso) return iso[1];
-          return value || null;
-        };
-        return {
-          ...record,
-          date: dateOnly(record.date),
-          inwardDate: dateOnly(record.inwardDate),
-          checkInDate: dateOnly(record.checkInDate),
-          startDate: dateOnly(record.startDate),
-          endDate: dateOnly(record.endDate),
-        };
+    const response = await fetch(`${API_BASE_URL}/api/save-history`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        records: (records || []).map(({ customerVoice, codifiedCustomerVoice, repairType, rate, netValue, ...record }) => {
+          const dateOnly = value => {
+            if (value instanceof Date && !Number.isNaN(value.getTime())) {
+              return String(value.getFullYear()).padStart(4, "0") + "-" +
+                String(value.getMonth() + 1).padStart(2, "0") + "-" +
+                String(value.getDate()).padStart(2, "0");
+            }
+            const text = String(value ?? "").trim();
+            const iso = text.match(/^(\d{4}-\d{2}-\d{2})/);
+            if (iso) return iso[1];
+            return value || null;
+          };
+          return {
+            ...record,
+            date: dateOnly(record.date),
+            inwardDate: dateOnly(record.inwardDate),
+            checkInDate: dateOnly(record.checkInDate),
+            startDate: dateOnly(record.startDate),
+            endDate: dateOnly(record.endDate),
+          };
+        }),
+        vehicle: {
+          ...vehicle,
+          sale: vehicle?.sale instanceof Date
+            ? String(vehicle.sale.getFullYear()).padStart(4, "0") + "-" +
+              String(vehicle.sale.getMonth() + 1).padStart(2, "0") + "-" +
+              String(vehicle.sale.getDate()).padStart(2, "0")
+            : vehicle?.sale || null,
+        },
       }),
-      vehicle: {
-        ...vehicle,
-        sale: vehicle?.sale instanceof Date
-          ? String(vehicle.sale.getFullYear()).padStart(4, "0") + "-" +
-            String(vehicle.sale.getMonth() + 1).padStart(2, "0") + "-" +
-            String(vehicle.sale.getDate()).padStart(2, "0")
-          : vehicle?.sale || null,
-      },
-    };
-    const payload = await postDatabaseJson(`${API_BASE_URL}/api/save-history`, body, "History save");
+    });
+
+    let payload = null;
+    try { payload = await response.json(); } catch { payload = null; }
+
+    if (!response.ok || !payload?.success) {
+      throw new Error(payload?.error || `History save failed (${response.status})`);
+    }
+
     if (Array.isArray(payload.insertedJobCardNumbers) && payload.insertedJobCardNumbers.length) {
       await addJobCardsToBrowserIndex(payload.insertedJobCardNumbers);
     }
+
     return payload;
   }
 
   async function upsertVehicleMaster(vehicles) {
-    const buildPayload = batch => ({ action: "upsert-vehicle-master", vehicles: batch });
-    const chunks = splitDatabasePayloadChunks(vehicles || [], buildPayload);
-    let upsertedVehicles = 0;
-    for (let index = 0; index < chunks.length; index += 1) {
-      const payload = await postDatabaseJson(
-        `${API_BASE_URL}/api/save-history`,
-        buildPayload(chunks[index]),
-        "Vehicle master update, batch " + (index + 1) + "/" + chunks.length
-      );
-      const count = Number(payload.upsertedVehicles || 0);
-      if (count !== chunks[index].length) {
-        throw new Error("Vehicle master batch " + (index + 1) + " count mismatch: expected " + chunks[index].length + ", updated " + count + ".");
-      }
-      upsertedVehicles += count;
+    const response = await fetch(`${API_BASE_URL}/api/save-history`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "upsert-vehicle-master", vehicles }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload?.success) {
+      throw new Error(payload?.error || `Vehicle master update failed (${response.status})`);
     }
-    return {
-      success: upsertedVehicles === (vehicles || []).length,
-      upsertedVehicles,
-      requestedVehicles: (vehicles || []).length,
-      missingVehicles: Math.max(0, (vehicles || []).length - upsertedVehicles),
-      batches: chunks.length,
-    };
+    return payload;
   }
 
   async function updateVehicleUploadTracker(action, payload = {}) {
-    return postDatabaseJson(
-      API_BASE_URL + "/api/save-history",
-      { action, ...payload },
-      "Upload tracking"
-    );
+    const response = await fetch(API_BASE_URL + "/api/save-history", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, ...payload }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data?.success) throw new Error(data?.error || ("Upload tracking failed (" + response.status + ")"));
+    return data;
   }
 
   async function registerVehicleUploadBatch(records, uploadedBy = "") {
@@ -6580,25 +6140,11 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       };
     });
     if (!vehicles.length) throw new Error("No valid chassis numbers were found to register for upload tracking.");
-    const buildPayload = batch => ({ action: "register-vehicle-upload-batch", source: "excel-upload", uploadedBy, vehicles: batch });
-    const chunks = splitDatabasePayloadChunks(vehicles, buildPayload);
-    let registered = 0;
-    for (let index = 0; index < chunks.length; index += 1) {
-      const result = await updateVehicleUploadTracker("register-vehicle-upload-batch", {
-        source: "excel-upload",
-        uploadedBy,
-        vehicles: chunks[index],
-      });
-      const batchRegistered = Number(result.registered || 0);
-      if (batchRegistered !== chunks[index].length) {
-        throw new Error("Upload tracking batch " + (index + 1) + "/" + chunks.length + " is incomplete. Expected " + chunks[index].length + " chassis, registered " + batchRegistered + ".");
-      }
-      registered += batchRegistered;
+    const result = await updateVehicleUploadTracker("register-vehicle-upload-batch", { source: "excel-upload", uploadedBy, vehicles });
+    if (Number(result.registered || 0) !== vehicles.length) {
+      throw new Error("Upload tracking list is incomplete. Expected " + vehicles.length + " chassis, registered " + Number(result.registered || 0) + ". Database upload was not started.");
     }
-    if (registered !== vehicles.length) {
-      throw new Error("Upload tracking list is incomplete. Expected " + vehicles.length + " chassis, registered " + registered + ".");
-    }
-    return { success: true, registered, requested: vehicles.length, batches: chunks.length };
+    return result;
   }
   async function touchVehicleRefreshTimestamps(vins) {
     const uniqueVins = [...new Set((vins || []).map(value => String(value || "").trim().toUpperCase()).filter(Boolean))];
@@ -6644,9 +6190,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
           const payload = await saveHistoryToBackend({ records: vehicleRecords, vehicle });
           const verification = await updateVehicleUploadTracker("verify-vehicle-upload", { vin });
           if (!verification?.verified) throw new Error(verification?.error || verification?.reason || "Database verification is incomplete.");
-          if (Array.isArray(payload.insertedJobCardNumbers) && payload.insertedJobCardNumbers.length) {
-            await addJobCardsToBrowserIndex(payload.insertedJobCardNumbers);
-          }
+
           outcomes.push({
             vin, registration: vehicleRecords[0]?.reg || vehicleRecords[0]?.registration || "",
             inputRows: vehicleRecords.length, uniqueJobCards: jobCards.length,
@@ -6685,7 +6229,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       setExcelData("");setUploadedFiles(accepted);setRegistrationSearchResult(null);setUploadMeta({files:result.files,failedFiles:result.failedFiles||[],rowsBefore:result.totalRowsBeforeDedup,duplicates:result.duplicateRowsIgnored,rowsAfter:parsedRows.length,invalidRows:result.invalidRows||[]});
       setAnalysis(null);setBulkResults([]);setBulkMeta(null);setCustomerGroups([]);setSelectedCustomers([]);setUploadParsedRecords(parsedRows);
       if(parsedRows.length){const vins=new Set(parsedRows.map(r=>String(r?.vin||"").trim().toUpperCase()).filter(Boolean));setMode(vins.size>1?"bulk":"single");logUsage("Excel Upload",{fileCount:accepted.length,vehicleCount:vins.size,details:{rows:parsedRows.length,files:accepted.map(f=>f.name)}});}
-      const diag = { filesSelected: files.length, filesRead: accepted.length, filesFailed: result.failedFiles || [], rowsBeforeDedup: Number(result.totalRowsBeforeDedup || 0), duplicateRowsIgnored: Number(result.duplicateRowsIgnored || 0), parsedRows: parsedRows.length, invalidRows: result.invalidRows || [], uniqueJobCards: 0, jobCardsAlreadyInDb: 0, jobCardsSubmitted: 0, jobCardsSaved: 0, serviceLinesSaved: 0, vehicleCount: 0, vehiclesUpserted: 0, vehicleMasterError: "", cutoff: false, cacheMode: testBypassJobCardCache ? "BYPASS TEST (live DB check)" : "CACHE ENABLED", outcomes: [], status: "processing", startedAt: new Date().toISOString() };
+      const diag = { filesSelected: files.length, filesRead: accepted.length, filesFailed: result.failedFiles || [], rowsBeforeDedup: Number(result.totalRowsBeforeDedup || 0), duplicateRowsIgnored: Number(result.duplicateRowsIgnored || 0), parsedRows: parsedRows.length, invalidRows: result.invalidRows || [], uniqueJobCards: 0, jobCardsAlreadyInDb: 0, jobCardsSubmitted: 0, jobCardsSaved: 0, serviceLinesSaved: 0, vehicleCount: 0, vehiclesUpserted: 0, vehicleMasterError: "", cutoff: false, cacheMode: "RETIRED (current Excel only)", outcomes: [], status: "processing", startedAt: new Date().toISOString() };
       setUploadDiagnostic(diag);
       if(!parsedRows.length&&result.failedFiles?.length)setError(result.failedFiles.map(x=>`${x.name} — ${x.reason}`).join(" | "));
       if(parsedRows.length){
@@ -6698,65 +6242,39 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         setUploadDiagnostic({...diag});
         void (async()=>{
           try{
-            // Persist every chassis before any vehicle-master or history writes begin.
-            // If this request fails, do not start the database upload.
-            await registerVehicleUploadBatch(parsedRows, user?.personName || user?.email || "");
-            const cutoff=await fetchEmergencyDbUploadCutoff();
-            diag.cutoff=Boolean(cutoff.enabled);
-            try{
-              const vehicleMasterRecords=uploadedVins.map(vin=>{
-                const vehicleRows=parsedRows.filter(record=>String(record?.vin||"").trim().toUpperCase()===vin);
-                const dateKey=value=>{
-                  const raw=String(value??"").trim();
-                  const iso=raw.match(/^(\d{4}-\d{2}-\d{2})/);
-                  if(iso)return iso[1];
-                  const parsed=new Date(value);
-                  return Number.isNaN(parsed.getTime())?"":parsed.toISOString().slice(0,10);
-                };
-                const datedRows=vehicleRows.map(record=>({record,date:dateKey(record?.date)}))
-                  .filter(item=>item.date&&String(item.record?.reg||item.record?.registration||"").trim())
-                  .sort((a,b)=>b.date.localeCompare(a.date)||normalizeJobCard(b.record?.jobCard).localeCompare(normalizeJobCard(a.record?.jobCard)));
-                const vehicle=deriveVehicle(vehicleRows);
-                const latest=datedRows[0];
-                return {...vehicle,registration:latest?(latest.record.reg||latest.record.registration):vehicle.registration,
-                  latestJobDate:latest?.date||null};
-              });
-              const masterResult=await upsertVehicleMaster(vehicleMasterRecords);
-              diag.vehiclesUpserted=Number(masterResult.upsertedVehicles||0);
-              if(diag.vehiclesUpserted<uploadedVins.length)throw new Error(`Vehicle master update count mismatch: expected ${uploadedVins.length}, updated ${diag.vehiclesUpserted}`);
-            }catch(refreshError){
-              console.error("Vehicle master upsert failed in background:",refreshError);
-              diag.vehicleMasterError=refreshError?.message||"Vehicle master upsert failed";
-            }
-            if(cutoff.enabled){diag.status="paused";return;}
-            const cards=parsedRows.map(r=>normalizeJobCard(r?.jobCard)).filter(Boolean);
-            // Default path uses the browser cache to reduce repeated database function calls. Enable bypass only for a controlled comparison test.
-            diag.cacheMode = testBypassJobCardCache ? "BYPASS TEST (live DB check)" : "CACHE ENABLED";
-            const fresh = testBypassJobCardCache
-              ? await checkNewJobCards(API_BASE_URL, allJobCards)
-              : await getHybridNewJobCards(API_BASE_URL, allJobCards, candidates => checkNewJobCards(API_BASE_URL, candidates));
-            diag.jobCardsSubmitted=fresh.size;
-            diag.jobCardsAlreadyInDb=Math.max(0,allJobCards.length-fresh.size);
-            // Reconcile every uploaded line, including Job Cards already known to the DB.
-            // This lets a retry repair missing line items instead of skipping existing Job Cards.
-            const records=parsedRows.filter(r=>normalizeJobCard(r?.jobCard || r?.jobCardNo));
-            const outcomes=records.length?await saveHistoryInBackground(records):[];
-            diag.outcomes=outcomes;
-            diag.jobCardsSaved=outcomes.reduce((sum,item)=>sum+item.newJobCardsSaved,0);
-            diag.serviceLinesSaved=outcomes.reduce((sum,item)=>sum+item.newServiceLines,0);
-            diag.status=outcomes.some(item=>item.status==="failed")||diag.vehicleMasterError?"completed-with-errors":"completed";
+            const vehicleMasterRecords=uploadedVins.map(vin=>{
+              const vehicleRows=parsedRows.filter(record=>String(record?.vin||"").trim().toUpperCase()===vin);
+              const dateKey=value=>{
+                const raw=String(value??"").trim();
+                const iso=raw.match(/^(\d{4}-\d{2}-\d{2})/);
+                if(iso)return iso[1];
+                const parsed=new Date(value);
+                return Number.isNaN(parsed.getTime())?"":parsed.toISOString().slice(0,10);
+              };
+              const datedRows=vehicleRows.map(record=>({record,date:dateKey(record?.date)}))
+                .filter(item=>item.date&&String(item.record?.reg||item.record?.registration||"").trim())
+                .sort((a,b)=>b.date.localeCompare(a.date));
+              const vehicle=deriveVehicle(vehicleRows);
+              const latest=datedRows[0];
+              return {...vehicle,registration:latest?(latest.record.reg||latest.record.registration):vehicle.registration,
+                latestJobDate:latest?.date||null};
+            });
+            const masterResult=await upsertVehicleMaster(vehicleMasterRecords);
+            diag.vehiclesUpserted=Number(masterResult.upsertedVehicles||0);
+            if(diag.vehiclesUpserted<uploadedVins.length)throw new Error(`Vehicle master update count mismatch: expected ${uploadedVins.length}, updated ${diag.vehiclesUpserted}`);
+            diag.status="completed";
           }catch(backgroundError){
-            console.error("Background database sync failed:",backgroundError);
+            console.error("Background vehicle master update failed:",backgroundError);
             diag.status="completed-with-errors";
-            diag.backgroundError=backgroundError?.message||"Unknown database sync error";
+            diag.vehicleMasterError=backgroundError?.message||"Vehicle master update failed";
           }finally{
             diag.finishedAt=new Date().toISOString();
             setUploadDiagnostic({...diag});
-            if(diag.status==="completed-with-errors")setError("Service data is ready for analysis, but background database sync reported an error. Check the temporary diagnostic report.");
+            if(diag.status==="completed-with-errors")setError("Service data is ready for analysis, but vehicle master update reported an error.");
           }
         })();
       }
-      setUploadProgress({stage:"Upload complete",current:files.length,total:files.length,detail:`${parsedRows.length.toLocaleString()} rows ready for service decision; database sync continues in background`});
+      setUploadProgress({stage:"Upload complete",current:files.length,total:files.length,detail:`${parsedRows.length.toLocaleString()} rows ready for service decision; vehicle details update in background`});
     }catch(e){if(e?.name==="AbortError")setError("Upload cancelled. No new background history save was started by this upload. Any current network lookup may finish in the background.");else{setUploadMeta(null);setUploadedFiles([]);setUploadParsedRecords([]);setError(e?.message||"The Excel file could not be read.");}}
     finally{setUploadBusy(false);cancelProcessingRef.current=false;window.setTimeout(()=>setUploadProgress(null),1800);}
   };
@@ -10009,23 +9527,9 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
 
           <input id="excel-file-input" className="no-print" type="file" accept=".xlsx,.xls,.xlsm,.csv" multiple style={{display:"none"}} onChange={handleExcelUpload} disabled={uploadBusy} />
 
-          {mode !== "home" && mode !== "warranty-tags" && mode !== "document-scanner" && mode !== "profile" && mode !== "single" && mode !== "bulk" && mode !== "estimate" && mode !== "registration-search" && (
-            <div className="no-print" style={{margin:"8px 0",padding:"9px 12px",border:"1px solid #d6a84f",borderRadius:8,background:"rgba(240,180,41,.08)",fontSize:12}}>
-              <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontWeight:700}}>
-                <input type="checkbox" checked={testBypassJobCardCache} onChange={e=>setTestBypassJobCardCache(e.target.checked)} disabled={uploadBusy} />
-                TEST ONLY: Bypass Job Card cache for next Excel upload (compare with cache ON)
-              </label>
-              <div style={{marginTop:4,opacity:.85}}>Unchecked = cache enabled (normal mode). Checked = live database duplicate check for this upload only; may use more Vercel Function calls. Change applies to the next upload.</div>
-              <button type="button" style={{marginTop:8,padding:"7px 10px",fontWeight:700}} onClick={async()=>{setBrowserCacheError("");setBrowserCacheReport(null);try{setBrowserCacheError("Comparing browser cache with the full database index…");const report=await compareBrowserJobCardCacheWithDatabase("");setBrowserCacheReport(report);setBrowserCacheError("");}catch(e){setBrowserCacheError(e?.message||"Cache comparison failed");}}}>Compare browser cache with database</button>
-              <button type="button" style={{marginTop:8,marginLeft:8,padding:"7px 10px",fontWeight:700,background:"#166534",color:"#fff",border:"1px solid #166534",borderRadius:4}} onClick={async()=>{setBrowserCacheError("");setBrowserCacheReport(null);try{setBrowserCacheError("Rebuilding browser cache: downloading Job Card index pages…");await clearJobCardIndex();await syncJobCardIndex("");const policy=await fetchJobCardCachePolicy();await updateJobCardIndexMeta({globalVersion:Number(policy.version||0),syncedAt:Date.now()});setBrowserCacheError("Cache rebuild complete. Verifying against database…");const report=await compareBrowserJobCardCacheWithDatabase("");setBrowserCacheReport(report);setBrowserCacheError("");}catch(e){setBrowserCacheError(e?.message||"Cache rebuild failed");}}}>Rebuild Browser Cache & Compare</button>
-              {browserCacheError && <div style={{color:"#b91c1c",marginTop:6}}>{browserCacheError}</div>}
-              {browserCacheReport && <div style={{marginTop:8,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(155px,1fr))",gap:8}}>{[["Browser cache entries",browserCacheReport.entries],["Browser unique Job Cards",browserCacheReport.unique],["Database unique Job Cards",browserCacheReport.databaseUnique],["Missing from browser",browserCacheReport.missingCount],["Extra in browser",browserCacheReport.extraCount],["Last processed DB ID",browserCacheReport.lastId]].map(([label,value])=><div key={label} style={{padding:"7px 8px",borderRadius:6,background:"rgba(127,127,127,.08)"}}><div style={{opacity:.75}}>{label}</div><strong>{Number(value||0).toLocaleString()}</strong></div>)}<span>Browser cache last sync: {browserCacheReport.syncedAt ? new Date(browserCacheReport.syncedAt).toLocaleString() : "Not recorded"}</span><span>Compared: {new Date(browserCacheReport.comparisonCompletedAt||browserCacheReport.checkedAt).toLocaleString()}</span>{browserCacheReport.missingExamples?.length>0&&<div style={{gridColumn:"1/-1"}}><b>First missing Job Cards:</b> {browserCacheReport.missingExamples.join(", ")}</div>}{browserCacheReport.extraExamples?.length>0&&<div style={{gridColumn:"1/-1"}}><b>First extra Job Cards:</b> {browserCacheReport.extraExamples.join(", ")}</div>}</div>}
-            </div>
-          )}
-
 
           <div className="mobile-work-actions no-print">
-            {mode !== "home" && mode !== "warranty-tags" && mode !== "document-scanner" && mode !== "profile" && mode !== "single" && mode !== "bulk" && (
+            {mode !== "home" && mode !== "warranty-tags" && mode !== "document-scanner" && mode !== "profile" && (
               <>
                 <button className="mobile-work-action" onClick={() => document.getElementById("excel-file-input")?.click()} disabled={uploadBusy}>Upload Excel</button>
                 <button className="mobile-work-action" onClick={clear}>Clear</button>

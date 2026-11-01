@@ -1683,12 +1683,19 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
             </label>
           </div>
           <div className="admin-cache-metrics">
-            <div className="admin-cache-metric"><span>Current Database Job Cards</span><strong>{Number(jobCardCacheSettings?.currentDatabaseJobCards ?? jobCardCacheSettings?.cachedJobCards ?? 0).toLocaleString("en-IN")}</strong></div>
-            <div className="admin-cache-metric"><span>Job Cards Queued for Cache Rebuild</span><strong>{Number(jobCardCacheSettings?.cachedJobCards || jobCardCacheSettings?.currentDatabaseJobCards || 0).toLocaleString("en-IN")}</strong><small>{jobCardCacheSettings?.lastRebuildAt ? "Rebuild requested " + new Date(jobCardCacheSettings.lastRebuildAt).toLocaleString("en-IN") : "No rebuild requested"}</small></div>
+            <div className="admin-cache-metric"><span>Current Database Job Cards</span><strong>{Number(jobCardCacheSettings?.currentDatabaseJobCards ?? 0).toLocaleString("en-IN")}</strong></div>
+            <div className="admin-cache-metric"><span>Last Rebuild Database Count</span><strong>{Number(jobCardCacheSettings?.cachedJobCards || 0).toLocaleString("en-IN")}</strong><small>{jobCardCacheSettings?.lastRebuildAt ? "Last rebuild " + new Date(jobCardCacheSettings.lastRebuildAt).toLocaleString("en-IN") : "No rebuild recorded"}</small></div>
             <div className="admin-cache-metric"><span>Last Automatic Rebuild</span><strong>{jobCardCacheSettings?.lastAutoRebuildAt ? new Date(jobCardCacheSettings.lastAutoRebuildAt).toLocaleString("en-IN") : "Not recorded"}</strong>{jobCardCacheSettings?.lastAutoRebuildError && <small className="admin-cache-error">{jobCardCacheSettings.lastAutoRebuildError}</small>}</div>
           </div>
+          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginTop:14}}>
+            <label style={{fontWeight:700}}>Automatic rebuild interval</label>
+            <select value={Number(jobCardCacheSettings?.intervalHours || 24)} onChange={e=>onJobCardCacheSettings({intervalHours:Number(e.target.value)})} style={{minWidth:120,padding:"8px 10px",borderRadius:8,border:"1px solid #94a3b8",background:"var(--surface,#fff)",color:"inherit"}}>
+              {[1,2,3,4,6,8,12,24,36,48,72,168].map(hours=><option key={hours} value={hours}>{hours} hour{hours===1?"":"s"}</option>)}
+            </select>
+            <span style={{fontSize:12,opacity:.75}}>Allowed: 1 to 168 hours. Scheduler checks hourly.</span>
+          </div>
           <div className="admin-cache-actions">
-            <button className="auth-primary" disabled={Boolean(jobCardCacheSettings?.rebuilding)} onClick={()=>onJobCardCacheSettings({operation:"rebuild"})}>Build Cache Now</button>
+            <button className="auth-primary" disabled={Boolean(jobCardCacheSettings?.rebuilding)} onClick={()=>onJobCardCacheSettings({operation:"rebuild"})}>Manual Rebuild Now</button>
             <button className="auth-secondary" onClick={()=>onJobCardCacheSettings({operation:"refresh"})}>Refresh Counts</button>
           </div>
         </div>}

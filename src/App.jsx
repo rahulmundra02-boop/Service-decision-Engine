@@ -5635,9 +5635,9 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   const [uploadParsedRecords, setUploadParsedRecords] = useState([]);
   const [uploadProgress, setUploadProgress] = useState(null);
   const [uploadDiagnostic, setUploadDiagnostic] = useState(null);
-  const [testBypassJobCardCache, setTestBypassJobCardCache] = useState(false);
-  const [browserCacheReport, setBrowserCacheReport] = useState(null);
-  const [browserCacheError, setBrowserCacheError] = useState("");
+  const testBypassJobCardCache = false;
+  
+  
   const [diagnosticReportText, setDiagnosticReportText] = useState("");
   const [analysisBusy, setAnalysisBusy] = useState(false);
   const cancelProcessingRef = useRef(false);
@@ -6544,7 +6544,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       setExcelData("");setUploadedFiles(accepted);setRegistrationSearchResult(null);setUploadMeta({files:result.files,failedFiles:result.failedFiles||[],rowsBefore:result.totalRowsBeforeDedup,duplicates:result.duplicateRowsIgnored,rowsAfter:parsedRows.length,invalidRows:result.invalidRows||[]});
       setAnalysis(null);setBulkResults([]);setBulkMeta(null);setCustomerGroups([]);setSelectedCustomers([]);setUploadParsedRecords(parsedRows);
       if(parsedRows.length){const vins=new Set(parsedRows.map(r=>String(r?.vin||"").trim().toUpperCase()).filter(Boolean));setMode(vins.size>1?"bulk":"single");logUsage("Excel Upload",{fileCount:accepted.length,vehicleCount:vins.size,details:{rows:parsedRows.length,files:accepted.map(f=>f.name)}});}
-      const diag = { filesSelected: files.length, filesRead: accepted.length, filesFailed: result.failedFiles || [], rowsBeforeDedup: Number(result.totalRowsBeforeDedup || 0), duplicateRowsIgnored: Number(result.duplicateRowsIgnored || 0), parsedRows: parsedRows.length, invalidRows: result.invalidRows || [], uniqueJobCards: 0, jobCardsAlreadyInDb: 0, jobCardsSubmitted: 0, jobCardsSaved: 0, serviceLinesSaved: 0, vehicleCount: 0, vehiclesUpserted: 0, vehicleMasterError: "", cutoff: false, cacheMode: testBypassJobCardCache ? "BYPASS TEST (live DB check)" : "CACHE ENABLED", outcomes: [], status: "processing", startedAt: new Date().toISOString() };
+      const diag = { filesSelected: files.length, filesRead: accepted.length, filesFailed: result.failedFiles || [], rowsBeforeDedup: Number(result.totalRowsBeforeDedup || 0), duplicateRowsIgnored: Number(result.duplicateRowsIgnored || 0), parsedRows: parsedRows.length, invalidRows: result.invalidRows || [], uniqueJobCards: 0, jobCardsAlreadyInDb: 0, jobCardsSubmitted: 0, jobCardsSaved: 0, serviceLinesSaved: 0, vehicleCount: 0, vehiclesUpserted: 0, vehicleMasterError: "", cutoff: false, cacheMode: "RETIRED (current Excel only)", outcomes: [], status: "processing", startedAt: new Date().toISOString() };
       setUploadDiagnostic(diag);
       if(!parsedRows.length&&result.failedFiles?.length)setError(result.failedFiles.map(x=>`${x.name} — ${x.reason}`).join(" | "));
       if(parsedRows.length){
@@ -9842,25 +9842,12 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
 
           <input id="excel-file-input" className="no-print" type="file" accept=".xlsx,.xls,.xlsm,.csv" multiple style={{display:"none"}} onChange={handleExcelUpload} disabled={uploadBusy} />
 
-          {mode !== "home" && mode !== "warranty-tags" && mode !== "document-scanner" && mode !== "profile" && (
-            <div className="no-print" style={{margin:"8px 0",padding:"9px 12px",border:"1px solid #d6a84f",borderRadius:8,background:"rgba(240,180,41,.08)",fontSize:12}}>
-              <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontWeight:700}}>
-                <input type="checkbox" checked={testBypassJobCardCache} onChange={e=>setTestBypassJobCardCache(e.target.checked)} disabled={uploadBusy} />
-                TEST ONLY: Bypass Job Card cache for next Excel upload (compare with cache ON)
-              </label>
-              <div style={{marginTop:4,opacity:.85}}>Unchecked = cache enabled (normal mode). Checked = live database duplicate check for this upload only; may use more Vercel Function calls. Change applies to the next upload.</div>
-              <button type="button" style={{marginTop:8,padding:"7px 10px",fontWeight:700}} onClick={async()=>{setBrowserCacheError("");setBrowserCacheReport(null);try{setBrowserCacheError("Comparing browser cache with the full database index…");const report=await compareBrowserJobCardCacheWithDatabase("");setBrowserCacheReport(report);setBrowserCacheError("");}catch(e){setBrowserCacheError(e?.message||"Cache comparison failed");}}}>Compare browser cache with database</button>
-              <button type="button" style={{marginTop:8,marginLeft:8,padding:"7px 10px",fontWeight:700,background:"#166534",color:"#fff",border:"1px solid #166534",borderRadius:4}} onClick={async()=>{setBrowserCacheError("");setBrowserCacheReport(null);try{setBrowserCacheError("Rebuilding browser cache: downloading Job Card index pages…");await clearJobCardIndex();await syncJobCardIndex("");const policy=await fetchJobCardCachePolicy();await updateJobCardIndexMeta({globalVersion:Number(policy.version||0),syncedAt:Date.now()});setBrowserCacheError("Cache rebuild complete. Verifying against database…");const report=await compareBrowserJobCardCacheWithDatabase("");setBrowserCacheReport(report);setBrowserCacheError("");}catch(e){setBrowserCacheError(e?.message||"Cache rebuild failed");}}}>Rebuild Browser Cache & Compare</button>
-              {browserCacheError && <div style={{color:"#b91c1c",marginTop:6}}>{browserCacheError}</div>}
-              {browserCacheReport && <div style={{marginTop:8,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(155px,1fr))",gap:8}}>{[["Browser cache entries",browserCacheReport.entries],["Browser unique Job Cards",browserCacheReport.unique],["Database unique Job Cards",browserCacheReport.databaseUnique],["Missing from browser",browserCacheReport.missingCount],["Extra in browser",browserCacheReport.extraCount],["Last processed DB ID",browserCacheReport.lastId]].map(([label,value])=><div key={label} style={{padding:"7px 8px",borderRadius:6,background:"rgba(127,127,127,.08)"}}><div style={{opacity:.75}}>{label}</div><strong>{Number(value||0).toLocaleString()}</strong></div>)}<span>Browser cache last sync: {browserCacheReport.syncedAt ? new Date(browserCacheReport.syncedAt).toLocaleString() : "Not recorded"}</span><span>Compared: {new Date(browserCacheReport.comparisonCompletedAt||browserCacheReport.checkedAt).toLocaleString()}</span>{browserCacheReport.missingExamples?.length>0&&<div style={{gridColumn:"1/-1"}}><b>First missing Job Cards:</b> {browserCacheReport.missingExamples.join(", ")}</div>}{browserCacheReport.extraExamples?.length>0&&<div style={{gridColumn:"1/-1"}}><b>First extra Job Cards:</b> {browserCacheReport.extraExamples.join(", ")}</div>}</div>}
-            </div>
-          )}
           {uploadDiagnostic && (
             <details className="no-print" open={true} style={{margin:"8px 0 12px",padding:"10px 12px",border:"1px solid #94a3b8",borderRadius:8,fontSize:12}}>
               <summary style={{cursor:"pointer",fontWeight:800}}>Excel Upload / Job Card Cache Diagnostic — {uploadDiagnostic.status}</summary>
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(145px,1fr))",gap:8,marginTop:10}}>
                 {[
-                  ["Cache mode",uploadDiagnostic.cacheMode || (testBypassJobCardCache ? "BYPASS TEST" : "CACHE ENABLED")],
+                  ["Cache mode",uploadDiagnostic.cacheMode || "RETIRED"],
                   ["Parsed rows",uploadDiagnostic.parsedRows],
                   ["Vehicles",uploadDiagnostic.vehicleCount],
                   ["Unique Job Cards",uploadDiagnostic.uniqueJobCards],

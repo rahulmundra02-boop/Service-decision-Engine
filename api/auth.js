@@ -219,9 +219,6 @@ async function ensureSchema(client) {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
-    INSERT INTO app_settings (setting_key, setting_value)
-    VALUES ('job_card_cache', '{"enabled":true,"intervalHours":24,"version":1,"lastRebuildAt":null}'::jsonb)
-    ON CONFLICT (setting_key) DO NOTHING;
 
     INSERT INTO app_settings (setting_key, setting_value)
     VALUES ('emergency_db_upload_cutoff', '{"enabled":false}'::jsonb)

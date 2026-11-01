@@ -664,7 +664,7 @@ export default function AuthGate({ children }) {
 
   useEffect(() => {
     if (user?.role !== "admin") return;
-    const section = adminRoute.split("/")[2] || "overview";
+    const section = adminRoute.split("/")[2] || "analytics";
     if (!adminOpen) { void loadAccountRequests(); return; }
     if (section === "users") { void loadAdminUsers(); return; }
     if (section === "cache") { void loadJobCardCacheSettings(); return; }
@@ -1512,8 +1512,8 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading, onChang
 function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRefreshAccountRequests, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, registrationSearchEnabled, onRegistrationSearchSetting, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel, priceMasterMeta, priceMasterUploadBusy, priceMasterUploadMessage, priceMasterUploadError, onUploadPriceMasterExcel }) {
   const analyticsDetailRef = useRef(null);
   const adminSectionFromPath = () => {
-    const part = window.location.pathname.split("/")[2] || "overview";
-    return ["overview","masters","system","analytics","users"].includes(part) ? part : "overview";
+    const part = window.location.pathname.split("/")[2] || "analytics";
+    return ["overview","masters","system","analytics","users"].includes(part) ? part : "analytics";
   };
   const [adminSection, setAdminSection] = useState(adminSectionFromPath);
   const [view, setView] = useState(() => {
@@ -1662,7 +1662,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
 
         <nav className="admin-category-nav" aria-label="Admin categories">
           {[
-            ["users","User Management"],["masters","Masters"],["system","System Controls"],["analytics","Analytics"]
+            ["analytics","Analytics"],["users","User Management"],["masters","Masters"],["system","System Controls"]
           ].map(([key,label]) => <button key={key} type="button" className={adminSection===key?"active":""} onClick={()=>goAdminSection(key)}>{label}</button>)}
         </nav>
         {adminSection === "analytics" && <div className="admin-kpi-grid">

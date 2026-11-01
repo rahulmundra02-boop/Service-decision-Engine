@@ -919,6 +919,21 @@ export default async function handler(req, res) {
           WHERE v.vin IS NOT NULL AND TRIM(v.vin) <> ''`
       );
 
+      const vehiclePeriodWhere = rangeDays === 1
+        ? "(v.created_at AT TIME ZONE 'Asia/Kolkata')::date = (NOW() AT TIME ZONE 'Asia/Kolkata')::date"
+        : "(v.created_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN (NOW() AT TIME ZONE 'Asia/Kolkata')::date - (\${rangeDays} - 1) AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date";
+
+      const [vehiclesAddedResult, recentVehiclesResult] = await Promise.all([
+        client.query(
+          "SELECT COUNT(*)::int AS vehicles_added FROM vehicles v WHERE v.vin IS NOT NULL AND TRIM(v.vin)<>'' AND " + vehiclePeriodWhere
+        ),
+        client.query(
+          "SELECT v.vin,v.registration,v.customer_name,v.customer_number,v.engine,v.model,v.created_at " +
+          "FROM vehicles v WHERE v.vin IS NOT NULL AND TRIM(v.vin)<>'' AND " + vehiclePeriodWhere +
+          " ORDER BY v.created_at DESC, v.vin ASC LIMIT 200"
+        )
+      ]);
+
       const uniqueVehiclesAnalyzedResult = await client.query(
         `SELECT COUNT(DISTINCT UPPER(TRIM(uva.vin)))::int AS unique_vehicles_analyzed
            FROM user_vehicle_analysis uva
@@ -1088,6 +1103,9 @@ export default async function handler(req, res) {
         rangeDays,
         includeAdmins,
         totalVehicles:Number(totalVehiclesResult.rows[0]?.total_vehicles || 0),
+        vehiclesAddedInPeriod:Number(vehiclesAddedResult.rows[0]?.vehicles_added || 0),
+        recentVehicles:recentVehiclesResult.rows,
+        recentVehiclesLimited:recentVehiclesResult.rowCount >= 200,
         uniqueVehiclesAnalyzed:Number(uniqueVehiclesAnalyzedResult.rows[0]?.unique_vehicles_analyzed || 0),
         summary:summary.rows.map(row => ({
           ...userPayload(row),

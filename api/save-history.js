@@ -139,7 +139,9 @@ async function ensureVehicleUploadTrackingSchema(client) {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
-  await client.query("CREATE INDEX IF NOT EXISTS idx_pending_vehicle_uploads_status_updated ON pending_vehicle_uploads(status, updated_at DESC)");
+    await client.query("CREATE INDEX IF NOT EXISTS idx_pending_vehicle_uploads_status_updated ON pending_vehicle_uploads(status, updated_at DESC)");
+  })().catch(error => { vehicleUploadTrackingSchemaPromise = null; throw error; });
+  return vehicleUploadTrackingSchemaPromise;
 }
 
 async function ensurePriceMasterSchema(client) {

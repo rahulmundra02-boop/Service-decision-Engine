@@ -1420,44 +1420,42 @@ export default async function handler(req, res) {
         if (body.enabled !== undefined) enabled = body.enabled === true;
         if (body.intervalHours !== undefined) {
           const requested = Number(body.intervalHours);
-          if (![6,12,24,48,168].includes(requested)) {
+          if (!Number.isInteger(requested) || requested < 1 || requested > 168) {
             await client.query("ROLLBACK");
-            return res.status(400).json({success:false,error:"Invalid cache rebuild interval."});
+            return res.status(400).json({success:false,error:"Rebuild interval must be a whole number from 1 to 168 hours."});
           }
           intervalHours = requested;
         }
       }
-
       const shouldRebuild = operation === "rebuild" || operation === "reset";
       const version = shouldRebuild ? Number(current.version || 0) + 1 : Number(current.version || 1);
       const lastRebuildAt = shouldRebuild ? new Date().toISOString() : (current.lastRebuildAt || null);
-      const rebuildCountResult = shouldRebuild ? await client.query(
-        "SELECT COUNT(DISTINCT UPPER(TRIM(job_card_no)))::int AS count FROM job_cards WHERE job_card_no IS NOT NULL AND TRIM(job_card_no)<>''"
-      ) : null;
-      const cachedJobCards = shouldRebuild ? Number(rebuildCountResult.rows[0]?.count || 0) : Number(current.cachedJobCards || 0);
-      await client.query(
-        "INSERT INTO app_settings (setting_key,setting_value,updated_at) " +
-        "VALUES ('job_card_cache',$1::jsonb,NOW()) " +
-        "ON CONFLICT (setting_key) DO UPDATE SET setting_value=EXCLUDED.setting_value,updated_at=NOW()",
-        [JSON.stringify({...current,enabled,intervalHours,version,lastRebuildAt,cachedJobCards,lastAutoRebuildError:shouldRebuild ? null : (current.lastAutoRebuildError || null)})]
-      );
       const countResult = await client.query(
         "SELECT COUNT(DISTINCT UPPER(TRIM(job_card_no)))::int AS count FROM job_cards WHERE job_card_no IS NOT NULL AND TRIM(job_card_no)<>''"
+      );
+      const cachedJobCards = shouldRebuild ? Number(countResult.rows[0]?.count || 0) : Number(current.cachedJobCards || 0);
+      const updatedSettings = {
+        ...current, enabled, intervalHours, version, lastRebuildAt, cachedJobCards,
+        lastManualRebuildAt: shouldRebuild ? lastRebuildAt : (current.lastManualRebuildAt || null),
+        lastAutoRebuildError: shouldRebuild ? null : (current.lastAutoRebuildError || null)
+      };
+      await client.query(
+        "INSERT INTO app_settings (setting_key,setting_value,updated_at) VALUES ('job_card_cache',$1::jsonb,NOW()) " +
+        "ON CONFLICT (setting_key) DO UPDATE SET setting_value=EXCLUDED.setting_value,updated_at=NOW()",
+        [JSON.stringify(updatedSettings)]
       );
       await client.query("COMMIT");
       return res.json({
         success:true,
         settings:{
-          enabled,
-          intervalHours,
-          version,
-          lastRebuildAt,
-          nextRebuildAt:new Date(new Date(lastRebuildAt).getTime()+intervalHours*60*60*1000).toISOString(),
+          ...updatedSettings,
+          nextRebuildAt:lastRebuildAt ? new Date(new Date(lastRebuildAt).getTime()+intervalHours*3600000).toISOString() : null,
           currentDatabaseJobCards:Number(countResult.rows[0]?.count || 0),
-          cachedJobCards,
           updatedAt:new Date().toISOString()
         },
-        message: operation === "reset" ? "Job Card cache policy reset and all browser caches marked for rebuild." : "Job Card cache policy updated and all browser caches marked for rebuild."
+        message: shouldRebuild
+          ? "Manual cache rebuild requested. Browsers rebuild on their next cache check."
+          : operation === "refresh" ? "Cache counts refreshed." : "Job Card cache settings updated."
       });
     }
 

@@ -118,8 +118,11 @@ function serviceLineIdentityFromDb(row = {}) {
   ].join("|");
 }
 
+let vehicleUploadTrackingSchemaPromise = null;
 async function ensureVehicleUploadTrackingSchema(client) {
-  await client.query(`
+  if (vehicleUploadTrackingSchemaPromise) return vehicleUploadTrackingSchemaPromise;
+  vehicleUploadTrackingSchemaPromise = (async () => {
+    await client.query(`
     CREATE TABLE IF NOT EXISTS pending_vehicle_uploads (
       vin TEXT PRIMARY KEY,
       registration TEXT,

@@ -1343,10 +1343,10 @@ async function getHybridNewJobCards(apiBaseUrl, jobCards, checkNewJobCardsFn) {
     await ensureJobCardCacheFreshInBackground(apiBaseUrl);
     let state = await loadJobCardIndexFromBrowser();
     const versionChanged = Number(state.globalVersion || 0) !== Number(policy.version || 0);
-    const countDifference = Math.abs(Number(policy.cachedJobCards || 0) - Number(state.jobCards?.size || 0));
-    if (!state.jobCards.size || versionChanged || countDifference >= 1000) {
+    // Full rebuild only on first use or after scheduled/admin version changes.
+    if (!state.jobCards.size || versionChanged) {
       await clearJobCardIndex();
-      await syncJobCardIndex(apiBaseUrl);
+      await syncJobCardIndex(apiBaseUrl, {fullRebuild:true});
       state = await updateJobCardIndexMeta({
         globalVersion:Number(policy.version || 0),
         syncedAt:Date.now()
@@ -1355,13 +1355,8 @@ async function getHybridNewJobCards(apiBaseUrl, jobCards, checkNewJobCardsFn) {
 
     const cached = state.jobCards || new Set();
     const candidates = uniqueJobCards.filter(jobCard => !cached.has(jobCard));
-
-    // If the browser cache says every card is already known, verify with Neon.
-    // Earlier uploads could have cached a Job Card before its background save
-    // completed, which otherwise makes a failed save impossible to retry.
-    if (!candidates.length) {
-      return checkNewJobCardsFn(uniqueJobCards);
-    }
+    // Cache hits are authoritative. Query Neon only for unknown Job Cards.
+    if (!candidates.length) return new Set();
 
     const confirmedNewJobCards = await checkNewJobCardsFn(candidates);
 
@@ -1388,18 +1383,15 @@ async function ensureJobCardCacheFreshInBackground(apiBaseUrl = "") {
       if (policy.enabled === false) return { skipped:true, reason:"cache-disabled" };
       const state = await loadJobCardIndexFromBrowser();
       const browserCount = Number(state.jobCards?.size || 0);
-      const databaseCount = Number(policy.cachedJobCards || 0);
-      const countDifference = Math.abs(databaseCount - browserCount);
+      const databaseCount = Number(policy.currentDatabaseJobCards ?? policy.cachedJobCards ?? 0);
       const versionChanged = Number(state.globalVersion || 0) !== Number(policy.version || 0);
-      // Do not rebuild based on age. Rebuild only when empty, globally requested,
-      // or the database/browser count differs by at least 1,000 Job Cards.
-      if (!browserCount || versionChanged || countDifference >= 1000) {
+      // Scheduled/admin version changes control rebuilds, not row-count drift.
+      if (!browserCount || versionChanged) {
         const downloaded = await syncJobCardIndex(apiBaseUrl, {fullRebuild:true});
         const verified = await inspectJobCardIndexInBrowser();
         const actualBrowserCount = Number(verified.unique || 0);
         const remainingDifference = Math.abs(databaseCount - actualBrowserCount);
-        // Never mark a partial or empty cache as current. Keep the old version
-        // so the next page open retries the rebuild.
+        // Do not mark an incomplete cache current. Retry on the next check.
         if (!actualBrowserCount || remainingDifference >= 1000) {
           throw new Error(`Cache verification failed. Database: ${databaseCount.toLocaleString()}, browser: ${actualBrowserCount.toLocaleString()}, difference: ${remainingDifference.toLocaleString()}.`);
         }

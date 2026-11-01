@@ -1,15 +1,15 @@
-name: Stable Job Card Cache Refresh
+name: Shared Stable and Beta Job Card Cache Refresh
 
 on:
   schedule:
-    - cron: "0 8 * * *"
+    - cron: "0 * * * *"
   workflow_dispatch:
 
 jobs:
-  refresh-stable-cache:
+  refresh-shared-cache:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger Stable cache refresh
+      - name: Trigger shared Stable/Beta cache refresh
         env:
           CACHE_CRON_SECRET: ${{ secrets.BETA_CACHE_CRON_SECRET }}
         run: |

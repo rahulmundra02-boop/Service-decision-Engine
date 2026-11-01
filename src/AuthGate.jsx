@@ -1607,6 +1607,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
   const summary = analytics.summary || [];
   const periods = analytics.periods || [];
   const breakdown = analytics.breakdown || [];
+  const recentVehicles = Array.isArray(analytics.recentVehicles) ? analytics.recentVehicles : [];
 
   const displayDealerName = (u) => {
     if (
@@ -1671,6 +1672,8 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           {metricCard("Vehicles Analysed", totals.vehicles)}
           {metricCard("Excel Files", totals.files)}
           {metricCard("Activities", totals.activities)}
+          {metricCard("Total Vehicles in Database", Number(analytics.totalVehicles||0).toLocaleString("en-IN"))}
+          {metricCard(`Vehicles Added (${analyticsRange === 1 ? "Today" : `${analyticsRange}D`})`, Number(analytics.vehiclesAddedInPeriod||0).toLocaleString("en-IN"))}
         </div>}
 
         {adminSection === "cache" && <div className="admin-panel-card" style={{marginTop:12,padding:"18px 20px"}}>
@@ -1864,6 +1867,29 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
 
         {adminSection === "analytics" && view === "overview" && (
           <>
+            <div className="admin-panel-card" style={{marginBottom:16}}>
+              <div className="admin-panel-card-title">Recently Added Vehicles</div>
+              <div className="admin-panel-card-sub">
+                {Number(analytics.vehiclesAddedInPeriod||0).toLocaleString("en-IN")} vehicles added to the database in the selected period.
+                {analytics.recentVehiclesLimited ? " Showing the latest 200 records." : ""}
+              </div>
+              <div className="admin-table-wrap" style={{marginTop:12}}>
+                <table className="admin-table" style={{minWidth:760}}>
+                  <thead><tr><th>Added to DB</th><th>Customer Name</th><th>Registration No.</th><th>Model</th><th>Engine</th><th>VIN</th></tr></thead>
+                  <tbody>
+                    {recentVehicles.map((v,i)=><tr key={v.vin || i}>
+                      <td>{v.created_at ? new Date(v.created_at).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"}) : "—"}</td>
+                      <td>{v.customer_name || "—"}</td>
+                      <td>{v.registration || "—"}</td>
+                      <td>{v.model || "—"}</td>
+                      <td>{v.engine || "—"}</td>
+                      <td style={{whiteSpace:"nowrap"}}>{v.vin || "—"}</td>
+                    </tr>)}
+                    {!recentVehicles.length && <tr><td colSpan="6" className="admin-empty">No vehicles were added in this period.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
             <div className="admin-section-title">Vehicle Productivity Overview</div>
             <div className="admin-dashboard-grid">
               <div className="admin-panel-card">

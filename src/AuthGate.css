@@ -582,6 +582,36 @@
 /* Beta: account actions are now inside the Profile tab. */
 .auth-userbar{display:none!important}
 
+/* Beta mobile admin navigation: keep User Management prominent on its own top row. */
+@media (max-width:600px) and (orientation:portrait) {
+  .admin-category-nav {
+    display:grid !important;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:7px;
+  }
+  .admin-category-nav button:first-child {
+    grid-column:1 / -1;
+    width:100%;
+    min-height:42px;
+    text-align:center;
+    background:#e8eef5;
+    border:1px solid #cbd5e1;
+    border-radius:8px;
+    color:#17324d;
+    font-weight:800;
+  }
+  .admin-category-nav button:first-child.active {
+    background:#0f2747;
+    border-color:#0f2747;
+    color:#fff;
+  }
+  .admin-category-nav button:not(:first-child) {
+    min-height:40px;
+    padding:8px 5px;
+    text-align:center;
+  }
+}
+
 /* Admin activity table: allow vertical scrolling on phones in portrait mode. */
 @media (max-width: 700px) {
   .admin-table-wrap.admin-activity-wrap {

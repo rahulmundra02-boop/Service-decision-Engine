@@ -6423,79 +6423,131 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     );
   }
 
-  async function saveHistoryToBackend({ records, vehicle }) {
-    const response = await fetch(`${API_BASE_URL}/api/save-history`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        records: (records || []).map(({ customerVoice, codifiedCustomerVoice, repairType, rate, netValue, ...record }) => {
-          const dateOnly = value => {
-            if (value instanceof Date && !Number.isNaN(value.getTime())) {
-              return String(value.getFullYear()).padStart(4, "0") + "-" +
-                String(value.getMonth() + 1).padStart(2, "0") + "-" +
-                String(value.getDate()).padStart(2, "0");
-            }
-            const text = String(value ?? "").trim();
-            const iso = text.match(/^(\d{4}-\d{2}-\d{2})/);
-            if (iso) return iso[1];
-            return value || null;
-          };
-          return {
-            ...record,
-            date: dateOnly(record.date),
-            inwardDate: dateOnly(record.inwardDate),
-            checkInDate: dateOnly(record.checkInDate),
-            startDate: dateOnly(record.startDate),
-            endDate: dateOnly(record.endDate),
-          };
-        }),
-        vehicle: {
-          ...vehicle,
-          sale: vehicle?.sale instanceof Date
-            ? String(vehicle.sale.getFullYear()).padStart(4, "0") + "-" +
-              String(vehicle.sale.getMonth() + 1).padStart(2, "0") + "-" +
-              String(vehicle.sale.getDate()).padStart(2, "0")
-            : vehicle?.sale || null,
-        },
-      }),
-    });
+  const DATABASE_UPLOAD_MAX_BODY_BYTES = 900000;
 
-    let payload = null;
-    try { payload = await response.json(); } catch { payload = null; }
-
-    if (!response.ok || !payload?.success) {
-      throw new Error(payload?.error || `History save failed (${response.status})`);
+  function splitDatabasePayloadChunks(items, buildPayload, maxBytes = DATABASE_UPLOAD_MAX_BODY_BYTES) {
+    const encoder = new TextEncoder();
+    const chunks = [];
+    let current = [];
+    for (const item of items || []) {
+      const candidate = [...current, item];
+      const candidateBytes = encoder.encode(JSON.stringify(buildPayload(candidate))).length;
+      if (current.length && candidateBytes > maxBytes) {
+        chunks.push(current);
+        current = [item];
+        const singleBytes = encoder.encode(JSON.stringify(buildPayload(current))).length;
+        if (singleBytes > maxBytes) {
+          throw new Error("A single vehicle database payload exceeds the safe request size (" + singleBytes.toLocaleString() + " bytes).");
+        }
+      } else {
+        current = candidate;
+        if (candidateBytes > maxBytes) {
+          throw new Error("A single vehicle database payload exceeds the safe request size (" + candidateBytes.toLocaleString() + " bytes).");
+        }
+      }
     }
+    if (current.length) chunks.push(current);
+    return chunks;
+  }
 
+  async function postDatabaseJson(url, body, label) {
+    const retryableStatuses = new Set([408, 425, 429, 500, 502, 503, 504]);
+    let lastError = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload?.success) {
+          const error = new Error(payload?.error || (label + " failed (" + response.status + ")"));
+          error.status = response.status;
+          throw error;
+        }
+        return payload;
+      } catch (error) {
+        lastError = error;
+        const status = Number(error?.status || 0);
+        const retryable = !status || retryableStatuses.has(status);
+        if (!retryable || attempt === 2) throw error;
+        await new Promise(resolve => window.setTimeout(resolve, 500 * (attempt + 1)));
+      }
+    }
+    throw lastError || new Error(label + " failed.");
+  }
+
+  async function saveHistoryToBackend({ records, vehicle }) {
+    const body = {
+      records: (records || []).map(({ customerVoice, codifiedCustomerVoice, repairType, rate, netValue, ...record }) => {
+        const dateOnly = value => {
+          if (value instanceof Date && !Number.isNaN(value.getTime())) {
+            return String(value.getFullYear()).padStart(4, "0") + "-" +
+              String(value.getMonth() + 1).padStart(2, "0") + "-" +
+              String(value.getDate()).padStart(2, "0");
+          }
+          const text = String(value ?? "").trim();
+          const iso = text.match(/^(\d{4}-\d{2}-\d{2})/);
+          if (iso) return iso[1];
+          return value || null;
+        };
+        return {
+          ...record,
+          date: dateOnly(record.date),
+          inwardDate: dateOnly(record.inwardDate),
+          checkInDate: dateOnly(record.checkInDate),
+          startDate: dateOnly(record.startDate),
+          endDate: dateOnly(record.endDate),
+        };
+      }),
+      vehicle: {
+        ...vehicle,
+        sale: vehicle?.sale instanceof Date
+          ? String(vehicle.sale.getFullYear()).padStart(4, "0") + "-" +
+            String(vehicle.sale.getMonth() + 1).padStart(2, "0") + "-" +
+            String(vehicle.sale.getDate()).padStart(2, "0")
+          : vehicle?.sale || null,
+      },
+    };
+    const payload = await postDatabaseJson(`${API_BASE_URL}/api/save-history`, body, "History save");
     if (Array.isArray(payload.insertedJobCardNumbers) && payload.insertedJobCardNumbers.length) {
       await addJobCardsToBrowserIndex(payload.insertedJobCardNumbers);
     }
-
     return payload;
   }
 
   async function upsertVehicleMaster(vehicles) {
-    const response = await fetch(`${API_BASE_URL}/api/save-history`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "upsert-vehicle-master", vehicles }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || !payload?.success) {
-      throw new Error(payload?.error || `Vehicle master update failed (${response.status})`);
+    const buildPayload = batch => ({ action: "upsert-vehicle-master", vehicles: batch });
+    const chunks = splitDatabasePayloadChunks(vehicles || [], buildPayload);
+    let upsertedVehicles = 0;
+    for (let index = 0; index < chunks.length; index += 1) {
+      const payload = await postDatabaseJson(
+        `${API_BASE_URL}/api/save-history`,
+        buildPayload(chunks[index]),
+        "Vehicle master update, batch " + (index + 1) + "/" + chunks.length
+      );
+      const count = Number(payload.upsertedVehicles || 0);
+      if (count !== chunks[index].length) {
+        throw new Error("Vehicle master batch " + (index + 1) + " count mismatch: expected " + chunks[index].length + ", updated " + count + ".");
+      }
+      upsertedVehicles += count;
     }
-    return payload;
+    return {
+      success: upsertedVehicles === (vehicles || []).length,
+      upsertedVehicles,
+      requestedVehicles: (vehicles || []).length,
+      missingVehicles: Math.max(0, (vehicles || []).length - upsertedVehicles),
+      batches: chunks.length,
+    };
   }
 
   async function updateVehicleUploadTracker(action, payload = {}) {
-    const response = await fetch(API_BASE_URL + "/api/save-history", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, ...payload }),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data?.success) throw new Error(data?.error || ("Upload tracking failed (" + response.status + ")"));
-    return data;
+    return postDatabaseJson(
+      API_BASE_URL + "/api/save-history",
+      { action, ...payload },
+      "Upload tracking"
+    );
   }
 
   async function registerVehicleUploadBatch(records, uploadedBy = "") {
@@ -6536,11 +6588,25 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       };
     });
     if (!vehicles.length) throw new Error("No valid chassis numbers were found to register for upload tracking.");
-    const result = await updateVehicleUploadTracker("register-vehicle-upload-batch", { source: "excel-upload", uploadedBy, vehicles });
-    if (Number(result.registered || 0) !== vehicles.length) {
-      throw new Error("Upload tracking list is incomplete. Expected " + vehicles.length + " chassis, registered " + Number(result.registered || 0) + ". Database upload was not started.");
+    const buildPayload = batch => ({ action: "register-vehicle-upload-batch", source: "excel-upload", uploadedBy, vehicles: batch });
+    const chunks = splitDatabasePayloadChunks(vehicles, buildPayload);
+    let registered = 0;
+    for (let index = 0; index < chunks.length; index += 1) {
+      const result = await updateVehicleUploadTracker("register-vehicle-upload-batch", {
+        source: "excel-upload",
+        uploadedBy,
+        vehicles: chunks[index],
+      });
+      const batchRegistered = Number(result.registered || 0);
+      if (batchRegistered !== chunks[index].length) {
+        throw new Error("Upload tracking batch " + (index + 1) + "/" + chunks.length + " is incomplete. Expected " + chunks[index].length + " chassis, registered " + batchRegistered + ".");
+      }
+      registered += batchRegistered;
     }
-    return result;
+    if (registered !== vehicles.length) {
+      throw new Error("Upload tracking list is incomplete. Expected " + vehicles.length + " chassis, registered " + registered + ".");
+    }
+    return { success: true, registered, requested: vehicles.length, batches: chunks.length };
   }
   async function touchVehicleRefreshTimestamps(vins) {
     const uniqueVins = [...new Set((vins || []).map(value => String(value || "").trim().toUpperCase()).filter(Boolean))];

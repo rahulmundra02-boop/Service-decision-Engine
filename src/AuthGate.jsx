@@ -976,7 +976,7 @@ export default function AuthGate({ children }) {
               <div className="mobile-bottom-nav-more-menu" role="menu" aria-label="More tools">
                 <button type="button" className="mobile-bottom-nav-more-option" role="menuitem" onClick={() => { setMobileMoreOpen(false); window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:"single"}})); }}><span aria-hidden="true">▣</span><span>Single Vehicle Service</span></button>
                 <button type="button" className="mobile-bottom-nav-more-option" role="menuitem" onClick={() => { setMobileMoreOpen(false); window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:"bulk"}})); }}><span aria-hidden="true">▤</span><span>Bulk Vehicle Service</span></button>
-                <button type="button" className="mobile-bottom-nav-more-option" role="menuitem" onClick={() => { setMobileMoreOpen(false); window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:"warranty-tags"}})); }}><span aria-hidden="true">▦</span><span>Warranty Tag</span></button>
+                <button type="button" className="mobile-bottom-nav-more-option" style={{marginTop:10,paddingTop:14,borderTop:"1px solid #dbe3ec",borderRadius:"0 0 12px 12px"}} role="menuitem" onClick={() => { setMobileMoreOpen(false); window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:"warranty-tags"}})); }}><span aria-hidden="true">▦</span><span>Warranty Tag</span></button>
               </div>
             )}
             <button type="button" className={`mobile-bottom-nav-item mobile-bottom-nav-more ${mobileMoreOpen ? "active" : ""}`} aria-expanded={mobileMoreOpen} aria-haspopup="menu" onClick={() => setMobileMoreOpen(open => !open)}>
@@ -1656,7 +1656,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
 
         <nav className="admin-category-nav" aria-label="Admin categories">
           {[
-            ["masters","Masters"],["system","System Controls"],["analytics","Analytics"],["users","User Management"]
+            ["users","User Management"],["masters","Masters"],["system","System Controls"],["analytics","Analytics"]
           ].map(([key,label]) => <button key={key} type="button" className={adminSection===key?"active":""} onClick={()=>goAdminSection(key)}>{label}</button>)}
         </nav>
         {adminSection === "analytics" && <div className="admin-kpi-grid">

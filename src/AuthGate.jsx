@@ -962,7 +962,6 @@ export default function AuthGate({ children }) {
           {[
             ["home","⌂","Home"],
             ["estimate","₹","Estimate"],
-            ["registration-search","🔎","Reg. Search"],
             ["document-scanner","▧","Document Scanner"],
           ].map(([key,icon,label]) => (
             <button key={key} type="button" className="mobile-bottom-nav-item" onClick={() => {
@@ -1509,7 +1508,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
   const analyticsDetailRef = useRef(null);
   const adminSectionFromPath = () => {
     const part = window.location.pathname.split("/")[2] || "overview";
-    return ["overview","cache","database","uploads","masters","system","analytics","users"].includes(part) ? part : "overview";
+    return ["overview","masters","system","analytics","users"].includes(part) ? part : "overview";
   };
   const [adminSection, setAdminSection] = useState(adminSectionFromPath);
   const [view, setView] = useState(() => {
@@ -1657,7 +1656,6 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
 
         <nav className="admin-category-nav" aria-label="Admin categories">
           {[
-            ["cache","Cache Control"],["database","Database"],["uploads","Upload Monitor"],
             ["masters","Masters"],["system","System Controls"],["analytics","Analytics"],["users","User Management"]
           ].map(([key,label]) => <button key={key} type="button" className={adminSection===key?"active":""} onClick={()=>goAdminSection(key)}>{label}</button>)}
         </nav>

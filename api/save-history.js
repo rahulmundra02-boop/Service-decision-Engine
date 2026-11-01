@@ -1123,9 +1123,7 @@ export default async function handler(req, res) {
     }
   }
 
-  // Upsert vehicle master records independently from Job Card deduplication.
-  // This ensures registration search can find newly uploaded vehicles even when
-  // all their Job Cards are already present in browser cache/Neon.
+  // Upsert vehicle master records independently from service-history storage.
   if (body.action === "upsert-vehicle-master") {
     const vehicles = Array.isArray(body.vehicles) ? body.vehicles : [];
     const uniqueVehicles = new Map();

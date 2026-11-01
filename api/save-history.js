@@ -1344,6 +1344,13 @@ export default async function handler(req, res) {
   }
 
   const records = Array.isArray(body.records) ? body.records : [];
+  if (records.length) {
+    return res.status(410).json({
+      success:false,
+      historyWritesDisabled:true,
+      error:"New Job Card and service-history uploads are disabled. Existing history remains available for read-only estimation."
+    });
+  }
   const vehicle = normalizeVehicle(body.vehicle || {});
   const recordsNormalized = records.map(normalizeRecord);
   const vin = String(vehicle.vin || vehicle.chassis || "").trim().toUpperCase();

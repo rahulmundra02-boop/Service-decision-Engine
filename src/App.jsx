@@ -5650,72 +5650,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
   const seenUploadSignaturesRef = useRef(new Set());
   const [estimateOpen, setEstimateOpen] = useState(false);
 
-  useEffect(() => {
-    // Automatically build this browser's IndexedDB cache after login/app load.
-    // If a transient API/network error leaves it empty, retry without requiring
-    // the user to refresh or click the diagnostic rebuild button.
-    let stopped = false;
-    let retryTimer = null;
-
-    const checkAndBuildCache = async () => {
-      if (stopped || document.visibilityState === "hidden") {
-        retryTimer = window.setTimeout(checkAndBuildCache, 300000);
-        return;
-      }
-      try {
-        const current = await inspectJobCardIndexInBrowser();
-        if (stopped) return;
-
-        // Empty local storage must trigger an explicit full download. Do not
-        // let a stale/disabled maintenance policy silently skip first-time setup.
-        if (Number(current.unique || 0) === 0) {
-          setBrowserCacheError("Automatic Job Card cache download started…");
-          const downloaded = await syncJobCardIndex("", { fullRebuild: true });
-          const policy = await fetchJobCardCachePolicy();
-          await updateJobCardIndexMeta({
-            globalVersion: Number(policy.version || 0),
-            syncedAt: Date.now()
-          });
-          const verified = await inspectJobCardIndexInBrowser();
-          if (stopped) return;
-          if (Number(verified.unique || 0) === 0) {
-            throw new Error("Automatic cache download finished with zero Job Cards.");
-          }
-          setBrowserCacheError("");
-          console.info("Automatic Job Card cache download verified:", {
-            uniqueJobCards: verified.unique,
-            pagesDownloaded: downloaded.pagesDownloaded
-          });
-          return;
-        }
-
-        await ensureJobCardCacheFreshInBackground("");
-        const state = await inspectJobCardIndexInBrowser();
-        if (stopped) return;
-        if (Number(state.unique || 0) > 0) return;
-        throw new Error("Automatic cache check completed but the browser cache is still empty.");
-      } catch (error) {
-        if (!stopped) setBrowserCacheError("Automatic cache download failed: " + (error?.message || "Unknown error") + ". Retrying in 60 seconds.");
-        console.error("Automatic Job Card cache build failed; retry scheduled:", error);
-      }
-      if (!stopped) retryTimer = window.setTimeout(checkAndBuildCache, 300000);
-    };
-
-    void checkAndBuildCache();
-    const handleVisibility = () => {
-      if (document.visibilityState === "visible" && !stopped) {
-        if (retryTimer) window.clearTimeout(retryTimer);
-        void checkAndBuildCache();
-      }
-    };
-    document.addEventListener("visibilitychange", handleVisibility);
-
-    return () => {
-      stopped = true;
-      if (retryTimer) window.clearTimeout(retryTimer);
-      document.removeEventListener("visibilitychange", handleVisibility);
-    };
-  }, []);
+  // Job Card browser cache is retired. Upload analysis uses the current Excel only.;
 
   useEffect(() => {
     const handleMobileNavigation = (event) => {
@@ -6628,65 +6563,39 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         setUploadDiagnostic({...diag});
         void (async()=>{
           try{
-            // Persist every chassis before any vehicle-master or history writes begin.
-            // If this request fails, do not start the database upload.
-            await registerVehicleUploadBatch(parsedRows, user?.personName || user?.email || "");
-            const cutoff=await fetchEmergencyDbUploadCutoff();
-            diag.cutoff=Boolean(cutoff.enabled);
-            try{
-              const vehicleMasterRecords=uploadedVins.map(vin=>{
-                const vehicleRows=parsedRows.filter(record=>String(record?.vin||"").trim().toUpperCase()===vin);
-                const dateKey=value=>{
-                  const raw=String(value??"").trim();
-                  const iso=raw.match(/^(\d{4}-\d{2}-\d{2})/);
-                  if(iso)return iso[1];
-                  const parsed=new Date(value);
-                  return Number.isNaN(parsed.getTime())?"":parsed.toISOString().slice(0,10);
-                };
-                const datedRows=vehicleRows.map(record=>({record,date:dateKey(record?.date)}))
-                  .filter(item=>item.date&&String(item.record?.reg||item.record?.registration||"").trim())
-                  .sort((a,b)=>b.date.localeCompare(a.date)||normalizeJobCard(b.record?.jobCard).localeCompare(normalizeJobCard(a.record?.jobCard)));
-                const vehicle=deriveVehicle(vehicleRows);
-                const latest=datedRows[0];
-                return {...vehicle,registration:latest?(latest.record.reg||latest.record.registration):vehicle.registration,
-                  latestJobDate:latest?.date||null};
-              });
-              const masterResult=await upsertVehicleMaster(vehicleMasterRecords);
-              diag.vehiclesUpserted=Number(masterResult.upsertedVehicles||0);
-              if(diag.vehiclesUpserted<uploadedVins.length)throw new Error(`Vehicle master update count mismatch: expected ${uploadedVins.length}, updated ${diag.vehiclesUpserted}`);
-            }catch(refreshError){
-              console.error("Vehicle master upsert failed in background:",refreshError);
-              diag.vehicleMasterError=refreshError?.message||"Vehicle master upsert failed";
-            }
-            if(cutoff.enabled){diag.status="paused";return;}
-            const cards=parsedRows.map(r=>normalizeJobCard(r?.jobCard)).filter(Boolean);
-            // Default path uses the browser cache to reduce repeated database function calls. Enable bypass only for a controlled comparison test.
-            diag.cacheMode = testBypassJobCardCache ? "BYPASS TEST (live DB check)" : "CACHE ENABLED";
-            const fresh = testBypassJobCardCache
-              ? await checkNewJobCards(API_BASE_URL, allJobCards)
-              : await getHybridNewJobCards(API_BASE_URL, allJobCards, candidates => checkNewJobCards(API_BASE_URL, candidates));
-            diag.jobCardsSubmitted=fresh.size;
-            diag.jobCardsAlreadyInDb=Math.max(0,allJobCards.length-fresh.size);
-            // Reconcile every uploaded line, including Job Cards already known to the DB.
-            // This lets a retry repair missing line items instead of skipping existing Job Cards.
-            const records=parsedRows.filter(r=>normalizeJobCard(r?.jobCard || r?.jobCardNo));
-            const outcomes=records.length?await saveHistoryInBackground(records):[];
-            diag.outcomes=outcomes;
-            diag.jobCardsSaved=outcomes.reduce((sum,item)=>sum+item.newJobCardsSaved,0);
-            diag.serviceLinesSaved=outcomes.reduce((sum,item)=>sum+item.newServiceLines,0);
-            diag.status=outcomes.some(item=>item.status==="failed")||diag.vehicleMasterError?"completed-with-errors":"completed";
+            const vehicleMasterRecords=uploadedVins.map(vin=>{
+              const vehicleRows=parsedRows.filter(record=>String(record?.vin||"").trim().toUpperCase()===vin);
+              const dateKey=value=>{
+                const raw=String(value??"").trim();
+                const iso=raw.match(/^(\d{4}-\d{2}-\d{2})/);
+                if(iso)return iso[1];
+                const parsed=new Date(value);
+                return Number.isNaN(parsed.getTime())?"":parsed.toISOString().slice(0,10);
+              };
+              const datedRows=vehicleRows.map(record=>({record,date:dateKey(record?.date)}))
+                .filter(item=>item.date&&String(item.record?.reg||item.record?.registration||"").trim())
+                .sort((a,b)=>b.date.localeCompare(a.date));
+              const vehicle=deriveVehicle(vehicleRows);
+              const latest=datedRows[0];
+              return {...vehicle,registration:latest?(latest.record.reg||latest.record.registration):vehicle.registration,
+                latestJobDate:latest?.date||null};
+            });
+            const masterResult=await upsertVehicleMaster(vehicleMasterRecords);
+            diag.vehiclesUpserted=Number(masterResult.upsertedVehicles||0);
+            if(diag.vehiclesUpserted<uploadedVins.length)throw new Error(`Vehicle master update count mismatch: expected ${uploadedVins.length}, updated ${diag.vehiclesUpserted}`);
+            diag.status="completed";
           }catch(backgroundError){
-            console.error("Background database sync failed:",backgroundError);
+            console.error("Background vehicle master update failed:",backgroundError);
             diag.status="completed-with-errors";
-            diag.backgroundError=backgroundError?.message||"Unknown database sync error";
+            diag.vehicleMasterError=backgroundError?.message||"Vehicle master update failed";
           }finally{
             diag.finishedAt=new Date().toISOString();
             setUploadDiagnostic({...diag});
-            if(diag.status==="completed-with-errors")setError("Service data is ready for analysis, but background database sync reported an error. Check the temporary diagnostic report.");
+            if(diag.status==="completed-with-errors")setError("Service data is ready for analysis, but vehicle master update reported an error.");
           }
         })();
       }
-      setUploadProgress({stage:"Upload complete",current:files.length,total:files.length,detail:`${parsedRows.length.toLocaleString()} rows ready for service decision; database sync continues in background`});
+      setUploadProgress({stage:"Upload complete",current:files.length,total:files.length,detail:`${parsedRows.length.toLocaleString()} rows ready for service decision; vehicle details update in background`});
     }catch(e){if(e?.name==="AbortError")setError("Upload cancelled. No new background history save was started by this upload. Any current network lookup may finish in the background.");else{setUploadMeta(null);setUploadedFiles([]);setUploadParsedRecords([]);setError(e?.message||"The Excel file could not be read.");}}
     finally{setUploadBusy(false);cancelProcessingRef.current=false;window.setTimeout(()=>setUploadProgress(null),1800);}
   };

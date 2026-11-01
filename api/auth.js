@@ -921,7 +921,7 @@ export default async function handler(req, res) {
 
       const vehiclePeriodWhere = rangeDays === 1
         ? "(v.created_at AT TIME ZONE 'Asia/Kolkata')::date = (NOW() AT TIME ZONE 'Asia/Kolkata')::date"
-        : "(v.created_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN (NOW() AT TIME ZONE 'Asia/Kolkata')::date - (\${rangeDays} - 1) AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date";
+        : "(v.created_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN (NOW() AT TIME ZONE 'Asia/Kolkata')::date - (" + (rangeDays - 1) + ") AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date";
 
       const [vehiclesAddedResult, recentVehiclesResult] = await Promise.all([
         client.query(

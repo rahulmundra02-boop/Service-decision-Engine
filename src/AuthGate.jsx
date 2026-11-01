@@ -71,10 +71,9 @@ export default function AuthGate({ children }) {
   const [profileForm, setProfileForm] = useState({ personName:"", dealerName:"", mobile:"", booking1:"", booking2:"", singleColumns:["date","jobCard","reading","plant","parts"], bulkColumns:["customerName","vin","reg","saleDate","model","currentReading","services"], singleColumnLabels:{date:"Date",jobCard:"Job Card",reading:"Reading",plant:"Plant",parts:"Part No. / Service / Qty"}, bulkColumnLabels:{serial:"S.No. / Due",customerName:"Customer Name",vin:"VIN",reg:"Reg. No.",saleDate:"Sale Date",model:"Model",currentReading:"Current Reading",services:"Service To Be Completed"}, theme:"blue" });
   const [adminAnalytics, setAdminAnalytics] = useState({ summary:[], recent:[], periods:[] });
   const [analyticsUserId, setAnalyticsUserId] = useState(null);
-  const [analyticsRange, setAnalyticsRange] = useState(30);
+  const [analyticsRange, setAnalyticsRange] = useState(1);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsIncludeAdmins, setAnalyticsIncludeAdmins] = useState(true);
-  const [jobCardCacheSettings, setJobCardCacheSettings] = useState({ enabled:true, intervalHours:24, version:1, lastRebuildAt:null, nextRebuildAt:null, cachedJobCards:0 });
   const [emergencyDbUploadCutoff, setEmergencyDbUploadCutoff] = useState(false);
   const [registrationSearchEnabled, setRegistrationSearchEnabled] = useState(true);
   const [sessionConflict, setSessionConflict] = useState(null);
@@ -322,21 +321,6 @@ export default function AuthGate({ children }) {
       setAnalyticsLoading(false);
     }
   };
-
-  const loadJobCardCacheSettings = async () => {
-    try {
-      const data = await api("job-card-cache-settings");
-      if (data?.settings) setJobCardCacheSettings(data.settings);
-    } catch (e) {
-      setError(e.message || "Unable to load Job Card cache settings.");
-    }
-  };
-
-  const updateJobCardCacheSettings = (payload) => run(async () => {
-    const data = await api("admin-job-card-cache-settings", payload, localStorage.getItem(TOKEN_KEY));
-    if (data?.settings) setJobCardCacheSettings(data.settings);
-    setMessage(data.message || "Job Card cache settings updated.");
-  });
 
   const loadEmergencyDbUploadCutoff = async () => {
     try {
@@ -664,10 +648,9 @@ export default function AuthGate({ children }) {
 
   useEffect(() => {
     if (user?.role !== "admin") return;
-    const section = adminRoute.split("/")[2] || "overview";
+    const section = adminRoute.split("/")[2] || "analytics";
     if (!adminOpen) { void loadAccountRequests(); return; }
     if (section === "users") { void loadAdminUsers(); return; }
-    if (section === "cache") { void loadJobCardCacheSettings(); return; }
     if (section === "masters") { void loadCampaignMeta(); void loadPriceMasterMeta(); return; }
     if (section === "system") { void loadEmergencyDbUploadCutoff(); void loadRegistrationSearchSetting(); return; }
     if (section === "uploads") { void loadAccountRequests(); return; }
@@ -962,7 +945,6 @@ export default function AuthGate({ children }) {
           {[
             ["home","⌂","Home"],
             ["estimate","₹","Estimate"],
-            ["registration-search","🔎","Reg. Search"],
             ["document-scanner","▧","Document Scanner"],
           ].map(([key,icon,label]) => (
             <button key={key} type="button" className="mobile-bottom-nav-item" onClick={() => {
@@ -972,12 +954,17 @@ export default function AuthGate({ children }) {
               <span className="mobile-bottom-nav-icon">{icon}</span><span>{label}</span>
             </button>
           ))}
+          <button type="button" className="mobile-bottom-nav-item" onClick={() => {
+            setMobileMoreOpen(false);
+            window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:"warranty-tags"}}));
+          }}>
+            <span className="mobile-bottom-nav-icon">▦</span><span>Warranty Tag</span>
+          </button>
           <div className="mobile-bottom-nav-more-wrap">
             {mobileMoreOpen && (
               <div className="mobile-bottom-nav-more-menu" role="menu" aria-label="More tools">
                 <button type="button" className="mobile-bottom-nav-more-option" role="menuitem" onClick={() => { setMobileMoreOpen(false); window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:"single"}})); }}><span aria-hidden="true">▣</span><span>Single Vehicle Service</span></button>
                 <button type="button" className="mobile-bottom-nav-more-option" role="menuitem" onClick={() => { setMobileMoreOpen(false); window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:"bulk"}})); }}><span aria-hidden="true">▤</span><span>Bulk Vehicle Service</span></button>
-                <button type="button" className="mobile-bottom-nav-more-option" role="menuitem" onClick={() => { setMobileMoreOpen(false); window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:"warranty-tags"}})); }}><span aria-hidden="true">▦</span><span>Warranty Tag</span></button>
               </div>
             )}
             <button type="button" className={`mobile-bottom-nav-item mobile-bottom-nav-more ${mobileMoreOpen ? "active" : ""}`} aria-expanded={mobileMoreOpen} aria-haspopup="menu" onClick={() => setMobileMoreOpen(open => !open)}>
@@ -1013,8 +1000,6 @@ export default function AuthGate({ children }) {
           analyticsIncludeAdmins={analyticsIncludeAdmins}
           onSetAnalyticsIncludeAdmins={setAnalyticsIncludeAdmins}
           onAnalytics={loadAdminAnalytics}
-          jobCardCacheSettings={jobCardCacheSettings}
-          onJobCardCacheSettings={updateJobCardCacheSettings}
           emergencyDbUploadCutoff={emergencyDbUploadCutoff}
           onEmergencyDbUploadCutoff={updateEmergencyDbUploadCutoff}
           registrationSearchEnabled={registrationSearchEnabled}
@@ -1508,8 +1493,8 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading, onChang
 function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRefreshAccountRequests, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, registrationSearchEnabled, onRegistrationSearchSetting, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel, priceMasterMeta, priceMasterUploadBusy, priceMasterUploadMessage, priceMasterUploadError, onUploadPriceMasterExcel }) {
   const analyticsDetailRef = useRef(null);
   const adminSectionFromPath = () => {
-    const part = window.location.pathname.split("/")[2] || "overview";
-    return ["overview","cache","database","uploads","masters","system","analytics","users"].includes(part) ? part : "overview";
+    const part = window.location.pathname.split("/")[2] || "analytics";
+    return ["overview","masters","system","analytics","users"].includes(part) ? part : "analytics";
   };
   const [adminSection, setAdminSection] = useState(adminSectionFromPath);
   const [view, setView] = useState(() => {
@@ -1603,6 +1588,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
   const summary = analytics.summary || [];
   const periods = analytics.periods || [];
   const breakdown = analytics.breakdown || [];
+  const recentVehicles = Array.isArray(analytics.recentVehicles) ? analytics.recentVehicles : [];
 
   const displayDealerName = (u) => {
     if (
@@ -1657,8 +1643,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
 
         <nav className="admin-category-nav" aria-label="Admin categories">
           {[
-            ["cache","Cache Control"],["database","Database"],["uploads","Upload Monitor"],
-            ["masters","Masters"],["system","System Controls"],["analytics","Analytics"],["users","User Management"]
+            ["analytics","Analytics"],["users","User Management"],["masters","Masters"],["system","System Controls"]
           ].map(([key,label]) => <button key={key} type="button" className={adminSection===key?"active":""} onClick={()=>goAdminSection(key)}>{label}</button>)}
         </nav>
         {adminSection === "analytics" && <div className="admin-kpi-grid">
@@ -1668,38 +1653,6 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           {metricCard("Vehicles Analysed", totals.vehicles)}
           {metricCard("Excel Files", totals.files)}
           {metricCard("Activities", totals.activities)}
-        </div>}
-
-        {adminSection === "cache" && <div className="admin-panel-card" style={{marginTop:12,padding:"18px 20px"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
-            <div>
-              <div className="admin-panel-card-title">Job Card Browser Cache</div>
-              <div className="admin-panel-card-sub">Central Neon Job Card index and browser IndexedDB rebuild control</div>
-            </div>
-            <label style={{display:"flex",alignItems:"center",gap:8,fontWeight:700}}>
-              <span>Cache System</span>
-              <input type="checkbox" checked={jobCardCacheSettings?.enabled !== false} onChange={e=>onJobCardCacheSettings({enabled:e.target.checked})} />
-              <span>{jobCardCacheSettings?.enabled !== false ? "ON" : "OFF"}</span>
-            </label>
-          </div>
-          <div className="admin-cache-metrics">
-            <div className="admin-cache-metric"><span>Current Database Job Cards</span><strong>{Number(jobCardCacheSettings?.currentDatabaseJobCards ?? 0).toLocaleString("en-IN")}</strong></div>
-            <div className="admin-cache-metric"><span>Last Rebuild Database Count</span><strong>{Number(jobCardCacheSettings?.cachedJobCards || 0).toLocaleString("en-IN")}</strong><small>{jobCardCacheSettings?.lastRebuildAt ? "Last rebuild " + new Date(jobCardCacheSettings.lastRebuildAt).toLocaleString("en-IN") : "No rebuild recorded"}</small></div>
-            <div className="admin-cache-metric"><span>Last Automatic Rebuild</span><strong>{jobCardCacheSettings?.lastAutoRebuildAt ? new Date(jobCardCacheSettings.lastAutoRebuildAt).toLocaleString("en-IN") : "Not recorded"}</strong>{jobCardCacheSettings?.lastAutoRebuildError && <small className="admin-cache-error">{jobCardCacheSettings.lastAutoRebuildError}</small>}</div>
-          </div>
-          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginTop:14}}>
-            <label style={{fontWeight:700}}>Automatic rebuild interval</label>
-            <select value={Number(jobCardCacheSettings?.intervalHours || 24)}
-              onChange={e=>onJobCardCacheSettings({intervalHours:Number(e.target.value)})}
-              style={{minWidth:120,padding:"8px 10px",borderRadius:8,border:"1px solid #94a3b8",background:"var(--surface,#fff)",color:"inherit"}}>
-              {[1,2,3,4,6,8,12,24,36,48,72,168].map(hours=><option key={hours} value={hours}>{hours} hour{hours===1?"":"s"}</option>)}
-            </select>
-            <span style={{fontSize:12,opacity:.75}}>Allowed: 1 to 168 hours. Scheduler checks hourly.</span>
-          </div>
-          <div className="admin-cache-actions">
-            <button className="auth-primary" disabled={Boolean(jobCardCacheSettings?.rebuilding)} onClick={()=>onJobCardCacheSettings({operation:"rebuild"})}>Manual Rebuild Now</button>
-            <button className="auth-secondary" onClick={()=>onJobCardCacheSettings({operation:"refresh"})}>Refresh Counts</button>
-          </div>
         </div>}
 
         {adminSection === "system" && <><div className="admin-panel-card" style={{marginTop:12,padding:"18px 20px",border:"1px solid #cbd5e1"}}>
@@ -1846,7 +1799,8 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
             {[
               ["overview","Overview"],
               ["users","User Insights"],
-              ["activity","Activity"]
+              ["activity","Activity"],
+              ["databaseVehicles","Database Vehicles"]
             ].map(([key,label])=>
               <button key={key} className={view===key ? "active" : ""} onClick={()=>setView(key)}>{label}</button>
             )}
@@ -1860,6 +1814,38 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           </div>
           {analyticsLoading && <span className="admin-loading-pill">Updating...</span>}
         </div>}
+
+        {adminSection === "analytics" && view === "databaseVehicles" && (
+          <>
+            <div className="admin-dashboard-grid" style={{marginBottom:16}}>
+              <div className="admin-kpi"><div className="admin-kpi-label">Total Vehicles in Database</div><div className="admin-kpi-value">{Number(analytics.totalVehicles||0).toLocaleString("en-IN")}</div><div className="admin-kpi-sub">Unique VIN records available</div></div>
+              <div className="admin-kpi"><div className="admin-kpi-label">Vehicles Added in Selected Period</div><div className="admin-kpi-value">{Number(analytics.vehiclesAddedInPeriod||0).toLocaleString("en-IN")}</div><div className="admin-kpi-sub">{analyticsRange === 1 ? "Today" : `Last ${analyticsRange} days`}</div></div>
+            </div>
+            <div className="admin-panel-card" style={{marginBottom:16}}>
+              <div className="admin-panel-card-title">Recently Added Vehicles</div>
+              <div className="admin-panel-card-sub">
+                {Number(analytics.vehiclesAddedInPeriod||0).toLocaleString("en-IN")} vehicles added to the database in the selected period.
+                {analytics.recentVehiclesLimited ? " Showing the latest 200 records." : ""}
+              </div>
+              <div className="admin-table-wrap" style={{marginTop:12}}>
+                <table className="admin-table" style={{minWidth:760}}>
+                  <thead><tr><th>Added to DB</th><th>Customer Name</th><th>Registration No.</th><th>Model</th><th>Engine</th><th>VIN</th></tr></thead>
+                  <tbody>
+                    {recentVehicles.map((v,i)=><tr key={v.vin || i}>
+                      <td>{v.created_at ? new Date(v.created_at).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"}) : "—"}</td>
+                      <td>{v.customer_name || "—"}</td>
+                      <td>{v.registration || "—"}</td>
+                      <td>{v.model || "—"}</td>
+                      <td>{v.engine || "—"}</td>
+                      <td style={{whiteSpace:"nowrap"}}>{v.vin || "—"}</td>
+                    </tr>)}
+                    {!recentVehicles.length && <tr><td colSpan="6" className="admin-empty">No vehicles were added in this period.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
 
         {adminSection === "analytics" && view === "overview" && (
           <>

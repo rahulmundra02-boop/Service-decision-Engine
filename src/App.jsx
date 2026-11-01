@@ -5168,8 +5168,7 @@ function WarrantyTagPanel({user,onBack}){
     })}</div>}
   </>;
 }
-function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResults, savedEstimates, savedEstimatesLoading, onOpenSavedEstimate, onSearchRegistration, registrationSearchError }) {
-  const [homeRegistration, setHomeRegistration] = useState("");
+function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResults, savedEstimates, savedEstimatesLoading, onOpenSavedEstimate }) {
   const dueVehicles = (bulkResults || []).filter(item => Array.isArray(item?.services) && item.services.length > 0).length;
   const totalVehicles = (bulkResults || []).length;
   const savedCount = Array.isArray(savedEstimates) ? savedEstimates.length : 0;
@@ -5296,18 +5295,12 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       "/warranty-tag-print": "warranty-tags",
       "/document-scanner": "document-scanner",
       "/profile": "profile",
-      "/registration-search": "registration-search",
       "/estimate": "estimate"
     };
     return routes[path] || "home";
   };
   const [mode, setMode] = useState(() => modeFromPath());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [registrationSearchInput, setRegistrationSearchInput] = useState("");
-  const [registrationSearchBusy, setRegistrationSearchBusy] = useState(false);
-  const [registrationSearchError, setRegistrationSearchError] = useState("");
-  const [registrationSearchResult, setRegistrationSearchResult] = useState(null);
-  const [registrationHistoryMode, setRegistrationHistoryMode] = useState("schedule");
   const navigationPopRef = useRef(false);
   const clearCurrentDataRef = useRef(null);
   const [bulkResults, setBulkResults] = useState([]);
@@ -5372,11 +5365,6 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
         setError("");
         return;
       }
-      if (nextMode === "registration-search") {
-        setMode("registration-search");
-        setRegistrationSearchError("");
-        return;
-      }
       if (nextMode === "profile") {
         setMode("profile");
         setError("");
@@ -5412,7 +5400,6 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       "warranty-tags": "/warranty-tag-print",
       "document-scanner": "/document-scanner",
       profile: "/profile",
-      "registration-search": "/registration-search",
       estimate: "/estimate"
     };
     const nextPath = routeByMode[mode] || "/";
@@ -6226,7 +6213,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
       const result=await parseExcelFiles(files,{onProgress:setUploadProgress,isCancelled:()=>cancelProcessingRef.current});
       if(cancelProcessingRef.current){const e=new Error("Upload cancelled.");e.name="AbortError";throw e;}
       const parsedRows=result.records||[],accepted=files.filter(f=>result.files.includes(f.name));
-      setExcelData("");setUploadedFiles(accepted);setRegistrationSearchResult(null);setUploadMeta({files:result.files,failedFiles:result.failedFiles||[],rowsBefore:result.totalRowsBeforeDedup,duplicates:result.duplicateRowsIgnored,rowsAfter:parsedRows.length,invalidRows:result.invalidRows||[]});
+      setExcelData("");setUploadedFiles(accepted);setUploadMeta({files:result.files,failedFiles:result.failedFiles||[],rowsBefore:result.totalRowsBeforeDedup,duplicates:result.duplicateRowsIgnored,rowsAfter:parsedRows.length,invalidRows:result.invalidRows||[]});
       setAnalysis(null);setBulkResults([]);setBulkMeta(null);setCustomerGroups([]);setSelectedCustomers([]);setUploadParsedRecords(parsedRows);
       if(parsedRows.length){const vins=new Set(parsedRows.map(r=>String(r?.vin||"").trim().toUpperCase()).filter(Boolean));setMode(vins.size>1?"bulk":"single");logUsage("Excel Upload",{fileCount:accepted.length,vehicleCount:vins.size,details:{rows:parsedRows.length,files:accepted.map(f=>f.name)}});}
       const diag = { filesSelected: files.length, filesRead: accepted.length, filesFailed: result.failedFiles || [], rowsBeforeDedup: Number(result.totalRowsBeforeDedup || 0), duplicateRowsIgnored: Number(result.duplicateRowsIgnored || 0), parsedRows: parsedRows.length, invalidRows: result.invalidRows || [], uniqueJobCards: 0, jobCardsAlreadyInDb: 0, jobCardsSubmitted: 0, jobCardsSaved: 0, serviceLinesSaved: 0, vehicleCount: 0, vehiclesUpserted: 0, vehicleMasterError: "", cutoff: false, cacheMode: "RETIRED (current Excel only)", outcomes: [], status: "processing", startedAt: new Date().toISOString() };
@@ -6464,7 +6451,6 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     };
   }, []);
   const analyze = async () => {
-    setRegistrationSearchResult(null);
     setError("");cancelProcessingRef.current=false;setAnalysisBusy(true);setUploadProgress({stage:"Preparing decision calculation",current:0,total:1,detail:"Validating vehicle records"});
     try {
       const parsed = getAnalysisRecords();
@@ -7223,48 +7209,6 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     } finally {
       setEstimateModelLoading(false);
     }
-  }
-
-  async function searchVehicleByRegistration(inputOverride) {
-    const registration = String(inputOverride ?? registrationSearchInput ?? "").replace(/\s+/g, "").trim().toUpperCase();
-    setRegistrationSearchInput(registration);
-    setRegistrationSearchError("");
-    setRegistrationSearchResult(null);
-    if (!registration) { setRegistrationSearchError("Please enter a vehicle registration number."); return; }
-    setRegistrationSearchBusy(true);
-    try {
-      const response = await fetch("/api/save-history?registration=" + encodeURIComponent(registration));
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || data?.success === false) throw new Error(data?.error || "Unable to search the database right now.");
-      if (!data?.vehicle) { setRegistrationSearchError("Vehicle not found. The registration number may be incorrect, or the vehicle may not be available in the database."); return; }
-      const records = (Array.isArray(data.rows) ? data.rows : []).map((row, index) => ({
-        rowNumber: index + 1, jobCard: String(row.job_card_no || ""), date: parseDate(row.job_date), reading: 0, unit: "",
-        cumulative: parseNumber(row.cumulative_reading), cumulativeUnit: String(row.cumulative_unit || ""),
-        secondaryReading: parseNumber(row.secondary_cumulative_reading), secondaryUnit: String(row.secondary_cumulative_unit || ""), secondaryCumulativeReading: parseNumber(row.secondary_cumulative_reading), secondaryCumulativeUnit: String(row.secondary_cumulative_unit || ""), plantName: String(row.plant_name || ""),
-        serviceType: String(row.service_type || ""), itemCategory: String(row.item_category || ""), partCode: String(row.part_code || ""),
-        part: String(row.part_description || ""), standardizedPart: String(row.standardized_part || standardizePart(row.part_code || "", row.part_description || "")),
-        qty: parseNumber(row.quantity), netValue: null, inward: null, reg: String(row.registration || data.vehicle.registration || registration),
-        customerNumber: "", customerName: String(row.customer_name || data.vehicle.customer_name || ""), customerVoice: "", codifiedCustomerVoice: "",
-        complaintCode: String(row.complaint_code || ""), lineOfBusiness: String(row.line_of_business || ""), engine: String(row.engine || data.vehicle.engine || ""),
-        sale: parseDate(row.sale_date || data.vehicle.sale_date), model: String(row.model || data.vehicle.model || ""), repairTypeLine: String(row.repair_line_item_type || ""),
-        checkInDate: null, vin: String(row.vin || data.vehicle.vin || ""), driverPhone: String(row.driver_phone || ""),
-        serviceContactPhone: String(row.service_contact_person_phone || ""), repairType: String(row.repair_type || ""), source: "Database Registration Search"
-      }));
-      if (!records.length) { setRegistrationSearchError("Vehicle exists in the database, but no service history records are available to calculate a decision."); return; }
-      const vehicle = deriveVehicle(records);
-      const running = deriveRunningReading(records, vehicle);
-      if (!running?.last || !(running.current > 0)) { setRegistrationSearchError("Vehicle history was found, but a usable cumulative KM/HRS reading is missing. The Decision Engine cannot safely determine services due."); return; }
-      const visits = aggregateHistory(records);
-      const decision = calculateDecisions(records, vehicle, running);
-      setDecisionBasis(running?.unit === "HRS" ? "HRS" : "KM");
-      setOverrideReading(""); setAppliedOverride(null); setHistoryViewMode("schedule"); setRemark(""); setCustomerVoice(""); setCampaigns([]); setCampaignLoading(false);
-      setAnalysis({ headers: [], records, headerMap: {}, vehicle, running, visits, decision });
-      setRegistrationSearchResult({ ...data, searchedRegistration: registration });
-      setEstimateOpen(false);
-      setMode("single");
-      logUsage("Registration Database Service Analysis", { mode: "single", vehicleCount: 1, vin: String(vehicle?.vin || "").trim().toUpperCase(), details: { source: "database", rows: records.length, serviceCount: (decision?.services || []).length } });
-    } catch (error) { setRegistrationSearchError(error?.message || "Unable to load vehicle service history. Please try again."); }
-    finally { setRegistrationSearchBusy(false); }
   }
 
   async function lookupEstimateVehicle() {
@@ -8343,7 +8287,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
     }
   };
 
-  const pageIsProcessing = registrationSearchBusy || uploadBusy || analysisBusy || screenshotBusy;
+  const pageIsProcessing = uploadBusy || analysisBusy || screenshotBusy;
 
   return (
     <>
@@ -9436,7 +9380,6 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
           <div className="excel-ribbon no-print">
             <div className="excel-tabs">
               <div className={"excel-tab " + (mode === "home" ? "active" : "")} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("home"); }}> <span className="nav-icon">🏠</span>Home</div>
-              <div className={`excel-tab ${mode === "registration-search" ? "active" : ""}`} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setAnalysis(null); setRegistrationSearchResult(null); setEstimateOpen(false); setMode("registration-search"); setRegistrationSearchError(""); }}> <span className="nav-icon">🚛</span>Search by Registration No.</div>
               <div className={"excel-tab " + (mode === "single" ? "active" : "")} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("single"); setError(""); setBulkResults([]); setBulkMeta(null); }}> <span className="nav-icon">🚚</span>Single Vehicle</div>
               <div className={`excel-tab ${mode === "bulk" ? "active" : ""}`} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("bulk"); setError(""); setAnalysis(null); }}> <span className="nav-icon">📊</span>Bulk Vehicle</div>
               <div className={`excel-tab ${mode === "warranty-tags" ? "active" : ""}`} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("warranty-tags"); setError(""); }}> <span className="nav-icon">🏷️</span>Warranty Tag Print</div>
@@ -9562,8 +9505,6 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
           <main className="excel-sheet">
             {mode === "home" ? (
               <PortalHome user={user} theme={dashboardPrefs.theme || "blue"} onThemeChange={changeDashboardTheme} hasAnalysis={Boolean(analysis)} bulkResults={bulkResults}
-                onSearchRegistration={registration => { const value = String(registration || "").replace(/\s+/g, "").trim().toUpperCase(); setRegistrationSearchInput(value); setRegistrationSearchError(""); void searchVehicleByRegistration(value); }}
-                registrationSearchError={registrationSearchError}
                 savedEstimates={savedEstimates}
                 savedEstimatesLoading={savedEstimatesLoading}
                 onNavigate={(nextMode) => { if (nextMode === "estimate") { if (analysis) void openEstimate(); else openStandaloneEstimate(); } else setMode(nextMode); }}
@@ -9577,68 +9518,11 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
               <DocumentScanner onBack={() => setMode("home")} />
             ) : mode === "profile" ? (
               <ProfileSection user={user} onOpenProfile={onOpenProfile} onOpenAdmin={onOpenAdmin} onChangePassword={onChangePassword} onLogout={onLogout} />
-            ) : mode === "registration-search" ? (
-              <section className="registration-search-view">
-                <div className="sheet-heading">VEHICLE SERVICE HISTORY BY REGISTRATION</div>
-                {!registrationSearchResult && (<div className="registration-search-form">
-                  <label htmlFor="registration-search-input">Vehicle Registration Number</label>
-                  <div className="registration-search-row">
-                    <input id="registration-search-input" className="excel-input" value={registrationSearchInput} onChange={e => setRegistrationSearchInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter") void searchVehicleByRegistration(); }} placeholder="e.g. GJ12CV0462" autoComplete="off" />
-                    <button className="excel-button green" onClick={() => void searchVehicleByRegistration()} disabled={registrationSearchBusy}>{registrationSearchBusy && <span className="sde-button-spinner" aria-hidden="true" />}{registrationSearchBusy ? "Searching..." : "Search Vehicle"}</button>
-                  </div>
-                  <div className="registration-search-warning">Only vehicles available in the database can be displayed.</div>
-                  {registrationSearchError && <div className="registration-search-error" role="alert">{registrationSearchError}</div>}
-                </div>)}
-                {registrationSearchResult && (() => {
-                  const vehicle = registrationSearchResult.vehicle || {};
-                  const rows = Array.isArray(registrationSearchResult.rows) ? registrationSearchResult.rows : [];
-                  const updated = vehicle.last_refreshed_at ? new Date(vehicle.last_refreshed_at) : null;
-                  const updateText = updated && !Number.isNaN(updated.getTime()) ? " on " + updated.toLocaleDateString("en-IN") + " at " + updated.toLocaleTimeString("en-IN", {hour:"2-digit",minute:"2-digit"}) : ", update date/time is not available in the database record";
-                  return <div className="registration-history-result">
-                    <div className="sheet-heading">VEHICLE SCHEDULE SERVICE HISTORY</div>
-                    <div className="registration-update-note">As per the last database update{updateText}.</div>
-                    <div className="vehicle-output-layout" style={{marginTop:10}}>
-                      <div className="vehicle-profile-panel">
-                        <div className="section-title">Customer / Vehicle Profile</div>
-                        <div className="sheet-grid">
-                          <div className="cell label">Customer Name</div><div className="cell value">{vehicle.customer_name || ""}</div>
-                          <div className="cell label">Reg No</div><div className="cell value">{String(vehicle.registration || registrationSearchResult.searchedRegistration).replace(/\s+/g,"").toUpperCase()}</div>
-                          <div className="cell label">VIN No</div><div className="cell value">{vehicle.vin || ""}</div>
-                          <div className="cell label">Engine No</div><div className="cell value">{vehicle.engine || ""}</div>
-                          <div className="cell label">Model</div><div className="cell value">{vehicle.model || ""}</div>
-                          <div className="cell label">Sale Date</div><div className="cell value">{vehicle.sale_date ? formatDate(vehicle.sale_date) : ""}</div>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="customer-output-panel" style={{marginTop:12}}>
-                      <div className="section-title">Customer Output — Service To Be Completed</div>
-                      <div className="due-box"><div className="small-note" style={{marginBottom:10}}>Informational estimate based on the database history shown below. The database may not include services performed after its last update.</div>{analysis?.decision?.services?.length ? <div className="due-service-list">{analysis.decision.services.map((service,index)=><span className="due-service-chip" key={service.key || service.name || index}>{service.name || service.label || service.part || String(service)}</span>)}</div> : <div className="small-note">No service items are currently flagged by the database-based decision. Please verify against the latest DMS records.</div>}</div>
-                    </div>
-                    <div className="customer-output-panel" style={{marginTop:12}}>
-                      <div className="section-title registration-history-heading">
-                        <span>Service Summary — Complete Vehicle History</span>
-                        <div className="single-history-toggle no-print" role="group" aria-label="Service history view">
-                          <label><input type="radio" name="registration-history-view" value="schedule" checked={registrationHistoryMode === "schedule"} onChange={() => setRegistrationHistoryMode("schedule")} />Only Schedule Service History</label>
-                          <label><input type="radio" name="registration-history-view" value="full" checked={registrationHistoryMode === "full"} onChange={() => setRegistrationHistoryMode("full")} />Full History</label>
-                        </div>
-                      </div>
-                      {(() => {
-                        const visibleRows = registrationHistoryMode === "full" ? rows : rows.filter(row => {
-                          const code = normalizePartCode(row.part_code || "");
-                          return !!row.standardized_part || !!PART_STANDARDIZATION[code];
-                        });
-                        return visibleRows.length ? <div className="history-wrap single-history-wrap registration-history-table-wrap"><table className="history-table single-service-summary"><thead><tr><th>Job Date</th><th>Job Card No.</th><th>KM / Reading</th><th>Part Code</th><th>Service / Part Description</th><th>Qty</th></tr></thead><tbody>{visibleRows.map((row,index) => <tr key={row.service_history_id || row.job_card_id || ((row.job_card_no || "row") + "-" + index)}><td>{row.job_date ? formatDate(row.job_date) : ""}</td><td>{row.job_card_no || ""}</td><td>{[row.cumulative_reading,row.cumulative_unit].filter(Boolean).join(" ")}</td><td>{row.part_code || ""}</td><td>{row.standardized_part || row.part_description || ""}</td><td>{row.quantity ?? ""}</td></tr>)}</tbody></table></div> : <div className="small-note" style={{padding:12}}>No matching history rows found for this vehicle.</div>;
-                      })()}
-                    </div>
-                  </div>;
-                })()}
-              </section>
             ) : mode === "single" ? (
               <>
                 {analysis ? (
                 <div id="single-screenshot-area" className="single-screenshot-area">
                 <div className="sheet-heading" style={{marginTop:10}}>VEHICLE SCHEDULE SERVICE HISTORY AS ON DATE - {todayDisplay}</div>
-                {registrationSearchResult && (() => { const updated = registrationSearchResult.vehicle?.last_refreshed_at ? new Date(registrationSearchResult.vehicle.last_refreshed_at) : null; const valid = updated && !Number.isNaN(updated.getTime()); const updateText = valid ? updated.toLocaleDateString("en-IN") + " at " + updated.toLocaleTimeString("en-IN", {hour:"2-digit",minute:"2-digit"}) : "date/time not available"; return <div className="registration-update-note" role="note">Decision provided as per latest database update: {updateText}.</div>; })()}
 
 
                 <div className="vehicle-output-layout" style={{marginTop:10}}>

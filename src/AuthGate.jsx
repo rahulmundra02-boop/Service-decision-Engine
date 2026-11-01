@@ -71,7 +71,7 @@ export default function AuthGate({ children }) {
   const [profileForm, setProfileForm] = useState({ personName:"", dealerName:"", mobile:"", booking1:"", booking2:"", singleColumns:["date","jobCard","reading","plant","parts"], bulkColumns:["customerName","vin","reg","saleDate","model","currentReading","services"], singleColumnLabels:{date:"Date",jobCard:"Job Card",reading:"Reading",plant:"Plant",parts:"Part No. / Service / Qty"}, bulkColumnLabels:{serial:"S.No. / Due",customerName:"Customer Name",vin:"VIN",reg:"Reg. No.",saleDate:"Sale Date",model:"Model",currentReading:"Current Reading",services:"Service To Be Completed"}, theme:"blue" });
   const [adminAnalytics, setAdminAnalytics] = useState({ summary:[], recent:[], periods:[] });
   const [analyticsUserId, setAnalyticsUserId] = useState(null);
-  const [analyticsRange, setAnalyticsRange] = useState(30);
+  const [analyticsRange, setAnalyticsRange] = useState(1);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsIncludeAdmins, setAnalyticsIncludeAdmins] = useState(true);
   const [jobCardCacheSettings, setJobCardCacheSettings] = useState({ enabled:true, intervalHours:24, version:1, lastRebuildAt:null, nextRebuildAt:null, cachedJobCards:0 });
@@ -1672,8 +1672,6 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           {metricCard("Vehicles Analysed", totals.vehicles)}
           {metricCard("Excel Files", totals.files)}
           {metricCard("Activities", totals.activities)}
-          {metricCard("Total Vehicles in Database", Number(analytics.totalVehicles||0).toLocaleString("en-IN"))}
-          {metricCard(`Vehicles Added (${analyticsRange === 1 ? "Today" : `${analyticsRange}D`})`, Number(analytics.vehiclesAddedInPeriod||0).toLocaleString("en-IN"))}
         </div>}
 
         {adminSection === "cache" && <div className="admin-panel-card" style={{marginTop:12,padding:"18px 20px"}}>
@@ -1850,7 +1848,8 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
             {[
               ["overview","Overview"],
               ["users","User Insights"],
-              ["activity","Activity"]
+              ["activity","Activity"],
+              ["databaseVehicles","Database Vehicles"]
             ].map(([key,label])=>
               <button key={key} className={view===key ? "active" : ""} onClick={()=>setView(key)}>{label}</button>
             )}
@@ -1865,8 +1864,12 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           {analyticsLoading && <span className="admin-loading-pill">Updating...</span>}
         </div>}
 
-        {adminSection === "analytics" && view === "overview" && (
+        {adminSection === "analytics" && view === "databaseVehicles" && (
           <>
+            <div className="admin-dashboard-grid" style={{marginBottom:16}}>
+              <div className="admin-kpi"><div className="admin-kpi-label">Total Vehicles in Database</div><div className="admin-kpi-value">{Number(analytics.totalVehicles||0).toLocaleString("en-IN")}</div><div className="admin-kpi-sub">Unique VIN records available</div></div>
+              <div className="admin-kpi"><div className="admin-kpi-label">Vehicles Added in Selected Period</div><div className="admin-kpi-value">{Number(analytics.vehiclesAddedInPeriod||0).toLocaleString("en-IN")}</div><div className="admin-kpi-sub">{analyticsRange === 1 ? "Today" : `Last ${analyticsRange} days`}</div></div>
+            </div>
             <div className="admin-panel-card" style={{marginBottom:16}}>
               <div className="admin-panel-card-title">Recently Added Vehicles</div>
               <div className="admin-panel-card-sub">
@@ -1890,6 +1893,11 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
                 </table>
               </div>
             </div>
+          </>
+        )}
+
+        {adminSection === "analytics" && view === "overview" && (
+          <>
             <div className="admin-section-title">Vehicle Productivity Overview</div>
             <div className="admin-dashboard-grid">
               <div className="admin-panel-card">

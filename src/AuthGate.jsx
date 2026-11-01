@@ -971,12 +971,17 @@ export default function AuthGate({ children }) {
               <span className="mobile-bottom-nav-icon">{icon}</span><span>{label}</span>
             </button>
           ))}
+          <button type="button" className="mobile-bottom-nav-item" onClick={() => {
+            setMobileMoreOpen(false);
+            window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:"warranty-tags"}}));
+          }}>
+            <span className="mobile-bottom-nav-icon">▦</span><span>Warranty Tag</span>
+          </button>
           <div className="mobile-bottom-nav-more-wrap">
             {mobileMoreOpen && (
               <div className="mobile-bottom-nav-more-menu" role="menu" aria-label="More tools">
                 <button type="button" className="mobile-bottom-nav-more-option" role="menuitem" onClick={() => { setMobileMoreOpen(false); window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:"single"}})); }}><span aria-hidden="true">▣</span><span>Single Vehicle Service</span></button>
                 <button type="button" className="mobile-bottom-nav-more-option" role="menuitem" onClick={() => { setMobileMoreOpen(false); window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:"bulk"}})); }}><span aria-hidden="true">▤</span><span>Bulk Vehicle Service</span></button>
-                <button type="button" className="mobile-bottom-nav-more-option" style={{marginTop:10,paddingTop:14,borderTop:"1px solid #dbe3ec",borderRadius:"0 0 12px 12px"}} role="menuitem" onClick={() => { setMobileMoreOpen(false); window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:"warranty-tags"}})); }}><span aria-hidden="true">▦</span><span>Warranty Tag</span></button>
               </div>
             )}
             <button type="button" className={`mobile-bottom-nav-item mobile-bottom-nav-more ${mobileMoreOpen ? "active" : ""}`} aria-expanded={mobileMoreOpen} aria-haspopup="menu" onClick={() => setMobileMoreOpen(open => !open)}>

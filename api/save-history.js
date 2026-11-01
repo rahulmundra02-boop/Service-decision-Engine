@@ -973,46 +973,6 @@ export default async function handler(req, res) {
     }
   }
 
-  if (body.action === "get-job-card-index") {
-    const afterId = Math.max(0, Number(body.afterId || 0));
-    const requestedLimit = Number(body.limit || 5000);
-    const limit = Math.min(
-      5000,
-      Math.max(100, Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 5000)
-    );
-
-    const client = await pool.connect();
-    try {
-      const result = await client.query(
-        "SELECT id, UPPER(TRIM(job_card_no)) AS job_card_no " +
-        "FROM job_cards " +
-        "WHERE id>$1 AND job_card_no IS NOT NULL AND TRIM(job_card_no)<>'' " +
-        "ORDER BY id ASC LIMIT $2",
-        [afterId, limit]
-      );
-
-      const jobCards = result.rows.map(row => ({
-        id: Number(row.id),
-        jobCardNo: row.job_card_no,
-      }));
-
-      return res.status(200).json({
-        success: true,
-        jobCards,
-        nextAfterId: jobCards.length ? jobCards[jobCards.length - 1].id : afterId,
-        hasMore: jobCards.length === limit,
-      });
-    } catch (error) {
-      console.error("Job Card Index Error:", error);
-      return res.status(500).json({
-        success: false,
-        error: error?.message || "Job Card index sync failed"
-      });
-    } finally {
-      client.release();
-    }
-  }
-
   if (["register-vehicle-upload-batch","update-vehicle-upload-status","verify-vehicle-upload"].includes(body.action)) {
     const client = await pool.connect();
     try {
@@ -1112,9 +1072,6 @@ export default async function handler(req, res) {
     }
   }
 
-  // The Job Card index is a read-only cache download. It must remain available
-  // even while emergency upload cutoff blocks database writes.
-  // Apply the cutoff only after the read-only get-job-card-index action above.
   const cutoffResult = await pool.query(
     "SELECT setting_value FROM app_settings WHERE setting_key='emergency_db_upload_cutoff' LIMIT 1"
   );

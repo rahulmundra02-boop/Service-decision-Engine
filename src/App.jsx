@@ -5488,7 +5488,6 @@ function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResu
   const savedCount = Array.isArray(savedEstimates) ? savedEstimates.length : 0;
   const cards = [
     { key:"single", icon:"🚚", title:"Single Vehicle", text:"Check one vehicle service history, service requirements and completed work." },
-    { key:"registration-search", icon:"🚛", title:"Search by Registration No.", text:"Check the latest service decision using a vehicle registration number." },
     { key:"bulk", icon:"📊", title:"Bulk Vehicle", text:"Analyse multiple vehicles and prepare customer-wise service due summaries." },
     { key:"estimate", icon:"🧾", title:"Prepare Estimate", text:"Open the existing Service Estimate module and prepare a vehicle estimate." },
     { key:"warranty-tags", icon:"🏷️", title:"Warranty Tag Print", text:"Generate and print warranty tags from Billed JC Claim Statement + Jobcard Summary." },
@@ -5508,11 +5507,6 @@ function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResu
           <button className="excel-button" onClick={onClear}>Clear</button>
         </div>
       </div>
-      <form className="home-registration-check" onSubmit={event => { event.preventDefault(); onSearchRegistration(homeRegistration); }}>
-        <div className="home-registration-copy"><strong>Schedule Service Check by Registration No.</strong><span>Enter the vehicle registration number to view its service decision.</span></div>
-        <div className="home-registration-controls"><input className="excel-input" value={homeRegistration} onChange={event => setHomeRegistration(event.target.value.toUpperCase())} placeholder="e.g. GJ12CV0462" aria-label="Vehicle registration number" autoComplete="off" /><button className="excel-button green" type="submit">Submit</button></div>
-        {registrationSearchError && <div className="registration-search-error home-registration-error" role="alert">{registrationSearchError}</div>}
-      </form>
       <div className="portal-kpi-grid">
         <div className="portal-kpi"><span>Vehicles in Current Upload</span><strong>{totalVehicles}</strong><small>Current session</small></div>
         <div className="portal-kpi"><span>Due Vehicles</span><strong>{dueVehicles}</strong><small>Current upload</small></div>

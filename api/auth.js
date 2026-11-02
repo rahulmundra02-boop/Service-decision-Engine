@@ -772,7 +772,7 @@ export default async function handler(req, res) {
         modifiedVehicleCount:modifiedVehicleCount.rows[0]?.count || 0,
         refreshedVehicleCount:refreshedVehicleCount.rows[0]?.count || 0,
         vehicles:vehicles.rows,
-        vehicleRowsLimited:vehicles.rowCount >= 200
+        vehicleRowsLimited:vehicles.rowCount >= 5000
       });
     }
 
@@ -856,7 +856,7 @@ export default async function handler(req, res) {
           "v.customer_number,v.engine,v.model,v.last_refreshed_at " +
           "FROM vehicles v " +
           "WHERE v.vin IS NOT NULL AND TRIM(v.vin)<>'' AND " + vehiclePeriodWhere +
-          " ORDER BY v.last_refreshed_at DESC, v.vin ASC LIMIT 200"
+          " ORDER BY v.last_refreshed_at DESC, v.vin ASC LIMIT 10000"
         )
       ]);
 
@@ -1031,7 +1031,7 @@ export default async function handler(req, res) {
         totalVehicles:Number(totalVehiclesResult.rows[0]?.total_vehicles || 0),
         vehiclesAddedInPeriod:Number(vehiclesAddedResult.rows[0]?.vehicles_added || 0),
         recentVehicles:recentVehiclesResult.rows,
-        recentVehiclesLimited:recentVehiclesResult.rowCount >= 200,
+        recentVehiclesLimited:recentVehiclesResult.rowCount >= 10000,
         uniqueVehiclesAnalyzed:Number(uniqueVehiclesAnalyzedResult.rows[0]?.unique_vehicles_analyzed || 0),
         summary:summary.rows.map(row => ({
           ...userPayload(row),

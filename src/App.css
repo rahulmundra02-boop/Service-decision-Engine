@@ -553,3 +553,20 @@ tr:last-child td { border-bottom:0; }
     touch-action: pan-x pan-y;
   }
 }
+
+ 
+/* Fill the available desktop browser width instead of leaving large side gutters. */
+@media (min-width: 901px) {
+  .container {
+    width: calc(100% - 32px);
+    max-width: none;
+    box-sizing: border-box;
+  }
+  .portal-profile-section {
+    width: 100%;
+    max-width: none;
+    box-sizing: border-box;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}

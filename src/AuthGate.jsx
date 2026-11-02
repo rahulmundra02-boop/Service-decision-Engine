@@ -1943,7 +1943,7 @@ function AdminPanel({ users, accountRequests = [], hasPendingRequests = false, o
                 <div className="admin-kpi"><div className="admin-kpi-label">Total Vehicle Modified</div><div className="admin-kpi-value">{Number(dbData?.modifiedVehicleCount||0).toLocaleString("en-IN")}</div><div className="admin-kpi-sub">Existing vehicles with newly added Job Cards</div></div>
                 <div className="admin-kpi"><div className="admin-kpi-label">Total Vehicle Timestamp Refreshed</div><div className="admin-kpi-value">{Number(dbData?.refreshedVehicleCount||0).toLocaleString("en-IN")}</div><div className="admin-kpi-sub">Unique vehicles refreshed in selected period</div></div>
               </div>
-              <div className="admin-panel-card-sub" style={{marginTop:12}}>Selected period: {dbStartDate} to {dbEndDate}. Counts are exact; each detail table shows up to 200 latest rows.</div>
+              <div className="admin-panel-card-sub" style={{marginTop:12}}>Selected period: {dbStartDate} to {dbEndDate}. Counts are exact; the detail list shows up to 5,000 latest rows for the selected date range.</div>
             </div>
 
             <div className="admin-panel-card" style={{marginBottom:16}}>

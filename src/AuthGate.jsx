@@ -591,7 +591,7 @@ export default function AuthGate({ children }) {
 
   const loadAccountRequests = async () => {
     const data = await api("admin-list-account-requests", {}, localStorage.getItem(TOKEN_KEY));
-    setAccountRequests(data.requests || []);
+    setAccountRequests((data.requests || []).filter(r => String(r.status || "").toLowerCase() === "pending"));
   };
 
   const reviewAccountRequest = (request, decision) => run(async () => {
@@ -629,6 +629,17 @@ export default function AuthGate({ children }) {
       window.removeEventListener("service-decision-admin-route", syncAdminRoute);
     };
   }, []);
+
+  useEffect(() => {
+    if (user?.role !== "admin") return undefined;
+    let active = true;
+    const refreshPendingRequests = () => {
+      if (active) void loadAccountRequests().catch(() => {});
+    };
+    refreshPendingRequests();
+    const timer = window.setInterval(refreshPendingRequests, 30000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [user?.role]);
 
   useEffect(() => {
     if (user?.role !== "admin") return;
@@ -957,7 +968,7 @@ export default function AuthGate({ children }) {
           </div>
           <button type="button" className="mobile-bottom-nav-item profile profile-button-with-dot" onClick={() => { setMobileMoreOpen(false); window.dispatchEvent(new CustomEvent("service-decision-mobile-nav",{detail:{mode:"profile"}})); }}>
             <span className="mobile-bottom-nav-icon">●</span><span>Profile</span>
-            {user?.role === "admin" && accountRequests.some(r=>r.status === "pending") && <span className="profile-alert-dot" aria-label="Pending account requests" title="Pending account requests" />}
+            {user?.role === "admin" && accountRequests.length > 0 && <span className="profile-alert-dot" aria-label="Pending account requests" title="Pending account requests" />}
           </button>
         </div>
       )}
@@ -966,6 +977,7 @@ export default function AuthGate({ children }) {
         <AdminPanel
           users={adminUsers}
           accountRequests={accountRequests}
+          hasPendingRequests={accountRequests.length > 0}
           onReviewAccountRequest={reviewAccountRequest}
           onRefreshAccountRequests={loadAccountRequests}
           form={adminForm}
@@ -1000,6 +1012,7 @@ export default function AuthGate({ children }) {
       ) : cloneElement(children, {
         user,
         onOpenProfile: openProfile,
+        hasPendingAccountRequests: accountRequests.length > 0,
         onOpenAdmin: () => { adminOpenedFromProfileRef.current = false; try { window.history.pushState({ ...(window.history.state || {}), serviceDecisionOverlay: "admin" }, "", window.location.href); } catch {} setAdminOpen(true); setError(""); setMessage(""); },
         onChangePassword: () => { setShowPassword(true); setError(""); setMessage(""); },
         onLogout: logout,
@@ -1472,7 +1485,7 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading, onChang
   {signatureOpen && <SignaturePad initialValue={form.signature} onUse={v=>{setForm({...form,signature:v});setSignatureOpen(false);}} onClose={()=>setSignatureOpen(false)}/>}
   </div>;
 }
-function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRefreshAccountRequests, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel, priceMasterMeta, priceMasterUploadBusy, priceMasterUploadMessage, priceMasterUploadError, onUploadPriceMasterExcel }) {
+function AdminPanel({ users, accountRequests = [], hasPendingRequests = false, onReviewAccountRequest, onRefreshAccountRequests, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel, priceMasterMeta, priceMasterUploadBusy, priceMasterUploadMessage, priceMasterUploadError, onUploadPriceMasterExcel }) {
   const analyticsDetailRef = useRef(null);
   const adminSectionFromPath = () => {
     const part = window.location.pathname.split("/")[2] || "analytics";
@@ -1626,7 +1639,7 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
         <nav className="admin-category-nav" aria-label="Admin categories">
           {[
             ["analytics","Analytics"],["users","User Management"],["masters","Masters"],["system","System Controls"]
-          ].map(([key,label]) => <button key={key} type="button" className={adminSection===key?"active":""} onClick={()=>goAdminSection(key)}>{label}</button>)}
+          ].map(([key,label]) => <button key={key} type="button" className={adminSection===key?"active":""} onClick={()=>goAdminSection(key)}>{label}{key==="users" && hasPendingRequests && <span className="pending-alert-dot" title="Pending account requests" aria-label="Pending account requests" />}</button>)}
         </nav>
         {adminSection === "analytics" && <div className="admin-kpi-grid">
           {metricCard("Total Users", totals.users)}
@@ -1991,18 +2004,20 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
                 {form.userId && <button className="auth-secondary" onClick={()=>setForm({userId:null,personName:"",dealerName:"",email:"",mobile:"",password:""})}>Cancel Edit</button>}
               </div>
 
+              {hasPendingRequests && (
               <div className="admin-users-card">
                 <div className="admin-users-header">
-                  <h3>Pending Account Requests {accountRequests.filter(r=>r.status==="pending").length > 0 && <span className="pending-request-dot" title="Pending requests">{accountRequests.filter(r=>r.status==="pending").length}</span>}</h3>
+                  <h3>Pending Account Requests <span className="pending-alert-dot" title="Pending account requests" aria-label="Pending account requests" /></h3>
                   <button className="auth-secondary admin-refresh" onClick={()=>void onRefreshAccountRequests()} disabled={loading}>Refresh</button>
                 </div>
                 <div className="admin-table-wrap">
                   <table className="admin-table">
                     <thead><tr><th>ID</th><th>Name</th><th>Dealer</th><th>Email</th><th>Mobile</th><th>Referral</th><th>Requested</th><th>Action</th></tr></thead>
-                    <tbody>{accountRequests.map(r=><tr key={r.id}><td>{r.id}</td><td>{r.person_name}</td><td>{r.dealer_name}</td><td>{r.email}</td><td>{r.mobile || "—"}</td><td>{r.referral_code || "—"}</td><td>{r.created_at ? new Date(r.created_at).toLocaleString() : "—"}</td><td>{r.status==="pending" ? <div className="admin-row-actions"><button onClick={()=>onReviewAccountRequest(r,"approve")}>Approve</button><button onClick={()=>onReviewAccountRequest(r,"reject")}>Reject</button></div> : r.status}</td></tr>)}{!accountRequests.length && <tr><td colSpan="8" className="admin-empty">No account requests found.</td></tr>}</tbody>
+                    <tbody>{accountRequests.map(r=><tr key={r.id}><td>{r.id}</td><td>{r.person_name}</td><td>{r.dealer_name}</td><td>{r.email}</td><td>{r.mobile || "—"}</td><td>{r.referral_code || "—"}</td><td>{r.created_at ? new Date(r.created_at).toLocaleString() : "—"}</td><td>{r.status==="pending" ? <div className="admin-row-actions"><button onClick={()=>onReviewAccountRequest(r,"approve")}>Approve</button><button onClick={()=>onReviewAccountRequest(r,"reject")}>Reject</button></div> : r.status}</td></tr>)}</tbody>
                   </table>
                 </div>
               </div>
+              )}
 
               <div className="admin-users-card">
                 <div className="admin-users-header"><h3>Users</h3><button className="auth-secondary admin-refresh" onClick={onRefresh} disabled={loading}>Refresh</button></div>

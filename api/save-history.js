@@ -1029,7 +1029,8 @@ export default async function handler(req, res) {
       });
     }
 
-    const requiredFields = ["customerName", "engine", "model", "saleDate"];
+    // Server-side guard mirrors the browser filter. Never write a partial vehicle master row.
+    const requiredFields = ["registration", "customerName", "engine", "model", "saleDate"];
     const completeVehicles = [];
     const rejectedVehicles = [];
     for (const vehicle of uniqueVehicles.values()) {

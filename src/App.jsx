@@ -1,15 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import * as XLSX from "xlsx-js-style";
-import JsBarcode from "jsbarcode";
-import html2pdf from "html2pdf.js";
-import html2canvas from "html2canvas";
-import { jsPDF } from "jspdf";
-import { autoTable } from "jspdf-autotable";
 import "./App.css";
 import DocumentScanner from "./DocumentScanner.jsx";
 import AuthGate from "./AuthGate.jsx";
 import { validateEstimateAggregateSelection } from "./estimateAggregateValidation.js";
+
+const loadXLSX = () => import("xlsx-js-style");
 
 const PART_STANDARDIZATION = {
   'T9999997': 'Tipping Oil',
@@ -1178,6 +1174,7 @@ async function parseExcelFiles(files, options = {}) {
     throw new Error("Please select at least one Excel file.");
   }
 
+  const XLSX = await loadXLSX();
   const fileRecordSets = [];
   const fileNames = [];
   const failedFiles = [];
@@ -2956,6 +2953,7 @@ async function printCustomerReport(group, detailed=false) {
     // IMPORTANT: Do not render the whole HTML history through html2canvas.
     // jsPDF + AutoTable keeps the PDF as real text, avoids blank-page/canvas
     // memory problems, and gives deterministic page breaks.
+    const [{ jsPDF }, { autoTable }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
     const pdf = new jsPDF({ unit:'mm', format:'a4', orientation:'portrait', compress:true });
     const pageW = 210;
     const margin = 10;
@@ -4529,7 +4527,8 @@ function formatWarrantyListDate(value){
 }
 
 function readWarrantyWorkbook(file,aliasGroups){
-  return file.arrayBuffer().then(buffer=>{
+  return file.arrayBuffer().then(async buffer=>{
+    const XLSX=await loadXLSX();
     const workbook=XLSX.read(buffer,{type:"array",cellDates:false,raw:true});
     const output=[];
     const mapping={};
@@ -4714,12 +4713,17 @@ function buildWarrantyTags(claimRows,summaryRows){
 function WarrantyBarcode({value}){
   const ref=useRef(null);
   useEffect(()=>{
+    let cancelled=false;
     if(!ref.current) return;
     ref.current.innerHTML="";
     if(!warrantyText(value)) return;
-    try{
-      JsBarcode(ref.current,warrantyText(value),{format:"CODE128",displayValue:false,width:1.35,height:34,margin:0,background:"#ffffff",lineColor:"#000000"});
-    }catch{}
+    import("jsbarcode").then(({default:JsBarcode})=>{
+      if(cancelled||!ref.current) return;
+      try{
+        JsBarcode(ref.current,warrantyText(value),{format:"CODE128",displayValue:false,width:1.35,height:34,margin:0,background:"#ffffff",lineColor:"#000000"});
+      }catch{}
+    }).catch(()=>{});
+    return ()=>{cancelled=true;};
   },[value]);
   return <svg ref={ref} className="warranty-tag-barcode" aria-label={value?"Barcode "+value:"Barcode"} />;
 }
@@ -4887,8 +4891,9 @@ function WarrantyTagPanel({user,onBack}){
     warrantyText(tag.jobCard),formatWarrantyListDate(tag.jobCardDate),warrantyText(tag.customerName),warrantyText(tag.reg),warrantyText(tag.activeClaimNo),warrantyText(tag.partNo),warrantyText(tag.partDesc),warrantyText(tag.qty),warrantyText(tag.claimType)
   ]),[visibleTags]);
   const warrantyListTsv=useMemo(()=>[warrantyListHeaders.join("\t"),...warrantyListRows.map(row=>row.join("\t"))].join("\n"),[warrantyListRows]);
-  const exportWarrantyList=()=>{
+  const exportWarrantyList=async()=>{
     if(!warrantyListRows.length) return;
+    const XLSX=await loadXLSX();
     const worksheet=XLSX.utils.aoa_to_sheet([warrantyListHeaders,...warrantyListRows]);
     worksheet["!cols"]=[{wch:18},{wch:23},{wch:36},{wch:20},{wch:20},{wch:20},{wch:42},{wch:12},{wch:14}];
     const workbook=XLSX.utils.book_new();
@@ -4943,6 +4948,7 @@ function WarrantyTagPanel({user,onBack}){
         jsPDF:{unit:"mm",format:"a4",orientation:"portrait"},
         pagebreak:{mode:["css","legacy"]}
       };
+      const { default: html2pdf } = await import("html2pdf.js");
       await html2pdf().set(opt).from(element).save();
       setMessage(visibleTags.length.toLocaleString("en-IN")+" tags PDF ready.");
     }catch(e){
@@ -5136,7 +5142,6 @@ function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResu
           <div className="small-note">No saved estimates yet.</div>
         )}
       </div>
-      <div className="portal-workflow"><div><b>Workflow</b><span>Upload DMS Excel → Analyse → Review Service History → Prepare Estimate / Share Due Summary</span></div><div><b>Personalisation</b><span>Theme is selected from Home. Columns, custom names and table widths are saved in Profile &amp; Settings.</span></div></div>
     </div>
   );
 }
@@ -6618,7 +6623,8 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
     setOpenBulkFilter(null);
   };
 
-  const downloadBulkCsv = () => {
+  const downloadBulkCsv = async () => {
+    const XLSX = await loadXLSX();
     const exportColumns = [
       ["serial", "S.No."],
       ["customerName", bulkColumnLabels.customerName || "Customer Name"],
@@ -7300,8 +7306,9 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
     })();
     return () => { cancelled = true; };
   }, [estimateStage]);
-  function downloadXlsxBlob(workbook, fileName) {
+  async function downloadXlsxBlob(workbook, fileName) {
     try {
+      const XLSX = await loadXLSX();
       // Let SheetJS handle browser download directly. This avoids failures
       // during manual Blob/URL construction in some browser environments.
       XLSX.writeFile(workbook, fileName, { bookType: "xlsx", compression: true });
@@ -7312,7 +7319,8 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
     }
   }
 
-  function exportEstimateExcel() {
+  async function exportEstimateExcel() {
+    const XLSX = await loadXLSX();
     const vehicle = estimateVehicle || {};
     const printModel = String(estimatePrintModel || vehicle.model || "").trim();
     const wb = XLSX.utils.book_new();
@@ -7546,10 +7554,11 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
     XLSX.utils.book_append_sheet(wb, ws, "Service Estimate");
     const fileName = ("Service_Estimate_" + (vehicle.reg || vehicle.vin || "Vehicle"))
       .replace(/[^a-z0-9_.-]+/gi, "_") + ".xlsx";
-    downloadXlsxBlob(wb, fileName);
+    await downloadXlsxBlob(wb, fileName);
   }
 
   async function buildEstimatePdf(autoPrint = false, sharePdf = false) {
+    const [{ jsPDF }, { autoTable }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
     const pdf = new jsPDF({ unit:"mm", format:"a4", orientation:"portrait", compress:true });
     const pageWidth = 210;
     const pageHeight = 297;
@@ -8056,6 +8065,7 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
         6000
       );
 
+      const { default: html2canvas } = await import("html2canvas");
       const canvas = await html2canvas(clone, {
         backgroundColor: "#ffffff",
         useCORS: true,
@@ -8123,11 +8133,11 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
         .sheet-heading,.section-title,.portal-section-title { background:var(--theme) !important; border-color:var(--theme-dark) !important; }
         .sheet-subheading { background:var(--theme-soft); border-color:var(--theme); color:var(--theme-dark); }
         .portal-home-hero { background:linear-gradient(135deg,var(--theme-bg),#fff); border-color:var(--theme); }
-        .portal-home-kicker,.portal-action-title,.portal-workflow b,.portal-kpi strong { color:var(--theme-dark) !important; }
+        .portal-home-kicker,.portal-action-title,.portal-kpi strong { color:var(--theme-dark) !important; }
         .portal-action-card,.portal-kpi,.bulk-overview-card,.home-estimate-preview { border-color:color-mix(in srgb,var(--theme) 35%,#c7d1da); }
         .portal-action-card:hover:not(:disabled),.home-estimate-preview:hover { border-color:var(--theme); }
         .portal-action-link { color:var(--theme) !important; }
-        .portal-workflow div,.decision-basis,.decision-status-card { border-color:color-mix(in srgb,var(--theme) 28%,#d7dee4); background:var(--theme-bg); }
+        .decision-basis,.decision-status-card { border-color:color-mix(in srgb,var(--theme) 28%,#d7dee4); background:var(--theme-bg); }
         .decision-table th,.history-table th { background:var(--theme) !important; }
         .cell.section { background:var(--theme) !important; }
         .cell.label { background:var(--theme-soft); color:var(--theme-dark); }
@@ -8182,7 +8192,6 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
         .portal-action-title { font-weight:800; font-size:15px; color:#1f4e78; }
         .portal-action-text { color:#66737d; font-size:12px; line-height:1.45; }
         .portal-action-link { margin-top:auto; color:#217346; font-size:12px; font-weight:800; }
-        .portal-workflow { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
         .portal-workflow div { border:1px solid #d7dee4; background:#f8fafc; padding:11px 13px; font-size:12px; }
         .portal-workflow b { display:block; color:#1f4e78; margin-bottom:4px; }
         .portal-workflow span { color:#66737d; }
@@ -8205,7 +8214,7 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
         .bulk-overview-card.due strong { color:#006100; }
         .bulk-search-input { max-width:360px; min-height:31px; }
         @media (max-width:900px) { .portal-action-grid{grid-template-columns:repeat(2,1fr)} .decision-status-grid{grid-template-columns:repeat(2,1fr)} .decision-basis-grid{grid-template-columns:repeat(2,1fr)} .bulk-overview-grid{grid-template-columns:repeat(2,1fr)} }
-        @media (max-width:600px) { .portal-home-hero{flex-direction:column;align-items:flex-start}.portal-home-hero-actions{width:100%;justify-content:flex-start}.portal-kpi-grid,.portal-workflow{grid-template-columns:1fr}.portal-action-grid{grid-template-columns:1fr}.decision-basis-grid{grid-template-columns:1fr}.bulk-overview-grid{grid-template-columns:1fr}.bulk-search-input{max-width:none;width:100%} }
+        @media (max-width:600px) { .portal-home-hero{flex-direction:column;align-items:flex-start}.portal-home-hero-actions{width:100%;justify-content:flex-start}.portal-kpi-grid{grid-template-columns:1fr}.portal-action-grid{grid-template-columns:1fr}.decision-basis-grid{grid-template-columns:1fr}.bulk-overview-grid{grid-template-columns:1fr}.bulk-search-input{max-width:none;width:100%} }
         .excel-window { width: min(1500px, 100%); margin: 0 auto; background: #fff; min-height: 100vh; box-shadow: 0 0 0 1px #9e9e9e; }
         .excel-titlebar { height: 34px; background: #217346; color: #fff; display:flex; align-items:center; justify-content:center; padding:0 12px; font-size:14px; }
         .excel-title { font-weight:700; text-align:center; flex:1; }

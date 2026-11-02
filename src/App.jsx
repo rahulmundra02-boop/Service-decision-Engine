@@ -865,9 +865,9 @@ function customerNameFromRow(headers, cells, preferredIndex) {
   const explicitValue = explicitCustomer ? String(cells[explicitCustomer.index] ?? "").trim() : "";
   const preferredValue = String(cells[preferredIndex] ?? "").trim();
   const otherValue = candidates.map(({ index }) => String(cells[index] ?? "").trim())
-    .find(value => value && !/^\\d+(?:\\.\\d+)?$/.test(value));
-  const selected = (explicitValue && !/^\\d+(?:\\.\\d+)?$/.test(explicitValue)) ? explicitValue : (otherValue || preferredValue);
-  return selected && !/^\\d+(?:\\.\\d+)?$/.test(selected) ? selected : "";
+    .find(value => value && !/^\d+(?:\\.\d+)?$/.test(value));
+  const selected = (explicitValue && !/^\d+(?:\\.\d+)?$/.test(explicitValue)) ? explicitValue : (otherValue || preferredValue);
+  return selected && !/^\d+(?:\\.\d+)?$/.test(selected) ? selected : "";
 }
 function splitDelimitedLine(line, delimiter) {
   // Excel worksheet data is converted to TAB-separated text from individual
@@ -6106,7 +6106,7 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
             const dateKey=value=>{
               if(value instanceof Date&&!Number.isNaN(value.getTime()))return String(value.getFullYear()).padStart(4,"0")+"-"+String(value.getMonth()+1).padStart(2,"0")+"-"+String(value.getDate()).padStart(2,"0");
               const raw=String(value??"").trim();
-              const iso=raw.match(/^(\\d{4}-\\d{2}-\\d{2})/);
+              const iso=raw.match(/^(\d{4}-\d{2}-\d{2})/);
               if(iso)return iso[1];
               const parsed=new Date(value);
               return Number.isNaN(parsed.getTime())?"":parsed.toISOString().slice(0,10);

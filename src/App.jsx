@@ -866,7 +866,7 @@ function customerNameFromRow(headers, cells, preferredIndex) {
   const preferredValue = String(cells[preferredIndex] ?? "").trim();
   const otherValue = candidates.map(({ index }) => String(cells[index] ?? "").trim())
     .find(value => value && !/^\d+(?:\.\d+)?$/.test(value));
-  const selected = (explicitValue && !/^\d+(?:\.\d+)?$/.test(explicitValue)) ? explicitValue : (otherValue || preferredValue);
+  const selected = explicitCustomer ? (explicitValue && !/^\d+(?:\.\d+)?$/.test(explicitValue) ? explicitValue : "") : (otherValue || preferredValue);
   return selected && !/^\d+(?:\.\d+)?$/.test(selected) ? selected : "";
 }
 function splitDelimitedLine(line, delimiter) {

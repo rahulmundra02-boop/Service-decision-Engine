@@ -853,10 +853,10 @@ export default async function handler(req, res) {
         ),
         client.query(
           "SELECT v.vin,v.registration,v.customer_name," +
-          "v.customer_number,v.engine,v.model,v.created_at " +
+          "v.customer_number,v.engine,v.model,v.last_refreshed_at " +
           "FROM vehicles v " +
           "WHERE v.vin IS NOT NULL AND TRIM(v.vin)<>'' AND " + vehiclePeriodWhere +
-          " ORDER BY v.created_at DESC, v.vin ASC LIMIT 200"
+          " ORDER BY v.last_refreshed_at DESC, v.vin ASC LIMIT 200"
         )
       ]);
 

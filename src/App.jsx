@@ -857,17 +857,18 @@ function customerNameIndex(headers, dataLines, delimiter) {
 function customerNameFromRow(headers, cells, preferredIndex) {
   const candidates = headers
     .map((header, index) => ({ header: normalizeHeader(header), index }))
-    .filter(({ header }) => header === "name" || (header.includes("customer") && header.includes("name")));
+    .filter(({ header }) => header === "name" || (header.includes("customer") && header.includes("name")))
+    .sort((a, b) => Number(b.header.includes("customer")) - Number(a.header.includes("customer")));
 
-  // Use the row's own textual value, not only a file-level column choice.
-  // This protects imports with duplicate or inconsistently ordered Name fields.
-  const textual = candidates
-    .map(({ index }) => String(cells[index] ?? "").trim())
-    .find(isUsableCustomerName);
-
-  return textual || String(cells[preferredIndex] ?? "").trim();
+  // Prefer explicit Customer Name. A generic Name column can refer to a driver/contact.
+  const explicitCustomer = candidates.find(({ header }) => header.includes("customer"));
+  const explicitValue = explicitCustomer ? String(cells[explicitCustomer.index] ?? "").trim() : "";
+  const preferredValue = String(cells[preferredIndex] ?? "").trim();
+  const otherValue = candidates.map(({ index }) => String(cells[index] ?? "").trim())
+    .find(value => value && !/^\\d+(?:\\.\\d+)?$/.test(value));
+  const selected = explicitValue || otherValue || preferredValue;
+  return selected && !/^\\d+(?:\\.\\d+)?$/.test(selected) ? selected : "";
 }
-
 function splitDelimitedLine(line, delimiter) {
   // Excel worksheet data is converted to TAB-separated text from individual
   // cell values. In TSV, double quotes are ordinary cell characters, not CSV
@@ -6102,27 +6103,47 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
         setUploadDiagnostic({...diag});
         void (async()=>{
           try{
+            const dateKey=value=>{
+              if(value instanceof Date&&!Number.isNaN(value.getTime()))return String(value.getFullYear()).padStart(4,"0")+"-"+String(value.getMonth()+1).padStart(2,"0")+"-"+String(value.getDate()).padStart(2,"0");
+              const raw=String(value??"").trim();
+              const iso=raw.match(/^(\\d{4}-\\d{2}-\\d{2})/);
+              if(iso)return iso[1];
+              const parsed=new Date(value);
+              return Number.isNaN(parsed.getTime())?"":parsed.toISOString().slice(0,10);
+            };
+            const rowsByVin=new Map();
+            for(const record of parsedRows){
+              const vin=String(record?.vin||"").trim().toUpperCase();
+              if(!vin)continue;
+              if(!rowsByVin.has(vin))rowsByVin.set(vin,[]);
+              rowsByVin.get(vin).push(record);
+            }
             const vehicleMasterRecords=uploadedVins.map(vin=>{
-              const vehicleRows=parsedRows.filter(record=>String(record?.vin||"").trim().toUpperCase()===vin);
-              const dateKey=value=>{
-                const raw=String(value??"").trim();
-                const iso=raw.match(/^(\d{4}-\d{2}-\d{2})/);
-                if(iso)return iso[1];
-                const parsed=new Date(value);
-                return Number.isNaN(parsed.getTime())?"":parsed.toISOString().slice(0,10);
+              const vehicleRows=rowsByVin.get(vin)||[];
+              // All master fields come from one latest source row for this VIN.
+              const latest=[...vehicleRows].sort((a,b)=>{
+                const dateCompare=dateKey(b?.date).localeCompare(dateKey(a?.date));
+                return dateCompare||Number(b?.rowNumber||0)-Number(a?.rowNumber||0);
+              })[0]||{};
+              return {
+                vin,
+                registration:String(latest.reg||latest.registration||"").trim(),
+                customerName:String(latest.customerName||latest.customer_name||"").trim(),
+                engine:String(latest.engine||"").trim(),
+                model:String(latest.model||"").trim(),
+                sale:dateKey(latest.sale),
               };
-              const datedRows=vehicleRows.map(record=>({record,date:dateKey(record?.date)}))
-                .filter(item=>item.date&&String(item.record?.reg||item.record?.registration||"").trim())
-                .sort((a,b)=>b.date.localeCompare(a.date));
-              const vehicle=deriveVehicle(vehicleRows);
-              const latest=datedRows[0];
-              return {...vehicle,registration:latest?(latest.record.reg||latest.record.registration):vehicle.registration,
-                latestJobDate:latest?.date||null};
             });
             const masterResult=await upsertVehicleMaster(vehicleMasterRecords);
             diag.vehiclesUpserted=Number(masterResult.upsertedVehicles||0);
-            if(diag.vehiclesUpserted<uploadedVins.length)throw new Error(`Vehicle master update count mismatch: expected ${uploadedVins.length}, updated ${diag.vehiclesUpserted}`);
-            diag.status="completed";
+            diag.vehiclesRejected=Number(masterResult.rejectedVehicles?.length||0);
+            diag.vehicleMasterRejected=masterResult.rejectedVehicles||[];
+            if(diag.vehiclesRejected||diag.vehiclesUpserted!==uploadedVins.length){
+              diag.status="completed-with-errors";
+              diag.vehicleMasterError=`${diag.vehiclesUpserted} updated, ${diag.vehiclesRejected} skipped because the latest VIN row is missing required details.`;
+            }else{
+              diag.status="completed";
+            }
           }catch(backgroundError){
             console.error("Background vehicle master update failed:",backgroundError);
             diag.status="completed-with-errors";

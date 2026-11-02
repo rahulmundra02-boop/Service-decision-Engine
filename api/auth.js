@@ -727,7 +727,8 @@ export default async function handler(req, res) {
 
       const [vehicleCount, lineCount, vehicles, modifiedVehicleCount, refreshedVehicleCount] = await Promise.all([
         client.query(
-          "SELECT COUNT(*)::int AS count FROM vehicles WHERE " + rangeFilter,
+          "SELECT COUNT(*)::int AS count FROM vehicles WHERE last_refreshed_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Kolkata') " +
+          "AND last_refreshed_at < (($2::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata')",
           rangeParams
         ),
         client.query(
@@ -735,17 +736,11 @@ export default async function handler(req, res) {
           rangeParams
         ),
         client.query(
-          "WITH period_events AS (" +
-          "SELECT UPPER(TRIM(vin)) AS normalized_vin, MAX(created_at) AS upload_at " +
-          "FROM vehicle_upload_events " +
-          "WHERE created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Kolkata') " +
-          "AND created_at < (($2::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata') " +
-          "GROUP BY UPPER(TRIM(vin))" +
-          ") " +
-          "SELECT v.vin,v.registration,v.customer_name,v.model,v.engine,COALESCE(pe.upload_at,v.created_at) AS created_at " +
-          "FROM vehicles v LEFT JOIN period_events pe ON pe.normalized_vin=UPPER(TRIM(v.vin)) " +
-          "WHERE " + rangeFilter.replaceAll("created_at","v.created_at") + " OR pe.normalized_vin IS NOT NULL " +
-          "ORDER BY COALESCE(pe.upload_at,v.created_at) DESC LIMIT 200",
+          "SELECT v.vin,v.registration,v.customer_name,v.model,v.engine,v.last_refreshed_at AS created_at " +
+          "FROM vehicles v " +
+          "WHERE v.last_refreshed_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Kolkata') " +
+          "AND v.last_refreshed_at < (($2::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata') " +
+          "ORDER BY v.last_refreshed_at DESC LIMIT 200",
           rangeParams
         ),
         client.query(
@@ -849,8 +844,8 @@ export default async function handler(req, res) {
       );
 
       const vehiclePeriodWhere = rangeDays === 1
-        ? "(v.created_at AT TIME ZONE 'Asia/Kolkata')::date = (NOW() AT TIME ZONE 'Asia/Kolkata')::date"
-        : "(v.created_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN (NOW() AT TIME ZONE 'Asia/Kolkata')::date - (" + (rangeDays - 1) + ") AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date";
+        ? "(v.last_refreshed_at AT TIME ZONE 'Asia/Kolkata')::date = (NOW() AT TIME ZONE 'Asia/Kolkata')::date"
+        : "(v.last_refreshed_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN (NOW() AT TIME ZONE 'Asia/Kolkata')::date - (" + (rangeDays - 1) + ") AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date";
 
       const [vehiclesAddedResult, recentVehiclesResult] = await Promise.all([
         client.query(

@@ -6152,7 +6152,7 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
           }finally{
             diag.finishedAt=new Date().toISOString();
             setUploadDiagnostic({...diag});
-            if(diag.status==="completed-with-errors")setError("Service data is ready for analysis, but vehicle master update reported an error.");
+            if(diag.status==="completed-with-errors"&&!diag.vehicleMasterError)setError("Service data is ready for analysis, but vehicle master update reported an error.");
           }
         })();
       }

@@ -2111,16 +2111,6 @@ function getVisitParts(visit, vehicle, decision, historyMode = "schedule") {
   }).filter(Boolean);
 }
 
-function getLastMatching(records, keywords) {
-  const matches = records
-    .filter((r) => {
-      const text = String(r.standardizedPart || r.part || "").toUpperCase();
-      return keywords.some((k) => text.includes(k));
-    })
-    .sort((a, b) => (b.date || 0) - (a.date || 0));
-  return matches[0] || null;
-}
-
 const DECISION_RULES = {
   coolant: [320000,36,15], gearOil:[1300000,18,6], hubGrease:[80000,12,3],
   axleOil:[200000,24,12], clutchOil:[80000,18,0.5], steeringOil:[1300000,24,1],
@@ -2134,7 +2124,6 @@ const TIP_RULES = {
 };
 
 function monthsAfter(date, months){ const d=new Date(date); d.setMonth(d.getMonth()+months); return d; }
-function daysBetween(a,b){ return Math.floor((b-a)/86400000); }
 function is4825Model(model){
   const t=String(model||'').toUpperCase();
   return /(?:^|[^0-9])4825(?:[^0-9]|$)/.test(t);
@@ -2602,11 +2591,6 @@ function serviceTextForRecord(record){
   return String(record?.standardizedPart || record?.part || record?.partDescription || '').toUpperCase();
 }
 
-function hasFreeServiceHistory(records, serviceName){
-  const target=String(serviceName||'').toUpperCase();
-  return records.some(r => serviceTextForRecord(r).includes(target));
-}
-
 function additionalServiceEligibility(records, vehicle, running, analysisDate, decisionBasis = "AUTO"){
   const services=[];
 
@@ -2904,21 +2888,6 @@ function saveCustomerMergeRule(group){
   next.push({customerKeys:keys,name:group.name});
   localStorage.setItem(CUSTOMER_MERGE_STORAGE_KEY,JSON.stringify(next));
 }
-function removeCustomerMergeKey(group, keyToRemove){
-  const keys=(group.customerKeys||[]).map(String);
-  const remaining=keys.filter(key=>key!==String(keyToRemove));
-  const saved=readSavedCustomerMerges().flatMap(rule=>{
-    if(!rule.customerKeys?.some(key=>keys.includes(String(key)))) return [rule];
-    return remaining.length>1?[{customerKeys:remaining,name:group.name}]:[];
-  });
-  localStorage.setItem(CUSTOMER_MERGE_STORAGE_KEY,JSON.stringify(saved));
-}
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;').replace(/'/g,'&#039;');
-}
-
 function buildCustomerWhatsAppText(group, preferences = {}) {
   const dueVehicles = (group?.vehicles || []).filter(v => Array.isArray(v.services) && v.services.length > 0);
   const count = dueVehicles.length;
@@ -3705,15 +3674,6 @@ function estimateLabourMatchesService(row = {}, serviceKey = "") {
   }
 }
 
-function estimateServiceKeyFromText(value = "") {
-  const t = String(value).toUpperCase();
-  for (const [serviceKey, families] of Object.entries(ESTIMATE_STANDARD_PARTS)) {
-    if (families.some(family => t.includes(family))) return serviceKey;
-  }
-  return "";
-}
-
-function estimateIsLabour(row = {}) {
   return estimateCategory(row) === "labour";
 }
 
@@ -3735,7 +3695,6 @@ function estimateChooseBestRate(rows=[]){
   const a=rows.map((row,index)=>({row,rate:Number(row?.rate),rank:estimateRowRank(row,index)})).filter(x=>Number.isFinite(x.rate)&&x.rate>0);
   if(!a.length)return 0;a.sort((x,y)=>y.rank-x.rank);return a[0].rate;
 }
-function estimateRowCategoryCode(value=""){const t=String(value||"").trim().toUpperCase();return t.startsWith("P001")?"P001":t.startsWith("P002")?"P002":"";}
 function estimateBuildHistoricalItem(type,serviceKey,rows,code="",forcedQty=null,rateOverride=null){
   if(!rows.length)return null;
   const q=forcedQty!==null?{qty:Number(forcedQty),latestRow:rows.slice().sort((a,b)=>estimateRowRank(b,0)-estimateRowRank(a,0))[0]}:estimateChooseBestQuantity(rows);
@@ -3819,42 +3778,6 @@ function estimateEligibleJobCards(rows = [], serviceKey = "") {
   }
 
   return eligible;
-}
-
-function estimateRowsForCompleteService(rows = [], serviceKey = "") {
-  const allRows = estimatePartRows(rows, serviceKey);
-  const eligibleKeys = estimateEligibleJobCards(rows, serviceKey);
-
-  // First preference: the same service part from a job card that looks like a
-  // complete replacement. Second preference: any matching historical part for
-  // this VIN. This prevents a missing/misnamed line on one job card from
-  // making a selected aggregate disappear.
-  const preferredRows = eligibleKeys.size
-    ? allRows.filter(row => eligibleKeys.has(estimateJobCardKey(row)))
-    : [];
-  if (preferredRows.length) return preferredRows;
-  if (allRows.length) return allRows;
-
-  // Final fallback: when the DMS history contains the labour operation for the
-  // selected service but the part line has an unknown/mismatched description,
-  // use P002 rows from the same job card as the historical quantity/rate source.
-  // The displayed part number will then come from the user-provided reference
-  // list. This is deliberately a fallback only; unrelated vehicle-history
-  // parts from other job cards are never used.
-  const labourJobKeys = new Set(
-    rows
-      .filter(row =>
-        estimateLabourMatchesService(row, serviceKey) &&
-        Number(row?.quantity || 0) > 0
-      )
-      .map(row => estimateJobCardKey(row))
-  );
-
-  return rows.filter(row =>
-    labourJobKeys.has(estimateJobCardKey(row)) &&
-    estimateCategory(row) === "part" &&
-    Number(row?.quantity || 0) > 0
-  );
 }
 
 function estimateHistoryToItems(vehicleRows = [], selectedKeys = [], modelRows = [], globalPartRates = [], vehicleModel = "") {
@@ -4576,12 +4499,6 @@ function parseWarrantyNumber(value){
   return match?Number(match[0]):0;
 }
 
-function formatWarrantyClaimNumber(value){
-  const text=warrantyText(value).replace(/\s+/g,"");
-  if(!text) return "";
-  return text.replace(/^0+(?=\d)/,"");
-}
-
 function getWarrantyRepairType(claimType){
   const normalized=warrantyText(claimType).trim().toUpperCase();
   return /^(?:ZAMC|AMC)(?:\b|$)/.test(normalized) ? "AMC" : "NON_AMC";
@@ -4613,22 +4530,6 @@ function formatWarrantyListDate(value){
   const year=match[3].length===4?match[3].slice(-2):match[3];
   return match[1].padStart(2,"0")+"-"+match[2].padStart(2,"0")+"-"+year;
 }
-
-function formatWarrantyReading(summary){
-  const primary=summary?.reading||0;
-  const primaryUnit=(summary?.readingUnit||"").toUpperCase();
-  const secondary=summary?.secondaryReading||0;
-  const secondaryUnit=(summary?.secondaryUnit||"").toUpperCase();
-
-  if(primary && primaryUnit.includes("KM")) return formatNumber(primary)+" K";
-  if(secondary && secondaryUnit.includes("KM")) return formatNumber(secondary)+" K";
-  if(primary && primaryUnit.includes("HR")) return formatNumber(primary)+" H";
-  if(secondary && secondaryUnit.includes("HR")) return formatNumber(secondary)+" H";
-  if(primary) return formatNumber(primary)+" "+primaryUnit;
-  if(secondary) return formatNumber(secondary)+" "+secondaryUnit;
-  return "-";
-}
-
 
 function readWarrantyWorkbook(file,aliasGroups){
   return file.arrayBuffer().then(buffer=>{
@@ -9933,7 +9834,6 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
   );
 }
 
-function Info({ label, value }) {
   return <div className="info-box"><span>{label}</span><strong>{value}</strong></div>;
 }
 

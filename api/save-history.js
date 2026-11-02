@@ -1049,10 +1049,10 @@ export default async function handler(req, res) {
         const result = await client.query(
           "WITH incoming AS (" +
           " SELECT * FROM jsonb_to_recordset($1::jsonb) AS x(" +
-          " vin text, registration text, customerName text, engine text, model text, saleDate date)" +
+          " vin text, registration text, customer_name text, engine text, model text, sale_date date)" +
           ")" +
           " INSERT INTO vehicles (vin,registration,customer_name,engine,model,sale_date,last_refreshed_at)" +
-          " SELECT vin,registration,customerName,engine,model,saleDate,NOW() FROM incoming" +
+          " SELECT vin,registration,customer_name,engine,model,sale_date,NOW() FROM incoming" +
           " ON CONFLICT (vin) DO UPDATE SET" +
           " registration=EXCLUDED.registration," +
           " customer_name=EXCLUDED.customer_name," +

@@ -1061,7 +1061,7 @@ export default async function handler(req, res) {
           " sale_date=EXCLUDED.sale_date," +
           " last_refreshed_at=NOW()" +
           " RETURNING vin",
-          [JSON.stringify(completeVehicles)]
+          [JSON.stringify(completeVehicles.map(vehicle => ({ vin:vehicle.vin, registration:vehicle.registration, customer_name:vehicle.customerName, engine:vehicle.engine, model:vehicle.model, sale_date:vehicle.saleDate })))]
         );
         upsertedVehicles = result.rowCount || 0;
       } catch (error) {

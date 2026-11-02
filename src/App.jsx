@@ -8192,9 +8192,6 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
         .portal-action-title { font-weight:800; font-size:15px; color:#1f4e78; }
         .portal-action-text { color:#66737d; font-size:12px; line-height:1.45; }
         .portal-action-link { margin-top:auto; color:#217346; font-size:12px; font-weight:800; }
-        .portal-workflow div { border:1px solid #d7dee4; background:#f8fafc; padding:11px 13px; font-size:12px; }
-        .portal-workflow b { display:block; color:#1f4e78; margin-bottom:4px; }
-        .portal-workflow span { color:#66737d; }
         .professional-section-title { margin-top:12px; }
         .decision-status-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:7px; margin-top:7px; }
         .decision-status-card { border:1px solid #b7b7b7; padding:9px; background:#f7f7f7; min-height:56px; }

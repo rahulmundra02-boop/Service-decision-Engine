@@ -5239,7 +5239,7 @@ function PortalHome({ user, onNavigate, onUpload, onClear, hasAnalysis, bulkResu
     </div>
   );
 }
-function ProfileSection({ user, onOpenProfile, onOpenAdmin, onChangePassword, onLogout }) {
+function ProfileSection({ user, hasPendingAccountRequests = false, onOpenProfile, onOpenAdmin, onChangePassword, onLogout }) {
   return (
     <div className="portal-profile-section">
       <div className="portal-profile-header">
@@ -5261,7 +5261,7 @@ function ProfileSection({ user, onOpenProfile, onOpenAdmin, onChangePassword, on
         </button>
         {user?.role === "admin" && (
           <button type="button" className="portal-profile-card" onClick={onOpenAdmin}>
-            <span className="portal-profile-card-icon portal-icon-admin" aria-hidden="true"></span><strong>Admin</strong>
+            <span className="portal-profile-card-icon portal-icon-admin" aria-hidden="true"></span><strong>Admin{hasPendingAccountRequests && <span className="pending-alert-dot" title="Pending account requests" aria-label="Pending account requests" />}</strong>
             <small>Manage users, campaigns, price master and admin controls.</small>
           </button>
         )}
@@ -5277,7 +5277,7 @@ function ProfileSection({ user, onOpenProfile, onOpenAdmin, onChangePassword, on
     </div>
   );
 }
-function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword, onLogout }) {
+function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenProfile, onOpenAdmin, onChangePassword, onLogout }) {
   const [excelData, setExcelData] = useState("");
   const [analysis, setAnalysis] = useState(null);
   const [error, setError] = useState("");
@@ -9388,7 +9388,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
               <div className={`excel-tab ${mode === "bulk" ? "active" : ""}`} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("bulk"); setError(""); setAnalysis(null); }}> <span className="nav-icon">📊</span>Bulk Vehicle</div>
               <div className={`excel-tab ${mode === "warranty-tags" ? "active" : ""}`} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("warranty-tags"); setError(""); }}> <span className="nav-icon">🏷️</span>Warranty Tag Print</div>
               <div className={`excel-tab ${mode === "document-scanner" ? "active" : ""}`} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("document-scanner"); setError(""); }}> <span className="nav-icon">📷</span>Document Scanner</div>
-              <div className={`excel-tab ${mode === "profile" ? "active" : ""}`} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("profile"); setError(""); }}> <span className="nav-icon">👤</span>Profile</div>
+              <div className={`excel-tab ${mode === "profile" ? "active" : ""}`} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("profile"); setError(""); }}> <span className="nav-icon">👤</span>Profile{hasPendingAccountRequests && <span className="pending-alert-dot" title="Pending account requests" aria-label="Pending account requests" />}</div>
             </div>
             {mode !== "warranty-tags" && mode !== "document-scanner" && mode !== "profile" && (
             <div className="excel-toolbar">
@@ -9521,7 +9521,7 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
             ) : mode === "document-scanner" ? (
               <DocumentScanner onBack={() => setMode("home")} />
             ) : mode === "profile" ? (
-              <ProfileSection user={user} onOpenProfile={onOpenProfile} onOpenAdmin={onOpenAdmin} onChangePassword={onChangePassword} onLogout={onLogout} />
+              <ProfileSection user={user} hasPendingAccountRequests={hasPendingAccountRequests} onOpenProfile={onOpenProfile} onOpenAdmin={onOpenAdmin} onChangePassword={onChangePassword} onLogout={onLogout} />
             ) : mode === "single" ? (
               <>
                 {analysis ? (

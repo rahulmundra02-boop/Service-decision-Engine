@@ -772,8 +772,17 @@ export default async function handler(req, res) {
           rangeParams
         ),
         client.query(
-          "SELECT vin,registration,customer_name,model,created_at FROM vehicles WHERE " + rangeFilter +
-          " ORDER BY created_at DESC LIMIT 200",
+          "WITH period_events AS (" +
+          "SELECT UPPER(TRIM(vin)) AS normalized_vin, MAX(created_at) AS upload_at " +
+          "FROM vehicle_upload_events " +
+          "WHERE created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Kolkata') " +
+          "AND created_at < (($2::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata') " +
+          "GROUP BY UPPER(TRIM(vin))" +
+          ") " +
+          "SELECT v.vin,v.registration,v.customer_name,v.model,COALESCE(pe.upload_at,v.created_at) AS created_at " +
+          "FROM vehicles v LEFT JOIN period_events pe ON pe.normalized_vin=UPPER(TRIM(v.vin)) " +
+          "WHERE " + rangeFilter.replaceAll("created_at","v.created_at") + " OR pe.normalized_vin IS NOT NULL " +
+          "ORDER BY COALESCE(pe.upload_at,v.created_at) DESC LIMIT 200",
           rangeParams
         ),
         client.query(

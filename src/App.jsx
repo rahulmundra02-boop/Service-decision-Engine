@@ -6118,9 +6118,9 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
               if(!rowsByVin.has(vin))rowsByVin.set(vin,[]);
               rowsByVin.get(vin).push(record);
             }
-            const vehicleMasterRecords=uploadedVins.map(vin=>{
+            const vehicleMasterCandidates=uploadedVins.map(vin=>{
               const vehicleRows=rowsByVin.get(vin)||[];
-              // All master fields come from one latest source row for this VIN.
+              // Build the complete DB upload row in the browser from the latest Excel row.
               const latest=[...vehicleRows].sort((a,b)=>{
                 const dateCompare=dateKey(b?.date).localeCompare(dateKey(a?.date));
                 return dateCompare||Number(b?.rowNumber||0)-Number(a?.rowNumber||0);
@@ -6134,13 +6134,28 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
                 sale:dateKey(latest.sale),
               };
             });
-            const masterResult=await upsertVehicleMaster(vehicleMasterRecords);
+            // Only complete rows are sent to Vercel. Every vehicles table column
+            // written by this action must have a value, including Registration.
+            const requiredMasterFields=["vin","registration","customerName","engine","model","sale"];
+            const locallyRejected=vehicleMasterCandidates
+              .filter(vehicle=>requiredMasterFields.some(field=>!String(vehicle[field]??"").trim()))
+              .map(vehicle=>({
+                vin:vehicle.vin,
+                missingFields:requiredMasterFields.filter(field=>!String(vehicle[field]??"").trim())
+              }));
+            const vehicleMasterRecords=vehicleMasterCandidates.filter(vehicle=>
+              requiredMasterFields.every(field=>String(vehicle[field]??"").trim())
+            );
+            diag.vehiclesSubmitted=vehicleMasterRecords.length;
+            const masterResult=vehicleMasterRecords.length
+              ? await upsertVehicleMaster(vehicleMasterRecords)
+              : {upsertedVehicles:0,rejectedVehicles:[]};
             diag.vehiclesUpserted=Number(masterResult.upsertedVehicles||0);
-            diag.vehiclesRejected=Number(masterResult.rejectedVehicles?.length||0);
-            diag.vehicleMasterRejected=masterResult.rejectedVehicles||[];
-            if(diag.vehiclesRejected||diag.vehiclesUpserted!==uploadedVins.length){
+            diag.vehicleMasterRejected=[...locallyRejected,...(masterResult.rejectedVehicles||[])];
+            diag.vehiclesRejected=diag.vehicleMasterRejected.length;
+            if(diag.vehiclesRejected||diag.vehiclesUpserted!==vehicleMasterRecords.length){
               diag.status="completed-with-errors";
-              diag.vehicleMasterError=`${diag.vehiclesUpserted} updated, ${diag.vehiclesRejected} skipped because the latest VIN row is missing required details.`;
+              diag.vehicleMasterError=`${diag.vehiclesUpserted} updated, ${diag.vehiclesRejected} skipped. Only records with VIN, Registration No., Customer Name, Engine, Model and Sale Date filled are uploaded to DB.`;
               setError(diag.vehicleMasterError);
             }else{
               diag.status="completed";

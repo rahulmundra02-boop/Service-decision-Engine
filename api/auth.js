@@ -779,8 +779,9 @@ export default async function handler(req, res) {
           "AND created_at < (($2::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata') " +
           "GROUP BY UPPER(TRIM(vin))" +
           ") " +
-          "SELECT v.vin,v.registration,v.customer_name,v.model,COALESCE(pe.upload_at,v.created_at) AS created_at " +
+          "SELECT v.vin,v.registration,COALESCE(NULLIF(TRIM(v.customer_name),''),NULLIF(TRIM(p.customer_name),'')) AS customer_name,v.model,v.engine,COALESCE(pe.upload_at,v.created_at) AS created_at " +
           "FROM vehicles v LEFT JOIN period_events pe ON pe.normalized_vin=UPPER(TRIM(v.vin)) " +
+          "LEFT JOIN pending_vehicle_uploads p ON UPPER(TRIM(p.vin))=UPPER(TRIM(v.vin)) " +
           "WHERE " + rangeFilter.replaceAll("created_at","v.created_at") + " OR pe.normalized_vin IS NOT NULL " +
           "ORDER BY COALESCE(pe.upload_at,v.created_at) DESC LIMIT 200",
           rangeParams

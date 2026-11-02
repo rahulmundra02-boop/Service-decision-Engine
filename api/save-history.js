@@ -64,7 +64,15 @@ function normalizeRecord(record = {}) {
 }
 
 function normalizeVehicle(vehicle = {}) {
-  return { ...vehicle, registration: vehicle.registration || vehicle.reg || "", sale: normalizeDate(vehicle.sale) };
+  return {
+    ...vehicle,
+    registration: vehicle.registration || vehicle.reg || "",
+    customerName: vehicle.customerName ?? vehicle.customer_name ?? vehicle.customer ?? "",
+    customerNumber: vehicle.customerNumber ?? vehicle.customer_number ?? "",
+    engine: vehicle.engine ?? vehicle.engineNumber ?? vehicle.engine_number ?? "",
+    model: vehicle.model ?? vehicle.modelName ?? "",
+    sale: normalizeDate(vehicle.sale ?? vehicle.sale_date)
+  };
 }
 
 function normalizeRate(record = {}) {

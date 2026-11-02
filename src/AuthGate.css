@@ -681,3 +681,19 @@
     max-width: 100%;
   }
 }
+
+
+/* Persistent orange indicator for unresolved account requests. */
+.pending-alert-dot,
+.profile-alert-dot {
+  display:inline-block;
+  width:9px;
+  height:9px;
+  min-width:9px;
+  border-radius:50%;
+  background:#f28c00;
+  box-shadow:0 0 0 2px rgba(242,140,0,.18);
+  vertical-align:middle;
+  margin-left:7px;
+}
+.admin-category-nav button { position:relative; }

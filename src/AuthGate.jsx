@@ -72,6 +72,7 @@ export default function AuthGate({ children }) {
   const [adminAnalytics, setAdminAnalytics] = useState({ summary:[], recent:[], periods:[] });
   const [analyticsUserId, setAnalyticsUserId] = useState(null);
   const [analyticsRange, setAnalyticsRange] = useState(1);
+  const analyticsRequestRef = useRef(0);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsIncludeAdmins, setAnalyticsIncludeAdmins] = useState(true);
   const [emergencyDbUploadCutoff, setEmergencyDbUploadCutoff] = useState(false);
@@ -303,21 +304,22 @@ export default function AuthGate({ children }) {
 
 
   const loadAdminAnalytics = async (userId = analyticsUserId, rangeDays = analyticsRange) => {
-    // Update the selected range immediately so the UI does not remain on the
-    // previous tab while the analytics request is loading.
+    // Keep the latest selected range authoritative if users click filters quickly.
+    const requestId = ++analyticsRequestRef.current;
     setAnalyticsRange(rangeDays);
     setAnalyticsLoading(true);
     try {
       const payload = { rangeDays, includeAdmins: analyticsIncludeAdmins };
       if (userId) payload.userId = userId;
       const data = await api("admin-analytics", payload, localStorage.getItem(TOKEN_KEY));
+      if (requestId !== analyticsRequestRef.current) return;
       setAdminAnalytics(data || { summary:[], recent:[], periods:[], breakdown:[], rangeDays });
       setAnalyticsUserId(userId || null);
       setAnalyticsRange(rangeDays);
     } catch (e) {
-      setError(e.message || "Unable to load analytics.");
+      if (requestId === analyticsRequestRef.current) setError(e.message || "Unable to load analytics.");
     } finally {
-      setAnalyticsLoading(false);
+      if (requestId === analyticsRequestRef.current) setAnalyticsLoading(false);
     }
   };
 
@@ -1785,14 +1787,14 @@ function AdminPanel({ users, accountRequests = [], hasPendingRequests = false, o
                   <thead><tr><th>Last Updated in DB</th><th>Customer Name</th><th>Registration No.</th><th>Model</th><th>Engine</th><th>VIN</th></tr></thead>
                   <tbody>
                     {recentVehicles.map((v,i)=><tr key={v.vin || i}>
-                      <td>{v.created_at ? new Date(v.created_at).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"}) : "—"}</td>
+                      <td>{v.last_refreshed_at ? new Date(v.last_refreshed_at).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"}) : "—"}</td>
                       <td>{v.customer_name || "—"}</td>
                       <td>{v.registration || "—"}</td>
                       <td>{v.model || "—"}</td>
                       <td>{v.engine || "—"}</td>
                       <td style={{whiteSpace:"nowrap"}}>{v.vin || "—"}</td>
                     </tr>)}
-                    {!recentVehicles.length && <tr><td colSpan="6" className="admin-empty">No vehicles were added in this period.</td></tr>}
+                    {!recentVehicles.length && <tr><td colSpan="6" className="admin-empty">No vehicles were updated in this period.</td></tr>}
                   </tbody>
                 </table>
               </div>

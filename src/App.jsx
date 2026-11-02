@@ -866,7 +866,7 @@ function customerNameFromRow(headers, cells, preferredIndex) {
   const preferredValue = String(cells[preferredIndex] ?? "").trim();
   const otherValue = candidates.map(({ index }) => String(cells[index] ?? "").trim())
     .find(value => value && !/^\\d+(?:\\.\\d+)?$/.test(value));
-  const selected = explicitValue || otherValue || preferredValue;
+  const selected = (explicitValue && !/^\\d+(?:\\.\\d+)?$/.test(explicitValue)) ? explicitValue : (otherValue || preferredValue);
   return selected && !/^\\d+(?:\\.\\d+)?$/.test(selected) ? selected : "";
 }
 function splitDelimitedLine(line, delimiter) {
@@ -6090,7 +6090,7 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
       setExcelData("");setUploadedFiles(accepted);setUploadMeta({files:result.files,failedFiles:result.failedFiles||[],rowsBefore:result.totalRowsBeforeDedup,duplicates:result.duplicateRowsIgnored,rowsAfter:parsedRows.length,invalidRows:result.invalidRows||[]});
       setAnalysis(null);setBulkResults([]);setBulkMeta(null);setCustomerGroups([]);setSelectedCustomers([]);setUploadParsedRecords(parsedRows);
       if(parsedRows.length){const vins=new Set(parsedRows.map(r=>String(r?.vin||"").trim().toUpperCase()).filter(Boolean));setMode(vins.size>1?"bulk":"single");logUsage("Excel Upload",{fileCount:accepted.length,vehicleCount:vins.size,details:{rows:parsedRows.length,files:accepted.map(f=>f.name)}});}
-      const diag = { filesSelected: files.length, filesRead: accepted.length, filesFailed: result.failedFiles || [], rowsBeforeDedup: Number(result.totalRowsBeforeDedup || 0), duplicateRowsIgnored: Number(result.duplicateRowsIgnored || 0), parsedRows: parsedRows.length, invalidRows: result.invalidRows || [], uniqueJobCards: 0, jobCardsAlreadyInDb: 0, jobCardsSubmitted: 0, jobCardsSaved: 0, serviceLinesSaved: 0, vehicleCount: 0, vehiclesUpserted: 0, vehicleMasterError: "", cutoff: false, cacheMode: "RETIRED (current Excel only)", outcomes: [], status: "processing", startedAt: new Date().toISOString() };
+      const diag = { filesSelected: files.length, filesRead: accepted.length, filesFailed: result.failedFiles || [], rowsBeforeDedup: Number(result.totalRowsBeforeDedup || 0), duplicateRowsIgnored: Number(result.duplicateRowsIgnored || 0), parsedRows: parsedRows.length, invalidRows: result.invalidRows || [], uniqueJobCards: 0, jobCardsAlreadyInDb: 0, jobCardsSubmitted: 0, jobCardsSaved: 0, serviceLinesSaved: 0, vehicleCount: 0, vehiclesUpserted: 0, vehicleMasterError: "", vehiclesRejected: 0, vehicleMasterRejected: [], cutoff: false, cacheMode: "RETIRED (current Excel only)", outcomes: [], status: "processing", startedAt: new Date().toISOString() };
       setUploadDiagnostic(diag);
       if(!parsedRows.length&&result.failedFiles?.length)setError(result.failedFiles.map(x=>`${x.name} — ${x.reason}`).join(" | "));
       if(parsedRows.length){
@@ -6141,6 +6141,7 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
             if(diag.vehiclesRejected||diag.vehiclesUpserted!==uploadedVins.length){
               diag.status="completed-with-errors";
               diag.vehicleMasterError=`${diag.vehiclesUpserted} updated, ${diag.vehiclesRejected} skipped because the latest VIN row is missing required details.`;
+              setError(diag.vehicleMasterError);
             }else{
               diag.status="completed";
             }

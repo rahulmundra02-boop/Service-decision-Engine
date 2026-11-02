@@ -75,6 +75,7 @@ function normalizeVehicle(vehicle = {}) {
   };
 }
 
+function normalizeRate(record = {}) {
   const qty = Number(record?.qty ?? record?.quantity ?? 0);
   const netValue = record?.netValue;
 

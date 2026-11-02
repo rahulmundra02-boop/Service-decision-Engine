@@ -1780,7 +1780,7 @@ function AdminPanel({ users, accountRequests = [], hasPendingRequests = false, o
               <div className="admin-panel-card-title">Recently Updated Vehicles</div>
               <div className="admin-panel-card-sub">
                 {Number(analytics.vehiclesAddedInPeriod||0).toLocaleString("en-IN")} vehicles updated in the main database during the selected period.
-                {analytics.recentVehiclesLimited ? " Showing the latest 200 records." : ""}
+                {analytics.recentVehiclesLimited ? " Showing the latest 10,000 records." : ""}
               </div>
               <div className="admin-table-wrap" style={{marginTop:12}}>
                 <table className="admin-table" style={{minWidth:760}}>

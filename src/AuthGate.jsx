@@ -1772,17 +1772,17 @@ function AdminPanel({ users, accountRequests = [], hasPendingRequests = false, o
           <>
             <div className="admin-dashboard-grid" style={{marginBottom:16}}>
               <div className="admin-kpi"><div className="admin-kpi-label">Total Vehicles in Database</div><div className="admin-kpi-value">{Number(analytics.totalVehicles||0).toLocaleString("en-IN")}</div><div className="admin-kpi-sub">Unique VIN records available</div></div>
-              <div className="admin-kpi"><div className="admin-kpi-label">Vehicles Added in Selected Period</div><div className="admin-kpi-value">{Number(analytics.vehiclesAddedInPeriod||0).toLocaleString("en-IN")}</div><div className="admin-kpi-sub">{analyticsRange === 1 ? "Today" : `Last ${analyticsRange} days`}</div></div>
+              <div className="admin-kpi"><div className="admin-kpi-label">Vehicles Updated in Selected Period</div><div className="admin-kpi-value">{Number(analytics.vehiclesAddedInPeriod||0).toLocaleString("en-IN")}</div><div className="admin-kpi-sub">{analyticsRange === 1 ? "Today" : `Last ${analyticsRange} days`}</div></div>
             </div>
             <div className="admin-panel-card" style={{marginBottom:16}}>
-              <div className="admin-panel-card-title">Recently Added Vehicles</div>
+              <div className="admin-panel-card-title">Recently Updated Vehicles</div>
               <div className="admin-panel-card-sub">
-                {Number(analytics.vehiclesAddedInPeriod||0).toLocaleString("en-IN")} vehicles added to the database in the selected period.
+                {Number(analytics.vehiclesAddedInPeriod||0).toLocaleString("en-IN")} vehicles updated in the main database during the selected period.
                 {analytics.recentVehiclesLimited ? " Showing the latest 200 records." : ""}
               </div>
               <div className="admin-table-wrap" style={{marginTop:12}}>
                 <table className="admin-table" style={{minWidth:760}}>
-                  <thead><tr><th>Added to DB</th><th>Customer Name</th><th>Registration No.</th><th>Model</th><th>Engine</th><th>VIN</th></tr></thead>
+                  <thead><tr><th>Last Updated in DB</th><th>Customer Name</th><th>Registration No.</th><th>Model</th><th>Engine</th><th>VIN</th></tr></thead>
                   <tbody>
                     {recentVehicles.map((v,i)=><tr key={v.vin || i}>
                       <td>{v.created_at ? new Date(v.created_at).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"}) : "—"}</td>

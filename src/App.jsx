@@ -1690,15 +1690,17 @@ function getActiveCampaignGroups(campaigns) {
 
 function deriveVehicle(records) {
   const firstNonEmpty = (key) => records.find((r) => String(r[key] ?? "").trim())?.[key] || "";
-  const firstCustomerName = records.find((r) => isUsableCustomerName(r.customerName))?.customerName || "";
+  const firstCustomerName = records
+    .map(r => r.customerName ?? r.customer_name ?? r.customer ?? r.name)
+    .find(isUsableCustomerName) || "";
   const saleDates = records.map((r) => r.sale).filter(Boolean).sort((a, b) => a - b);
   const lastServiceUnderAmc = records.some((record) =>
     String(record?.repairTypeLine ?? "").trim().toLowerCase().includes("amc order")
   );
 
   return {
-    reg: firstNonEmpty("reg"),
-    customerNumber: records.find((r) => isUsableCustomerNumber(r.customerNumber))?.customerNumber || "",
+    reg: firstNonEmpty("reg") || firstNonEmpty("registration"),
+    customerNumber: records.map(r => r.customerNumber ?? r.customer_number).find(isUsableCustomerNumber) || "",
     customerName: firstCustomerName,
     engine: firstNonEmpty("engine"),
     model: firstNonEmpty("model"),
@@ -6074,133 +6076,6 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
       throw new Error(payload?.error || `Vehicle master update failed (${response.status})`);
     }
     return payload;
-  }
-
-  async function updateVehicleUploadTracker(action, payload = {}) {
-    const response = await fetch(API_BASE_URL + "/api/save-history", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, ...payload }),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data?.success) throw new Error(data?.error || ("Upload tracking failed (" + response.status + ")"));
-    return data;
-  }
-
-  async function registerVehicleUploadBatch(records, uploadedBy = "") {
-    const byVin = new Map();
-    for (const record of records || []) {
-      const vin = String(record?.vin || "").trim().toUpperCase();
-      if (!vin) continue;
-      if (!byVin.has(vin)) byVin.set(vin, []);
-      byVin.get(vin).push(record);
-    }
-    const vehicles = [...byVin.entries()].map(([vin, rows]) => {
-      const vehicle = deriveVehicle(rows);
-      const latest = [...rows].sort((a,b) => String(b?.date || "").localeCompare(String(a?.date || "")))[0] || {};
-      return {
-        vin,
-        registration: latest.reg || latest.registration || vehicle.registration || vehicle.reg || "",
-        customerName: vehicle.customerName || latest.customerName || "",
-        model: vehicle.model || latest.model || "",
-        expectedJobCards: [...new Set(rows.map(row => normalizeJobCard(row?.jobCard || row?.jobCardNo)).filter(Boolean))],
-        expectedLines: (() => {
-          const normalizeText = value => String(value ?? "").trim().toUpperCase().replace(/\\s+/g, " ");
-          const counts = new Map();
-          for (const row of rows) {
-            const jobCard = normalizeJobCard(row?.jobCard || row?.jobCardNo);
-            if (!jobCard) continue;
-            const category = normalizeText(row.itemCategory);
-            const partCode = normalizeText(row.partCode).replace(/\\s+/g, "");
-            const identity = partCode
-              ? category + "|CODE:" + partCode
-              : [category, normalizeText(row.part || row.partDescription), normalizeText(row.standardizedPart), normalizeText(row.repairTypeLine), normalizeText(row.faultCode || row.complaintCode)].join("|");
-            const key = jobCard + "|" + identity;
-            const existing = counts.get(key);
-            if (existing) existing.count++;
-            else counts.set(key, { jobCard, identity, count:1 });
-          }
-          return [...counts.values()];
-        })(),
-      };
-    });
-    if (!vehicles.length) throw new Error("No valid chassis numbers were found to register for upload tracking.");
-    const result = await updateVehicleUploadTracker("register-vehicle-upload-batch", { source: "excel-upload", uploadedBy, vehicles });
-    if (Number(result.registered || 0) !== vehicles.length) {
-      throw new Error("Upload tracking list is incomplete. Expected " + vehicles.length + " chassis, registered " + Number(result.registered || 0) + ". Database upload was not started.");
-    }
-    return result;
-  }
-  async function touchVehicleRefreshTimestamps(vins) {
-    const uniqueVins = [...new Set((vins || []).map(value => String(value || "").trim().toUpperCase()).filter(Boolean))];
-    if (!uniqueVins.length) return { updatedVehicles: 0 };
-    const response = await fetch(`${API_BASE_URL}/api/save-history`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "touch-vehicle-refresh", vins: uniqueVins }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || !payload?.success) {
-      throw new Error(payload?.error || `Vehicle timestamp update failed (${response.status})`);
-    }
-    return payload;
-  }
-
-  async function saveHistoryInBackground(records) {
-    const groups = new Map();
-    for (const record of records || []) {
-      const vin = String(record?.vin || "").trim().toUpperCase();
-      if (!vin) continue;
-      if (!groups.has(vin)) groups.set(vin, []);
-      groups.get(vin).push(record);
-    }
-
-    const jobs = [...groups.entries()];
-    const outcomes = [];
-    if (!jobs.length) return outcomes;
-
-    // Keep upload concurrency below the bounded server-side pool size, leaving room
-    // for the cutoff check, vehicle-master upsert and cache/index requests.
-    const concurrency = Math.min(3, jobs.length);
-    let nextIndex = 0;
-
-    async function worker() {
-      while (nextIndex < jobs.length) {
-        const index = nextIndex++;
-        const [vin, vehicleRecords] = jobs[index];
-        const vehicle = deriveVehicle(vehicleRecords);
-        const jobCards = [...new Set(vehicleRecords.map(record => normalizeJobCard(record?.jobCard)).filter(Boolean))];
-        try {
-          await updateVehicleUploadTracker("update-vehicle-upload-status", { vin, status: "processing" }).catch(error => console.warn("Could not update upload tracker status:", error));
-          const payload = await saveHistoryToBackend({ records: vehicleRecords, vehicle });
-          const verification = await updateVehicleUploadTracker("verify-vehicle-upload", { vin });
-          if (!verification?.verified) throw new Error(verification?.error || verification?.reason || "Database verification is incomplete.");
-
-          outcomes.push({
-            vin, registration: vehicleRecords[0]?.reg || vehicleRecords[0]?.registration || "",
-            inputRows: vehicleRecords.length, uniqueJobCards: jobCards.length,
-            newJobCardsSaved: Number(payload.newJobCards || 0),
-            duplicateJobCards: Number(payload.duplicateJobCards || 0),
-            newServiceLines: Number(payload.newServiceLines || 0),
-            status: "success", message: ""
-          });
-        } catch (error) {
-          console.error("Background history save failed:", error);
-          const message = error?.message || "Unknown database error";
-          await updateVehicleUploadTracker("update-vehicle-upload-status", { vin, status: "failed", error: message }).catch(trackerError => console.warn("Could not save upload failure status:", trackerError));
-          outcomes.push({
-            vin, registration: vehicleRecords[0]?.reg || vehicleRecords[0]?.registration || "",
-            inputRows: vehicleRecords.length, uniqueJobCards: jobCards.length,
-            newJobCardsSaved: 0, duplicateJobCards: 0, newServiceLines: 0,
-            status: "failed", message
-          });
-          setError(`Database history save failed for vehicle ${vehicleRecords[0]?.reg || vin}: ${message}. See Upload Diagnostic Report for details.`);
-        }
-      }
-    }
-
-    await Promise.all(Array.from({ length: concurrency }, () => worker()));
-    return outcomes.sort((a,b) => a.vin.localeCompare(b.vin));
   }
 
   const handleExcelUpload = async (event) => {

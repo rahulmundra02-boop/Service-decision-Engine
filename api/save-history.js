@@ -1195,22 +1195,12 @@ export default async function handler(req, res) {
       new Date(priorVehicleResult.rows[0].created_at).getTime() < Date.now() - 30 * 60 * 1000
     );
 
-    const vehicleResult = await client.query(
-      "INSERT INTO vehicles (vin,registration,customer_number,customer_name,engine,model,sale_date,last_refreshed_at) " +
-      "VALUES ($1,$2,$3,$4,$5,$6,$7,NOW()) " +
-      "ON CONFLICT (vin) DO UPDATE SET " +
-      "registration=vehicles.registration, " +
-      "customer_number=COALESCE(EXCLUDED.customer_number,vehicles.customer_number), " +
-      "customer_name=COALESCE(EXCLUDED.customer_name,vehicles.customer_name), " +
-      "engine=COALESCE(EXCLUDED.engine,vehicles.engine), " +
-      "model=COALESCE(EXCLUDED.model,vehicles.model), " +
-      "sale_date=COALESCE(EXCLUDED.sale_date,vehicles.sale_date), " +
-      "last_refreshed_at=NOW() RETURNING id",
-      [vin, clean(vehicle.registration), clean(vehicle.customerNumber), clean(vehicle.customerName),
-       clean(vehicle.engine), clean(vehicle.model), clean(vehicle.sale)]
-    );
-
-    const vehicleId = vehicleResult.rows[0].id;
+    // Vehicle master details are written only by upsert-vehicle-master.
+    // History storage must never create or partially refresh a vehicle row.
+    const vehicleId = priorVehicleResult.rows[0]?.id;
+    if (!vehicleId) {
+      throw new Error("Vehicle master record is not ready. Complete VIN details must be uploaded first.");
+    }
     const jobCards = new Map();
 
     for (const record of recordsNormalized) {

@@ -53,11 +53,10 @@ export default function AuthGate({ children }) {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [showAccountHelp, setShowAccountHelp] = useState(false);
-  const [requestForm, setRequestForm] = useState({personName:"",dealerName:"",email:"",mobile:"",referralCode:""});
+  const [requestForm, setRequestForm] = useState({personName:"",dealerName:"",email:"",mobile:""});
   const [requestStatusForm, setRequestStatusForm] = useState({mobile:""});
   const [requestStatusResult, setRequestStatusResult] = useState("");
   const [accountRequests, setAccountRequests] = useState([]);
-  const [referralStats, setReferralStats] = useState({referralCode:"",referralCount:0});
   const [showForgotHelp, setShowForgotHelp] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [passwordForm, setPasswordForm] = useState({ currentPassword:"", newPassword:"", confirmPassword:"" });
@@ -582,7 +581,7 @@ export default function AuthGate({ children }) {
   const submitAccountRequest = () => run(async () => {
     const data = await api("request-account", requestForm);
     setMessage(data.message + " Request ID: " + data.requestId);
-    setRequestForm({personName:"",dealerName:"",email:"",mobile:"",referralCode:""});
+    setRequestForm({personName:"",dealerName:"",email:"",mobile:""});
   });
 
   const checkAccountRequest = () => run(async () => {
@@ -866,7 +865,6 @@ export default function AuthGate({ children }) {
                 <label>Dealer / Workshop Name</label><input value={requestForm.dealerName} onChange={e=>setRequestForm(v=>({...v,dealerName:e.target.value}))} />
                 <label>Email</label><input type="email" value={requestForm.email} onChange={e=>setRequestForm(v=>({...v,email:e.target.value}))} />
                 <label>Mobile Number</label><input type="tel" inputMode="tel" value={requestForm.mobile} onChange={e=>setRequestForm(v=>({...v,mobile:e.target.value}))} />
-                <label>Referral Code (optional)</label><input value={requestForm.referralCode} onChange={e=>setRequestForm(v=>({...v,referralCode:e.target.value.toUpperCase()}))} />
                 <button className="auth-primary" onClick={submitAccountRequest} disabled={loading}>Submit Account Request</button>
                 <div className="auth-help-title" style={{marginTop:18}}>Check Request Status</div>
                 <label>Mobile Number</label><input type="tel" inputMode="tel" placeholder="Enter registered mobile number" value={requestStatusForm.mobile} onChange={e=>setRequestStatusForm(v=>({...v,mobile:e.target.value}))} />
@@ -897,8 +895,6 @@ export default function AuthGate({ children }) {
   return (
     <div className="app-auth-shell">
       <div className="auth-userbar" aria-hidden="true"></div>
-      {user && user.role !== "admin" && <div className="auth-referral-panel"><strong>Refer a Workshop</strong><span>Your referral code: <b>{referralStats.referralCode || "—"}</b></span><span>Successful referrals: <b>{referralStats.referralCount}</b></span><button type="button" onClick={()=>navigator.clipboard?.writeText(referralStats.referralCode)}>Copy Code</button></div>}
-
       {error && <div className="auth-inline-error">{error}</div>}
       {message && <div className="auth-inline-message">{message}</div>}
 
@@ -1971,8 +1967,8 @@ function AdminPanel({ users, accountRequests = [], hasPendingRequests = false, o
                 </div>
                 <div className="admin-table-wrap">
                   <table className="admin-table">
-                    <thead><tr><th>ID</th><th>Name</th><th>Dealer</th><th>Email</th><th>Mobile</th><th>Referral</th><th>Requested</th><th>Action</th></tr></thead>
-                    <tbody>{accountRequests.map(r=><tr key={r.id}><td>{r.id}</td><td>{r.person_name}</td><td>{r.dealer_name}</td><td>{r.email}</td><td>{r.mobile || "—"}</td><td>{r.referral_code || "—"}</td><td>{r.created_at ? new Date(r.created_at).toLocaleString() : "—"}</td><td>{r.status==="pending" ? <div className="admin-row-actions"><button onClick={()=>onReviewAccountRequest(r,"approve")}>Approve</button><button onClick={()=>onReviewAccountRequest(r,"reject")}>Reject</button></div> : r.status}</td></tr>)}</tbody>
+                    <thead><tr><th>ID</th><th>Name</th><th>Dealer</th><th>Email</th><th>Mobile</th><th>Requested</th><th>Action</th></tr></thead>
+                    <tbody>{accountRequests.map(r=><tr key={r.id}><td>{r.id}</td><td>{r.person_name}</td><td>{r.dealer_name}</td><td>{r.email}</td><td>{r.mobile || "—"}</td><td>{r.created_at ? new Date(r.created_at).toLocaleString() : "—"}</td><td>{r.status==="pending" ? <div className="admin-row-actions"><button onClick={()=>onReviewAccountRequest(r,"approve")}>Approve</button><button onClick={()=>onReviewAccountRequest(r,"reject")}>Reject</button></div> : r.status}</td></tr>)}</tbody>
                   </table>
                 </div>
               </div>

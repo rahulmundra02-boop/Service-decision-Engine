@@ -3674,9 +3674,6 @@ function estimateLabourMatchesService(row = {}, serviceKey = "") {
   }
 }
 
-  return estimateCategory(row) === "labour";
-}
-
 function estimateRowRank(row = {}, index = 0) {
   const time = row?.job_date ? new Date(row.job_date).getTime() : NaN;
   return Number.isFinite(time) ? time : -index;
@@ -9833,10 +9830,6 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
     </>
   );
 }
-
-  return <div className="info-box"><span>{label}</span><strong>{value}</strong></div>;
-}
-
 
 function App() {
   return <AuthGate><ServiceDecisionApp /></AuthGate>;

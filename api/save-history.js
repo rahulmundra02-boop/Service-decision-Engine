@@ -1054,7 +1054,7 @@ export default async function handler(req, res) {
           " INSERT INTO vehicles (vin,registration,customer_name,engine,model,sale_date,last_refreshed_at)" +
           " SELECT vin,registration,customer_name,engine,model,sale_date,NOW() FROM incoming" +
           " ON CONFLICT (vin) DO UPDATE SET" +
-          " registration=EXCLUDED.registration," +
+          " registration=COALESCE(EXCLUDED.registration,vehicles.registration)," +
           " customer_name=EXCLUDED.customer_name," +
           " engine=EXCLUDED.engine," +
           " model=EXCLUDED.model," +

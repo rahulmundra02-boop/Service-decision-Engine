@@ -1958,10 +1958,10 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
               <div className="admin-panel-card-title">Vehicles Uploaded / Refreshed</div>
               <div style={{overflowX:"auto",marginTop:10}}>
                 <table className="admin-table">
-                  <thead><tr><th>Last Upload / Refresh</th><th>VIN</th><th>Registration</th><th>Customer</th><th>Model</th></tr></thead>
+                  <thead><tr><th>Last Upload / Refresh</th><th>VIN</th><th>Registration</th><th>Customer</th><th>Model</th><th>Engine</th></tr></thead>
                   <tbody>
-                    {(dbData?.vehicles||[]).map((v,i)=><tr key={v.vin||i}><td>{v.created_at?new Date(v.created_at).toLocaleString("en-IN"):"—"}</td><td>{v.vin||"—"}</td><td>{v.registration||"—"}</td><td>{v.customer_name||"—"}</td><td>{v.model||"—"}</td></tr>)}
-                    {!(dbData?.vehicles||[]).length && <tr><td colSpan="5" className="admin-empty">No vehicle uploads or refreshes found in this period.</td></tr>}
+                    {(dbData?.vehicles||[]).map((v,i)=><tr key={v.vin||i}><td>{v.created_at?new Date(v.created_at).toLocaleString("en-IN"):"—"}</td><td>{v.vin||"—"}</td><td>{v.registration||"—"}</td><td>{v.customer_name||"—"}</td><td>{v.model||"—"}</td><td>{v.engine||"—"}</td></tr>)}
+                    {!(dbData?.vehicles||[]).length && <tr><td colSpan="6" className="admin-empty">No vehicle uploads or refreshes found in this period.</td></tr>}
                   </tbody>
                 </table>
               </div>

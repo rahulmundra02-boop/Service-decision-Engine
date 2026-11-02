@@ -1031,25 +1031,6 @@ function fileToDataUrl(file) {
   });
 }
 
-function resizeImageDataUrl(dataUrl, maxWidth = 1600, maxHeight = 2260, quality = 0.82) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(1, maxWidth / img.width, maxHeight / img.height);
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.round(img.width * scale));
-      canvas.height = Math.max(1, Math.round(img.height * scale));
-      const ctx = canvas.getContext("2d");
-      ctx.fillStyle = "#fff";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL("image/jpeg", quality));
-    };
-    img.onerror = reject;
-    img.src = dataUrl;
-  });
-}
-
 function detectLetterheadCrop(dataUrl) {
   return new Promise((resolve) => {
     const img = new Image();
@@ -1390,7 +1371,6 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading, onChang
       <input value={(form[group+"Labels"]||{})[key]||label} onChange={e=>setLabel(group+"Labels",key,e.target.value)} />
     </div>
   );
-  const savePlacement=()=>setForm({...form,signaturePlacement:placement});
   return <div><div className="auth-modal-backdrop"><div className="auth-modal" style={{maxWidth:820,width:"min(820px,calc(100vw - 32px))",maxHeight:"90vh",overflow:"auto",boxSizing:"border-box"}}>
     <h2>Profile & Dashboard Settings</h2>
     <p className="auth-hint">These settings are saved only for your user ID. Drag the table header divider with the mouse to set the column width.</p>

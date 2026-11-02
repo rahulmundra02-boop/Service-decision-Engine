@@ -1934,8 +1934,8 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
           <>
             <div className="admin-section-title">Database View</div>
             <div className="admin-panel-card" style={{marginBottom:16}}>
-              <div className="admin-panel-card-title">New Data Stored in DM Database</div>
-              <div className="admin-panel-card-sub">Counts use database record creation time in India Standard Time, not vehicle sale date or job-card service date.</div>
+              <div className="admin-panel-card-title">Vehicle Upload / Refresh Activity</div>
+              <div className="admin-panel-card-sub">Detail list includes new vehicle records and existing vehicles with upload or refresh events in the selected India Standard Time date range.</div>
               <div style={{display:"flex",gap:10,alignItems:"end",flexWrap:"wrap",marginTop:14}}>
                 <button className="admin-analytics-btn" onClick={() => { const d=localDateString(); setDbStartDate(d); setDbEndDate(d); loadDatabaseView(d,d); }}>Today</button>
                 <button className="admin-analytics-btn" onClick={() => { const end=localDateString(); const start=localDateString(new Date(Date.now()-6*24*60*60*1000)); setDbStartDate(start); setDbEndDate(end); loadDatabaseView(start,end); }}>Last 7 Days</button>
@@ -1955,13 +1955,13 @@ function AdminPanel({ users, accountRequests = [], onReviewAccountRequest, onRef
             </div>
 
             <div className="admin-panel-card" style={{marginBottom:16}}>
-              <div className="admin-panel-card-title">Vehicle Records Added</div>
+              <div className="admin-panel-card-title">Vehicles Uploaded / Refreshed</div>
               <div style={{overflowX:"auto",marginTop:10}}>
                 <table className="admin-table">
-                  <thead><tr><th>Created At</th><th>VIN</th><th>Registration</th><th>Customer</th><th>Model</th></tr></thead>
+                  <thead><tr><th>Last Upload / Refresh</th><th>VIN</th><th>Registration</th><th>Customer</th><th>Model</th></tr></thead>
                   <tbody>
                     {(dbData?.vehicles||[]).map((v,i)=><tr key={v.vin||i}><td>{v.created_at?new Date(v.created_at).toLocaleString("en-IN"):"—"}</td><td>{v.vin||"—"}</td><td>{v.registration||"—"}</td><td>{v.customer_name||"—"}</td><td>{v.model||"—"}</td></tr>)}
-                    {!(dbData?.vehicles||[]).length && <tr><td colSpan="5" className="admin-empty">No vehicle records added in this period.</td></tr>}
+                    {!(dbData?.vehicles||[]).length && <tr><td colSpan="5" className="admin-empty">No vehicle uploads or refreshes found in this period.</td></tr>}
                   </tbody>
                 </table>
               </div>

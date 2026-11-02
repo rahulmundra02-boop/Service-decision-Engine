@@ -9357,6 +9357,12 @@ function ServiceDecisionApp({ user, onOpenProfile, onOpenAdmin, onChangePassword
           .excel-tabs .excel-tab.active { background:#a3e635 !important; color:#172b4d !important; }
           .excel-tabs .excel-tab:hover { color:#10243b !important; background:#e8f5d0 !important; }
         }
+        /* Desktop: expand the application and profile content to the full monitor width. */
+        @media (min-width: 901px) {
+          .excel-window { width:100% !important; max-width:none !important; margin:0 !important; }
+          .portal-profile-section { width:100% !important; max-width:none !important; box-sizing:border-box; padding-left:16px !important; padding-right:16px !important; }
+          .container { width:calc(100% - 32px) !important; max-width:none !important; }
+        }
       `}
       </style>
       {pageIsProcessing && <div className="sde-processing-indicator" role="status" aria-live="polite"><span className="sde-processing-spinner" />Processing</div>}

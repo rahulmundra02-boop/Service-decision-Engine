@@ -740,7 +740,7 @@ export default async function handler(req, res) {
           "FROM vehicles v " +
           "WHERE v.last_refreshed_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Kolkata') " +
           "AND v.last_refreshed_at < (($2::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata') " +
-          "ORDER BY v.last_refreshed_at DESC LIMIT 200",
+          "ORDER BY v.last_refreshed_at DESC LIMIT 5000",
           rangeParams
         ),
         client.query(

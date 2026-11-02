@@ -894,8 +894,11 @@ export default async function handler(req, res) {
           "SELECT COUNT(*)::int AS vehicles_added FROM vehicles v WHERE v.vin IS NOT NULL AND TRIM(v.vin)<>'' AND " + vehiclePeriodWhere
         ),
         client.query(
-          "SELECT v.vin,v.registration,v.customer_name,v.customer_number,v.engine,v.model,v.created_at " +
-          "FROM vehicles v WHERE v.vin IS NOT NULL AND TRIM(v.vin)<>'' AND " + vehiclePeriodWhere +
+          "SELECT v.vin,v.registration," +
+          "COALESCE(NULLIF(TRIM(v.customer_name),''),NULLIF(TRIM(p.customer_name),'')) AS customer_name," +
+          "v.customer_number,v.engine,v.model,v.created_at " +
+          "FROM vehicles v LEFT JOIN pending_vehicle_uploads p ON UPPER(TRIM(p.vin))=UPPER(TRIM(v.vin)) " +
+          "WHERE v.vin IS NOT NULL AND TRIM(v.vin)<>'' AND " + vehiclePeriodWhere +
           " ORDER BY v.created_at DESC, v.vin ASC LIMIT 200"
         )
       ]);

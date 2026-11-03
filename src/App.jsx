@@ -967,15 +967,20 @@ function formatDate(date) {
 
   const value = date instanceof Date ? date : new Date(date);
   if (Number.isNaN(value.getTime())) return "-";
-  return value.toLocaleDateString("en-GB");
+  const dd = String(value.getDate()).padStart(2, "0");
+  const mm = String(value.getMonth() + 1).padStart(2, "0");
+  const yyyy = String(value.getFullYear());
+  return `${dd}-${mm}-${yyyy}`;
 }
 
 function formatDateShort(date) {
   if (!date) return "-";
-  const dd = String(date.getDate()).padStart(2, "0");
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const yy = String(date.getFullYear()).slice(-2);
-  return `${dd}-${mm}-${yy}`;
+  const value = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(value.getTime())) return "-";
+  const dd = String(value.getDate()).padStart(2, "0");
+  const mm = String(value.getMonth() + 1).padStart(2, "0");
+  const yyyy = String(value.getFullYear());
+  return `${dd}-${mm}-${yyyy}`;
 }
 
 function formatVehicleAge(saleDate, asOfDate = new Date()) {

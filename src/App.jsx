@@ -6320,8 +6320,10 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
       setUploadProgress({stage:"Calculating service decision",current:0,total:1,detail:"Calculating service intervals and due status"});await new Promise(resolve=>setTimeout(resolve,0));if(cancelProcessingRef.current){const e=new Error("Analysis cancelled.");e.name="AbortError";throw e;}
       const vehicle = deriveVehicle(parsed.records);
       const running = deriveRunningReading(parsed.records, vehicle);
-      const visits = aggregateHistory(parsed.records);
-      const decision = calculateDecisions(parsed.records, vehicle, running);
+
+      // Start the single-vehicle campaign lookup immediately after VIN extraction.
+      // It runs in parallel with history aggregation and service decision calculations,
+      // so campaign latency is hidden behind work the page already has to perform.
       const vinForCampaign = String(vehicle?.vin || parsed.records?.[0]?.vin || "").trim().toUpperCase();
       setCampaigns([]);
       if (vinForCampaign) {
@@ -6351,6 +6353,9 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
       } else {
         setCampaignLoading(false);
       }
+
+      const visits = aggregateHistory(parsed.records);
+      const decision = calculateDecisions(parsed.records, vehicle, running);
       setOverrideReading("");
       setAppliedOverride(null);
       setDecisionBasis(running?.unit === "HRS" ? "HRS" : "KM");

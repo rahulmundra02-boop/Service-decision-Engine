@@ -9136,6 +9136,55 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
         .single-screenshot-area .no-due {
           padding: 6px !important;
         }
+
+        /* The screenshot-area rule above applies to the live page too.
+           Give the campaign layout a more specific rule so its 50/50 columns win. */
+        .single-screenshot-area .single-note-grid.single-note-grid-with-campaign {
+          display: grid !important;
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+          width: 100% !important;
+          gap: 10px !important;
+          align-items: stretch !important;
+        }
+        .single-screenshot-area .single-note-grid.single-note-grid-with-campaign > .campaign-due-card,
+        .single-screenshot-area .single-note-grid.single-note-grid-with-campaign > .customer-voice-card {
+          display: flex !important;
+          flex-direction: column !important;
+          width: 100% !important;
+          min-width: 0 !important;
+          max-width: none !important;
+          grid-column: auto !important;
+          box-sizing: border-box !important;
+        }
+        .single-screenshot-area .single-note-grid.single-note-grid-with-campaign > .campaign-due-card > .single-note-title,
+        .single-screenshot-area .single-note-grid.single-note-grid-with-campaign > .customer-voice-card > .single-note-title {
+          width: 100% !important;
+          min-height: 42px !important;
+          flex: 0 0 42px !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          box-sizing: border-box !important;
+        }
+        .single-screenshot-area .single-note-grid.single-note-grid-with-campaign > .campaign-due-card > .single-note-value,
+        .single-screenshot-area .single-note-grid.single-note-grid-with-campaign > .customer-voice-card > .single-customer-voice {
+          width: 100% !important;
+          min-width: 0 !important;
+          flex: 1 1 auto !important;
+          min-height: 110px !important;
+          height: auto !important;
+          box-sizing: border-box !important;
+        }
+        @media (max-width: 800px) {
+          .single-screenshot-area .single-note-grid.single-note-grid-with-campaign {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          }
+        }
+        @media (max-width: 420px) {
+          .single-screenshot-area .single-note-grid.single-note-grid-with-campaign {
+            grid-template-columns: minmax(0, 1fr) !important;
+          }
+        }
         @media (max-width: 800px) {
           .single-screenshot-area .single-note-grid,
           .single-screenshot-area .single-note-grid-no-campaign .single-note-card-full,

@@ -9171,9 +9171,21 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
           width: 100% !important;
           min-width: 0 !important;
           flex: 1 1 auto !important;
-          min-height: 110px !important;
+          min-height: 44px !important;
           height: auto !important;
           box-sizing: border-box !important;
+        }
+        /* Keep the paired panels compact for a one-line campaign or empty voice.
+           The grid row still stretches both content areas equally when either
+           campaign text wraps or customer voice grows while typing. */
+        .single-screenshot-area .single-note-grid.single-note-grid-with-campaign > .campaign-due-card > .single-note-value {
+          padding-top: 8px !important;
+          padding-bottom: 8px !important;
+        }
+        .single-screenshot-area .single-note-grid.single-note-grid-with-campaign > .customer-voice-card > .single-customer-voice {
+          padding-top: 8px !important;
+          padding-bottom: 8px !important;
+          overflow: hidden !important;
         }
         @media (max-width: 800px) {
           .single-screenshot-area .single-note-grid.single-note-grid-with-campaign {

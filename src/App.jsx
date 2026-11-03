@@ -8798,6 +8798,72 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
 .campaign-loading-text {
   opacity:.75;
 }
+
+        /* Campaign Due + Customer Voice: stacked labels, equal-width panels,
+           and a shared row height that follows the taller content. */
+        .single-note-grid.single-note-grid-with-campaign {
+          display: grid !important;
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+          gap: 10px !important;
+          align-items: stretch !important;
+        }
+        .single-note-grid-with-campaign > .single-note-card {
+          display: flex !important;
+          flex-direction: column !important;
+          min-width: 0 !important;
+          width: 100% !important;
+          align-self: stretch !important;
+        }
+        .single-note-grid-with-campaign > .single-note-card > .single-note-title {
+          display: block !important;
+          width: 100% !important;
+          min-height: 42px !important;
+          box-sizing: border-box !important;
+          text-align: center !important;
+        }
+        .single-note-grid-with-campaign > .single-note-card > .single-note-value,
+        .single-note-grid-with-campaign > .single-note-card > .single-customer-voice {
+          flex: 1 1 auto !important;
+          min-height: 100px !important;
+          height: auto !important;
+          width: 100% !important;
+          box-sizing: border-box !important;
+        }
+        .single-note-grid-with-campaign .single-note-value {
+          align-items: flex-start !important;
+          justify-content: flex-start !important;
+          text-align: left !important;
+          padding: 12px !important;
+        }
+        .single-note-grid-with-campaign .campaign-remark-row {
+          justify-content: flex-start !important;
+          text-align: left !important;
+          align-items: flex-start !important;
+        }
+        .single-note-grid-with-campaign .campaign-remark-text {
+          flex: 1 1 auto !important;
+          min-width: 0 !important;
+          text-align: left !important;
+          overflow-wrap: anywhere !important;
+        }
+        .single-note-grid-with-campaign > .single-note-card > .single-customer-voice {
+          display: block !important;
+          flex: 1 1 auto !important;
+          min-height: 100px !important;
+          resize: none !important;
+          overflow: hidden !important;
+        }
+        @media (max-width: 700px) {
+          .single-note-grid.single-note-grid-with-campaign {
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+            gap: 8px !important;
+          }
+        }
+        @media (max-width: 420px) {
+          .single-note-grid.single-note-grid-with-campaign {
+            grid-template-columns: minmax(0, 1fr) !important;
+          }
+        }
 .single-note-grid {
           display: grid;
           grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -9434,7 +9500,7 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
                   return (
                     <div className="single-note-grid single-note-grid-with-campaign">
                       <div className="single-note-card">
-                        <div className="single-note-title">Remark</div>
+                        <div className="single-note-title">Campaign Due</div>
                         <div className="single-note-value">
                           <div className="campaign-list">
                             {activeCampaigns.map((campaign, index) => (

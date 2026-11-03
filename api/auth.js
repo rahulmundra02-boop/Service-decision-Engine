@@ -395,6 +395,66 @@ export default async function handler(req, res) {
   const client = await pool.connect();
 
   try {
+    // Fast path for single-vehicle campaign display.
+    // This read-only lookup avoids the general auth middleware's schema bootstrap,
+    // inactive-user sweep, transaction setup, and two per-request activity UPDATEs.
+    // Session validity rules remain the same: active user, unexpired session,
+    // last seen within 12 hours, and no discontinued Android device session.
+    if (action === "campaigns-by-vin") {
+      const vin = clean(body.vin);
+      if (!vin) {
+        return res.status(400).json({success:false,error:"VIN is required."});
+      }
+
+      const token = authToken(req);
+      if (!token) {
+        return res.status(401).json({success:false,error:"Session expired."});
+      }
+
+      const result = await client.query(
+        `WITH valid_session AS MATERIALIZED (
+           SELECT s.user_id
+             FROM auth_sessions s
+             JOIN app_users u ON u.id=s.user_id
+            WHERE s.token_hash=$1
+              AND s.expires_at>NOW()
+              AND s.last_seen_at>NOW() - INTERVAL '12 hours'
+              AND u.status='active'
+              AND COALESCE(s.device_name,'') NOT ILIKE '%service estimate android%'
+            LIMIT 1
+         )
+         SELECT EXISTS(SELECT 1 FROM valid_session) AS authenticated,
+                CASE WHEN EXISTS(SELECT 1 FROM valid_session) THEN
+                  COALESCE((
+                    SELECT jsonb_agg(
+                      jsonb_build_object(
+                        'campaignNumber',COALESCE(c.campaign_number,''),
+                        'campaignDesc',COALESCE(c.campaign_desc,''),
+                        'fromDate',c.from_date,
+                        'toDate',c.to_date,
+                        'item',COALESCE(c.item,''),
+                        'quantity',COALESCE(c.quantity,'')
+                      )
+                      ORDER BY c.from_date ASC NULLS LAST,c.campaign_number ASC,c.id ASC
+                    )
+                    FROM campaign_records c
+                    WHERE UPPER(TRIM(c.chassis_number))=UPPER(TRIM($2))
+                  ),'[]'::jsonb)
+                ELSE '[]'::jsonb END AS campaigns`,
+        [hashValue(token),vin]
+      );
+
+      if (!result.rows[0]?.authenticated) {
+        return res.status(401).json({success:false,error:"Session expired."});
+      }
+
+      return res.json({
+        success:true,
+        vin,
+        campaigns:Array.isArray(result.rows[0].campaigns) ? result.rows[0].campaigns : []
+      });
+    }
+
     await client.query("BEGIN");
     await initAuthSchemaOnce(client);
     await autoDeactivateInactiveUsers(client);

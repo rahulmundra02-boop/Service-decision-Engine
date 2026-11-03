@@ -8940,6 +8940,73 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
           min-width: 0;
           align-self: start;
         }
+
+        /* Final, scoped campaign layout overrides. These come after the
+           legacy horizontal-title rule so it cannot override this layout. */
+        .single-note-grid.single-note-grid-with-campaign {
+          display: grid !important;
+          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          width: 100% !important;
+          align-items: stretch !important;
+          gap: 10px !important;
+        }
+        .single-note-grid-with-campaign > .campaign-due-card,
+        .single-note-grid-with-campaign > .customer-voice-card {
+          display: flex !important;
+          flex-direction: column !important;
+          grid-column: auto !important;
+          width: 100% !important;
+          min-width: 0 !important;
+          max-width: none !important;
+          align-self: stretch !important;
+          box-sizing: border-box !important;
+        }
+        .single-note-grid-with-campaign > .campaign-due-card > .single-note-title,
+        .single-note-grid-with-campaign > .customer-voice-card > .single-note-title {
+          display: flex !important;
+          width: 100% !important;
+          min-height: 42px !important;
+          flex: 0 0 42px !important;
+          align-items: center !important;
+          justify-content: center !important;
+          text-align: center !important;
+          box-sizing: border-box !important;
+        }
+        .single-note-grid-with-campaign > .campaign-due-card > .single-note-value {
+          display: block !important;
+          width: 100% !important;
+          flex: 1 1 auto !important;
+          min-height: 100px !important;
+          height: auto !important;
+          box-sizing: border-box !important;
+          text-align: left !important;
+        }
+        .single-note-grid-with-campaign > .customer-voice-card:has(> .single-note-title + .single-customer-voice) {
+          display: flex !important;
+          flex-direction: column !important;
+          grid-template-columns: none !important;
+        }
+        .single-note-grid-with-campaign > .customer-voice-card > .single-customer-voice {
+          display: block !important;
+          width: 100% !important;
+          min-width: 0 !important;
+          min-height: 100px !important;
+          height: auto !important;
+          flex: 1 1 auto !important;
+          align-self: stretch !important;
+          box-sizing: border-box !important;
+          resize: none !important;
+        }
+        @media (max-width: 700px) {
+          .single-note-grid.single-note-grid-with-campaign {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          }
+        }
+        @media (max-width: 420px) {
+          .single-note-grid.single-note-grid-with-campaign {
+            grid-template-columns: minmax(0, 1fr) !important;
+          }
+        }
         .single-history-toggle {
           margin-left: auto;
           display: inline-flex;
@@ -9499,7 +9566,7 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
 
                   return (
                     <div className="single-note-grid single-note-grid-with-campaign">
-                      <div className="single-note-card">
+                      <div className="single-note-card campaign-due-card">
                         <div className="single-note-title">Campaign Due</div>
                         <div className="single-note-value">
                           <div className="campaign-list">
@@ -9525,7 +9592,7 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
                           </div>
                         </div>
                       </div>
-                      <div className="single-note-card">
+                      <div className="single-note-card customer-voice-card">
                         <div className="single-note-title">Customer Voice</div>
                         <textarea
                           className="single-customer-voice"

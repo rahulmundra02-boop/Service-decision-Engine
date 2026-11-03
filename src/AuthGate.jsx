@@ -839,7 +839,7 @@ export default function AuthGate({ children }) {
                   <div className="session-conflict-details">
                     <div><strong>Previous device:</strong> {sessionConflict.deviceName || "Unknown device"}</div>
                     <div><strong>IP address:</strong> {sessionConflict.ipAddress || "Unavailable"}</div>
-                    <div><strong>Last active:</strong> {sessionConflict.lastSeenAt ? new Date(sessionConflict.lastSeenAt).toLocaleString("en-IN") : "Unavailable"}</div>
+                    <div><strong>Last active:</strong> {sessionConflict.lastSeenAt ? formatDisplayDateTime(sessionConflict.lastSeenAt) : "Unavailable"}</div>
                   </div>
                   <p className="auth-hint">Do you want to terminate the previous session and continue with this login?</p>
                   <div className="auth-modal-actions">
@@ -1498,6 +1498,24 @@ function AdminPanel({ users, accountRequests = [], hasPendingRequests = false, o
     const d = String(date.getDate()).padStart(2, "0");
     return `${y}-${m}-${d}`;
   };
+  const formatDisplayDate = (input) => {
+    if (!input) return "—";
+    const value = input instanceof Date ? input : new Date(input);
+    if (Number.isNaN(value.getTime())) return "—";
+    const dd = String(value.getDate()).padStart(2, "0");
+    const mm = String(value.getMonth() + 1).padStart(2, "0");
+    const yyyy = String(value.getFullYear());
+    return `${dd}-${mm}-${yyyy}`;
+  };
+  const formatDisplayDateTime = (input) => {
+    if (!input) return "—";
+    const value = input instanceof Date ? input : new Date(input);
+    if (Number.isNaN(value.getTime())) return "—";
+    const date = formatDisplayDate(value);
+    const hours = String(value.getHours()).padStart(2, "0");
+    const minutes = String(value.getMinutes()).padStart(2, "0");
+    return `${date} ${hours}:${minutes}`;
+  };
   const [dbStartDate, setDbStartDate] = useState(localDateString());
   const [dbEndDate, setDbEndDate] = useState(localDateString());
   const [dbData, setDbData] = useState(null);
@@ -1675,7 +1693,7 @@ function AdminPanel({ users, accountRequests = [], hasPendingRequests = false, o
             </div>
             <div>
               <div className="admin-panel-card-sub">Last Updated</div>
-              <strong>{campaignMeta?.uploadedAt ? new Date(campaignMeta.uploadedAt).toLocaleString("en-IN") : "Not uploaded"}</strong>
+              <strong>{campaignMeta?.uploadedAt ? formatDisplayDateTime(campaignMeta.uploadedAt) : "Not uploaded"}</strong>
             </div>
           </div>
 
@@ -1715,7 +1733,7 @@ function AdminPanel({ users, accountRequests = [], hasPendingRequests = false, o
             <div><div className="admin-panel-card-sub">Price List Version</div><strong>{Number(priceMasterMeta?.version||0)}</strong></div>
             <div><div className="admin-panel-card-sub">Parts in Master</div><strong>{Number(priceMasterMeta?.rowCount||0).toLocaleString("en-IN")}</strong></div>
             <div><div className="admin-panel-card-sub">Last Uploaded File</div><strong>{priceMasterMeta?.fileName||"Not uploaded"}</strong></div>
-            <div><div className="admin-panel-card-sub">Last Updated</div><strong>{priceMasterMeta?.updatedAt ? new Date(priceMasterMeta.updatedAt).toLocaleString("en-IN") : "Not uploaded"}</strong></div>
+            <div><div className="admin-panel-card-sub">Last Updated</div><strong>{priceMasterMeta?.updatedAt ? formatDisplayDateTime(priceMasterMeta.updatedAt) : "Not uploaded"}</strong></div>
           </div>
           {(priceMasterUploadMessage || priceMasterUploadError) && <div style={{marginTop:12,padding:"10px 12px",borderRadius:8,background:priceMasterUploadError?"#fff1f2":"#ecfdf5",color:priceMasterUploadError?"#b91c1c":"#166534",fontWeight:700}}>{priceMasterUploadError||priceMasterUploadMessage}</div>}
           <div style={{marginTop:12,fontSize:11,color:"#6b7280"}}>Required headers: Part No, Part Description, MRP. Same Part No duplicate rows me last valid row will be used. This master will be shared by Website and Android Estimate app.</div>
@@ -1763,7 +1781,7 @@ function AdminPanel({ users, accountRequests = [], hasPendingRequests = false, o
                   <thead><tr><th>Last Updated in DB</th><th>Customer Name</th><th>Registration No.</th><th>Model</th><th>Engine</th><th>VIN</th></tr></thead>
                   <tbody>
                     {recentVehicles.map((v,i)=><tr key={v.vin || i}>
-                      <td>{v.last_refreshed_at ? new Date(v.last_refreshed_at).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"}) : "—"}</td>
+                      <td>{v.last_refreshed_at ? formatDisplayDateTime(v.last_refreshed_at) : "—"}</td>
                       <td>{v.customer_name || "—"}</td>
                       <td>{v.registration || "—"}</td>
                       <td>{v.model || "—"}</td>
@@ -1792,7 +1810,7 @@ function AdminPanel({ users, accountRequests = [], hasPendingRequests = false, o
                     return <div className="admin-bar-col" key={`v-${String(p.activity_date)}`} title={`${p.activity_date}: ${v} vehicles`}>
                       <div className="admin-bar-value">{v||""}</div>
                       <div className="admin-bar" style={{height:`${h}%`}} />
-                      <div className="admin-bar-label">{new Date(p.activity_date).toLocaleDateString(undefined,{day:"2-digit",month:"short"})}</div>
+                      <div className="admin-bar-label">{formatDisplayDate(p.activity_date)}</div>
                     </div>;
                   })}
                 </div>
@@ -1814,7 +1832,7 @@ function AdminPanel({ users, accountRequests = [], hasPendingRequests = false, o
                 <div className="admin-mini-list">
                   {recentUsers.map(u=><button key={u.id} onClick={()=>onAnalytics(Number(u.id),analyticsRange)}>
                     <span><strong>{u.personName}</strong><small>{displayDealerName(u)}</small></span>
-                    <em>{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "—"}</em>
+                    <em>{u.createdAt ? formatDisplayDate(u.createdAt) : "—"}</em>
                   </button>)}
                 </div>
               </div>
@@ -1839,7 +1857,7 @@ function AdminPanel({ users, accountRequests = [], hasPendingRequests = false, o
                 <div className="admin-panel-card-sub">Active accounts with no activity for more than 7 days</div>
                 <div className="admin-ranked-list">
                   {inactiveUsers.slice(0,8).map((u,i)=><button className="admin-rank-row inactive" key={u.id} onClick={()=>onAnalytics(Number(u.id),analyticsRange)}>
-                    <span className="rank-no">{i+1}</span><span className="rank-name">{u.personName}<small>{u.dealerName}</small></span><span className="rank-value">{u._last ? new Date(u._last).toLocaleDateString() : "Never"}</span>
+                    <span className="rank-no">{i+1}</span><span className="rank-name">{u.personName}<small>{u.dealerName}</small></span><span className="rank-value">{u._last ? formatDisplayDate(u._last) : "Never"}</span>
                   </button>)}
                   {!inactiveUsers.length && <div className="admin-empty">No inactive users in this period.</div>}
                 </div>
@@ -1851,7 +1869,7 @@ function AdminPanel({ users, accountRequests = [], hasPendingRequests = false, o
                 <div className="admin-mini-list">
                   {recentUsers.map(u=><button key={u.id} onClick={()=>onAnalytics(Number(u.id),analyticsRange)}>
                     <span><strong>{u.personName}</strong><small>{u.email}</small></span>
-                    <em>{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "—"}</em>
+                    <em>{u.createdAt ? formatDisplayDate(u.createdAt) : "—"}</em>
                   </button>)}
                 </div>
               </div>
@@ -1889,7 +1907,7 @@ function AdminPanel({ users, accountRequests = [], hasPendingRequests = false, o
                 <table className="admin-table">
                   <thead><tr><th>Date / Time</th><th>User</th><th>Dealer</th><th>Activity</th><th>Mode</th><th>Vehicles</th><th>Files</th><th>VIN</th></tr></thead>
                   <tbody>
-                    {(analytics.recent||[]).map(a=><tr key={a.id}><td>{new Date(a.activity_time).toLocaleString()}</td><td>{a.person_name}</td><td>{a.dealer_name}</td><td>{a.activity_type === "UI Interaction" ? `Click: ${a.details?.label || "Control"}` : a.activity_type}</td><td>{a.mode||"—"}</td><td>{a.vehicle_count||0}</td><td>{a.file_count||0}</td><td>{a.vin||"—"}</td></tr>)}
+                    {(analytics.recent||[]).map(a=><tr key={a.id}><td>{formatDisplayDateTime(a.activity_time)}</td><td>{a.person_name}</td><td>{a.dealer_name}</td><td>{a.activity_type === "UI Interaction" ? `Click: ${a.details?.label || "Control"}` : a.activity_type}</td><td>{a.mode||"—"}</td><td>{a.vehicle_count||0}</td><td>{a.file_count||0}</td><td>{a.vin||"—"}</td></tr>)}
                     {!(analytics.recent||[]).length && <tr><td colSpan="8" className="admin-empty">No activity recorded yet.</td></tr>}
                   </tbody>
                 </table>
@@ -1928,7 +1946,7 @@ function AdminPanel({ users, accountRequests = [], hasPendingRequests = false, o
                 <table className="admin-table">
                   <thead><tr><th>Last Upload / Refresh</th><th>VIN</th><th>Registration</th><th>Customer</th><th>Model</th><th>Engine</th></tr></thead>
                   <tbody>
-                    {(dbData?.vehicles||[]).map((v,i)=><tr key={v.vin||i}><td>{v.created_at?new Date(v.created_at).toLocaleString("en-IN"):"—"}</td><td>{v.vin||"—"}</td><td>{v.registration||"—"}</td><td>{v.customer_name||"—"}</td><td>{v.model||"—"}</td><td>{v.engine||"—"}</td></tr>)}
+                    {(dbData?.vehicles||[]).map((v,i)=><tr key={v.vin||i}><td>{v.created_at?formatDisplayDateTime(v.created_at):"—"}</td><td>{v.vin||"—"}</td><td>{v.registration||"—"}</td><td>{v.customer_name||"—"}</td><td>{v.model||"—"}</td><td>{v.engine||"—"}</td></tr>)}
                     {!(dbData?.vehicles||[]).length && <tr><td colSpan="6" className="admin-empty">No vehicle uploads or refreshes found in this period.</td></tr>}
                   </tbody>
                 </table>
@@ -1968,7 +1986,7 @@ function AdminPanel({ users, accountRequests = [], hasPendingRequests = false, o
                 <div className="admin-table-wrap">
                   <table className="admin-table">
                     <thead><tr><th>ID</th><th>Name</th><th>Dealer</th><th>Email</th><th>Mobile</th><th>Requested</th><th>Action</th></tr></thead>
-                    <tbody>{accountRequests.map(r=><tr key={r.id}><td>{r.id}</td><td>{r.person_name}</td><td>{r.dealer_name}</td><td>{r.email}</td><td>{r.mobile || "—"}</td><td>{r.created_at ? new Date(r.created_at).toLocaleString() : "—"}</td><td>{r.status==="pending" ? <div className="admin-row-actions"><button onClick={()=>onReviewAccountRequest(r,"approve")}>Approve</button><button onClick={()=>onReviewAccountRequest(r,"reject")}>Reject</button></div> : r.status}</td></tr>)}</tbody>
+                    <tbody>{accountRequests.map(r=><tr key={r.id}><td>{r.id}</td><td>{r.person_name}</td><td>{r.dealer_name}</td><td>{r.email}</td><td>{r.mobile || "—"}</td><td>{r.created_at ? formatDisplayDateTime(r.created_at) : "—"}</td><td>{r.status==="pending" ? <div className="admin-row-actions"><button onClick={()=>onReviewAccountRequest(r,"approve")}>Approve</button><button onClick={()=>onReviewAccountRequest(r,"reject")}>Reject</button></div> : r.status}</td></tr>)}</tbody>
                   </table>
                 </div>
               </div>
@@ -1983,8 +2001,8 @@ function AdminPanel({ users, accountRequests = [], hasPendingRequests = false, o
                       {users.map(u=><tr key={u.id}>
                         <td>{u.id}</td><td>{u.personName}</td><td>{displayDealerName(u)}</td><td>{u.email}</td>
                         <td>{u.role === "admin" ? "ADMIN" : u.status}</td>
-                        <td>{u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : "Never"}</td>
-                        <td>{u.lastActivityAt ? new Date(u.lastActivityAt).toLocaleString() : "—"}</td>
+                        <td>{u.lastLoginAt ? formatDisplayDateTime(u.lastLoginAt) : "Never"}</td>
+                        <td>{u.lastActivityAt ? formatDisplayDateTime(u.lastActivityAt) : "—"}</td>
                         <td><button className="admin-analytics-btn" onClick={()=>onAnalytics(Number(u.id),analyticsRange)}>View</button></td>
                         <td><div className="admin-row-actions">
                           {u.role !== "admin" && <button onClick={()=>onEdit(u)}>Edit</button>}

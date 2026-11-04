@@ -1822,7 +1822,7 @@ function AdminPanel({ users, accountRequests = [], hasPendingRequests = false, o
                 <div className="admin-panel-card-title">{`Top Users by Vehicles Analysed ${analyticsRange === 1 ? "Today" : `${analyticsRange} Days`}`}</div>
                 <div className="admin-ranked-list">
                   {topUsers.slice(0,10).map((u,i)=><button className="admin-rank-row" key={u.id} onClick={()=>onAnalytics(Number(u.id),analyticsRange)}>
-                    <span className="rank-no">{i+1}</span><span className="rank-name">{u.personName}</span><span className="rank-value">{u.vehiclesAnalyzed||0}</span>
+                    <span className="rank-no">{i+1}</span><span className="rank-name">{u.personName}{displayDealerName(u) ? ` - ${displayDealerName(u)}` : ""}</span><span className="rank-value">{u.vehiclesAnalyzed||0}</span>
                   </button>)}
                   {!topUsers.length && <div className="admin-empty">No user activity yet.</div>}
                 </div>

@@ -713,7 +713,7 @@ export default async function handler(req, res) {
 
     // Lazy retention cleanup: removes expired interaction logs on admin access.
     if (action === "admin-analytics") {
-      await client.query("DELETE FROM user_activity WHERE activity_time < NOW() - INTERVAL '7 days'");
+      // Preserve activity history for the dashboard 30D and 90D reports.
       const admin = await requireAdmin(client, req);
       if (admin.error) {
         await client.query("ROLLBACK");
@@ -732,9 +732,7 @@ export default async function handler(req, res) {
       if (!includeAdmins) userConditions.push("u.role <> 'admin'");
       const userWhere = userConditions.length ? "WHERE " + userConditions.join(" AND ") : "";
 
-      const summaryActivityFilter = rangeDays === 1
-        ? "(a.activity_time AT TIME ZONE 'Asia/Kolkata')::date = (NOW() AT TIME ZONE 'Asia/Kolkata')::date"
-        : "a.activity_time >= NOW() - (" + (targetUserId ? "$2" : "$1") + " * INTERVAL '1 day')";
+      const summaryActivityFilter = "(a.activity_time AT TIME ZONE 'Asia/Kolkata')::date BETWEEN (NOW() AT TIME ZONE 'Asia/Kolkata')::date - (" + (rangeDays - 1) + ") AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date";
       const summaryQueryParams = rangeDays === 1
         ? (targetUserId ? [targetUserId] : [])
         : (targetUserId ? [targetUserId, rangeDays] : [rangeDays]);
@@ -821,8 +819,7 @@ export default async function handler(req, res) {
                     AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date
             ${targetUserId ? " AND a.user_id=$1" : ""}
             ${!includeAdmins ? " AND u.role <> 'admin'" : ""}
-          ORDER BY a.activity_time DESC
-          LIMIT 200`,
+          ORDER BY a.activity_time DESC`,
         targetUserId ? [targetUserId] : []
       );
 

@@ -568,7 +568,7 @@ export default async function handler(req, res) {
         return res.status(401).json({success:false,error:"Session expired."});
       }
       // Rolling retention cleanup runs whenever a batch is received.
-      await client.query("DELETE FROM user_activity WHERE activity_time < NOW() - INTERVAL '7 days'");
+      // Keep activity history. The dashboard supports 30D and 90D ranges.
       const events = Array.isArray(body.events) ? body.events.slice(0, 100) : [];
       for (const event of events) {
         const label = clean(event?.details?.label).slice(0, 180);
@@ -809,15 +809,21 @@ export default async function handler(req, res) {
         targetUserId ? [targetUserId] : []
       );
 
+      // Recent Activity must obey the same selected date window as the charts.
+      // Compare calendar dates in IST so Today never includes yesterday's UTC spillover.
       const recent = await client.query(
         `SELECT a.id,a.user_id,u.person_name,u.dealer_name,a.activity_type,a.activity_time,
                 a.mode,a.vehicle_count,a.file_count,a.vin,a.details
            FROM user_activity a
            JOIN app_users u ON u.id=a.user_id
-          WHERE 1=1${targetUserId ? " AND a.user_id=$1" : ""}${!includeAdmins ? " AND u.role <> 'admin'" : ""}
+          WHERE (a.activity_time AT TIME ZONE 'Asia/Kolkata')::date
+                BETWEEN (NOW() AT TIME ZONE 'Asia/Kolkata')::date - (${rangeDays} - 1)
+                    AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date
+            ${targetUserId ? " AND a.user_id=$1" : ""}
+            ${!includeAdmins ? " AND u.role <> 'admin'" : ""}
           ORDER BY a.activity_time DESC
           LIMIT 200`,
-        params
+        targetUserId ? [targetUserId] : []
       );
 
       // Today uses a dedicated SQL path with no artificial $1/$2 range parameter.

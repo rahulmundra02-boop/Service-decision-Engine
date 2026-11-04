@@ -697,3 +697,11 @@
   margin-left:7px;
 }
 .admin-category-nav button { position:relative; }
+
+/* Compact admin user management controls */
+.admin-users-tools{display:flex;align-items:center;gap:7px}
+.admin-user-search-toggle{width:34px;height:34px;padding:0;border:1px solid #b8c8d8;border-radius:6px;background:#edf3f8;color:#24445f;font-size:22px;line-height:1;cursor:pointer}
+.admin-user-search-input{width:min(260px,38vw);min-width:130px;margin:0!important;background:#fff!important;color:#17324d!important;border:1px solid #b8c8d8!important;border-radius:6px;padding:8px 10px!important;font-size:12px!important}
+.admin-user-row-actions{gap:4px;align-items:center}
+.admin-user-row-actions button{font-size:10px;padding:4px 6px;line-height:1.15;border-radius:4px;white-space:nowrap}
+@media(max-width:700px){.admin-users-tools{flex-wrap:wrap;justify-content:flex-end}.admin-user-search-input{width:180px}}

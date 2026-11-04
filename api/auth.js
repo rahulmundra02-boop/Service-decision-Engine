@@ -733,9 +733,9 @@ export default async function handler(req, res) {
       const userWhere = userConditions.length ? "WHERE " + userConditions.join(" AND ") : "";
 
       const summaryActivityFilter = "(a.activity_time AT TIME ZONE 'Asia/Kolkata')::date BETWEEN (NOW() AT TIME ZONE 'Asia/Kolkata')::date - (" + (rangeDays - 1) + ") AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date";
-      const summaryQueryParams = rangeDays === 1
-        ? (targetUserId ? [targetUserId] : [])
-        : (targetUserId ? [targetUserId, rangeDays] : [rangeDays]);
+      // rangeDays is embedded in the date-filter SQL above. Only targetUserId
+      // uses a positional placeholder, so pass only that parameter when present.
+      const summaryQueryParams = targetUserId ? [targetUserId] : [];
 
       await backfillUserVehicleAnalyses(client);
 

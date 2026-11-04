@@ -2577,7 +2577,7 @@ function freeService(records,vehicle,running,analysisDate,decisionBasis = "AUTO"
     : [
         ['1ST FREE SERVICE',440,560,2,4,'1st free service'],
         ['2ND FREE SERVICE',940,1060,5,7,'2nd free service'],
-        ['3RD FREE SERVICE',1940,2060,8,10,'3rd free service']
+        ['3RD FREE SERVICE',1440,1560,8,10,'3rd free service']
       ];
 
   for(const [name,min,max,mn,mx,label] of checks){
@@ -6463,15 +6463,21 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
       return;
     }
 
-    const historicalReadings = analysis.records
-      .map(r => getRelevantReadingForBasis(r, basis))
-      .filter(v => Number.isFinite(v) && v > 0);
-    const highestRecorded = historicalReadings.length ? Math.max(...historicalReadings) : 0;
+    const previousRecordedEntry = [...analysis.records]
+      .filter(record => {
+        const reading = getRelevantReadingForBasis(record, basis);
+        return Number.isFinite(reading) && reading > 0;
+      })
+      .sort((a, b) => (b.date || 0) - (a.date || 0) || (b.rowNumber || 0) - (a.rowNumber || 0))[0] || null;
+    const previousRecordedReading = previousRecordedEntry
+      ? getRelevantReadingForBasis(previousRecordedEntry, basis)
+      : 0;
 
-    if (highestRecorded > 0 && value < highestRecorded) {
+    if (previousRecordedReading > 0 && value < previousRecordedReading) {
       setAppliedOverride(null);
-      const msg = `Invalid ${basis} reading!\n\nEntered: ${formatNumber(value)} ${basis}\nPrevious recorded reading: ${formatNumber(highestRecorded)} ${basis}\n\nPlease enter a reading equal to or higher than the previous recorded reading.`;
-      setError(msg.replace(/\n/g, " "));
+      const previousDate = previousRecordedEntry.date ? formatDate(previousRecordedEntry.date) : "Date unavailable";
+      const msg = `Invalid ${basis} reading.\\n\\nEntered reading: ${formatNumber(value)} ${basis}\\nPrevious recorded reading: ${formatNumber(previousRecordedReading)} ${basis}\\nPrevious recorded date: ${previousDate}\\n\\nThe entered reading must be equal to or higher than the previous recorded reading.`;
+      setError(msg.replace(/\\n/g, " "));
       window.alert(msg);
       return;
     }

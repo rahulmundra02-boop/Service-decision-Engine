@@ -1464,6 +1464,20 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading, onChang
 }
 function AdminPanel({ users, accountRequests = [], hasPendingRequests = false, onReviewAccountRequest, onRefreshAccountRequests, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel, priceMasterMeta, priceMasterUploadBusy, priceMasterUploadMessage, priceMasterUploadError, onUploadPriceMasterExcel }) {
   const analyticsDetailRef = useRef(null);
+  const [userSearchOpen, setUserSearchOpen] = useState(false);
+  const [userSearchText, setUserSearchText] = useState("");
+  const filteredUsers = [...(users || [])]
+    .sort((a,b) => {
+      const aTime = a.lastLoginAt ? new Date(a.lastLoginAt).getTime() : 0;
+      const bTime = b.lastLoginAt ? new Date(b.lastLoginAt).getTime() : 0;
+      return bTime - aTime;
+    })
+    .filter(u => {
+      const q = userSearchText.trim().toLowerCase();
+      if (!q) return true;
+      return [u.id, u.personName, u.dealerName, u.email, u.mobile, u.role, u.status, u.lastLoginAt]
+        .some(value => String(value ?? "").toLowerCase().includes(q));
+    });
   const adminSectionFromPath = () => {
     const part = window.location.pathname.split("/")[2] || "analytics";
     return ["overview","masters","system","analytics","users"].includes(part) ? part : "analytics";
@@ -1993,24 +2007,30 @@ function AdminPanel({ users, accountRequests = [], hasPendingRequests = false, o
               )}
 
               <div className="admin-users-card">
-                <div className="admin-users-header"><h3>Users</h3><button className="auth-secondary admin-refresh" onClick={onRefresh} disabled={loading}>Refresh</button></div>
+                <div className="admin-users-header">
+                  <h3>Users</h3>
+                  <div className="admin-users-tools">
+                    {userSearchOpen && <input className="admin-user-search-input" autoFocus value={userSearchText} onChange={e=>setUserSearchText(e.target.value)} placeholder="Search all user details..." aria-label="Search users" />}
+                    <button type="button" className="admin-user-search-toggle" onClick={()=>{setUserSearchOpen(v=>!v);setUserSearchText("");}} title={userSearchOpen ? "Close search" : "Search users"} aria-label={userSearchOpen ? "Close search" : "Search users"}>⌕</button>
+                    <button className="auth-secondary admin-refresh" onClick={onRefresh} disabled={loading}>Refresh</button>
+                  </div>
+                </div>
                 <div className="admin-table-wrap">
                   <table className="admin-table">
-                    <thead><tr><th>ID</th><th>Name</th><th>Dealer</th><th>Email</th><th>Status</th><th>Last Login</th><th>Last Activity</th><th>Analytics</th><th>Action</th></tr></thead>
+                    <thead><tr><th>ID</th><th>Name</th><th>Dealer</th><th>Mobile No.</th><th>Status</th><th>Last Login</th><th>Analytics</th><th>Action</th></tr></thead>
                     <tbody>
-                      {users.map(u=><tr key={u.id}>
-                        <td>{u.id}</td><td>{u.personName}</td><td>{displayDealerName(u)}</td><td>{u.email}</td>
+                      {filteredUsers.map(u=><tr key={u.id}>
+                        <td>{u.id}</td><td>{u.personName}</td><td>{displayDealerName(u)}</td><td>{u.mobile || "—"}</td>
                         <td>{u.role === "admin" ? "ADMIN" : u.status}</td>
                         <td>{u.lastLoginAt ? formatDisplayDateTime(u.lastLoginAt) : "Never"}</td>
-                        <td>{u.lastActivityAt ? formatDisplayDateTime(u.lastActivityAt) : "—"}</td>
                         <td><button className="admin-analytics-btn" onClick={()=>onAnalytics(Number(u.id),analyticsRange)}>View</button></td>
-                        <td><div className="admin-row-actions">
+                        <td><div className="admin-row-actions admin-user-row-actions">
                           {u.role !== "admin" && <button onClick={()=>onEdit(u)}>Edit</button>}
                           {u.role !== "admin" && <button onClick={()=>onReset(u)}>Reset Password</button>}
                           {u.role !== "admin" && <button onClick={()=>onToggleStatus(u)}>{u.status === "active" ? "Deactivate" : "Activate"}</button>}
                         </div></td>
                       </tr>)}
-                      {!users.length && <tr><td colSpan="9" className="admin-empty">No users found.</td></tr>}
+                      {!filteredUsers.length && <tr><td colSpan="8" className="admin-empty">{userSearchText.trim() ? "No matching users found." : "No users found."}</td></tr>}
                     </tbody>
                   </table>
                 </div>

@@ -1464,6 +1464,8 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading, onChang
 }
 function AdminPanel({ users, accountRequests = [], hasPendingRequests = false, onReviewAccountRequest, onRefreshAccountRequests, form, setForm, loading, onCreate, onEdit, onRefresh, onReset, onToggleStatus, onBack, analytics, analyticsUserId, analyticsRange, analyticsLoading, analyticsIncludeAdmins, onSetAnalyticsIncludeAdmins, onAnalytics, jobCardCacheSettings, onJobCardCacheSettings, emergencyDbUploadCutoff, onEmergencyDbUploadCutoff, campaignMeta, campaignUploadBusy, campaignUploadMessage, campaignUploadError, onUploadCampaignExcel, priceMasterMeta, priceMasterUploadBusy, priceMasterUploadMessage, priceMasterUploadError, onUploadPriceMasterExcel }) {
   const analyticsDetailRef = useRef(null);
+  const [activitySearchOpen, setActivitySearchOpen] = useState(false);
+  const [activitySearchText, setActivitySearchText] = useState("");
   const [userSearchOpen, setUserSearchOpen] = useState(false);
   const [userSearchText, setUserSearchText] = useState("");
   const filteredUsers = [...(users || [])]
@@ -1916,13 +1918,44 @@ function AdminPanel({ users, accountRequests = [], hasPendingRequests = false, o
               </div>
             </div>
             <div className="admin-panel-card">
-              <div className="admin-panel-card-title">Recent Activity</div>
+              <div className="admin-activity-heading">
+                <div className="admin-panel-card-title">Recent Activity</div>
+                <div className="admin-activity-search-tools">
+                  {activitySearchOpen && <input
+                    className="admin-activity-search-input"
+                    autoFocus
+                    type="search"
+                    value={activitySearchText}
+                    onChange={e=>setActivitySearchText(e.target.value)}
+                    placeholder="Search all columns..."
+                    aria-label="Search all activity columns"
+                  />}
+                  <button type="button" className="admin-activity-search-toggle"
+                    onClick={()=>{setActivitySearchOpen(v=>!v);setActivitySearchText("");}}
+                    title={activitySearchOpen ? "Close search" : "Search activity"}
+                    aria-label={activitySearchOpen ? "Close search" : "Search activity"}>⌕</button>
+                </div>
+              </div>
               <div className="admin-table-wrap admin-activity-wrap">
                 <table className="admin-table">
                   <thead><tr><th>Date / Time</th><th>User</th><th>Dealer</th><th>Activity</th><th>Mode</th><th>Vehicles</th><th>Files</th><th>VIN</th></tr></thead>
                   <tbody>
-                    {(analytics.recent||[]).map(a=><tr key={a.id}><td>{formatDisplayDateTime(a.activity_time)}</td><td>{a.person_name}</td><td>{a.dealer_name}</td><td>{a.activity_type === "UI Interaction" ? `Click: ${a.details?.label || "Control"}` : a.activity_type}</td><td>{a.mode||"—"}</td><td>{a.vehicle_count||0}</td><td>{a.file_count||0}</td><td>{a.vin||"—"}</td></tr>)}
+                    {(analytics.recent||[]).filter(a => {
+                      const query = activitySearchText.trim().toLowerCase();
+                      if (!query) return true;
+                      const values = [
+                        formatDisplayDateTime(a.activity_time), a.person_name, a.dealer_name,
+                        a.activity_type === "UI Interaction" ? `Click: ${a.details?.label || "Control"}` : a.activity_type,
+                        a.mode, a.vehicle_count ?? 0, a.file_count ?? 0, a.vin
+                      ];
+                      return values.some(value => String(value ?? "").toLowerCase().includes(query));
+                    }).map(a=><tr key={a.id}><td>{formatDisplayDateTime(a.activity_time)}</td><td>{a.person_name}</td><td>{a.dealer_name}</td><td>{a.activity_type === "UI Interaction" ? `Click: ${a.details?.label || "Control"}` : a.activity_type}</td><td>{a.mode||"—"}</td><td>{a.vehicle_count||0}</td><td>{a.file_count||0}</td><td>{a.vin||"—"}</td></tr>)}
                     {!(analytics.recent||[]).length && <tr><td colSpan="8" className="admin-empty">No activity recorded yet.</td></tr>}
+                    {!!(analytics.recent||[]).length && activitySearchText.trim() && !(analytics.recent||[]).some(a => [
+                      formatDisplayDateTime(a.activity_time),a.person_name,a.dealer_name,
+                      a.activity_type === "UI Interaction" ? `Click: ${a.details?.label || "Control"}` : a.activity_type,
+                      a.mode,a.vehicle_count??0,a.file_count??0,a.vin
+                    ].some(value=>String(value??"").toLowerCase().includes(activitySearchText.trim().toLowerCase()))) && <tr><td colSpan="8" className="admin-empty">No matching activity found.</td></tr>}
                   </tbody>
                 </table>
               </div>

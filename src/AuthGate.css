@@ -705,3 +705,11 @@
 .admin-user-row-actions{gap:4px;align-items:center}
 .admin-user-row-actions button{font-size:10px;padding:4px 6px;line-height:1.15;border-radius:4px;white-space:nowrap}
 @media(max-width:700px){.admin-users-tools{flex-wrap:wrap;justify-content:flex-end}.admin-user-search-input{width:180px}}
+
+/* Recent Activity all-column search */
+.admin-activity-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+.admin-activity-heading .admin-panel-card-title{margin:0}
+.admin-activity-search-tools{display:flex;align-items:center;gap:8px}
+.admin-activity-search-toggle{width:34px;height:34px;flex:0 0 34px;padding:0;border:1px solid #b8c8d8;border-radius:7px;background:#edf3f8;color:#24445f;font-size:23px;line-height:1;cursor:pointer}
+.admin-activity-search-input{width:min(280px,48vw);min-width:130px;margin:0!important;padding:8px 10px!important;border:1px solid #b8c8d8!important;border-radius:7px;background:#fff!important;color:#17324d!important;font-size:13px!important}
+@media(max-width:600px){.admin-activity-search-input{width:min(210px,48vw)}}

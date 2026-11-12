@@ -3030,11 +3030,18 @@ async function printCustomerReport(group, detailed=false) {
       });
       y = (pdf.lastAutoTable?.finalY || y + 10) + 4;
 
-      const historyBody = visits.map(visit => {
+      // Match the Single Vehicle schedule-history view and include Plant Name.
+      // Keep mapped schedule parts even when their quantities do not qualify
+      // for service-decision calculations.
+      const scheduleVisits = visits.filter(visit => isScheduledHistoryVisit(visit, vehicle, v.decision));
+      const historyBody = scheduleVisits.map(visit => {
         const date = getVisitDate(visit);
         const jc = getVisitJobCard(visit);
-        const reading = getVisitReading(visit, vehicle, "KM");
-        const parts = getVisitParts(visit.filter(isMappedServiceLine), vehicle, v.decision)
+        const isHrs = v.decision?.basis === "HRS" || getTargetUnit(vehicle) === "HRS";
+        const reading = getVisitReading(visit, vehicle, isHrs ? "HRS" : "KM");
+        const plant = [...new Set(visit.map(r => String(r?.plantName || r?.salesOrgName || "").trim()).filter(Boolean))].join(", ") || "-";
+        const parts = getVisitParts(visit, vehicle, v.decision)
+          .filter(part => part.historyEligible)
           .map(part => part.text)
           .filter(Boolean)
           .join(', ');
@@ -3042,7 +3049,8 @@ async function printCustomerReport(group, detailed=false) {
         return [
           formatDateShort(date),
           jc || '-',
-          reading ? `${formatNumber(reading)} ${getTargetUnit(vehicle)}` : '-',
+          reading ? `${formatNumber(reading)} ${isHrs ? "HRS" : "KM"}` : '-',
+          plant,
           parts
         ];
       }).filter(Boolean);
@@ -3052,11 +3060,11 @@ async function printCustomerReport(group, detailed=false) {
         margin: { left: margin, right: margin },
         tableWidth: usableW,
         theme: 'grid',
-        head: [['Date','Job Card','Reading','Service / Part No. / Qty']],
-        body: historyBody.length ? historyBody : [['-','-','-','No mapped service history available.']],
-        styles: { font:'helvetica', fontSize:7.5, cellPadding:2.5, textColor:[20,20,20], lineColor:[150,150,150], lineWidth:0.2, overflow:'linebreak', valign:'top' },
+        head: [['Date','Job Card','Reading','Plant Name','Service / Part No. / Qty']],
+        body: historyBody.length ? historyBody : [['-','-','-','-','No mapped schedule service history available.']],
+        styles: { font:'helvetica', fontSize:7.2, cellPadding:2.2, textColor:[20,20,20], lineColor:[150,150,150], lineWidth:0.2, overflow:'linebreak', valign:'top' },
         headStyles: { fontStyle:'bold', fillColor:[238,238,238], textColor:[20,20,20] },
-        columnStyles: { 0:{cellWidth:27}, 1:{cellWidth:33}, 2:{cellWidth:30}, 3:{cellWidth:100} },
+        columnStyles: { 0:{cellWidth:22}, 1:{cellWidth:29}, 2:{cellWidth:25}, 3:{cellWidth:38}, 4:{cellWidth:76} },
         rowPageBreak: 'avoid',
         pageBreak: 'auto'
       });

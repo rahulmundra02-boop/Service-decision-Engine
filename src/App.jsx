@@ -3332,45 +3332,51 @@ function downloadCustomerServiceSummary(group) {
           rowPageBreak: "avoid",
           pageBreak: "auto"
         });
-      });
 
-      // Place a prominent disclaimer immediately below the service table.
-      // Each vehicle starts on its own page, and the reserved bottom margin
-      // keeps this customer-critical note with its corresponding summary.
-      const disclaimerLines = [
-        "IMPORTANT: Service is due at the prescribed odometer/hour-meter reading or time interval, whichever occurs first.",
-        "IMPORTANT: The current reading is an estimate based on previous recorded running. Manually verify the actual physical meter reading before confirming service requirements."
-      ];
-      const disclaimerY = (pdf.lastAutoTable?.finalY || 48) + 6;
-      const disclaimerTextWidth = tableWidth - 8;
-      const wrappedDisclaimer = disclaimerLines.map(line =>
-        pdf.splitTextToSize(line, disclaimerTextWidth)
-      );
-      const disclaimerLineHeight = 4.2;
-      const disclaimerBoxHeight =
-        wrappedDisclaimer.reduce((total, lines) => total + lines.length * disclaimerLineHeight, 0) +
-        (disclaimerLines.length - 1) * 1.2 + 7;
+        // Render the disclaimer inside the vehicle loop so every vehicle page
+        // receives its own customer-facing disclaimer directly below its table.
+        const disclaimerItems = [
+          "Service is due at the prescribed odometer/hour-meter reading or time interval, whichever occurs first.",
+          "The current reading is an estimate based on previously recorded vehicle running. Verify the actual physical odometer/hour-meter reading before confirming service requirements.",
+          "This summary is based on the vehicle details and service history available at the time of preparation. Missing or incorrect records may affect the recommendations."
+        ];
+        const disclaimerTextWidth = tableWidth - 10;
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(8.1);
+        const wrappedDisclaimer = disclaimerItems.map((item, index) =>
+          pdf.splitTextToSize(String(index + 1) + ". " + item, disclaimerTextWidth)
+        );
+        const disclaimerLineHeight = 4.1;
+        const disclaimerY = (pdf.lastAutoTable?.finalY || 48) + 5;
+        const disclaimerBoxHeight =
+          5.5 +
+          wrappedDisclaimer.reduce((total, lines) => total + lines.length * disclaimerLineHeight, 0) +
+          (disclaimerItems.length - 1) * 1.1 + 5;
 
-      pdf.setFillColor(245, 245, 245);
-      pdf.setDrawColor(55, 55, 55);
-      pdf.setLineWidth(0.35);
-      pdf.roundedRect(
-        margin,
-        disclaimerY,
-        tableWidth,
-        disclaimerBoxHeight,
-        1.5,
-        1.5,
-        "FD"
-      );
+        pdf.setFillColor(248, 248, 248);
+        pdf.setDrawColor(35, 35, 35);
+        pdf.setLineWidth(0.45);
+        pdf.roundedRect(
+          margin,
+          disclaimerY,
+          tableWidth,
+          disclaimerBoxHeight,
+          1.2,
+          1.2,
+          "FD"
+        );
 
-      pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(8.2);
-      pdf.setTextColor(15, 15, 15);
-      let disclaimerTextY = disclaimerY + 5;
-      wrappedDisclaimer.forEach(lines => {
-        pdf.text(lines, margin + 4, disclaimerTextY, { lineHeightFactor: 1.15 });
-        disclaimerTextY += lines.length * disclaimerLineHeight + 1.2;
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(9.2);
+        pdf.setTextColor(0, 0, 0);
+        pdf.text("DISCLAIMER", margin + 4, disclaimerY + 4.5);
+
+        pdf.setFontSize(8.1);
+        let disclaimerTextY = disclaimerY + 10;
+        wrappedDisclaimer.forEach(lines => {
+          pdf.text(lines, margin + 4, disclaimerTextY, { lineHeightFactor: 1.12 });
+          disclaimerTextY += lines.length * disclaimerLineHeight + 1.1;
+        });
       });
 
       const safeName = String(group.name || "Customer")

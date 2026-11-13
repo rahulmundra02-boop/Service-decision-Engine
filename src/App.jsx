@@ -3222,13 +3222,15 @@ function buildVehicleServiceSummary(vehicleResult) {
   }
 
   specialItems.forEach((name, index) => {
-    // Applicable special services must show their target meter reading and date.
+    // Calculate the service target first, then derive its status from the same
+    // KM/HRS/time thresholds. Never label an applicable service Due by default.
     const freeMatch = name.match(/^(1st|2nd|3rd) Free Service$/i);
-    const wheelMatch = name.match(/WHEEL ALIGNMENT SERVICE[- ]?(\d)/i);
+    const wheelMatch = name.match(/WHEEL ALIGNMENT SERVICE[- ]?(\\d)/i);
     const isBodyCheck = /BODY BUILDING CHECK ?UP/i.test(name);
     let upcoming = "Applicable";
     let sortDays = Number.POSITIVE_INFINITY;
     let sortDate = Number.MAX_SAFE_INTEGER;
+    let status = "No Due";
 
     if (freeMatch) {
       const ordinal = freeMatch[1].toLowerCase();
@@ -3247,9 +3249,22 @@ function buildVehicleServiceSummary(vehicleResult) {
         ? monthsAfter(saleDate, targetMonths[serviceIndex])
         : null;
       const targetReading = targetReadings[serviceIndex];
+      const deviation = useHourTarget ? 60 : 3000;
 
       upcoming = (targetDate ? formatDateShort(targetDate) : "N/A") +
         " | " + formatNumber(targetReading) + " " + targetUnit;
+
+      // Free service is due by whichever comes first: target meter reading
+      // or target date. One-month / +/-3,000 KM (or +/-60 HRS) windows apply.
+      status = getServiceSummaryStatus(
+        saleDate,
+        0,
+        targetReading,
+        targetMonths[serviceIndex],
+        current,
+        deviation,
+        basis === "TIME_ONLY"
+      );
 
       if (targetDate) {
         const normalizedTargetDate = new Date(
@@ -3270,19 +3285,50 @@ function buildVehicleServiceSummary(vehicleResult) {
       const targetReading = wheelMatch ? [10000, 20000, 30000, 40000][wheelIndex] : 3000;
       const targetUnit = "KM";
       const fallbackMonths = wheelMatch ? [4, 5, 6, 7][wheelIndex] : 3;
-      const targetDateFromAverage = averageDailyKm && currentKm > 0
+      const hasReliableKmProjection = Number.isFinite(averageDailyKm) && averageDailyKm > 0 && currentKm > 0;
+      const targetDateFromAverage = hasReliableKmProjection
         ? new Date(Date.now() + Math.max(0, (targetReading - currentKm) / averageDailyKm) * 86400000)
         : null;
       const targetDate = targetDateFromAverage || (saleDate ? monthsAfter(saleDate, fallbackMonths) : null);
       upcoming = (targetDate ? formatDateShort(targetDate) : "N/A") +
         " | " + formatNumber(targetReading) + " " + targetUnit;
 
+      if (hasReliableKmProjection) {
+        // Wheel alignment: +/-3,000 KM. Body check-up: 0-5,000 KM
+        // around the 3,000 KM target (2,000 KM early/late tolerance).
+        status = getServiceSummaryStatus(
+          null,
+          0,
+          targetReading,
+          0,
+          currentKm,
+          wheelMatch ? 3000 : 2000,
+          false
+        );
+      } else {
+        // When running-rate data is not reliable, use the calendar target.
+        status = getServiceSummaryStatus(
+          saleDate,
+          0,
+          0,
+          fallbackMonths,
+          currentKm,
+          0,
+          true
+        );
+      }
+
       if (targetDate) {
         const normalizedTargetDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         sortDate = normalizedTargetDate.getTime();
-        sortDays = Math.max(0, (sortDate - today.getTime()) / 86400000);
+        const timeDays = (sortDate - today.getTime()) / 86400000;
+        const readingDays = hasReliableKmProjection
+          ? (targetReading - currentKm) / averageDailyKm
+          : null;
+        const triggers = [timeDays, readingDays].filter(Number.isFinite);
+        sortDays = triggers.length ? Math.min(...triggers) : timeDays;
       }
     }
 
@@ -3291,7 +3337,7 @@ function buildVehicleServiceSummary(vehicleResult) {
       key: "additionalService-" + index,
       last: "No Previous Record",
       upcoming,
-      status: "Due",
+      status,
       sortDays,
       sortDate
     });

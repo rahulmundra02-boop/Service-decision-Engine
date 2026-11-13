@@ -2781,6 +2781,8 @@ function buildBulkAnalysis(records, considerKmVehicles = []) {
       vin: vehicle.vin || vinKey,
       vehicle,
       running,
+      decisionRunning,
+      decisionBasis: useTimeOnly ? "TIME_ONLY" : (isTipperModel(vehicle.model) ? "HRS" : "KM"),
       decision,
       services,
       dueCount: services.length,
@@ -2939,6 +2941,342 @@ async function copyCustomerSummary(group, dealerName = "", preferences = {}) {
     console.error('WhatsApp copy error:', err);
     window.alert(`The WhatsApp summary could not be copied:\n\n${err?.message || err}`);
   }
+}
+
+
+function getServiceSummaryStatus(baseDate, baseReading, interval, months, current, deviation, dateOnly = false) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const hasDateRule = !!baseDate && Number(months) > 0;
+  const hasReadingRule = !dateOnly && Number(interval) > 0 && Number.isFinite(Number(current));
+  const dueDate = hasDateRule ? monthsAfter(baseDate, months) : null;
+  const nearDate = hasDateRule ? monthsAfter(baseDate, months - 1) : null;
+  const lapsedDate = hasDateRule ? monthsAfter(baseDate, months + 1) : null;
+  const dueReading = hasReadingRule ? Number(baseReading || 0) + Number(interval) : null;
+  const nearReading = hasReadingRule ? dueReading - Number(deviation || 0) : null;
+  const lapsedReading = hasReadingRule ? dueReading + Number(deviation || 0) : null;
+
+  const isLapsed =
+    (hasDateRule && today > lapsedDate) ||
+    (hasReadingRule && Number(current) > lapsedReading);
+  if (isLapsed) return "Lapsed";
+
+  const isDue =
+    (hasDateRule && today >= dueDate) ||
+    (hasReadingRule && Number(current) >= dueReading);
+  if (isDue) return "Due";
+
+  const isNearDue =
+    (hasDateRule && today >= nearDate) ||
+    (hasReadingRule && Number(current) >= nearReading);
+  if (isNearDue) return "Near Due";
+
+  return "No Due";
+}
+
+function buildVehicleServiceSummary(vehicleResult) {
+  const vehicle = vehicleResult?.vehicle || {};
+  const records = getServiceDecisionRecords(Array.isArray(vehicleResult?.records) ? vehicleResult.records : []);
+  const basis = vehicleResult?.decisionBasis || (isTipperModel(vehicle.model) ? "HRS" : "KM");
+  const displayBasis = basis === "TIME_ONLY" ? "KM" : basis;
+  const unit = displayBasis === "HRS" ? "HRS" : "KM";
+  const current = Number(vehicleResult?.running?.current || 0);
+  const saleDate = vehicle.sale || null;
+  const rows = [];
+
+  const addRow = (name, key, base, interval, months, deviation, options = {}) => {
+    if (options.notApplicable) {
+      rows.push({ name, last: "N/A", upcoming: "Not Applicable", status: "No Due" });
+      return;
+    }
+
+    const baseDate = base?.date || saleDate;
+    const baseReading = base
+      ? Number(getRelevantReadingForBasis(base, displayBasis) || 0)
+      : 0;
+    const nextDate = baseDate && Number(months) > 0 ? monthsAfter(baseDate, months) : null;
+    const nextReading = Number(interval) > 0 ? baseReading + Number(interval) : null;
+    const lastDateText = base?.date ? formatDateShort(base.date) : "";
+    const lastReadingText = baseReading > 0
+      ? formatNumber(baseReading) + " " + unit
+      : "";
+    const nextDateText = nextDate ? formatDateShort(nextDate) : "N/A";
+    const nextReadingText = nextReading !== null
+      ? formatNumber(nextReading) + " " + unit
+      : "N/A";
+
+    const lastText = base
+      ? [lastDateText, lastReadingText].filter(Boolean).join(" | ") || "N/A"
+      : "N/A";
+    const upcomingText = nextDateText + " | " + nextReadingText;
+    const status = getServiceSummaryStatus(
+      baseDate,
+      baseReading,
+      interval,
+      months,
+      current,
+      deviation,
+      basis === "TIME_ONLY" || options.dateOnly === true
+    );
+
+    rows.push({ name, key, last: lastText, upcoming: upcomingText, status });
+  };
+
+  const useHours = displayBasis === "HRS";
+  const engineSpecial = isGB2822G50HCoModel(vehicle.model);
+  const engineBase = engineSpecial
+    ? serviceBase(records, ["ENGINE OIL"], 12, false, vehicle)
+    : serviceBase(records, ["ENGINE OIL"], 12, true, vehicle, "ENGINE OIL FILTER", true);
+
+  if (engineSpecial) {
+    addRow("ENGINE OIL", "engineOil", engineBase, 20000, 6, 0);
+  } else {
+    let engineKmInterval = 120000;
+    if (isH4Model(vehicle.model)) engineKmInterval = 40000;
+    else if (isA4Model(vehicle.model)) engineKmInterval = engineBase && engineBase.serviceQty >= 19 ? 80000 : 40000;
+    else if (isH6Model(vehicle.model)) engineKmInterval = 80000;
+    const engineInterval = useHours
+      ? ((isA4Model(vehicle.model) || isH4Model(vehicle.model) || isH6Model(vehicle.model)) ? 1000 : 1500)
+      : engineKmInterval;
+    addRow("ENGINE OIL", "engineOil", engineBase, engineInterval, 18, useHours ? 60 : 4000);
+  }
+
+  const simpleSpecs = [
+    ["GEAR OIL", "gearOil"],
+    ["AXLE OIL", "axleOil"],
+    ["STEERING OIL", "steeringOil"],
+    ["CLUTCH OIL", "clutchOil"],
+    ["DEF INLINE FILTER", "defInline"],
+    ["COOLANT", "coolant"],
+    ["HUB GREASE", "hubGrease"],
+    [isCngModel(vehicle.model) ? "CNG FILTER" : "FUEL FILTER", isCngModel(vehicle.model) ? "cngFilter" : "fuelFilter"],
+    ["AIR FILTER", "airFilter"],
+    ["DEF FILTER", "defFilter"],
+    ["APDA FILTER", "apdaFilter"]
+  ];
+
+  for (const [label, key] of simpleSpecs) {
+    if (key === "fuelFilter" && isCngModel(vehicle.model)) continue;
+    if (key === "defFilter" || key === "apdaFilter") {
+      if (!isBSVIApplicable(vehicle)) {
+        addRow(label, key, null, 0, 0, 0, { notApplicable: true });
+        continue;
+      }
+    }
+
+    if (key === "defInline") {
+      const hasHistory = records.some(r => String(r.standardizedPart || "").toUpperCase().includes("DEF INLINE FILTER"));
+      const applicable = hasHistory || (saleDate && saleDate >= new Date(2025, 4, 1));
+      if (!applicable) {
+        addRow(label, key, null, 0, 0, 0, { notApplicable: true });
+        continue;
+      }
+    }
+
+    let base = null;
+    let kmInterval = 0;
+    let hourInterval = 0;
+    let months = 0;
+
+    if (key === "steeringOil") {
+      base = steeringOilServiceBase(records, vehicle);
+      kmInterval = 160000;
+      hourInterval = 4000;
+      months = 24;
+    } else if (key === "clutchOil") {
+      base = clutchOilServiceBase(records, vehicle);
+      kmInterval = 80000;
+      hourInterval = 2000;
+      months = useHours ? 12 : 18;
+    } else if (key === "airFilter") {
+      base = latestFilter(records, "AIR FILTER", "AIR FILTER KIT", vehicle);
+      kmInterval = DECISION_RULES.airFilter[0];
+      hourInterval = TIP_RULES.airFilter[0];
+      months = DECISION_RULES.airFilter[1];
+    } else if (key === "fuelFilter") {
+      base = latestFuelFilter(records, vehicle);
+      kmInterval = DECISION_RULES.fuelFilter[0];
+      hourInterval = TIP_RULES.fuelFilter[0];
+      months = DECISION_RULES.fuelFilter[1];
+    } else if (key === "defFilter") {
+      base = latestDefFilter(records, vehicle);
+      kmInterval = DECISION_RULES.defFilter[0];
+      hourInterval = TIP_RULES.defFilter[0];
+      months = DECISION_RULES.defFilter[1];
+    } else {
+      const cfg = DECISION_RULES[key];
+      if (!cfg) continue;
+      base = serviceBase(records, [keyToPart(key)], cfg[2], false, vehicle);
+      kmInterval = cfg[0];
+      months = cfg[1];
+      hourInterval = TIP_RULES[key]?.[0] || 0;
+      if (useHours && TIP_RULES[key]) months = TIP_RULES[key][1];
+    }
+
+    const interval = useHours ? hourInterval : kmInterval;
+    const deviation = useHours ? 60 : 4000;
+    addRow(label, key, base, interval, months, deviation);
+  }
+
+  if (isCngModel(vehicle.model)) {
+    const sparkBase = serviceBase(records, ["SPARK PLUG"], 1, false, vehicle);
+    addRow("SPARK PLUG", "sparkPlug", sparkBase, 20000, 0, 0, { dateOnly: basis === "TIME_ONLY" });
+  }
+
+  if (isTipperModel(vehicle.model) && String(vehicle.model || "").toUpperCase().includes("TIP")) {
+    const tippingBase = serviceBase(records, ["TIPPING OIL"], 1, false, vehicle);
+    addRow("TIPPING OIL", "tippingOil", tippingBase, 0, 12, 0, { dateOnly: true });
+  }
+
+  const dueNames = getDueServiceNames(vehicleResult?.decision || {});
+  const specialItems = [];
+  const freeService = String(vehicleResult?.decision?.freeService || "").trim();
+  if (freeService && dueNames.some(name => String(name).toLowerCase() === freeService.toLowerCase())) {
+    specialItems.push(freeService.replace(/\b\w/g, letter => letter.toUpperCase()));
+  }
+  for (const service of vehicleResult?.decision?.additionalServices || []) {
+    if (!specialItems.some(item => item.toLowerCase() === String(service).toLowerCase())) {
+      specialItems.push(service);
+    }
+  }
+
+  return {
+    rows,
+    specialText: specialItems.length ? specialItems.join(", ") : "No Free service due",
+    specialStatus: specialItems.length ? "Due" : "No Due"
+  };
+}
+
+function downloadCustomerServiceSummary(group) {
+  if (!group || !Array.isArray(group.vehicles) || !group.vehicles.length) {
+    window.alert("No vehicle is available in the selected customer group.");
+    return;
+  }
+
+  (async () => {
+    try {
+      const [{ jsPDF }, { autoTable }] = await Promise.all([
+        import("jspdf"),
+        import("jspdf-autotable")
+      ]);
+      const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true });
+      const margin = 10;
+      const pageWidth = 210;
+      const tableWidth = pageWidth - margin * 2;
+      const prepared = group.vehicles.map((vehicleResult, originalIndex) => {
+        const summary = buildVehicleServiceSummary(vehicleResult);
+        const lapsedDue = summary.rows.filter(row => row.status === "Lapsed" || row.status === "Due").length
+          + (summary.specialStatus === "Due" ? 1 : 0);
+        const nearDue = summary.rows.filter(row => row.status === "Near Due").length;
+        return { vehicleResult, summary, originalIndex, lapsedDue, nearDue };
+      });
+
+      prepared.sort((a, b) =>
+        b.lapsedDue - a.lapsedDue ||
+        b.nearDue - a.nearDue ||
+        a.originalIndex - b.originalIndex
+      );
+
+      prepared.forEach((item, vehicleIndex) => {
+        if (vehicleIndex > 0) pdf.addPage();
+        const vehicleResult = item.vehicleResult;
+        const vehicle = vehicleResult.vehicle || {};
+        const vin = String(vehicle.vin || vehicleResult.vin || "-");
+        const customerName = String(vehicle.customerName || group.name || "-");
+        const regNo = String(vehicle.reg || "-");
+        const saleDate = vehicle.sale ? formatDateShort(vehicle.sale) : "N/A";
+        const engineNo = String(vehicle.engine || "-");
+        const model = String(vehicle.model || "-");
+        const targetUnit = vehicleResult.running?.unit || getTargetUnit(vehicle);
+        const lastRecord = vehicleResult.running?.last || null;
+        const lastReading = lastRecord ? getRelevantReading(lastRecord, vehicle) : 0;
+        const lastOdometer = lastRecord && lastReading > 0
+          ? formatNumber(lastReading) + " " + targetUnit + " | " + formatDateShort(lastRecord.date)
+          : "N/A";
+        const approximateReading = Number(vehicleResult.running?.current || 0) > 0
+          ? formatNumber(vehicleResult.running.current) + " " + targetUnit
+          : "N/A";
+
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(14);
+        pdf.text("VEHICLE SERVICE SUMMARY", margin, 12);
+
+        autoTable(pdf, {
+          startY: 17,
+          margin: { left: margin, right: margin },
+          tableWidth,
+          theme: "grid",
+          styles: { font: "helvetica", fontSize: 8.2, cellPadding: 2.4, textColor: [20, 20, 20], lineColor: [150, 150, 150], lineWidth: 0.2, overflow: "linebreak", valign: "middle" },
+          columnStyles: {
+            0: { cellWidth: 34, fontStyle: "bold" },
+            1: { cellWidth: 61 },
+            2: { cellWidth: 34, fontStyle: "bold" },
+            3: { cellWidth: 61 }
+          },
+          body: [
+            ["Customer Name", customerName, "Sale Date", saleDate],
+            ["Chassis No", vin, "Model", model],
+            ["Reg No", regNo, "Engine No", engineNo],
+            ["Last Odometer reading recorded", lastOdometer, "Current Approximate Reading", approximateReading]
+          ]
+        });
+
+        const body = item.summary.rows.map((row, index) => [
+          String(index + 1),
+          row.name,
+          row.last,
+          row.upcoming,
+          row.status
+        ]);
+        body.push([
+          String(item.summary.rows.length + 1),
+          "Any free service due",
+          { content: item.summary.specialText, colSpan: 3, styles: { halign: "center", fontStyle: "bold" } }
+        ]);
+
+        autoTable(pdf, {
+          startY: (pdf.lastAutoTable?.finalY || 48) + 5,
+          margin: { left: margin, right: margin },
+          tableWidth,
+          theme: "grid",
+          head: [["Sr No", "Aggregate Name", "Last Service Done", "Upcoming Service", "Due Status"]],
+          body,
+          styles: { font: "helvetica", fontSize: 7.8, cellPadding: 2.2, textColor: [20, 20, 20], lineColor: [150, 150, 150], lineWidth: 0.2, overflow: "linebreak", valign: "middle" },
+          headStyles: { fillColor: [112, 48, 160], textColor: [255, 255, 255], fontStyle: "bold", halign: "center" },
+          columnStyles: {
+            0: { cellWidth: 12, halign: "center" },
+            1: { cellWidth: 43 },
+            2: { cellWidth: 45 },
+            3: { cellWidth: 54 },
+            4: { cellWidth: 36, halign: "center", fontStyle: "bold" }
+          },
+          didParseCell: data => {
+            if (data.section !== "body" || data.column.index !== 4) return;
+            const status = String(data.cell.raw || "");
+            if (status === "Lapsed") data.cell.styles.textColor = [220, 38, 38];
+            else if (status === "Due") data.cell.styles.textColor = [230, 126, 34];
+            else if (status === "Near Due") data.cell.styles.textColor = [190, 145, 0];
+            else if (status === "No Due") data.cell.styles.textColor = [0, 145, 70];
+            data.cell.styles.fontStyle = "bold";
+          },
+          rowPageBreak: "avoid",
+          pageBreak: "auto"
+        });
+      });
+
+      const safeName = String(group.name || "Customer")
+        .replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "").slice(0, 80) || "Customer";
+      pdf.setProperties({
+        title: safeName + " Service Summary",
+        subject: "Bulk Vehicle Service Summary",
+        creator: "Service Decision Engine"
+      });
+      pdf.save(safeName + "_Service_Summary.pdf");
+    } catch (error) {
+      console.error("Service Summary PDF generation error:", error);
+      window.alert("Service Summary PDF could not be created:\n\n" + (error?.message || error));
+    }
+  })();
 }
 
 async function printCustomerReport(group, detailed=false) {
@@ -9761,7 +10099,7 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
                   </div></div>
 
                   <div className="section-title">Customer-wise Output</div>
-                  {customerGroups.map(group=>{const dueVehicles=group.vehicles.filter(v=>v.services.length>0);return <div className="bulk-card" key={group.id}><div className="bulk-card-head"><div className="action-row"><strong>{group.name}</strong><span className="small-note">{group.vehicles.length} vehicles · {dueVehicles.length} due</span><span className="spacer"/><button className="excel-button no-print" onClick={()=>copyCustomerSummary(group, user?.dealerName, user?.preferences || {})}>Copy WhatsApp Summary</button><button className="excel-button no-print" onClick={()=>printCustomerReport(group,true)}>Print Detailed PDF</button></div></div></div>})}
+                  {customerGroups.map(group=>{const dueVehicles=group.vehicles.filter(v=>v.services.length>0);return <div className="bulk-card" key={group.id}><div className="bulk-card-head"><div className="action-row"><strong>{group.name}</strong><span className="small-note">{group.vehicles.length} vehicles · {dueVehicles.length} due</span><span className="spacer"/><button className="excel-button no-print" onClick={()=>copyCustomerSummary(group, user?.dealerName, user?.preferences || {})}>Copy WhatsApp Summary</button><button className="excel-button no-print" onClick={()=>printCustomerReport(group,true)}>Print Detailed PDF</button><button className="excel-button no-print" onClick={()=>downloadCustomerServiceSummary(group)}>Service Summary PDF</button></div></div></div>})}
 
                   <div className="bulk-overview-grid">
                     <button type="button" className={"bulk-overview-card bulk-overview-card-button " + (bulkQuickFilter === "all" ? "active" : "")} onClick={() => setBulkQuickFilter("all")}><span>Total Vehicles</span><strong>{bulkResults.length}</strong><small>Show all vehicles</small></button>

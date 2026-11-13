@@ -2986,7 +2986,7 @@ function buildVehicleServiceSummary(vehicleResult) {
 
   const addRow = (name, key, base, interval, months, deviation, options = {}) => {
     if (options.notApplicable) {
-      rows.push({ name, last: "N/A", upcoming: "Not Applicable", status: "No Due" });
+      rows.push({ name, key, last: "N/A", upcoming: "Not Applicable", status: "No Due", sortDate: Number.MAX_SAFE_INTEGER, sortReading: Number.MAX_SAFE_INTEGER });
       return;
     }
 
@@ -3019,7 +3019,7 @@ function buildVehicleServiceSummary(vehicleResult) {
       basis === "TIME_ONLY" || options.dateOnly === true
     );
 
-    rows.push({ name, key, last: lastText, upcoming: upcomingText, status });
+    rows.push({ name, key, last: lastText, upcoming: upcomingText, status, sortDate: nextDate ? new Date(nextDate).getTime() : Number.MAX_SAFE_INTEGER, sortReading: nextReading !== null ? nextReading : Number.MAX_SAFE_INTEGER });
   };
 
   const useHours = displayBasis === "HRS";
@@ -3144,11 +3144,28 @@ function buildVehicleServiceSummary(vehicleResult) {
     }
   }
 
-  return {
-    rows,
-    specialText: specialItems.length ? specialItems.join(", ") : "No Free service due",
-    specialStatus: specialItems.length ? "Due" : "No Due"
-  };
+  // Keep free-service status in the same sortable table as aggregate services.
+  rows.push({
+    name: "Any free service due",
+    key: "freeService",
+    last: "N/A",
+    upcoming: specialItems.length ? specialItems.join(", ") : "No Free service due",
+    status: specialItems.length ? "Due" : "No Due",
+    sortDate: Number.MAX_SAFE_INTEGER,
+    sortReading: Number.MAX_SAFE_INTEGER
+  });
+
+  // Excel-style priority: Lapsed -> Due -> Near Due -> No Due.
+  // Within each status, show the earliest upcoming date first, then the lowest
+  // upcoming KM/HRS reading. This changes display order only, not decisions.
+  const statusPriority = { Lapsed: 0, Due: 1, "Near Due": 2, "No Due": 3 };
+  rows.sort((a, b) =>
+    (statusPriority[a.status] ?? 99) - (statusPriority[b.status] ?? 99) ||
+    (a.sortDate ?? Number.MAX_SAFE_INTEGER) - (b.sortDate ?? Number.MAX_SAFE_INTEGER) ||
+    (a.sortReading ?? Number.MAX_SAFE_INTEGER) - (b.sortReading ?? Number.MAX_SAFE_INTEGER)
+  );
+
+  return { rows };
 }
 
 function downloadCustomerServiceSummary(group) {
@@ -3232,12 +3249,6 @@ function downloadCustomerServiceSummary(group) {
           row.upcoming,
           row.status
         ]);
-        body.push([
-          String(item.summary.rows.length + 1),
-          "Any free service due",
-          { content: item.summary.specialText, colSpan: 3, styles: { halign: "center", fontStyle: "bold" } }
-        ]);
-
         autoTable(pdf, {
           startY: (pdf.lastAutoTable?.finalY || 48) + 5,
           margin: { left: margin, right: margin },

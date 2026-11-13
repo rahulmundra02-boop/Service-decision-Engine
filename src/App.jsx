@@ -2977,7 +2977,10 @@ function getServiceSummaryStatus(baseDate, baseReading, interval, months, curren
 function buildVehicleServiceSummary(vehicleResult) {
   const vehicle = vehicleResult?.vehicle || {};
   const records = getServiceDecisionRecords(Array.isArray(vehicleResult?.records) ? vehicleResult.records : []);
-  const basis = vehicleResult?.decisionBasis || (isTipperModel(vehicle.model) ? "HRS" : "KM");
+  const basis = getEffectiveDecisionBasis(
+    vehicle,
+    vehicleResult?.decisionBasis || (isTipperModel(vehicle.model) ? "HRS" : "KM")
+  );
   const displayBasis = basis === "TIME_ONLY" ? "KM" : basis;
   const unit = displayBasis === "HRS" ? "HRS" : "KM";
   const current = Number(vehicleResult?.running?.current || 0);
@@ -2985,10 +2988,8 @@ function buildVehicleServiceSummary(vehicleResult) {
   const rows = [];
 
   const addRow = (name, key, base, interval, months, deviation, options = {}) => {
-    if (options.notApplicable) {
-      rows.push({ name, key, last: "N/A", upcoming: "Not Applicable", status: "No Due", sortDate: Number.MAX_SAFE_INTEGER, sortReading: Number.MAX_SAFE_INTEGER });
-      return;
-    }
+    // Not-applicable services are deliberately excluded from the customer PDF.
+    if (options.notApplicable) return;
 
     const baseDate = base?.date || saleDate;
     const baseReading = base
@@ -3006,8 +3007,8 @@ function buildVehicleServiceSummary(vehicleResult) {
       : "N/A";
 
     const lastText = base
-      ? [lastDateText, lastReadingText].filter(Boolean).join(" | ") || "N/A"
-      : "N/A";
+      ? [lastDateText, lastReadingText].filter(Boolean).join(" | ") || "No Previous Record"
+      : "No Previous Record";
     const upcomingText = nextDateText + " | " + nextReadingText;
     const status = getServiceSummaryStatus(
       baseDate,
@@ -3019,7 +3020,15 @@ function buildVehicleServiceSummary(vehicleResult) {
       basis === "TIME_ONLY" || options.dateOnly === true
     );
 
-    rows.push({ name, key, last: lastText, upcoming: upcomingText, status, sortDate: nextDate ? new Date(nextDate).getTime() : Number.MAX_SAFE_INTEGER, sortReading: nextReading !== null ? nextReading : Number.MAX_SAFE_INTEGER });
+    rows.push({
+      name,
+      key,
+      last: lastText,
+      upcoming: upcomingText,
+      status,
+      sortDate: nextDate ? new Date(nextDate).getTime() : Number.MAX_SAFE_INTEGER,
+      sortReading: nextReading !== null ? nextReading : Number.MAX_SAFE_INTEGER
+    });
   };
 
   const useHours = displayBasis === "HRS";
@@ -3041,53 +3050,49 @@ function buildVehicleServiceSummary(vehicleResult) {
     addRow("ENGINE OIL", "engineOil", engineBase, engineInterval, 18, useHours ? 60 : 4000);
   }
 
-  const simpleSpecs = [
-    ["GEAR OIL", "gearOil"],
-    ["AXLE OIL", "axleOil"],
-    ["STEERING OIL", "steeringOil"],
-    ["CLUTCH OIL", "clutchOil"],
-    ["DEF INLINE FILTER", "defInline"],
-    ["COOLANT", "coolant"],
-    ["HUB GREASE", "hubGrease"],
-    [isCngModel(vehicle.model) ? "CNG FILTER" : "FUEL FILTER", isCngModel(vehicle.model) ? "cngFilter" : "fuelFilter"],
-    ["AIR FILTER", "airFilter"],
-    ["DEF FILTER", "defFilter"],
-    ["APDA FILTER", "apdaFilter"]
-  ];
+  // Build the customer-facing list from the same service-rule catalogue used by
+  // the decision engine. New DECISION_RULES entries are included automatically.
+  const summaryKeys = Object.keys(DECISION_RULES);
+  if (isCngModel(vehicle.model)) summaryKeys.push("cngFilter", "sparkPlug");
+  if (isTipperModel(vehicle.model) && String(vehicle.model || "").toUpperCase().includes("TIP")) {
+    summaryKeys.push("tippingOil");
+  }
 
-  for (const [label, key] of simpleSpecs) {
+  const summaryLabel = key => String(
+    keyToPart(key) || key.replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+  ).toUpperCase();
+
+  for (const key of summaryKeys) {
     if (key === "fuelFilter" && isCngModel(vehicle.model)) continue;
-    if (key === "defFilter" || key === "apdaFilter") {
-      if (!isBSVIApplicable(vehicle)) {
-        addRow(label, key, null, 0, 0, 0, { notApplicable: true });
-        continue;
-      }
-    }
+    if (key === "cngFilter" && !isCngModel(vehicle.model)) continue;
+    if (key === "sparkPlug" && !isCngModel(vehicle.model)) continue;
+    if (key === "tippingOil" && (!isTipperModel(vehicle.model) || !String(vehicle.model || "").toUpperCase().includes("TIP"))) continue;
+    if ((key === "defFilter" || key === "apdaFilter") && !isBSVIApplicable(vehicle)) continue;
 
     if (key === "defInline") {
-      const hasHistory = records.some(r => String(r.standardizedPart || "").toUpperCase().includes("DEF INLINE FILTER"));
+      const hasHistory = records.some(r =>
+        String(r.standardizedPart || "").toUpperCase().includes("DEF INLINE FILTER")
+      );
       const applicable = hasHistory || (saleDate && saleDate >= new Date(2025, 4, 1));
-      if (!applicable) {
-        addRow(label, key, null, 0, 0, 0, { notApplicable: true });
-        continue;
-      }
+      if (!applicable) continue;
     }
 
     let base = null;
     let kmInterval = 0;
     let hourInterval = 0;
     let months = 0;
+    let dateOnly = false;
 
     if (key === "steeringOil") {
       base = steeringOilServiceBase(records, vehicle);
-      kmInterval = 160000;
-      hourInterval = 4000;
-      months = 24;
+      kmInterval = DECISION_RULES.steeringOil[0];
+      hourInterval = TIP_RULES.steeringOil[0];
+      months = DECISION_RULES.steeringOil[1];
     } else if (key === "clutchOil") {
       base = clutchOilServiceBase(records, vehicle);
-      kmInterval = 80000;
-      hourInterval = 2000;
-      months = useHours ? 12 : 18;
+      kmInterval = DECISION_RULES.clutchOil[0];
+      hourInterval = TIP_RULES.clutchOil[0];
+      months = useHours ? TIP_RULES.clutchOil[1] : DECISION_RULES.clutchOil[1];
     } else if (key === "airFilter") {
       base = latestFilter(records, "AIR FILTER", "AIR FILTER KIT", vehicle);
       kmInterval = DECISION_RULES.airFilter[0];
@@ -3107,10 +3112,19 @@ function buildVehicleServiceSummary(vehicleResult) {
       base = serviceBase(records, ["CNG FILTER"], 1, false, vehicle);
       kmInterval = 40000;
       months = 6;
+    } else if (key === "sparkPlug") {
+      base = serviceBase(records, ["SPARK PLUG"], 1, false, vehicle);
+      kmInterval = 20000;
+      dateOnly = basis === "TIME_ONLY";
+    } else if (key === "tippingOil") {
+      base = serviceBase(records, ["TIPPING OIL"], 1, false, vehicle);
+      months = 12;
+      dateOnly = true;
     } else {
       const cfg = DECISION_RULES[key];
       if (!cfg) continue;
-      base = serviceBase(records, [keyToPart(key)], cfg[2], false, vehicle);
+      const partName = keyToPart(key) || summaryLabel(key);
+      base = serviceBase(records, [partName], cfg[2], false, vehicle);
       kmInterval = cfg[0];
       months = cfg[1];
       hourInterval = TIP_RULES[key]?.[0] || 0;
@@ -3118,46 +3132,41 @@ function buildVehicleServiceSummary(vehicleResult) {
     }
 
     const interval = useHours ? hourInterval : kmInterval;
-    const deviation = useHours ? 60 : (key === "cngFilter" ? 0 : 4000);
-    addRow(label, key, base, interval, months, deviation);
+    const deviation = useHours ? 60 : (key === "cngFilter" || key === "sparkPlug" ? 0 : 4000);
+    addRow(summaryLabel(key), key, base, interval, months, deviation, {
+      dateOnly: dateOnly || basis === "TIME_ONLY"
+    });
   }
 
-  if (isCngModel(vehicle.model)) {
-    const sparkBase = serviceBase(records, ["SPARK PLUG"], 1, false, vehicle);
-    addRow("SPARK PLUG", "sparkPlug", sparkBase, 20000, 0, 0, { dateOnly: basis === "TIME_ONLY" });
-  }
-
-  if (isTipperModel(vehicle.model) && String(vehicle.model || "").toUpperCase().includes("TIP")) {
-    const tippingBase = serviceBase(records, ["TIPPING OIL"], 1, false, vehicle);
-    addRow("TIPPING OIL", "tippingOil", tippingBase, 0, 12, 0, { dateOnly: true });
-  }
-
-  const dueNames = getDueServiceNames(vehicleResult?.decision || {});
+  // Show free service / additional services only when the decision engine
+  // identifies an applicable service. Keep the actual service name visible.
+  const decision = vehicleResult?.decision || {};
+  const aggregateDue = Object.values(decision.result || {}).some(Boolean);
   const specialItems = [];
-  const freeService = String(vehicleResult?.decision?.freeService || "").trim();
-  if (freeService && dueNames.some(name => String(name).toLowerCase() === freeService.toLowerCase())) {
+  const freeService = String(decision.freeService || "").trim();
+  if (freeService && (/^1st free service$/i.test(freeService) || aggregateDue)) {
     specialItems.push(freeService.replace(/\b\w/g, letter => letter.toUpperCase()));
   }
-  for (const service of vehicleResult?.decision?.additionalServices || []) {
-    if (!specialItems.some(item => item.toLowerCase() === String(service).toLowerCase())) {
-      specialItems.push(service);
+  for (const service of decision.additionalServices || []) {
+    const name = String(service || "").trim();
+    if (name && !specialItems.some(item => item.toLowerCase() === name.toLowerCase())) {
+      specialItems.push(name);
     }
   }
 
-  // Keep free-service status in the same sortable table as aggregate services.
-  rows.push({
-    name: "Any free service due",
-    key: "freeService",
-    last: "N/A",
-    upcoming: specialItems.length ? specialItems.join(", ") : "No Free service due",
-    status: specialItems.length ? "Due" : "No Due",
-    sortDate: Number.MAX_SAFE_INTEGER,
-    sortReading: Number.MAX_SAFE_INTEGER
+  specialItems.forEach((name, index) => {
+    rows.push({
+      name,
+      key: "additionalService-" + index,
+      last: "No Previous Record",
+      upcoming: "Applicable",
+      status: "Due",
+      sortDate: Number.MAX_SAFE_INTEGER,
+      sortReading: Number.MAX_SAFE_INTEGER
+    });
   });
 
-  // Excel-style priority: Lapsed -> Due -> Near Due -> No Due.
-  // Within each status, show the earliest upcoming date first, then the lowest
-  // upcoming KM/HRS reading. This changes display order only, not decisions.
+  // Excel-style priority is retained for the report. Only display wording changes.
   const statusPriority = { Lapsed: 0, Due: 1, "Near Due": 2, "No Due": 3 };
   rows.sort((a, b) =>
     (statusPriority[a.status] ?? 99) - (statusPriority[b.status] ?? 99) ||
@@ -3186,8 +3195,7 @@ function downloadCustomerServiceSummary(group) {
       const tableWidth = pageWidth - margin * 2;
       const prepared = group.vehicles.map((vehicleResult, originalIndex) => {
         const summary = buildVehicleServiceSummary(vehicleResult);
-        const lapsedDue = summary.rows.filter(row => row.status === "Lapsed" || row.status === "Due").length
-          + (summary.specialStatus === "Due" ? 1 : 0);
+        const lapsedDue = summary.rows.filter(row => row.status === "Lapsed" || row.status === "Due").length;
         const nearDue = summary.rows.filter(row => row.status === "Near Due").length;
         return { vehicleResult, summary, originalIndex, lapsedDue, nearDue };
       });
@@ -3224,7 +3232,7 @@ function downloadCustomerServiceSummary(group) {
 
         autoTable(pdf, {
           startY: 17,
-          margin: { left: margin, right: margin },
+          margin: { left: margin, right: margin, bottom: 24 },
           tableWidth,
           theme: "grid",
           styles: { font: "helvetica", fontSize: 8.2, cellPadding: 2.4, textColor: [20, 20, 20], lineColor: [150, 150, 150], lineWidth: 0.2, overflow: "linebreak", valign: "middle" },
@@ -3238,46 +3246,67 @@ function downloadCustomerServiceSummary(group) {
             ["Customer Name", customerName, "Sale Date", saleDate],
             ["Chassis No", vin, "Model", model],
             ["Reg No", regNo, "Engine No", engineNo],
-            ["Last Odometer reading recorded", lastOdometer, "Current Approximate Reading", approximateReading]
+            ["Last Recorded Reading", lastOdometer, "Current Approx. Reading", approximateReading]
           ]
         });
 
+        const statusLabels = {
+          Lapsed: "Overdue",
+          Due: "Due",
+          "Near Due": "Approaching",
+          "No Due": "Not Due"
+        };
         const body = item.summary.rows.map((row, index) => [
           String(index + 1),
           row.name,
           row.last,
           row.upcoming,
-          row.status
+          statusLabels[row.status] || row.status
         ]);
         autoTable(pdf, {
           startY: (pdf.lastAutoTable?.finalY || 48) + 5,
-          margin: { left: margin, right: margin },
+          margin: { left: margin, right: margin, bottom: 24 },
           tableWidth,
           theme: "grid",
-          head: [["Sr No", "Aggregate Name", "Last Service Done", "Upcoming Service", "Due Status"]],
+          head: [["Sr. No.", "Aggregate Name", "Last Service", "Next Recommended Service", "Status"]],
           body,
           styles: { font: "helvetica", fontSize: 7.8, cellPadding: 2.2, textColor: [20, 20, 20], lineColor: [150, 150, 150], lineWidth: 0.2, overflow: "linebreak", valign: "middle" },
           headStyles: { fillColor: [112, 48, 160], textColor: [255, 255, 255], fontStyle: "bold", halign: "center" },
           columnStyles: {
             0: { cellWidth: 12, halign: "center" },
-            1: { cellWidth: 43 },
-            2: { cellWidth: 45 },
-            3: { cellWidth: 54 },
+            1: { cellWidth: 39 },
+            2: { cellWidth: 43 },
+            3: { cellWidth: 60 },
             4: { cellWidth: 36, halign: "center", fontStyle: "bold" }
           },
           didParseCell: data => {
             if (data.section !== "body" || data.column.index !== 4) return;
             const status = String(data.cell.raw || "");
-            if (status === "Lapsed") data.cell.styles.textColor = [220, 38, 38];
+            if (status === "Overdue") data.cell.styles.textColor = [220, 38, 38];
             else if (status === "Due") data.cell.styles.textColor = [230, 126, 34];
-            else if (status === "Near Due") data.cell.styles.textColor = [190, 145, 0];
-            else if (status === "No Due") data.cell.styles.textColor = [0, 145, 70];
+            else if (status === "Approaching") data.cell.styles.textColor = [190, 145, 0];
+            else if (status === "Not Due") data.cell.styles.textColor = [0, 145, 70];
             data.cell.styles.fontStyle = "bold";
           },
           rowPageBreak: "avoid",
           pageBreak: "auto"
         });
       });
+
+      // Add the disclaimer to every page, including pages created by AutoTable.
+      const disclaimerLines = [
+        "Service is due as per the prescribed odometer/hour-meter reading or time interval, whichever occurs first.",
+        "The current reading is an estimate based on previous recorded running. Manually verify the physical meter reading before confirming service requirements."
+      ];
+      const pageCount = pdf.getNumberOfPages();
+      for (let page = 1; page <= pageCount; page++) {
+        pdf.setPage(page);
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(6.5);
+        pdf.setTextColor(85, 85, 85);
+        pdf.text(disclaimerLines[0], margin, 283, { maxWidth: tableWidth });
+        pdf.text(disclaimerLines[1], margin, 287, { maxWidth: tableWidth });
+      }
 
       const safeName = String(group.name || "Customer")
         .replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "").slice(0, 80) || "Customer";

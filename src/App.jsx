@@ -2976,7 +2976,8 @@ function getServiceSummaryStatus(baseDate, baseReading, interval, months, curren
 
 function buildVehicleServiceSummary(vehicleResult) {
   const vehicle = vehicleResult?.vehicle || {};
-  const records = getServiceDecisionRecords(Array.isArray(vehicleResult?.records) ? vehicleResult.records : []);
+  const allVehicleRecords = Array.isArray(vehicleResult?.records) ? vehicleResult.records : [];
+  const records = getServiceDecisionRecords(allVehicleRecords);
   const basis = getEffectiveDecisionBasis(
     vehicle,
     vehicleResult?.decisionBasis || (isTipperModel(vehicle.model) ? "HRS" : "KM")
@@ -2995,7 +2996,7 @@ function buildVehicleServiceSummary(vehicleResult) {
     if (basis === "TIME_ONLY") return null;
 
     const readingsByDay = new Map();
-    for (const record of records) {
+    for (const record of allVehicleRecords) {
       const reading = Number(getRelevantReadingForBasis(record, displayBasis) || 0);
       const date = record?.date instanceof Date ? record.date : new Date(record?.date);
       if (!Number.isFinite(reading) || reading <= 0 || !Number.isFinite(date.getTime())) continue;

@@ -3020,12 +3020,36 @@ function buildVehicleServiceSummary(vehicleResult) {
       basis === "TIME_ONLY" || options.dateOnly === true
     );
 
+    // Rank by whichever service trigger is closer: elapsed KM/HRS interval
+    // or elapsed calendar interval. The larger completion ratio reaches due first.
+    const todayForSort = new Date();
+    todayForSort.setHours(0, 0, 0, 0);
+    const readingProgress = Number(interval) > 0
+      ? (Number(current || 0) - baseReading) / Number(interval)
+      : null;
+    const baseDateForSort = baseDate ? new Date(baseDate) : null;
+    const nextDateForSort = nextDate ? new Date(nextDate) : null;
+    const baseDateMs = baseDateForSort && Number.isFinite(baseDateForSort.getTime())
+      ? new Date(baseDateForSort.getFullYear(), baseDateForSort.getMonth(), baseDateForSort.getDate()).getTime()
+      : null;
+    const nextDateMs = nextDateForSort && Number.isFinite(nextDateForSort.getTime())
+      ? new Date(nextDateForSort.getFullYear(), nextDateForSort.getMonth(), nextDateForSort.getDate()).getTime()
+      : null;
+    const timeProgress = baseDateMs !== null && nextDateMs !== null && nextDateMs > baseDateMs
+      ? (todayForSort.getTime() - baseDateMs) / (nextDateMs - baseDateMs)
+      : null;
+    const progressCandidates = [readingProgress, timeProgress].filter(Number.isFinite);
+    const sortProgress = progressCandidates.length
+      ? Math.max(...progressCandidates)
+      : Number.NEGATIVE_INFINITY;
+
     rows.push({
       name,
       key,
       last: lastText,
       upcoming: upcomingText,
       status,
+      sortProgress,
       sortDate: nextDate ? new Date(nextDate).getTime() : Number.MAX_SAFE_INTEGER,
       sortReading: nextReading !== null ? nextReading : Number.MAX_SAFE_INTEGER
     });
@@ -3161,18 +3185,35 @@ function buildVehicleServiceSummary(vehicleResult) {
       last: "No Previous Record",
       upcoming: "Applicable",
       status: "Due",
+      sortProgress: Number.NEGATIVE_INFINITY,
       sortDate: Number.MAX_SAFE_INTEGER,
       sortReading: Number.MAX_SAFE_INTEGER
     });
   });
 
-  // Excel-style priority is retained for the report. Only display wording changes.
+  // Keep status priority first. Within each status, rank the service whose
+  // KM/HRS or time interval is more consumed, because whichever reaches its
+  // limit first determines the service due point. If progress is unavailable
+  // or tied, use KM/HRS reading as the deterministic fallback, then date.
   const statusPriority = { Lapsed: 0, Due: 1, "Near Due": 2, "No Due": 3 };
-  rows.sort((a, b) =>
-    (statusPriority[a.status] ?? 99) - (statusPriority[b.status] ?? 99) ||
-    (a.sortDate ?? Number.MAX_SAFE_INTEGER) - (b.sortDate ?? Number.MAX_SAFE_INTEGER) ||
-    (a.sortReading ?? Number.MAX_SAFE_INTEGER) - (b.sortReading ?? Number.MAX_SAFE_INTEGER)
-  );
+  rows.sort((a, b) => {
+    const statusDiff =
+      (statusPriority[a.status] ?? 99) - (statusPriority[b.status] ?? 99);
+    if (statusDiff) return statusDiff;
+
+    const progressA = Number.isFinite(a.sortProgress) ? a.sortProgress : -1;
+    const progressB = Number.isFinite(b.sortProgress) ? b.sortProgress : -1;
+    const progressDiff = progressB - progressA;
+    if (Math.abs(progressDiff) > 0.000001) return progressDiff;
+
+    const readingDiff =
+      (a.sortReading ?? Number.MAX_SAFE_INTEGER) -
+      (b.sortReading ?? Number.MAX_SAFE_INTEGER);
+    if (readingDiff) return readingDiff;
+
+    return (a.sortDate ?? Number.MAX_SAFE_INTEGER) -
+      (b.sortDate ?? Number.MAX_SAFE_INTEGER);
+  });
 
   return { rows };
 }
@@ -3232,7 +3273,7 @@ function downloadCustomerServiceSummary(group) {
 
         autoTable(pdf, {
           startY: 17,
-          margin: { left: margin, right: margin, bottom: 24 },
+          margin: { left: margin, right: margin, bottom: 38 },
           tableWidth,
           theme: "grid",
           styles: { font: "helvetica", fontSize: 8.2, cellPadding: 2.4, textColor: [20, 20, 20], lineColor: [150, 150, 150], lineWidth: 0.2, overflow: "linebreak", valign: "middle" },
@@ -3265,7 +3306,7 @@ function downloadCustomerServiceSummary(group) {
         ]);
         autoTable(pdf, {
           startY: (pdf.lastAutoTable?.finalY || 48) + 5,
-          margin: { left: margin, right: margin, bottom: 24 },
+          margin: { left: margin, right: margin, bottom: 38 },
           tableWidth,
           theme: "grid",
           head: [["Sr. No.", "Aggregate Name", "Last Service", "Next Recommended Service", "Status"]],
@@ -3293,20 +3334,44 @@ function downloadCustomerServiceSummary(group) {
         });
       });
 
-      // Add the disclaimer to every page, including pages created by AutoTable.
+      // Place a prominent disclaimer immediately below the service table.
+      // Each vehicle starts on its own page, and the reserved bottom margin
+      // keeps this customer-critical note with its corresponding summary.
       const disclaimerLines = [
-        "Service is due as per the prescribed odometer/hour-meter reading or time interval, whichever occurs first.",
-        "The current reading is an estimate based on previous recorded running. Manually verify the physical meter reading before confirming service requirements."
+        "IMPORTANT: Service is due at the prescribed odometer/hour-meter reading or time interval, whichever occurs first.",
+        "IMPORTANT: The current reading is an estimate based on previous recorded running. Manually verify the actual physical meter reading before confirming service requirements."
       ];
-      const pageCount = pdf.getNumberOfPages();
-      for (let page = 1; page <= pageCount; page++) {
-        pdf.setPage(page);
-        pdf.setFont("helvetica", "normal");
-        pdf.setFontSize(6.5);
-        pdf.setTextColor(85, 85, 85);
-        pdf.text(disclaimerLines[0], margin, 283, { maxWidth: tableWidth });
-        pdf.text(disclaimerLines[1], margin, 287, { maxWidth: tableWidth });
-      }
+      const disclaimerY = (pdf.lastAutoTable?.finalY || 48) + 6;
+      const disclaimerTextWidth = tableWidth - 8;
+      const wrappedDisclaimer = disclaimerLines.map(line =>
+        pdf.splitTextToSize(line, disclaimerTextWidth)
+      );
+      const disclaimerLineHeight = 4.2;
+      const disclaimerBoxHeight =
+        wrappedDisclaimer.reduce((total, lines) => total + lines.length * disclaimerLineHeight, 0) +
+        (disclaimerLines.length - 1) * 1.2 + 7;
+
+      pdf.setFillColor(245, 245, 245);
+      pdf.setDrawColor(55, 55, 55);
+      pdf.setLineWidth(0.35);
+      pdf.roundedRect(
+        margin,
+        disclaimerY,
+        tableWidth,
+        disclaimerBoxHeight,
+        1.5,
+        1.5,
+        "FD"
+      );
+
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(8.2);
+      pdf.setTextColor(15, 15, 15);
+      let disclaimerTextY = disclaimerY + 5;
+      wrappedDisclaimer.forEach(lines => {
+        pdf.text(lines, margin + 4, disclaimerTextY, { lineHeightFactor: 1.15 });
+        disclaimerTextY += lines.length * disclaimerLineHeight + 1.2;
+      });
 
       const safeName = String(group.name || "Customer")
         .replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "").slice(0, 80) || "Customer";

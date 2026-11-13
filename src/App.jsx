@@ -2615,18 +2615,12 @@ function additionalServiceEligibility(records, vehicle, running, analysisDate, d
     const isRmc=String(vehicle.model||'').toUpperCase().includes('RMC');
     let wheelService='';
 
-    if(tip && !isRmc){
-      const hrs=Number(running.current||0);
-      if(hrs>=0 && hrs<=750 && analysisDate<=monthsAfter(vehicle.sale,4)) wheelService='Wheel Alignment Service-1';
-      else if(hrs>=751 && hrs<=1250 && analysisDate<=monthsAfter(vehicle.sale,5)) wheelService='Wheel Alignment Service-2';
-      else if(hrs>=1251 && hrs<=1750 && analysisDate<=monthsAfter(vehicle.sale,6)) wheelService='Wheel Alignment Service-3';
-      else if(hrs>=1751 && hrs<=2060 && analysisDate<=monthsAfter(vehicle.sale,7)) wheelService='Wheel Alignment Service-4';
-    } else {
-      const km=Number(running.current||0);
-      if(km>=7000 && km<=15000 && analysisDate<=monthsAfter(vehicle.sale,4)) wheelService='Wheel Alignment Service-1';
-      else if(km>=15001 && km<=25000 && analysisDate<=monthsAfter(vehicle.sale,5)) wheelService='Wheel Alignment Service-2';
-      else if(km>=25001 && km<=35000 && analysisDate<=monthsAfter(vehicle.sale,6)) wheelService='Wheel Alignment Service-3';
-      else if(km>=35001 && km<=45000 && analysisDate<=monthsAfter(vehicle.sale,7)) wheelService='Wheel Alignment Service-4';
+    if(!isRmc){
+      const km=Number(deriveRunningReadingForBasis(records, vehicle, "KM")?.current||0);
+      if(km>=7000 && km<=13000 && analysisDate<=monthsAfter(vehicle.sale,4)) wheelService='Wheel Alignment Service-1';
+      else if(km>=17000 && km<=23000 && analysisDate<=monthsAfter(vehicle.sale,5)) wheelService='Wheel Alignment Service-2';
+      else if(km>=27000 && km<=33000 && analysisDate<=monthsAfter(vehicle.sale,6)) wheelService='Wheel Alignment Service-3';
+      else if(km>=37000 && km<=43000 && analysisDate<=monthsAfter(vehicle.sale,7)) wheelService='Wheel Alignment Service-4';
     }
 
     if(wheelService){
@@ -2658,7 +2652,7 @@ function additionalServiceEligibility(records, vehicle, running, analysisDate, d
       : analysisDate<=bodyDateMax;
     const bodyTimeOnlyEligible = decisionBasis === "TIME_ONLY"
       ? (analysisDate >= monthsAfter(vehicle.sale,2) && analysisDate <= bodyDateMax)
-      : (km>=1 && km<=5000 && bodyTimeEligible);
+      : (km>=0 && km<=5000 && bodyTimeEligible);
     if(bodyTimeOnlyEligible){
       const historyDone=records.some(r=>{
         const t=serviceTextForRecord(r);
@@ -2992,12 +2986,12 @@ function buildVehicleServiceSummary(vehicleResult) {
   // Require at least three distinct reading dates, a 14-day observation
   // window, and monotonic readings. Resets or inconsistent records disable
   // the projection so sorting safely falls back to calendar time.
-  const getReliableAverageDailyRunning = () => {
+  const getReliableAverageDailyRunning = (readingUnit = displayBasis) => {
     if (basis === "TIME_ONLY") return null;
 
     const readingsByDay = new Map();
     for (const record of allVehicleRecords) {
-      const reading = Number(getRelevantReadingForBasis(record, displayBasis) || 0);
+      const reading = Number(getRelevantReadingForBasis(record, readingUnit) || 0);
       const date = record?.date instanceof Date ? record.date : new Date(record?.date);
       if (!Number.isFinite(reading) || reading <= 0 || !Number.isFinite(date.getTime())) continue;
 
@@ -3028,6 +3022,8 @@ function buildVehicleServiceSummary(vehicleResult) {
   };
 
   const averageDailyRunning = getReliableAverageDailyRunning();
+  const averageDailyKm = displayBasis === "KM" ? averageDailyRunning : getReliableAverageDailyRunning("KM");
+  const currentKm = Number(deriveRunningReadingForBasis(records, vehicle, "KM")?.current || 0);
 
   const addRow = (name, key, base, interval, months, deviation, options = {}) => {
     // Not-applicable services are deliberately excluded from the customer PDF.
@@ -3062,10 +3058,9 @@ function buildVehicleServiceSummary(vehicleResult) {
       basis === "TIME_ONLY" || options.dateOnly === true
     );
 
-    // Sort by the estimated number of days until the next service trigger.
-    // A KM/HRS projection is used only when the vehicle has a reliable
-    // historical average daily running rate. Otherwise, use the calendar
-    // service interval as the fallback. This affects ordering only, not status.
+    // Sort by the earliest projected trigger: meter reading or calendar time.
+    // If the historical running rate is unreliable, use the calendar-time fallback.
+    // Sorting never changes the independently calculated status.
     const todayForSort = new Date();
     todayForSort.setHours(0, 0, 0, 0);
     const todayMs = todayForSort.getTime();
@@ -3227,12 +3222,12 @@ function buildVehicleServiceSummary(vehicleResult) {
   }
 
   specialItems.forEach((name, index) => {
-    // Free-service rows must show their actual scheduled target, not a
-    // generic "Applicable" label. Targets come from the same model/basis
-    // windows used by freeService() above.
+    // Applicable special services must show their target meter reading and date.
     const freeMatch = name.match(/^(1st|2nd|3rd) Free Service$/i);
+    const wheelMatch = name.match(/WHEEL ALIGNMENT SERVICE[- ]?(\d)/i);
+    const isBodyCheck = /BODY BUILDING CHECK ?UP/i.test(name);
     let upcoming = "Applicable";
-    let sortDays = 0;
+    let sortDays = Number.POSITIVE_INFINITY;
     let sortDate = Number.MAX_SAFE_INTEGER;
 
     if (freeMatch) {
@@ -3270,6 +3265,25 @@ function buildVehicleServiceSummary(vehicleResult) {
         const triggers = [timeDays, targetReadingDays].filter(Number.isFinite);
         sortDays = triggers.length ? Math.min(...triggers) : timeDays;
       }
+    } else if (wheelMatch || isBodyCheck) {
+      const wheelIndex = wheelMatch ? Math.max(0, Math.min(3, Number(wheelMatch[1]) - 1)) : -1;
+      const targetReading = wheelMatch ? [10000, 20000, 30000, 40000][wheelIndex] : 3000;
+      const targetUnit = "KM";
+      const fallbackMonths = wheelMatch ? [4, 5, 6, 7][wheelIndex] : 3;
+      const targetDateFromAverage = averageDailyKm && currentKm > 0
+        ? new Date(Date.now() + Math.max(0, (targetReading - currentKm) / averageDailyKm) * 86400000)
+        : null;
+      const targetDate = targetDateFromAverage || (saleDate ? monthsAfter(saleDate, fallbackMonths) : null);
+      upcoming = (targetDate ? formatDateShort(targetDate) : "N/A") +
+        " | " + formatNumber(targetReading) + " " + targetUnit;
+
+      if (targetDate) {
+        const normalizedTargetDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        sortDate = normalizedTargetDate.getTime();
+        sortDays = Math.max(0, (sortDate - today.getTime()) / 86400000);
+      }
     }
 
     rows.push({
@@ -3283,18 +3297,18 @@ function buildVehicleServiceSummary(vehicleResult) {
     });
   });
 
-  // Keep the existing status grouping. Within each status, sort by the
-  // earliest estimated service trigger in days. If historical average running
-  // is unreliable, sortDays is based on the calendar interval only.
+  // Sort all applicable services by the earliest projected trigger, regardless
+  // of status. A reliable meter-running projection wins; otherwise calendar time
+  // remains the fallback. The status itself is never modified by sorting.
   const statusPriority = { Lapsed: 0, Due: 1, "Near Due": 2, "No Due": 3 };
   rows.sort((a, b) => {
-    const statusDiff =
-      (statusPriority[a.status] ?? 99) - (statusPriority[b.status] ?? 99);
-    if (statusDiff) return statusDiff;
-
     const daysA = Number.isFinite(a.sortDays) ? a.sortDays : Number.POSITIVE_INFINITY;
     const daysB = Number.isFinite(b.sortDays) ? b.sortDays : Number.POSITIVE_INFINITY;
     if (daysA !== daysB) return daysA - daysB;
+
+    const statusDiff =
+      (statusPriority[a.status] ?? 99) - (statusPriority[b.status] ?? 99);
+    if (statusDiff) return statusDiff;
 
     const dateDiff =
       (a.sortDate ?? Number.MAX_SAFE_INTEGER) -

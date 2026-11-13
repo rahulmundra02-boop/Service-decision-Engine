@@ -2937,7 +2937,6 @@ async function copyCustomerSummary(group, dealerName = "", preferences = {}) {
   }
 }
 
-
 function getServiceSummaryStatus(baseDate, baseReading, interval, months, current, deviation, dateOnly = false) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -3225,7 +3224,7 @@ function buildVehicleServiceSummary(vehicleResult) {
     // Calculate the service target first, then derive its status from the same
     // KM/HRS/time thresholds. Never label an applicable service Due by default.
     const freeMatch = name.match(/^(1st|2nd|3rd) Free Service$/i);
-    const wheelMatch = name.match(/WHEEL ALIGNMENT SERVICE[- ]?(\\d)/i);
+    const wheelMatch = name.match(/WHEEL ALIGNMENT SERVICE[- ]?(\d)/i);
     const isBodyCheck = /BODY BUILDING CHECK ?UP/i.test(name);
     let upcoming = "Applicable";
     let sortDays = Number.POSITIVE_INFINITY;
@@ -3543,6 +3542,7 @@ function downloadCustomerServiceSummary(group) {
   })();
 }
 
+
 async function printCustomerReport(group, detailed=false) {
   if (!group || !group.vehicles?.length) {
     window.alert('No vehicle is available in the selected customer group.');
@@ -3632,14 +3632,15 @@ async function printCustomerReport(group, detailed=false) {
       });
       y = (pdf.lastAutoTable?.finalY || y + 10) + 4;
 
-      // Match the Single Vehicle "Only Schedule Service History" view exactly.
-      // Keep every visit containing a mapped standard service part, regardless
-      // of whether its quantity qualifies for service-decision calculations.
+      // Match the Single Vehicle schedule-history view and include Plant Name.
+      // Keep mapped schedule parts even when their quantities do not qualify
+      // for service-decision calculations.
       const scheduleVisits = visits.filter(visit => isScheduledHistoryVisit(visit, vehicle, v.decision));
       const historyBody = scheduleVisits.map(visit => {
         const date = getVisitDate(visit);
         const jc = getVisitJobCard(visit);
-        const reading = getVisitReading(visit, vehicle, v.decision?.basis === "HRS" ? "HRS" : getTargetUnit(vehicle) === "HRS" ? "HRS" : "KM");
+        const isHrs = v.decision?.basis === "HRS" || getTargetUnit(vehicle) === "HRS";
+        const reading = getVisitReading(visit, vehicle, isHrs ? "HRS" : "KM");
         const plant = [...new Set(visit.map(r => String(r?.plantName || r?.salesOrgName || "").trim()).filter(Boolean))].join(", ") || "-";
         const parts = getVisitParts(visit, vehicle, v.decision)
           .filter(part => part.historyEligible)
@@ -3650,7 +3651,7 @@ async function printCustomerReport(group, detailed=false) {
         return [
           formatDateShort(date),
           jc || '-',
-          reading ? `${formatNumber(reading)} ${(v.decision?.basis === "HRS" || getTargetUnit(vehicle) === "HRS" ? "HRS" : "KM")}` : '-',
+          reading ? `${formatNumber(reading)} ${isHrs ? "HRS" : "KM"}` : '-',
           plant,
           parts
         ];

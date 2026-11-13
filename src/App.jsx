@@ -3227,14 +3227,59 @@ function buildVehicleServiceSummary(vehicleResult) {
   }
 
   specialItems.forEach((name, index) => {
+    // Free-service rows must show their actual scheduled target, not a
+    // generic "Applicable" label. Targets come from the same model/basis
+    // windows used by freeService() above.
+    const freeMatch = name.match(/^(1st|2nd|3rd) Free Service$/i);
+    let upcoming = "Applicable";
+    let sortDays = 0;
+    let sortDate = Number.MAX_SAFE_INTEGER;
+
+    if (freeMatch) {
+      const ordinal = freeMatch[1].toLowerCase();
+      const serviceIndex = ordinal === "1st" ? 0 : ordinal === "2nd" ? 1 : 2;
+      const cndModel = isGB2822G50HCoModel(vehicle.model);
+      const useHourTarget = basis === "HRS" && !cndModel;
+
+      const targetMonths = cndModel
+        ? [6, 12, 18]
+        : useHourTarget ? [3, 6, 9] : [6, 12, 18];
+      const targetReadings = cndModel
+        ? [20000, 40000, 60000]
+        : useHourTarget ? [500, 1000, 1500] : [40000, 80000, 120000];
+      const targetUnit = useHourTarget ? "HRS" : "KM";
+      const targetDate = saleDate
+        ? monthsAfter(saleDate, targetMonths[serviceIndex])
+        : null;
+      const targetReading = targetReadings[serviceIndex];
+
+      upcoming = (targetDate ? formatDateShort(targetDate) : "N/A") +
+        " | " + formatNumber(targetReading) + " " + targetUnit;
+
+      if (targetDate) {
+        const normalizedTargetDate = new Date(
+          targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate()
+        );
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        sortDate = normalizedTargetDate.getTime();
+        const timeDays = (sortDate - today.getTime()) / 86400000;
+        const targetReadingDays = averageDailyRunning && targetUnit === unit
+          ? (targetReading - current) / averageDailyRunning
+          : null;
+        const triggers = [timeDays, targetReadingDays].filter(Number.isFinite);
+        sortDays = triggers.length ? Math.min(...triggers) : timeDays;
+      }
+    }
+
     rows.push({
       name,
       key: "additionalService-" + index,
       last: "No Previous Record",
-      upcoming: "Applicable",
+      upcoming,
       status: "Due",
-      sortDays: 0,
-      sortDate: Number.MAX_SAFE_INTEGER
+      sortDays,
+      sortDate
     });
   });
 

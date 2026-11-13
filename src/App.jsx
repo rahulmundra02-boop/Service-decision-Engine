@@ -2615,18 +2615,12 @@ function additionalServiceEligibility(records, vehicle, running, analysisDate, d
     const isRmc=String(vehicle.model||'').toUpperCase().includes('RMC');
     let wheelService='';
 
-    if(tip && !isRmc){
-      const hrs=Number(running.current||0);
-      if(hrs>=0 && hrs<=750 && analysisDate<=monthsAfter(vehicle.sale,4)) wheelService='Wheel Alignment Service-1';
-      else if(hrs>=751 && hrs<=1250 && analysisDate<=monthsAfter(vehicle.sale,5)) wheelService='Wheel Alignment Service-2';
-      else if(hrs>=1251 && hrs<=1750 && analysisDate<=monthsAfter(vehicle.sale,6)) wheelService='Wheel Alignment Service-3';
-      else if(hrs>=1751 && hrs<=2060 && analysisDate<=monthsAfter(vehicle.sale,7)) wheelService='Wheel Alignment Service-4';
-    } else {
-      const km=Number(running.current||0);
-      if(km>=7000 && km<=15000 && analysisDate<=monthsAfter(vehicle.sale,4)) wheelService='Wheel Alignment Service-1';
-      else if(km>=15001 && km<=25000 && analysisDate<=monthsAfter(vehicle.sale,5)) wheelService='Wheel Alignment Service-2';
-      else if(km>=25001 && km<=35000 && analysisDate<=monthsAfter(vehicle.sale,6)) wheelService='Wheel Alignment Service-3';
-      else if(km>=35001 && km<=45000 && analysisDate<=monthsAfter(vehicle.sale,7)) wheelService='Wheel Alignment Service-4';
+    if(!isRmc){
+      const km=Number(deriveRunningReadingForBasis(records, vehicle, "KM")?.current||0);
+      if(km>=7000 && km<=13000 && analysisDate<=monthsAfter(vehicle.sale,4)) wheelService='Wheel Alignment Service-1';
+      else if(km>=17000 && km<=23000 && analysisDate<=monthsAfter(vehicle.sale,5)) wheelService='Wheel Alignment Service-2';
+      else if(km>=27000 && km<=33000 && analysisDate<=monthsAfter(vehicle.sale,6)) wheelService='Wheel Alignment Service-3';
+      else if(km>=37000 && km<=43000 && analysisDate<=monthsAfter(vehicle.sale,7)) wheelService='Wheel Alignment Service-4';
     }
 
     if(wheelService){
@@ -2658,7 +2652,7 @@ function additionalServiceEligibility(records, vehicle, running, analysisDate, d
       : analysisDate<=bodyDateMax;
     const bodyTimeOnlyEligible = decisionBasis === "TIME_ONLY"
       ? (analysisDate >= monthsAfter(vehicle.sale,2) && analysisDate <= bodyDateMax)
-      : (km>=1 && km<=5000 && bodyTimeEligible);
+      : (km>=0 && km<=5000 && bodyTimeEligible);
     if(bodyTimeOnlyEligible){
       const historyDone=records.some(r=>{
         const t=serviceTextForRecord(r);
@@ -2781,6 +2775,8 @@ function buildBulkAnalysis(records, considerKmVehicles = []) {
       vin: vehicle.vin || vinKey,
       vehicle,
       running,
+      decisionRunning,
+      decisionBasis: useTimeOnly ? "TIME_ONLY" : (isTipperModel(vehicle.model) ? "HRS" : "KM"),
       decision,
       services,
       dueCount: services.length,
@@ -2940,6 +2936,612 @@ async function copyCustomerSummary(group, dealerName = "", preferences = {}) {
     window.alert(`The WhatsApp summary could not be copied:\n\n${err?.message || err}`);
   }
 }
+
+function getServiceSummaryStatus(baseDate, baseReading, interval, months, current, deviation, dateOnly = false) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const hasDateRule = !!baseDate && Number(months) > 0;
+  const hasReadingRule = !dateOnly && Number(interval) > 0 && Number.isFinite(Number(current));
+  const dueDate = hasDateRule ? monthsAfter(baseDate, months) : null;
+  const nearDate = hasDateRule ? monthsAfter(baseDate, months - 1) : null;
+  const lapsedDate = hasDateRule ? monthsAfter(baseDate, months + 1) : null;
+  const dueReading = hasReadingRule ? Number(baseReading || 0) + Number(interval) : null;
+  const nearReading = hasReadingRule ? dueReading - Number(deviation || 0) : null;
+  const lapsedReading = hasReadingRule ? dueReading + Number(deviation || 0) : null;
+
+  const isLapsed =
+    (hasDateRule && today > lapsedDate) ||
+    (hasReadingRule && Number(current) > lapsedReading);
+  if (isLapsed) return "Lapsed";
+
+  const isDue =
+    (hasDateRule && today >= dueDate) ||
+    (hasReadingRule && Number(current) >= dueReading);
+  if (isDue) return "Due";
+
+  const isNearDue =
+    (hasDateRule && today >= nearDate) ||
+    (hasReadingRule && Number(current) >= nearReading);
+  if (isNearDue) return "Near Due";
+
+  return "No Due";
+}
+
+function buildVehicleServiceSummary(vehicleResult) {
+  const vehicle = vehicleResult?.vehicle || {};
+  const allVehicleRecords = Array.isArray(vehicleResult?.records) ? vehicleResult.records : [];
+  const records = getServiceDecisionRecords(allVehicleRecords);
+  const basis = getEffectiveDecisionBasis(
+    vehicle,
+    vehicleResult?.decisionBasis || (isTipperModel(vehicle.model) ? "HRS" : "KM")
+  );
+  const displayBasis = basis === "TIME_ONLY" ? "KM" : basis;
+  const unit = displayBasis === "HRS" ? "HRS" : "KM";
+  const current = Number(vehicleResult?.running?.current || 0);
+  const saleDate = vehicle.sale || null;
+  const rows = [];
+
+  // Use dated cumulative readings to estimate average daily running.
+  // Require at least three distinct reading dates, a 14-day observation
+  // window, and monotonic readings. Resets or inconsistent records disable
+  // the projection so sorting safely falls back to calendar time.
+  const getReliableAverageDailyRunning = (readingUnit = displayBasis) => {
+    if (basis === "TIME_ONLY") return null;
+
+    const readingsByDay = new Map();
+    for (const record of allVehicleRecords) {
+      const reading = Number(getRelevantReadingForBasis(record, readingUnit) || 0);
+      const date = record?.date instanceof Date ? record.date : new Date(record?.date);
+      if (!Number.isFinite(reading) || reading <= 0 || !Number.isFinite(date.getTime())) continue;
+
+      const day = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+      const previous = readingsByDay.get(day) || 0;
+      if (reading > previous) readingsByDay.set(day, reading);
+    }
+
+    const points = [...readingsByDay.entries()]
+      .map(([day, reading]) => ({ day, reading }))
+      .sort((a, b) => a.day - b.day);
+
+    if (points.length < 3) return null;
+
+    const elapsedDays = (points[points.length - 1].day - points[0].day) / 86400000;
+    if (elapsedDays < 14) return null;
+
+    let increasingIntervals = 0;
+    for (let index = 1; index < points.length; index++) {
+      const difference = points[index].reading - points[index - 1].reading;
+      if (difference < 0) return null;
+      if (difference > 0) increasingIntervals++;
+    }
+    if (increasingIntervals < 2) return null;
+
+    const average = (points[points.length - 1].reading - points[0].reading) / elapsedDays;
+    return Number.isFinite(average) && average > 0 ? average : null;
+  };
+
+  const averageDailyRunning = getReliableAverageDailyRunning();
+  const averageDailyKm = displayBasis === "KM" ? averageDailyRunning : getReliableAverageDailyRunning("KM");
+  const currentKm = Number(deriveRunningReadingForBasis(records, vehicle, "KM")?.current || 0);
+
+  const addRow = (name, key, base, interval, months, deviation, options = {}) => {
+    // Not-applicable services are deliberately excluded from the customer PDF.
+    if (options.notApplicable) return;
+
+    const baseDate = base?.date || saleDate;
+    const baseReading = base
+      ? Number(getRelevantReadingForBasis(base, displayBasis) || 0)
+      : 0;
+    const nextDate = baseDate && Number(months) > 0 ? monthsAfter(baseDate, months) : null;
+    const nextReading = Number(interval) > 0 ? baseReading + Number(interval) : null;
+    const lastDateText = base?.date ? formatDateShort(base.date) : "";
+    const lastReadingText = baseReading > 0
+      ? formatNumber(baseReading) + " " + unit
+      : "";
+    const nextDateText = nextDate ? formatDateShort(nextDate) : "N/A";
+    const nextReadingText = nextReading !== null
+      ? formatNumber(nextReading) + " " + unit
+      : "N/A";
+
+    const lastText = base
+      ? [lastDateText, lastReadingText].filter(Boolean).join(" | ") || "No Previous Record"
+      : "No Previous Record";
+    const upcomingText = nextDateText + " | " + nextReadingText;
+    const status = getServiceSummaryStatus(
+      baseDate,
+      baseReading,
+      interval,
+      months,
+      current,
+      deviation,
+      basis === "TIME_ONLY" || options.dateOnly === true
+    );
+
+    // Sort by the earliest projected trigger: meter reading or calendar time.
+    // If the historical running rate is unreliable, use the calendar-time fallback.
+    // Sorting never changes the independently calculated status.
+    const todayForSort = new Date();
+    todayForSort.setHours(0, 0, 0, 0);
+    const todayMs = todayForSort.getTime();
+    const nextDateForSort = nextDate ? new Date(nextDate) : null;
+    const nextDateMs = nextDateForSort && Number.isFinite(nextDateForSort.getTime())
+      ? new Date(nextDateForSort.getFullYear(), nextDateForSort.getMonth(), nextDateForSort.getDate()).getTime()
+      : null;
+    const timeDaysRemaining = nextDateMs !== null
+      ? (nextDateMs - todayMs) / 86400000
+      : null;
+    const canUseReadingProjection =
+      basis !== "TIME_ONLY" &&
+      options.dateOnly !== true &&
+      Number(interval) > 0 &&
+      Number.isFinite(current) &&
+      current > 0 &&
+      Number.isFinite(averageDailyRunning) &&
+      averageDailyRunning > 0;
+    const readingDaysRemaining = canUseReadingProjection && nextReading !== null
+      ? (nextReading - current) / averageDailyRunning
+      : null;
+    const triggerDays = [timeDaysRemaining, readingDaysRemaining].filter(Number.isFinite);
+    const sortDays = triggerDays.length
+      ? Math.min(...triggerDays)
+      : Number.POSITIVE_INFINITY;
+
+    rows.push({
+      name,
+      key,
+      last: lastText,
+      upcoming: upcomingText,
+      status,
+      sortDays,
+      sortDate: nextDateMs !== null ? nextDateMs : Number.MAX_SAFE_INTEGER
+    });
+  };
+
+  const useHours = displayBasis === "HRS";
+  const engineSpecial = isGB2822G50HCoModel(vehicle.model);
+  const engineBase = engineSpecial
+    ? serviceBase(records, ["ENGINE OIL"], 12, false, vehicle)
+    : serviceBase(records, ["ENGINE OIL"], 12, true, vehicle, "ENGINE OIL FILTER", true);
+
+  if (engineSpecial) {
+    addRow("ENGINE OIL", "engineOil", engineBase, 20000, 6, 0);
+  } else {
+    let engineKmInterval = 120000;
+    if (isH4Model(vehicle.model)) engineKmInterval = 40000;
+    else if (isA4Model(vehicle.model)) engineKmInterval = engineBase && engineBase.serviceQty >= 19 ? 80000 : 40000;
+    else if (isH6Model(vehicle.model)) engineKmInterval = 80000;
+    const engineInterval = useHours
+      ? ((isA4Model(vehicle.model) || isH4Model(vehicle.model) || isH6Model(vehicle.model)) ? 1000 : 1500)
+      : engineKmInterval;
+    addRow("ENGINE OIL", "engineOil", engineBase, engineInterval, 18, useHours ? 60 : 4000);
+  }
+
+  // Build the customer-facing list from the same service-rule catalogue used by
+  // the decision engine. New DECISION_RULES entries are included automatically.
+  const summaryKeys = Object.keys(DECISION_RULES);
+  if (isCngModel(vehicle.model)) summaryKeys.push("cngFilter", "sparkPlug");
+  if (isTipperModel(vehicle.model) && String(vehicle.model || "").toUpperCase().includes("TIP")) {
+    summaryKeys.push("tippingOil");
+  }
+
+  const summaryLabel = key => String(
+    keyToPart(key) || key.replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+  ).toUpperCase();
+
+  for (const key of summaryKeys) {
+    if (key === "fuelFilter" && isCngModel(vehicle.model)) continue;
+    if (key === "cngFilter" && !isCngModel(vehicle.model)) continue;
+    if (key === "sparkPlug" && !isCngModel(vehicle.model)) continue;
+    if (key === "tippingOil" && (!isTipperModel(vehicle.model) || !String(vehicle.model || "").toUpperCase().includes("TIP"))) continue;
+    if ((key === "defFilter" || key === "apdaFilter") && !isBSVIApplicable(vehicle)) continue;
+
+    if (key === "defInline") {
+      const hasHistory = records.some(r =>
+        String(r.standardizedPart || "").toUpperCase().includes("DEF INLINE FILTER")
+      );
+      const applicable = hasHistory || (saleDate && saleDate >= new Date(2025, 4, 1));
+      if (!applicable) continue;
+    }
+
+    let base = null;
+    let kmInterval = 0;
+    let hourInterval = 0;
+    let months = 0;
+    let dateOnly = false;
+
+    if (key === "steeringOil") {
+      base = steeringOilServiceBase(records, vehicle);
+      kmInterval = DECISION_RULES.steeringOil[0];
+      hourInterval = TIP_RULES.steeringOil[0];
+      months = DECISION_RULES.steeringOil[1];
+    } else if (key === "clutchOil") {
+      base = clutchOilServiceBase(records, vehicle);
+      kmInterval = DECISION_RULES.clutchOil[0];
+      hourInterval = TIP_RULES.clutchOil[0];
+      months = useHours ? TIP_RULES.clutchOil[1] : DECISION_RULES.clutchOil[1];
+    } else if (key === "airFilter") {
+      base = latestFilter(records, "AIR FILTER", "AIR FILTER KIT", vehicle);
+      kmInterval = DECISION_RULES.airFilter[0];
+      hourInterval = TIP_RULES.airFilter[0];
+      months = DECISION_RULES.airFilter[1];
+    } else if (key === "fuelFilter") {
+      base = latestFuelFilter(records, vehicle);
+      kmInterval = DECISION_RULES.fuelFilter[0];
+      hourInterval = TIP_RULES.fuelFilter[0];
+      months = DECISION_RULES.fuelFilter[1];
+    } else if (key === "defFilter") {
+      base = latestDefFilter(records, vehicle);
+      kmInterval = DECISION_RULES.defFilter[0];
+      hourInterval = TIP_RULES.defFilter[0];
+      months = DECISION_RULES.defFilter[1];
+    } else if (key === "cngFilter") {
+      base = serviceBase(records, ["CNG FILTER"], 1, false, vehicle);
+      kmInterval = 40000;
+      months = 6;
+    } else if (key === "sparkPlug") {
+      base = serviceBase(records, ["SPARK PLUG"], 1, false, vehicle);
+      kmInterval = 20000;
+      dateOnly = basis === "TIME_ONLY";
+    } else if (key === "tippingOil") {
+      base = serviceBase(records, ["TIPPING OIL"], 1, false, vehicle);
+      months = 12;
+      dateOnly = true;
+    } else {
+      const cfg = DECISION_RULES[key];
+      if (!cfg) continue;
+      const partName = keyToPart(key) || summaryLabel(key);
+      base = serviceBase(records, [partName], cfg[2], false, vehicle);
+      kmInterval = cfg[0];
+      months = cfg[1];
+      hourInterval = TIP_RULES[key]?.[0] || 0;
+      if (useHours && TIP_RULES[key]) months = TIP_RULES[key][1];
+    }
+
+    const interval = useHours ? hourInterval : kmInterval;
+    const deviation = useHours ? 60 : (key === "cngFilter" || key === "sparkPlug" ? 0 : 4000);
+    addRow(summaryLabel(key), key, base, interval, months, deviation, {
+      dateOnly: dateOnly || basis === "TIME_ONLY"
+    });
+  }
+
+  // Show free service / additional services only when the decision engine
+  // identifies an applicable service. Keep the actual service name visible.
+  const decision = vehicleResult?.decision || {};
+  const aggregateDue = Object.values(decision.result || {}).some(Boolean);
+  const specialItems = [];
+  const freeService = String(decision.freeService || "").trim();
+  if (freeService && (/^1st free service$/i.test(freeService) || aggregateDue)) {
+    specialItems.push(freeService.replace(/\b\w/g, letter => letter.toUpperCase()));
+  }
+  for (const service of decision.additionalServices || []) {
+    const name = String(service || "").trim();
+    if (name && !specialItems.some(item => item.toLowerCase() === name.toLowerCase())) {
+      specialItems.push(name);
+    }
+  }
+
+  specialItems.forEach((name, index) => {
+    // Calculate the service target first, then derive its status from the same
+    // KM/HRS/time thresholds. Never label an applicable service Due by default.
+    const freeMatch = name.match(/^(1st|2nd|3rd) Free Service$/i);
+    const wheelMatch = name.match(/WHEEL ALIGNMENT SERVICE[- ]?(\d)/i);
+    const isBodyCheck = /BODY BUILDING CHECK ?UP/i.test(name);
+    let upcoming = "Applicable";
+    let sortDays = Number.POSITIVE_INFINITY;
+    let sortDate = Number.MAX_SAFE_INTEGER;
+    let status = "No Due";
+
+    if (freeMatch) {
+      const ordinal = freeMatch[1].toLowerCase();
+      const serviceIndex = ordinal === "1st" ? 0 : ordinal === "2nd" ? 1 : 2;
+      const cndModel = isGB2822G50HCoModel(vehicle.model);
+      const useHourTarget = basis === "HRS" && !cndModel;
+
+      const targetMonths = cndModel
+        ? [6, 12, 18]
+        : useHourTarget ? [3, 6, 9] : [6, 12, 18];
+      const targetReadings = cndModel
+        ? [20000, 40000, 60000]
+        : useHourTarget ? [500, 1000, 1500] : [40000, 80000, 120000];
+      const targetUnit = useHourTarget ? "HRS" : "KM";
+      const targetDate = saleDate
+        ? monthsAfter(saleDate, targetMonths[serviceIndex])
+        : null;
+      const targetReading = targetReadings[serviceIndex];
+      const deviation = useHourTarget ? 60 : 3000;
+
+      upcoming = (targetDate ? formatDateShort(targetDate) : "N/A") +
+        " | " + formatNumber(targetReading) + " " + targetUnit;
+
+      // Free service is due by whichever comes first: target meter reading
+      // or target date. One-month / +/-3,000 KM (or +/-60 HRS) windows apply.
+      status = getServiceSummaryStatus(
+        saleDate,
+        0,
+        targetReading,
+        targetMonths[serviceIndex],
+        current,
+        deviation,
+        basis === "TIME_ONLY"
+      );
+
+      if (targetDate) {
+        const normalizedTargetDate = new Date(
+          targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate()
+        );
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        sortDate = normalizedTargetDate.getTime();
+        const timeDays = (sortDate - today.getTime()) / 86400000;
+        const targetReadingDays = averageDailyRunning && targetUnit === unit
+          ? (targetReading - current) / averageDailyRunning
+          : null;
+        const triggers = [timeDays, targetReadingDays].filter(Number.isFinite);
+        sortDays = triggers.length ? Math.min(...triggers) : timeDays;
+      }
+    } else if (wheelMatch || isBodyCheck) {
+      const wheelIndex = wheelMatch ? Math.max(0, Math.min(3, Number(wheelMatch[1]) - 1)) : -1;
+      const targetReading = wheelMatch ? [10000, 20000, 30000, 40000][wheelIndex] : 3000;
+      const targetUnit = "KM";
+      const fallbackMonths = wheelMatch ? [4, 5, 6, 7][wheelIndex] : 3;
+      const hasReliableKmProjection = Number.isFinite(averageDailyKm) && averageDailyKm > 0 && currentKm > 0;
+      const targetDateFromAverage = hasReliableKmProjection
+        ? new Date(Date.now() + Math.max(0, (targetReading - currentKm) / averageDailyKm) * 86400000)
+        : null;
+      const targetDate = targetDateFromAverage || (saleDate ? monthsAfter(saleDate, fallbackMonths) : null);
+      upcoming = (targetDate ? formatDateShort(targetDate) : "N/A") +
+        " | " + formatNumber(targetReading) + " " + targetUnit;
+
+      if (hasReliableKmProjection) {
+        // Wheel alignment: +/-3,000 KM. Body check-up: 0-5,000 KM
+        // around the 3,000 KM target (2,000 KM early/late tolerance).
+        status = getServiceSummaryStatus(
+          null,
+          0,
+          targetReading,
+          0,
+          currentKm,
+          wheelMatch ? 3000 : 2000,
+          false
+        );
+      } else {
+        // When running-rate data is not reliable, use the calendar target.
+        status = getServiceSummaryStatus(
+          saleDate,
+          0,
+          0,
+          fallbackMonths,
+          currentKm,
+          0,
+          true
+        );
+      }
+
+      if (targetDate) {
+        const normalizedTargetDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        sortDate = normalizedTargetDate.getTime();
+        const timeDays = (sortDate - today.getTime()) / 86400000;
+        const readingDays = hasReliableKmProjection
+          ? (targetReading - currentKm) / averageDailyKm
+          : null;
+        const triggers = [timeDays, readingDays].filter(Number.isFinite);
+        sortDays = triggers.length ? Math.min(...triggers) : timeDays;
+      }
+    }
+
+    rows.push({
+      name,
+      key: "additionalService-" + index,
+      last: "No Previous Record",
+      upcoming,
+      status,
+      sortDays,
+      sortDate
+    });
+  });
+
+  // Sort all applicable services by the earliest projected trigger, regardless
+  // of status. A reliable meter-running projection wins; otherwise calendar time
+  // remains the fallback. The status itself is never modified by sorting.
+  const statusPriority = { Lapsed: 0, Due: 1, "Near Due": 2, "No Due": 3 };
+  rows.sort((a, b) => {
+    const daysA = Number.isFinite(a.sortDays) ? a.sortDays : Number.POSITIVE_INFINITY;
+    const daysB = Number.isFinite(b.sortDays) ? b.sortDays : Number.POSITIVE_INFINITY;
+    if (daysA !== daysB) return daysA - daysB;
+
+    const statusDiff =
+      (statusPriority[a.status] ?? 99) - (statusPriority[b.status] ?? 99);
+    if (statusDiff) return statusDiff;
+
+    const dateDiff =
+      (a.sortDate ?? Number.MAX_SAFE_INTEGER) -
+      (b.sortDate ?? Number.MAX_SAFE_INTEGER);
+    if (dateDiff) return dateDiff;
+
+    return String(a.name || "").localeCompare(String(b.name || ""));
+  });
+
+  return { rows };
+}
+
+function downloadCustomerServiceSummary(group) {
+  if (!group || !Array.isArray(group.vehicles) || !group.vehicles.length) {
+    window.alert("No vehicle is available in the selected customer group.");
+    return;
+  }
+
+  (async () => {
+    try {
+      const [{ jsPDF }, { autoTable }] = await Promise.all([
+        import("jspdf"),
+        import("jspdf-autotable")
+      ]);
+      const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true });
+      const margin = 10;
+      const pageWidth = 210;
+      const tableWidth = pageWidth - margin * 2;
+      const prepared = group.vehicles.map((vehicleResult, originalIndex) => {
+        const summary = buildVehicleServiceSummary(vehicleResult);
+        const lapsedDue = summary.rows.filter(row => row.status === "Lapsed" || row.status === "Due").length;
+        const nearDue = summary.rows.filter(row => row.status === "Near Due").length;
+        return { vehicleResult, summary, originalIndex, lapsedDue, nearDue };
+      });
+
+      prepared.sort((a, b) =>
+        b.lapsedDue - a.lapsedDue ||
+        b.nearDue - a.nearDue ||
+        a.originalIndex - b.originalIndex
+      );
+
+      prepared.forEach((item, vehicleIndex) => {
+        if (vehicleIndex > 0) pdf.addPage();
+        const vehicleResult = item.vehicleResult;
+        const vehicle = vehicleResult.vehicle || {};
+        const vin = String(vehicle.vin || vehicleResult.vin || "-");
+        const customerName = String(vehicle.customerName || group.name || "-");
+        const regNo = String(vehicle.reg || "-");
+        const saleDate = vehicle.sale ? formatDateShort(vehicle.sale) : "N/A";
+        const engineNo = String(vehicle.engine || "-");
+        const model = String(vehicle.model || "-");
+        const targetUnit = vehicleResult.running?.unit || getTargetUnit(vehicle);
+        const lastRecord = vehicleResult.running?.last || null;
+        const lastReading = lastRecord ? getRelevantReading(lastRecord, vehicle) : 0;
+        const lastOdometer = lastRecord && lastReading > 0
+          ? formatNumber(lastReading) + " " + targetUnit + " | " + formatDateShort(lastRecord.date)
+          : "N/A";
+        const approximateReading = Number(vehicleResult.running?.current || 0) > 0
+          ? formatNumber(vehicleResult.running.current) + " " + targetUnit
+          : "N/A";
+
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(14);
+        pdf.text("VEHICLE SERVICE SUMMARY", margin, 12);
+
+        autoTable(pdf, {
+          startY: 17,
+          margin: { left: margin, right: margin, bottom: 38 },
+          tableWidth,
+          theme: "grid",
+          styles: { font: "helvetica", fontSize: 8.2, cellPadding: 2.4, textColor: [20, 20, 20], lineColor: [150, 150, 150], lineWidth: 0.2, overflow: "linebreak", valign: "middle" },
+          columnStyles: {
+            0: { cellWidth: 34, fontStyle: "bold" },
+            1: { cellWidth: 61 },
+            2: { cellWidth: 34, fontStyle: "bold" },
+            3: { cellWidth: 61 }
+          },
+          body: [
+            ["Customer Name", customerName, "Sale Date", saleDate],
+            ["Chassis No", vin, "Model", model],
+            ["Reg No", regNo, "Engine No", engineNo],
+            ["Last Recorded Reading", lastOdometer, "Current Approx. Reading", approximateReading]
+          ]
+        });
+
+        const statusLabels = {
+          Lapsed: "Overdue",
+          Due: "Due",
+          "Near Due": "Approaching",
+          "No Due": "Not Due"
+        };
+        const body = item.summary.rows.map((row, index) => [
+          String(index + 1),
+          row.name,
+          row.last,
+          row.upcoming,
+          statusLabels[row.status] || row.status
+        ]);
+        autoTable(pdf, {
+          startY: (pdf.lastAutoTable?.finalY || 48) + 5,
+          margin: { left: margin, right: margin, bottom: 38 },
+          tableWidth,
+          theme: "grid",
+          head: [["Sr. No.", "Aggregate Name", "Last Service", "Next Recommended Service", "Status"]],
+          body,
+          styles: { font: "helvetica", fontSize: 7.8, cellPadding: 2.2, textColor: [20, 20, 20], lineColor: [150, 150, 150], lineWidth: 0.2, overflow: "linebreak", valign: "middle" },
+          headStyles: { fillColor: [112, 48, 160], textColor: [255, 255, 255], fontStyle: "bold", halign: "center" },
+          columnStyles: {
+            0: { cellWidth: 12, halign: "center" },
+            1: { cellWidth: 39 },
+            2: { cellWidth: 43 },
+            3: { cellWidth: 60 },
+            4: { cellWidth: 36, halign: "center", fontStyle: "bold" }
+          },
+          didParseCell: data => {
+            if (data.section !== "body" || data.column.index !== 4) return;
+            const status = String(data.cell.raw || "");
+            if (status === "Overdue") data.cell.styles.textColor = [220, 38, 38];
+            else if (status === "Due") data.cell.styles.textColor = [230, 126, 34];
+            else if (status === "Approaching") data.cell.styles.textColor = [190, 145, 0];
+            else if (status === "Not Due") data.cell.styles.textColor = [0, 145, 70];
+            data.cell.styles.fontStyle = "bold";
+          },
+          rowPageBreak: "avoid",
+          pageBreak: "auto"
+        });
+
+        // Render the disclaimer inside the vehicle loop so every vehicle page
+        // receives its own customer-facing disclaimer directly below its table.
+        const disclaimerItems = [
+          "Service is due at the prescribed odometer/hour-meter reading or time interval, whichever occurs first.",
+          "The current reading is an estimate based on previously recorded vehicle running. Verify the actual physical odometer/hour-meter reading before confirming service requirements.",
+          "This summary is based on the vehicle details and service history available at the time of preparation. Missing or incorrect records may affect the recommendations."
+        ];
+        const disclaimerTextWidth = tableWidth - 10;
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(8.1);
+        const wrappedDisclaimer = disclaimerItems.map((item, index) =>
+          pdf.splitTextToSize(String(index + 1) + ". " + item, disclaimerTextWidth)
+        );
+        const disclaimerLineHeight = 4.1;
+        const disclaimerY = (pdf.lastAutoTable?.finalY || 48) + 5;
+        const disclaimerBoxHeight =
+          5.5 +
+          wrappedDisclaimer.reduce((total, lines) => total + lines.length * disclaimerLineHeight, 0) +
+          (disclaimerItems.length - 1) * 1.1 + 5;
+
+        pdf.setFillColor(248, 248, 248);
+        pdf.setDrawColor(35, 35, 35);
+        pdf.setLineWidth(0.45);
+        pdf.roundedRect(
+          margin,
+          disclaimerY,
+          tableWidth,
+          disclaimerBoxHeight,
+          1.2,
+          1.2,
+          "FD"
+        );
+
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(9.2);
+        pdf.setTextColor(0, 0, 0);
+        pdf.text("DISCLAIMER", margin + 4, disclaimerY + 4.5);
+
+        pdf.setFontSize(8.1);
+        let disclaimerTextY = disclaimerY + 10;
+        wrappedDisclaimer.forEach(lines => {
+          pdf.text(lines, margin + 4, disclaimerTextY, { lineHeightFactor: 1.12 });
+          disclaimerTextY += lines.length * disclaimerLineHeight + 1.1;
+        });
+      });
+
+      const safeName = String(group.name || "Customer")
+        .replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "").slice(0, 80) || "Customer";
+      pdf.setProperties({
+        title: safeName + " Service Summary",
+        subject: "Bulk Vehicle Service Summary",
+        creator: "Service Decision Engine"
+      });
+      pdf.save(safeName + "_Service_Summary.pdf");
+    } catch (error) {
+      console.error("Service Summary PDF generation error:", error);
+      window.alert("Service Summary PDF could not be created:\n\n" + (error?.message || error));
+    }
+  })();
+}
+
 
 async function printCustomerReport(group, detailed=false) {
   if (!group || !group.vehicles?.length) {
@@ -9762,7 +10364,7 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
                   </div></div>
 
                   <div className="section-title">Customer-wise Output</div>
-                  {customerGroups.map(group=>{const dueVehicles=group.vehicles.filter(v=>v.services.length>0);return <div className="bulk-card" key={group.id}><div className="bulk-card-head"><div className="action-row"><strong>{group.name}</strong><span className="small-note">{group.vehicles.length} vehicles · {dueVehicles.length} due</span><span className="spacer"/><button className="excel-button no-print" onClick={()=>copyCustomerSummary(group, user?.dealerName, user?.preferences || {})}>Copy WhatsApp Summary</button><button className="excel-button no-print" onClick={()=>printCustomerReport(group,true)}>Print Detailed PDF</button></div></div></div>})}
+                  {customerGroups.map(group=>{const dueVehicles=group.vehicles.filter(v=>v.services.length>0);return <div className="bulk-card" key={group.id}><div className="bulk-card-head"><div className="action-row"><strong>{group.name}</strong><span className="small-note">{group.vehicles.length} vehicles · {dueVehicles.length} due</span><span className="spacer"/><button className="excel-button no-print" onClick={()=>copyCustomerSummary(group, user?.dealerName, user?.preferences || {})}>Copy WhatsApp Summary</button><button className="excel-button no-print" onClick={()=>printCustomerReport(group,true)}>Print Detailed PDF</button><button className="excel-button no-print" onClick={()=>downloadCustomerServiceSummary(group)}>Service Summary PDF</button></div></div></div>})}
 
                   <div className="bulk-overview-grid">
                     <button type="button" className={"bulk-overview-card bulk-overview-card-button " + (bulkQuickFilter === "all" ? "active" : "")} onClick={() => setBulkQuickFilter("all")}><span>Total Vehicles</span><strong>{bulkResults.length}</strong><small>Show all vehicles</small></button>

@@ -2987,6 +2987,47 @@ function buildVehicleServiceSummary(vehicleResult) {
   const saleDate = vehicle.sale || null;
   const rows = [];
 
+  // Use dated cumulative readings to estimate average daily running.
+  // Require at least three distinct reading dates, a 14-day observation
+  // window, and monotonic readings. Resets or inconsistent records disable
+  // the projection so sorting safely falls back to calendar time.
+  const getReliableAverageDailyRunning = () => {
+    if (basis === "TIME_ONLY") return null;
+
+    const readingsByDay = new Map();
+    for (const record of records) {
+      const reading = Number(getRelevantReadingForBasis(record, displayBasis) || 0);
+      const date = record?.date instanceof Date ? record.date : new Date(record?.date);
+      if (!Number.isFinite(reading) || reading <= 0 || !Number.isFinite(date.getTime())) continue;
+
+      const day = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+      const previous = readingsByDay.get(day) || 0;
+      if (reading > previous) readingsByDay.set(day, reading);
+    }
+
+    const points = [...readingsByDay.entries()]
+      .map(([day, reading]) => ({ day, reading }))
+      .sort((a, b) => a.day - b.day);
+
+    if (points.length < 3) return null;
+
+    const elapsedDays = (points[points.length - 1].day - points[0].day) / 86400000;
+    if (elapsedDays < 14) return null;
+
+    let increasingIntervals = 0;
+    for (let index = 1; index < points.length; index++) {
+      const difference = points[index].reading - points[index - 1].reading;
+      if (difference < 0) return null;
+      if (difference > 0) increasingIntervals++;
+    }
+    if (increasingIntervals < 2) return null;
+
+    const average = (points[points.length - 1].reading - points[0].reading) / elapsedDays;
+    return Number.isFinite(average) && average > 0 ? average : null;
+  };
+
+  const averageDailyRunning = getReliableAverageDailyRunning();
+
   const addRow = (name, key, base, interval, months, deviation, options = {}) => {
     // Not-applicable services are deliberately excluded from the customer PDF.
     if (options.notApplicable) return;
@@ -3020,28 +3061,35 @@ function buildVehicleServiceSummary(vehicleResult) {
       basis === "TIME_ONLY" || options.dateOnly === true
     );
 
-    // Rank by whichever service trigger is closer: elapsed KM/HRS interval
-    // or elapsed calendar interval. The larger completion ratio reaches due first.
+    // Sort by the estimated number of days until the next service trigger.
+    // A KM/HRS projection is used only when the vehicle has a reliable
+    // historical average daily running rate. Otherwise, use the calendar
+    // service interval as the fallback. This affects ordering only, not status.
     const todayForSort = new Date();
     todayForSort.setHours(0, 0, 0, 0);
-    const readingProgress = Number(interval) > 0
-      ? (Number(current || 0) - baseReading) / Number(interval)
-      : null;
-    const baseDateForSort = baseDate ? new Date(baseDate) : null;
+    const todayMs = todayForSort.getTime();
     const nextDateForSort = nextDate ? new Date(nextDate) : null;
-    const baseDateMs = baseDateForSort && Number.isFinite(baseDateForSort.getTime())
-      ? new Date(baseDateForSort.getFullYear(), baseDateForSort.getMonth(), baseDateForSort.getDate()).getTime()
-      : null;
     const nextDateMs = nextDateForSort && Number.isFinite(nextDateForSort.getTime())
       ? new Date(nextDateForSort.getFullYear(), nextDateForSort.getMonth(), nextDateForSort.getDate()).getTime()
       : null;
-    const timeProgress = baseDateMs !== null && nextDateMs !== null && nextDateMs > baseDateMs
-      ? (todayForSort.getTime() - baseDateMs) / (nextDateMs - baseDateMs)
+    const timeDaysRemaining = nextDateMs !== null
+      ? (nextDateMs - todayMs) / 86400000
       : null;
-    const progressCandidates = [readingProgress, timeProgress].filter(Number.isFinite);
-    const sortProgress = progressCandidates.length
-      ? Math.max(...progressCandidates)
-      : Number.NEGATIVE_INFINITY;
+    const canUseReadingProjection =
+      basis !== "TIME_ONLY" &&
+      options.dateOnly !== true &&
+      Number(interval) > 0 &&
+      Number.isFinite(current) &&
+      current > 0 &&
+      Number.isFinite(averageDailyRunning) &&
+      averageDailyRunning > 0;
+    const readingDaysRemaining = canUseReadingProjection && nextReading !== null
+      ? (nextReading - current) / averageDailyRunning
+      : null;
+    const triggerDays = [timeDaysRemaining, readingDaysRemaining].filter(Number.isFinite);
+    const sortDays = triggerDays.length
+      ? Math.min(...triggerDays)
+      : Number.POSITIVE_INFINITY;
 
     rows.push({
       name,
@@ -3049,9 +3097,8 @@ function buildVehicleServiceSummary(vehicleResult) {
       last: lastText,
       upcoming: upcomingText,
       status,
-      sortProgress,
-      sortDate: nextDate ? new Date(nextDate).getTime() : Number.MAX_SAFE_INTEGER,
-      sortReading: nextReading !== null ? nextReading : Number.MAX_SAFE_INTEGER
+      sortDays,
+      sortDate: nextDateMs !== null ? nextDateMs : Number.MAX_SAFE_INTEGER
     });
   };
 
@@ -3185,34 +3232,30 @@ function buildVehicleServiceSummary(vehicleResult) {
       last: "No Previous Record",
       upcoming: "Applicable",
       status: "Due",
-      sortProgress: Number.NEGATIVE_INFINITY,
-      sortDate: Number.MAX_SAFE_INTEGER,
-      sortReading: Number.MAX_SAFE_INTEGER
+      sortDays: 0,
+      sortDate: Number.MAX_SAFE_INTEGER
     });
   });
 
-  // Keep status priority first. Within each status, rank the service whose
-  // KM/HRS or time interval is more consumed, because whichever reaches its
-  // limit first determines the service due point. If progress is unavailable
-  // or tied, use KM/HRS reading as the deterministic fallback, then date.
+  // Keep the existing status grouping. Within each status, sort by the
+  // earliest estimated service trigger in days. If historical average running
+  // is unreliable, sortDays is based on the calendar interval only.
   const statusPriority = { Lapsed: 0, Due: 1, "Near Due": 2, "No Due": 3 };
   rows.sort((a, b) => {
     const statusDiff =
       (statusPriority[a.status] ?? 99) - (statusPriority[b.status] ?? 99);
     if (statusDiff) return statusDiff;
 
-    const progressA = Number.isFinite(a.sortProgress) ? a.sortProgress : -1;
-    const progressB = Number.isFinite(b.sortProgress) ? b.sortProgress : -1;
-    const progressDiff = progressB - progressA;
-    if (Math.abs(progressDiff) > 0.000001) return progressDiff;
+    const daysA = Number.isFinite(a.sortDays) ? a.sortDays : Number.POSITIVE_INFINITY;
+    const daysB = Number.isFinite(b.sortDays) ? b.sortDays : Number.POSITIVE_INFINITY;
+    if (daysA !== daysB) return daysA - daysB;
 
-    const readingDiff =
-      (a.sortReading ?? Number.MAX_SAFE_INTEGER) -
-      (b.sortReading ?? Number.MAX_SAFE_INTEGER);
-    if (readingDiff) return readingDiff;
-
-    return (a.sortDate ?? Number.MAX_SAFE_INTEGER) -
+    const dateDiff =
+      (a.sortDate ?? Number.MAX_SAFE_INTEGER) -
       (b.sortDate ?? Number.MAX_SAFE_INTEGER);
+    if (dateDiff) return dateDiff;
+
+    return String(a.name || "").localeCompare(String(b.name || ""));
   });
 
   return { rows };

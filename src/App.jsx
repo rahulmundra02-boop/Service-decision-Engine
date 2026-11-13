@@ -3103,6 +3103,10 @@ function buildVehicleServiceSummary(vehicleResult) {
       kmInterval = DECISION_RULES.defFilter[0];
       hourInterval = TIP_RULES.defFilter[0];
       months = DECISION_RULES.defFilter[1];
+    } else if (key === "cngFilter") {
+      base = serviceBase(records, ["CNG FILTER"], 1, false, vehicle);
+      kmInterval = 40000;
+      months = 6;
     } else {
       const cfg = DECISION_RULES[key];
       if (!cfg) continue;
@@ -3114,7 +3118,7 @@ function buildVehicleServiceSummary(vehicleResult) {
     }
 
     const interval = useHours ? hourInterval : kmInterval;
-    const deviation = useHours ? 60 : 4000;
+    const deviation = useHours ? 60 : (key === "cngFilter" ? 0 : 4000);
     addRow(label, key, base, interval, months, deviation);
   }
 

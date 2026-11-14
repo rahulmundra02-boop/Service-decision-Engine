@@ -3156,7 +3156,8 @@ function buildVehicleServiceSummary(vehicleResult) {
       if (base) continue;
       base = null;
       kmInterval = DECISION_RULES.hubGrease[0];
-      months = DECISION_RULES.hubGrease[1];
+      hourInterval = TIP_RULES.hubGrease?.[0] || 0;
+      months = useHours && TIP_RULES.hubGrease ? TIP_RULES.hubGrease[1] : DECISION_RULES.hubGrease[1];
     } else if (key === "steeringOil") {
       base = steeringOilServiceBase(records, vehicle);
       kmInterval = DECISION_RULES.steeringOil[0];
@@ -3214,7 +3215,6 @@ function buildVehicleServiceSummary(vehicleResult) {
 
   // Show free service / additional services only when the decision engine
   // identifies an applicable service. Keep the actual service name visible.
-  const decision = vehicleResult?.decision || {};
   const specialItems = [];
   const addSpecialItem = name => {
     const clean = String(name || "").trim();
@@ -3224,7 +3224,6 @@ function buildVehicleServiceSummary(vehicleResult) {
 
   // Show each unavailed free-service stage in this summary, including Not Due stages.
   const cndFreeModel = isGB2822G50HCoModel(vehicle.model);
-  const hourFreeModel = basis === "HRS" && !cndFreeModel;
   const freeNames = ["1st Free Service", "2nd Free Service", "3rd Free Service"];
   freeNames.forEach((name, index) => {
     const historyTokens = ["1ST FREE SERVICE", "2ND FREE SERVICE", "3RD FREE SERVICE"];
@@ -3341,6 +3340,7 @@ function buildVehicleServiceSummary(vehicleResult) {
         today.setHours(0, 0, 0, 0);
         sortDate = normalizedTargetDate.getTime();
         const timeDays = (sortDate - today.getTime()) / 86400000;
+        const hasReliableKmProjection = Number.isFinite(averageDailyKm) && averageDailyKm > 0 && currentKm > 0;
         const readingDays = hasReliableKmProjection
           ? (targetReading - currentKm) / averageDailyKm
           : null;

@@ -2166,6 +2166,12 @@ function isH6Model(model){
   }
   return false;
 }
+// 320 HP models are identified by a four-digit model code ending in 32
+// (examples: 2832, 5532, 4832). Tipper/RMC selection continues to use
+// the existing isTipperModel() identification rule.
+function is320HPModel(model){
+  return /(?:^|[^0-9])\d{2}32(?=$|[^0-9])/.test(String(model||'').toUpperCase());
+}
 function matchesServicePart(value, serviceName) {
   const text = String(value || '').toUpperCase();
   // Steering Oil Filter is a required companion part, never the Steering Oil
@@ -2365,6 +2371,15 @@ function decideAggregate(records, vehicle, running, key, analysisDate, decisionB
       return kmRunning.current >= baseKm + 20000 || analysisDate >= monthsAfter(baseDate,6);
     }
     const base=serviceBase(records,['ENGINE OIL'],12,true,vehicle,'ENGINE OIL FILTER',true);
+    if(is320HPModel(vehicle.model)){
+      // First drain is based on the absence of a valid Engine Oil + Filter
+      // service record. Later changes use the subsequent interval.
+      const interval = useHours
+        ? (base ? 2000 : 500)
+        : (base ? 120000 : 40000);
+      if(useHours) return dueByHours(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),interval,18,analysisDate,sale,vehicle);
+      return dueNormalWithSale(running.current,base,interval,18,analysisDate,sale,running.mode,vehicle);
+    }
     let interval=120000;
     if(isH4Model(vehicle.model)) interval=40000;
     else if(isA4Model(vehicle.model)) interval=base && base.serviceQty>=19 ? 80000 : 40000;
@@ -2428,6 +2443,17 @@ function decideAggregate(records, vehicle, running, key, analysisDate, decisionB
     );
   }
   const cfg=DECISION_RULES[key]; if(!cfg) return false;
+  if(is320HPModel(vehicle.model) && ['gearOil','axleOil','coolant','hubGrease'].includes(key)){
+    const base=serviceBase(records,[keyToPart(key)],cfg[2],false,vehicle);
+    const intervals = {
+      gearOil: { km:240000, hrs:5000, months:24 },
+      axleOil: { km:200000, hrs:2000, months:24 },
+      coolant: { km:320000, hrs:5000, months:36 },
+      hubGrease: { km:80000, hrs:1500, months:12 }
+    }[key];
+    if(useHours) return dueByHours(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),intervals.hrs,intervals.months,analysisDate,sale,vehicle);
+    return dueNormalWithSale(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),intervals.km,intervals.months,analysisDate,sale,running.mode,vehicle);
+  }
   let base=null;
   if(key==='airFilter') base=latestFilter(records,'AIR FILTER','AIR FILTER KIT',vehicle);
   else if(key==='fuelFilter') base=latestFuelFilter(records,vehicle);

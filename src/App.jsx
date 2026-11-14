@@ -777,6 +777,13 @@ const PART_STANDARDIZATION = {
   'XFZ02800': 'DEF Filter Breather',
   'XFZ03100': 'DEF Filter Nack',
   'XFZ03500': 'DEF Filter Suction',
+  'P5105669': 'DEF Filter Kit',
+  'P5105776': 'DEF Filter Kit',
+  'P5106222': 'DEF Filter Kit',
+  'XFZ01200': 'DEF Filter Kit',
+  'P5106531': 'DEF Filter Kit',
+  'P5106533': 'DEF Filter Kit',
+  'MB404129': 'DEF Filter Kit',
 };
 
 // ============================================================
@@ -2125,6 +2132,14 @@ const TIP_RULES = {
   defFilter:[1500,18], apdaFilter:[2000,24], defInline:[1500,12]
 };
 
+// These DMS part numbers identify the shorter-cycle DEF Filter service.
+// For non-tipper vehicles they trigger 40,000 KM / 6 months.
+// Tipper/RMC vehicles must ignore these codes and retain normal DEF Filter rules.
+const DEF_FILTER_SHORT_INTERVAL_PART_CODES = new Set([
+  "P5106222", "P5105669", "XFZ01200", "P5106531",
+  "P5106533", "MB404129", "P5105776"
+]);
+
 function monthsAfter(date, months){ const d=new Date(date); d.setMonth(d.getMonth()+months); return d; }
 function is4825Model(model){
   const t=String(model||'').toUpperCase();
@@ -2457,7 +2472,31 @@ function decideAggregate(records, vehicle, running, key, analysisDate, decisionB
   let base=null;
   if(key==='airFilter') base=latestFilter(records,'AIR FILTER','AIR FILTER KIT',vehicle);
   else if(key==='fuelFilter') base=latestFuelFilter(records,vehicle);
-  else if(key==='defFilter') base=latestDefFilter(records,vehicle);
+  else if(key==='defFilter') {
+    const shortCycleRows = records.filter(r =>
+      DEF_FILTER_SHORT_INTERVAL_PART_CODES.has(
+        normalizePartCode(r.partCode ?? r.part_code)
+      ) && Number(r.qty || r.quantity || 0) > 0 && r.date
+    );
+    if (shortCycleRows.length && !tip) {
+      // Any listed DEF Filter part in a non-tipper vehicle's history
+      // changes its interval to 40,000 KM / 6 months.
+      base = shortCycleRows.sort((a,b) => b.date - a.date)[0];
+      const shortBase = normalizeDecisionBase(base, "KM", vehicle);
+      return dueNormalWithSale(
+        running.current, shortBase, 40000, 6,
+        analysisDate, sale, running.mode, vehicle
+      );
+    }
+    // On tipper/RMC vehicles, ignore these part numbers completely.
+    // Their presence must not alter the normal DEF Filter HRS decision.
+    const defFilterRecords = tip
+      ? records.filter(r => !DEF_FILTER_SHORT_INTERVAL_PART_CODES.has(
+          normalizePartCode(r.partCode ?? r.part_code)
+        ))
+      : records;
+    base=latestDefFilter(defFilterRecords,vehicle);
+  }
   else base=serviceBase(records,[keyToPart(key)],cfg[2],false,vehicle);
   if(useHours){ const tr=TIP_RULES[key]; return tr ? dueByHours(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),tr[0],tr[1],analysisDate,sale,vehicle) : false; }
   return dueNormalWithSale(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),cfg[0],cfg[1],analysisDate,sale,running.mode,vehicle);

@@ -3149,7 +3149,12 @@ function buildVehicleServiceSummary(vehicleResult) {
     let months = 0;
     let dateOnly = false;
 
-    if (key === "steeringOil") {
+    if (key === "hubGrease") {
+      // Customer Service Summary only: anchor hub-grease target to vehicle sale date.
+      base = null;
+      kmInterval = DECISION_RULES.hubGrease[0];
+      months = DECISION_RULES.hubGrease[1];
+    } else if (key === "steeringOil") {
       base = steeringOilServiceBase(records, vehicle);
       kmInterval = DECISION_RULES.steeringOil[0];
       hourInterval = TIP_RULES.steeringOil[0];
@@ -3207,17 +3212,44 @@ function buildVehicleServiceSummary(vehicleResult) {
   // Show free service / additional services only when the decision engine
   // identifies an applicable service. Keep the actual service name visible.
   const decision = vehicleResult?.decision || {};
-  const aggregateDue = Object.values(decision.result || {}).some(Boolean);
   const specialItems = [];
-  const freeService = String(decision.freeService || "").trim();
-  if (freeService && (/^1st free service$/i.test(freeService) || aggregateDue)) {
-    specialItems.push(freeService.replace(/\b\w/g, letter => letter.toUpperCase()));
+  const addSpecialItem = name => {
+    const clean = String(name || "").trim();
+    if (clean && !specialItems.some(item => item.toLowerCase() === clean.toLowerCase())) specialItems.push(clean);
+  };
+  const historyHas = pattern => records.some(record => pattern.test(serviceTextForRecord(record)));
+
+  // Show each unavailed free-service stage in this summary, including Not Due stages.
+  const cndFreeModel = isGB2822G50HCoModel(vehicle.model);
+  const hourFreeModel = basis === "HRS" && !cndFreeModel;
+  const freeNames = ["1st Free Service", "2nd Free Service", "3rd Free Service"];
+  freeNames.forEach((name, index) => {
+    const historyTokens = ["1ST FREE SERVICE", "2ND FREE SERVICE", "3RD FREE SERVICE"];
+    if (!historyHas(new RegExp(historyTokens[index]))) addSpecialItem(name);
+  });
+
+  // Keep the same model eligibility boundaries as the decision engine, but list
+  // every unavailed stage so future services appear as Not Due in this summary.
+  const summaryModelText = String(vehicle.model || "").toUpperCase().replace(/\s+/g, " ").trim();
+  const summaryWheelModels = ["2620","2820","2825","3120","3520","4120","4220","4225","4525","4625","4825","4925","4828","3525"];
+  const summaryWheelPattern = new RegExp("(?:^|[^0-9])(?:" + summaryWheelModels.join("|") + ")(?![0-9])");
+  const summaryWheelEligible = basis !== "TIME_ONLY" &&
+    (summaryWheelPattern.test(summaryModelText) || /\b5525\s*\/\s*39\b/.test(summaryModelText) || /\b5525N\s*\/\s*39\b/.test(summaryModelText));
+  if (summaryWheelEligible && !summaryModelText.includes("RMC")) {
+    ["Wheel Alignment Service-1","Wheel Alignment Service-2","Wheel Alignment Service-3","Wheel Alignment Service-4"].forEach((name, index) => {
+      const n = index + 1;
+      const patterns = [
+        new RegExp(name.toUpperCase()),
+        new RegExp("WHEEL ALIGNMENT " + ["1ST","2ND","3RD","4TH"][index]),
+        new RegExp("WHEEL ALIGNMENT - " + n)
+      ];
+      if (!historyHas(new RegExp(patterns.map(p => p.source).join("|")))) addSpecialItem(name);
+    });
   }
-  for (const service of decision.additionalServices || []) {
-    const name = String(service || "").trim();
-    if (name && !specialItems.some(item => item.toLowerCase() === name.toLowerCase())) {
-      specialItems.push(name);
-    }
+  const summaryBodyModels = ["GM4225/66 H CO","GP4925/68 H CO","NH4120/60 H CC","NP4825/66 H CC","UG3520/57 H CC","UP4825/66 H CC","UP4825/66 PL CC"];
+  if ((isGB2822G50HCoModel(vehicle.model) || summaryBodyModels.some(code => summaryModelText.includes(code))) &&
+      !historyHas(/BODY BUILDING CHECK ?UP|BODY BUILDING CHECKUP/)) {
+    addSpecialItem("Body Building Check Up");
   }
 
   specialItems.forEach((name, index) => {
@@ -3283,39 +3315,22 @@ function buildVehicleServiceSummary(vehicleResult) {
       const wheelIndex = wheelMatch ? Math.max(0, Math.min(3, Number(wheelMatch[1]) - 1)) : -1;
       const targetReading = wheelMatch ? [10000, 20000, 30000, 40000][wheelIndex] : 3000;
       const targetUnit = "KM";
-      const fallbackMonths = wheelMatch ? [4, 5, 6, 7][wheelIndex] : 3;
-      const hasReliableKmProjection = Number.isFinite(averageDailyKm) && averageDailyKm > 0 && currentKm > 0;
-      const targetDateFromAverage = hasReliableKmProjection
-        ? new Date(Date.now() + Math.max(0, (targetReading - currentKm) / averageDailyKm) * 86400000)
-        : null;
-      const targetDate = targetDateFromAverage || (saleDate ? monthsAfter(saleDate, fallbackMonths) : null);
+      const fallbackMonths = wheelMatch ? [3, 4, 5, 6][wheelIndex] : 3;
+      // Summary-only target dates are always anchored to vehicle sale date.
+      const targetDate = saleDate ? monthsAfter(saleDate, fallbackMonths) : null;
       upcoming = (targetDate ? formatDateShort(targetDate) : "N/A") +
         " | " + formatNumber(targetReading) + " " + targetUnit;
 
-      if (hasReliableKmProjection) {
-        // Wheel alignment: +/-3,000 KM. Body check-up: 0-5,000 KM
-        // around the 3,000 KM target (2,000 KM early/late tolerance).
-        status = getServiceSummaryStatus(
-          null,
-          0,
-          targetReading,
-          0,
-          currentKm,
-          wheelMatch ? 3000 : 2000,
-          false
-        );
-      } else {
-        // When running-rate data is not reliable, use the calendar target.
-        status = getServiceSummaryStatus(
-          saleDate,
-          0,
-          0,
-          fallbackMonths,
-          currentKm,
-          0,
-          true
-        );
-      }
+      // Both the sale-date interval and KM target apply, whichever comes first.
+      status = getServiceSummaryStatus(
+        saleDate,
+        0,
+        targetReading,
+        fallbackMonths,
+        currentKm,
+        wheelMatch ? 3000 : 2000,
+        false
+      );
 
       if (targetDate) {
         const normalizedTargetDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
@@ -3331,6 +3346,8 @@ function buildVehicleServiceSummary(vehicleResult) {
       }
     }
 
+    // Overdue or already availed services are excluded from this customer summary.
+    if (status === "Lapsed") return;
     rows.push({
       name,
       key: "additionalService-" + index,

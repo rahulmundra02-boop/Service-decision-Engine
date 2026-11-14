@@ -4,6 +4,7 @@ import "./App.css";
 import DocumentScanner from "./DocumentScanner.jsx";
 import AuthGate from "./AuthGate.jsx";
 import { validateEstimateAggregateSelection } from "./estimateAggregateValidation.js";
+import { DECISION_RULES, TIP_RULES, DEF_FILTER_SHORT_INTERVAL_PART_CODES, resolveAggregateSchedule } from "./serviceDecisionEngine.js";
 
 const loadXLSX = () => import("xlsx-js-style");
 
@@ -2116,26 +2117,6 @@ function getVisitParts(visit, vehicle, decision, historyMode = "schedule") {
   }).filter(Boolean);
 }
 
-const DECISION_RULES = {
-  coolant: [320000,36,15], gearOil:[160000,18,6], hubGrease:[80000,12,3],
-  axleOil:[200000,24,12], clutchOil:[80000,18,0.5], steeringOil:[160000,24,1],
-  airFilter:[80000,12,0], fuelFilter:[80000,12,0], defFilter:[120000,18,0],
-  apdaFilter:[200000,24,1], defInline:[80000,12,1]
-};
-const TIP_RULES = {
-  coolant:[5000,36], gearOil:[2000,18], hubGrease:[1500,12], axleOil:[2000,24],
-  clutchOil:[2000,12], steeringOil:[4000,24], airFilter:[1000,12], fuelFilter:[1000,12],
-  defFilter:[1500,18], apdaFilter:[2000,24], defInline:[1500,12]
-};
-
-// These DMS part numbers identify the shorter-cycle DEF Filter service.
-// For non-tipper vehicles they trigger 40,000 KM / 6 months.
-// Tipper/RMC vehicles must ignore these codes and retain normal DEF Filter rules.
-const DEF_FILTER_SHORT_INTERVAL_PART_CODES = new Set([
-  "P5106222", "P5105669", "XFZ01200", "P5106531",
-  "P5106533", "MB404129", "P5105776"
-]);
-
 function monthsAfter(date, months){ const d=new Date(date); d.setMonth(d.getMonth()+months); return d; }
 function is4825Model(model){
   const t=String(model||'').toUpperCase();
@@ -2186,6 +2167,7 @@ function isH6Model(model){
 function is320HPModel(model){
   return /(?:^|[^0-9])\d{2}32(?=$|[^0-9])/.test(String(model||'').toUpperCase());
 }
+function getCentralAggregateSchedule(key,vehicle,decisionBasis,base,records=[]){return resolveAggregateSchedule({key,decisionBasis,base,records,isTipper:isTipperModel(vehicle?.model),isCng:isCngModel(vehicle?.model),is320HP:is320HPModel(vehicle?.model),isH4:isH4Model(vehicle?.model),isA4:isA4Model(vehicle?.model),isH6:isH6Model(vehicle?.model)});}
 function matchesServicePart(value, serviceName) {
   const text = String(value || '').toUpperCase();
   // Steering Oil Filter is a required companion part, never the Steering Oil
@@ -2377,132 +2359,81 @@ function decideAggregate(records, vehicle, running, key, analysisDate, decisionB
   const sale=vehicle.sale;
   if(key==='engineOil'){
     const base=serviceBase(records,['ENGINE OIL'],12,true,vehicle,'ENGINE OIL FILTER',true);
-    // CNG models are maintained in the explicit model identification list.
-    // Their Engine Oil interval is always 40,000 KM / 18 months.
+    const schedule=getCentralAggregateSchedule(key,vehicle,decisionBasis,base,records);
     if(isCngModel(vehicle.model)){
-      const kmRunning=deriveRunningReadingForBasis(records, vehicle, "KM");
-      const cngMode = decisionBasis === "TIME_ONLY" ? "TIME_ONLY" : kmRunning.mode;
-      return dueNormalWithSale(kmRunning.current,base,40000,18,analysisDate,sale,cngMode,vehicle);
+      const kmRunning=deriveRunningReadingForBasis(records,vehicle,"KM");
+      const cngMode=decisionBasis==="TIME_ONLY"?"TIME_ONLY":kmRunning.mode;
+      return dueNormalWithSale(kmRunning.current,base,schedule.interval,schedule.months,analysisDate,sale,cngMode,vehicle);
     }
-    if(is320HPModel(vehicle.model)){
-      // First drain is based on the absence of a valid Engine Oil + Filter
-      // service record. Later changes use the subsequent interval.
-      const interval = useHours
-        ? (base ? 2000 : 500)
-        : (base ? 120000 : 40000);
-      if(useHours) return dueByHours(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),interval,18,analysisDate,sale,vehicle);
-      return dueNormalWithSale(running.current,base,interval,18,analysisDate,sale,running.mode,vehicle);
-    }
-    let interval=120000;
-    if(isH4Model(vehicle.model)) interval=base ? 80000 : 40000;
-    else if(isA4Model(vehicle.model)) interval=base && base.serviceQty>=19 ? 80000 : 40000;
-    else if(isH6Model(vehicle.model)) interval=80000;
-    if(useHours){
-      let hrs=1500;
-      if(isH4Model(vehicle.model)) hrs=base ? 1500 : 1000;
-      else if(isA4Model(vehicle.model)) hrs=base && base.serviceQty>=19 ? 1500 : 1000;
-      return dueByHours(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),hrs,18,analysisDate,sale,vehicle);
-    }
-    return dueNormalWithSale(running.current,base,interval,18,analysisDate,sale,running.mode,vehicle);
+    const decisionBase=normalizeDecisionBase(base,decisionBasis,vehicle);
+    return schedule.useHours
+      ? dueByHours(running.current,decisionBase,schedule.interval,schedule.months,analysisDate,sale,vehicle)
+      : dueNormalWithSale(running.current,base,schedule.interval,schedule.months,analysisDate,sale,running.mode,vehicle);
   }
   if (key === 'tippingOil') {
-    // Tipping Oil applies only to tipper models and is time-only: every 12 months,
-    // with no KM or engine-hour cap. Tipper applicability follows the existing model guard.
     if (!isTipperModel(vehicle.model) || !String(vehicle.model || '').toUpperCase().includes('TIP')) return false;
-    const base = serviceBase(records, ['TIPPING OIL'], 1, false, vehicle);
-    const baseDate = base ? base.date : sale;
-    return analysisDate >= monthsAfter(baseDate, 11);
+    const base=serviceBase(records,['TIPPING OIL'],1,false,vehicle);
+    const schedule=getCentralAggregateSchedule(key,vehicle,decisionBasis,base,records);
+    const baseDate=base?base.date:sale;
+    return analysisDate>=monthsAfter(baseDate,schedule.months-1);
   }
   if(key==='cngFilter'){
-    if(!isCngModel(vehicle.model)) return false;
+    if(!isCngModel(vehicle.model))return false;
     const base=serviceBase(records,['CNG FILTER'],1,false,vehicle);
-    const kmRunning=deriveRunningReadingForBasis(records, vehicle, "KM");
-    const baseKm=base ? getRelevantReadingForBasis(base, "KM") : 0;
-    const baseDate=base ? base.date : sale;
-    if (decisionBasis === "TIME_ONLY") return analysisDate >= monthsAfter(baseDate,5);
-    return kmRunning.current >= baseKm + 40000 || analysisDate >= monthsAfter(baseDate,6);
+    const schedule=getCentralAggregateSchedule(key,vehicle,decisionBasis,base,records);
+    const kmRunning=deriveRunningReadingForBasis(records,vehicle,"KM");
+    const baseKm=base?getRelevantReadingForBasis(base,"KM"):0;
+    const baseDate=base?base.date:sale;
+    if(decisionBasis==="TIME_ONLY")return analysisDate>=monthsAfter(baseDate,schedule.months-1);
+    return kmRunning.current>=baseKm+schedule.interval||analysisDate>=monthsAfter(baseDate,schedule.months);
   }
   if(key==='sparkPlug'){
-    if(!isCngModel(vehicle.model) || decisionBasis === "TIME_ONLY") return false;
+    if(!isCngModel(vehicle.model)||decisionBasis==="TIME_ONLY")return false;
     const base=serviceBase(records,['SPARK PLUG'],1,false,vehicle);
-    const kmRunning=deriveRunningReadingForBasis(records, vehicle, "KM");
-    const baseKm=base ? getRelevantReadingForBasis(base, "KM") : 0;
-    return kmRunning.current >= baseKm + 20000;
+    const schedule=getCentralAggregateSchedule(key,vehicle,decisionBasis,base,records);
+    const kmRunning=deriveRunningReadingForBasis(records,vehicle,"KM");
+    const baseKm=base?getRelevantReadingForBasis(base,"KM"):0;
+    return kmRunning.current>=baseKm+schedule.interval;
   }
   if(key==='steeringOil'){
-    // Steering Oil is a valid replacement only when its dedicated filter is
-    // recorded on the same job card. Entries from separate job cards must not
-    // be paired together.
-    const base=steeringOilServiceBase(records, vehicle);
-    return useHours ? dueByHours(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),4000,24,analysisDate,sale) : dueNormalWithSale(running.current,base,160000,24,analysisDate,sale,running.mode,vehicle);
+    const base=steeringOilServiceBase(records,vehicle);
+    const schedule=getCentralAggregateSchedule(key,vehicle,decisionBasis,base,records);
+    const decisionBase=normalizeDecisionBase(base,decisionBasis,vehicle);
+    return schedule.useHours
+      ? dueByHours(running.current,decisionBase,schedule.interval,schedule.months,analysisDate,sale,vehicle)
+      : dueNormalWithSale(running.current,base,schedule.interval,schedule.months,analysisDate,sale,running.mode,vehicle);
   }
-  if (key === 'clutchOil') {
-    const base = clutchOilServiceBase(records, vehicle);
-    if (useHours) {
-      return dueByHours(
-        running.current,
-        normalizeDecisionBase(base, decisionBasis, vehicle),
-        2000,
-        12,
-        analysisDate,
-        sale,
-        vehicle
-      );
-    }
-    return dueNormalWithSale(
-      running.current,
-      base,
-      80000,
-      18,
-      analysisDate,
-      sale,
-      running.mode,
-      vehicle
-    );
+  if(key==='clutchOil'){
+    const base=clutchOilServiceBase(records,vehicle);
+    const schedule=getCentralAggregateSchedule(key,vehicle,decisionBasis,base,records);
+    const decisionBase=normalizeDecisionBase(base,decisionBasis,vehicle);
+    return schedule.useHours
+      ? dueByHours(running.current,decisionBase,schedule.interval,schedule.months,analysisDate,sale,vehicle)
+      : dueNormalWithSale(running.current,base,schedule.interval,schedule.months,analysisDate,sale,running.mode,vehicle);
   }
   const cfg=DECISION_RULES[key]; if(!cfg) return false;
   if(is320HPModel(vehicle.model) && ['gearOil','axleOil','coolant','hubGrease'].includes(key)){
     const base=serviceBase(records,[keyToPart(key)],cfg[2],false,vehicle);
-    const intervals = {
-      gearOil: { km:240000, hrs:5000, months:24 },
-      axleOil: { km:200000, hrs:2000, months:24 },
-      coolant: { km:320000, hrs:5000, months:36 },
-      hubGrease: { km:80000, hrs:1500, months:12 }
-    }[key];
-    if(useHours) return dueByHours(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),intervals.hrs,intervals.months,analysisDate,sale,vehicle);
-    return dueNormalWithSale(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),intervals.km,intervals.months,analysisDate,sale,running.mode,vehicle);
+    const schedule=getCentralAggregateSchedule(key,vehicle,decisionBasis,base,records);
+    const decisionBase=normalizeDecisionBase(base,decisionBasis,vehicle);
+    if(schedule.useHours)return dueByHours(running.current,decisionBase,schedule.interval,schedule.months,analysisDate,sale,vehicle);
+    return dueNormalWithSale(running.current,decisionBase,schedule.interval,schedule.months,analysisDate,sale,running.mode,vehicle);
   }
   let base=null;
   if(key==='airFilter') base=latestFilter(records,'AIR FILTER','AIR FILTER KIT',vehicle);
   else if(key==='fuelFilter') base=latestFuelFilter(records,vehicle);
   else if(key==='defFilter') {
-    const shortCycleRows = records.filter(r =>
-      DEF_FILTER_SHORT_INTERVAL_PART_CODES.has(
-        normalizePartCode(r.partCode ?? r.part_code)
-      ) && Number(r.qty || r.quantity || 0) > 0 && r.date
-    );
-    if (shortCycleRows.length && !tip) {
-      // Any listed DEF Filter part in a non-tipper vehicle's history
-      // changes its interval to 40,000 KM / 6 months.
-      base = shortCycleRows.sort((a,b) => b.date - a.date)[0];
-      const shortBase = normalizeDecisionBase(base, "KM", vehicle);
-      return dueNormalWithSale(
-        running.current, shortBase, 40000, 6,
-        analysisDate, sale, running.mode, vehicle
-      );
-    }
-    // On tipper/RMC vehicles, ignore these part numbers completely.
-    // Their presence must not alter the normal DEF Filter HRS decision.
-    const defFilterRecords = tip
-      ? records.filter(r => !DEF_FILTER_SHORT_INTERVAL_PART_CODES.has(
-          normalizePartCode(r.partCode ?? r.part_code)
-        ))
+    const defFilterRecords=tip
+      ? records.filter(r=>!DEF_FILTER_SHORT_INTERVAL_PART_CODES.has(normalizePartCode(r.partCode??r.part_code)))
       : records;
     base=latestDefFilter(defFilterRecords,vehicle);
   }
   else base=serviceBase(records,[keyToPart(key)],cfg[2],false,vehicle);
-  if(useHours){ const tr=TIP_RULES[key]; return tr ? dueByHours(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),tr[0],tr[1],analysisDate,sale,vehicle) : false; }
-  return dueNormalWithSale(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),cfg[0],cfg[1],analysisDate,sale,running.mode,vehicle);
+  const schedule=getCentralAggregateSchedule(key,vehicle,decisionBasis,base,records);
+  if(!schedule)return false;
+  const resolvedBase=normalizeDecisionBase(schedule.base||base,decisionBasis,vehicle);
+  if(schedule.useHours)return schedule.interval?dueByHours(running.current,resolvedBase,schedule.interval,schedule.months,analysisDate,sale,vehicle):false;
+  return dueNormalWithSale(running.current,resolvedBase,schedule.interval,schedule.months,analysisDate,sale,running.mode,vehicle);
 }
 function keyToPart(key){ return ({coolant:'COOLANT',gearOil:'GEAR OIL',hubGrease:'HUB GREASE',axleOil:'AXLE OIL',clutchOil:'CLUTCH OIL',apdaFilter:'APDA FILTER',defInline:'DEF INLINE FILTER',cngFilter:'CNG FILTER'})[key]||''; }
 function latestDefFilter(records, vehicle){
@@ -3048,6 +2979,7 @@ function buildVehicleServiceSummary(vehicleResult) {
   const current = Number(vehicleResult?.running?.current || 0);
   const saleDate = vehicle.sale || null;
   const rows = [];
+  const centralDecision=calculateDecisions(allVehicleRecords,vehicle,vehicleResult?.decisionRunning||vehicleResult?.running||{},basis);
 
   // Use dated cumulative readings to estimate average daily running.
   // Require at least three distinct reading dates, a 14-day observation
@@ -3115,7 +3047,7 @@ function buildVehicleServiceSummary(vehicleResult) {
       ? [lastDateText, lastReadingText].filter(Boolean).join(" | ") || "No Previous Record"
       : "No Previous Record";
     const upcomingText = nextDateText + " | " + nextReadingText;
-    const status = getServiceSummaryStatus(
+    let status = getServiceSummaryStatus(
       baseDate,
       baseReading,
       interval,
@@ -3124,6 +3056,7 @@ function buildVehicleServiceSummary(vehicleResult) {
       deviation,
       basis === "TIME_ONLY" || options.dateOnly === true
     );
+    if (centralDecision?.result?.[key] && status !== "Lapsed") status = "Due";
 
     // Sort by the earliest projected trigger: meter reading or calendar time.
     // If the historical running rate is unreliable, use the calendar-time fallback.
@@ -3470,6 +3403,11 @@ function buildVehicleServiceSummary(vehicleResult) {
         sortReadingRemaining = targetReading - currentKm;
       }
     }
+
+    if (freeMatch && String(centralDecision?.freeService || "").toLowerCase() === name.toLowerCase() && status !== "Lapsed") status = "Due";
+    if (Array.isArray(centralDecision?.additionalServices) &&
+        centralDecision.additionalServices.some(service => String(service).toLowerCase() === name.toLowerCase()) &&
+        status !== "Lapsed") status = "Due";
 
     // Overdue or already availed services are excluded from this customer summary.
     if (status === "Lapsed") return;

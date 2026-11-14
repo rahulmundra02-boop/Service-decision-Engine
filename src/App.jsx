@@ -3381,6 +3381,19 @@ function buildVehicleServiceSummary(vehicleResult) {
   // remains the fallback. The status itself is never modified by sorting.
   const statusPriority = { Lapsed: 0, Due: 1, "Near Due": 2, "No Due": 3 };
   rows.sort((a, b) => {
+    const dateA = Number.isFinite(a.sortDate) ? a.sortDate : Number.MAX_SAFE_INTEGER;
+    const dateB = Number.isFinite(b.sortDate) ? b.sortDate : Number.MAX_SAFE_INTEGER;
+
+    // If both services show the same target calendar date, prioritize the
+    // lower remaining KM/HRS target. This prevents a higher meter target
+    // (for example 120,000 KM) from appearing above a lower one (80,000 KM)
+    // merely because their unrounded projected-day values differ slightly.
+    if (dateA === dateB) {
+      const readingA = Number.isFinite(a.sortReadingRemaining) ? a.sortReadingRemaining : Number.POSITIVE_INFINITY;
+      const readingB = Number.isFinite(b.sortReadingRemaining) ? b.sortReadingRemaining : Number.POSITIVE_INFINITY;
+      if (readingA !== readingB) return readingA - readingB;
+    }
+
     const daysA = Number.isFinite(a.sortDays) ? a.sortDays : Number.POSITIVE_INFINITY;
     const daysB = Number.isFinite(b.sortDays) ? b.sortDays : Number.POSITIVE_INFINITY;
     if (daysA !== daysB) return daysA - daysB;
@@ -3393,9 +3406,7 @@ function buildVehicleServiceSummary(vehicleResult) {
       (statusPriority[a.status] ?? 99) - (statusPriority[b.status] ?? 99);
     if (statusDiff) return statusDiff;
 
-    const dateDiff =
-      (a.sortDate ?? Number.MAX_SAFE_INTEGER) -
-      (b.sortDate ?? Number.MAX_SAFE_INTEGER);
+    const dateDiff = dateA - dateB;
     if (dateDiff) return dateDiff;
 
     return String(a.name || "").localeCompare(String(b.name || ""));

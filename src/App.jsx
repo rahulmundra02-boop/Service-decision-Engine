@@ -3150,7 +3150,10 @@ function buildVehicleServiceSummary(vehicleResult) {
     let dateOnly = false;
 
     if (key === "hubGrease") {
-      // Customer Service Summary only: anchor hub-grease target to vehicle sale date.
+      // Customer Service Summary only: show the sale-date-based first target
+      // until a hub-grease service record confirms it has been availed.
+      base = serviceBase(records, [keyToPart(key) || "HUB GREASE"], DECISION_RULES.hubGrease[2], false, vehicle);
+      if (base) continue;
       base = null;
       kmInterval = DECISION_RULES.hubGrease[0];
       months = DECISION_RULES.hubGrease[1];

@@ -2371,28 +2371,29 @@ function decideAggregate(records, vehicle, running, key, analysisDate, decisionB
       : dueNormalWithSale(running.current,base,schedule.interval,schedule.months,analysisDate,sale,running.mode,vehicle);
   }
   if (key === 'tippingOil') {
-    // Tipping Oil applies only to tipper models and is time-only: every 12 months,
-    // with no KM or engine-hour cap. Tipper applicability follows the existing model guard.
     if (!isTipperModel(vehicle.model) || !String(vehicle.model || '').toUpperCase().includes('TIP')) return false;
-    const base = serviceBase(records, ['TIPPING OIL'], 1, false, vehicle);
-    const baseDate = base ? base.date : sale;
-    return analysisDate >= monthsAfter(baseDate, 11);
+    const base=serviceBase(records,['TIPPING OIL'],1,false,vehicle);
+    const schedule=getCentralAggregateSchedule(key,vehicle,decisionBasis,base,records);
+    const baseDate=base?base.date:sale;
+    return analysisDate>=monthsAfter(baseDate,schedule.months-1);
   }
   if(key==='cngFilter'){
-    if(!isCngModel(vehicle.model)) return false;
+    if(!isCngModel(vehicle.model))return false;
     const base=serviceBase(records,['CNG FILTER'],1,false,vehicle);
-    const kmRunning=deriveRunningReadingForBasis(records, vehicle, "KM");
-    const baseKm=base ? getRelevantReadingForBasis(base, "KM") : 0;
-    const baseDate=base ? base.date : sale;
-    if (decisionBasis === "TIME_ONLY") return analysisDate >= monthsAfter(baseDate,5);
-    return kmRunning.current >= baseKm + 40000 || analysisDate >= monthsAfter(baseDate,6);
+    const schedule=getCentralAggregateSchedule(key,vehicle,decisionBasis,base,records);
+    const kmRunning=deriveRunningReadingForBasis(records,vehicle,"KM");
+    const baseKm=base?getRelevantReadingForBasis(base,"KM"):0;
+    const baseDate=base?base.date:sale;
+    if(decisionBasis==="TIME_ONLY")return analysisDate>=monthsAfter(baseDate,schedule.months-1);
+    return kmRunning.current>=baseKm+schedule.interval||analysisDate>=monthsAfter(baseDate,schedule.months);
   }
   if(key==='sparkPlug'){
-    if(!isCngModel(vehicle.model) || decisionBasis === "TIME_ONLY") return false;
+    if(!isCngModel(vehicle.model)||decisionBasis==="TIME_ONLY")return false;
     const base=serviceBase(records,['SPARK PLUG'],1,false,vehicle);
-    const kmRunning=deriveRunningReadingForBasis(records, vehicle, "KM");
-    const baseKm=base ? getRelevantReadingForBasis(base, "KM") : 0;
-    return kmRunning.current >= baseKm + 20000;
+    const schedule=getCentralAggregateSchedule(key,vehicle,decisionBasis,base,records);
+    const kmRunning=deriveRunningReadingForBasis(records,vehicle,"KM");
+    const baseKm=base?getRelevantReadingForBasis(base,"KM"):0;
+    return kmRunning.current>=baseKm+schedule.interval;
   }
   if(key==='steeringOil'){
     const base=steeringOilServiceBase(records,vehicle);

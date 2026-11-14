@@ -3185,11 +3185,15 @@ function buildVehicleServiceSummary(vehicleResult) {
     let dateOnly = false;
 
     if (key === "hubGrease") {
-      // Customer Service Summary only: show the sale-date-based first target
-      // until a hub-grease service record confirms it has been availed.
-      base = serviceBase(records, [keyToPart(key) || "HUB GREASE"], DECISION_RULES.hubGrease[2], false, vehicle);
-      if (base) continue;
-      base = null;
+      // Keep one-time free-service Hub Grease codes separate from the
+      // recurring aggregate Hub Grease service history.
+      const hubGreaseFreeCodes = new Set(["FS0H1A", "FS0H1B", "FS0H1C", "FS0H1D"]);
+      const aggregateHubGreaseRecords = records.filter(record =>
+        !hubGreaseFreeCodes.has(normalizePartCode(record?.partCode))
+      );
+      // Aggregate Hub Grease repeats from its latest normal service record.
+      // A free-service entry must never reset or suppress this recurring cycle.
+      base = serviceBase(aggregateHubGreaseRecords, [keyToPart(key) || "HUB GREASE"], DECISION_RULES.hubGrease[2], false, vehicle);
       kmInterval = DECISION_RULES.hubGrease[0];
       hourInterval = TIP_RULES.hubGrease?.[0] || 0;
       months = useHours && TIP_RULES.hubGrease ? TIP_RULES.hubGrease[1] : DECISION_RULES.hubGrease[1];
@@ -3265,6 +3269,15 @@ function buildVehicleServiceSummary(vehicleResult) {
     if (!historyHas(new RegExp(historyTokens[index]))) addSpecialItem(name);
   });
 
+  // Hub Grease Free Service is a separate one-time benefit, not the
+  // recurring Hub Grease aggregate service. Its own FS0H1* codes determine
+  // whether this one-time row has already been availed.
+  const hubGreaseFreeCodes = new Set(["FS0H1A", "FS0H1B", "FS0H1C", "FS0H1D"]);
+  const hubGreaseFreeAvailed = records.some(record =>
+    hubGreaseFreeCodes.has(normalizePartCode(record?.partCode))
+  );
+  if (!hubGreaseFreeAvailed) addSpecialItem("Hub Grease Free Service");
+
   // Keep the same model eligibility boundaries as the decision engine, but list
   // every unavailed stage so future services appear as Not Due in this summary.
   const summaryModelText = String(vehicle.model || "").toUpperCase().replace(/\s+/g, " ").trim();
@@ -3301,7 +3314,36 @@ function buildVehicleServiceSummary(vehicleResult) {
     let sortDate = Number.MAX_SAFE_INTEGER;
     let status = "No Due";
 
-    if (freeMatch) {
+    if (/^HUB GREASE FREE SERVICE$/i.test(name)) {
+      // One-time free Hub Grease: 80,000 KM or 12 months from sale,
+      // whichever comes first. This is independent of aggregate history.
+      const targetReading = 80000;
+      const targetDate = saleDate ? monthsAfter(saleDate, 12) : null;
+      upcoming = (targetDate ? formatDateShort(targetDate) : "N/A") +
+        " | " + formatNumber(targetReading) + " KM";
+      status = getServiceSummaryStatus(
+        saleDate,
+        0,
+        targetReading,
+        12,
+        currentKm,
+        3000,
+        false
+      );
+      if (targetDate) {
+        const normalizedTargetDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        sortDate = normalizedTargetDate.getTime();
+        const timeDays = (sortDate - today.getTime()) / 86400000;
+        const readingDays = Number.isFinite(averageDailyKm) && averageDailyKm > 0 && currentKm > 0
+          ? (targetReading - currentKm) / averageDailyKm
+          : null;
+        const triggers = [timeDays, readingDays].filter(Number.isFinite);
+        sortDays = triggers.length ? Math.min(...triggers) : timeDays;
+        sortReadingRemaining = targetReading - currentKm;
+      }
+    } else if (freeMatch) {
       const ordinal = freeMatch[1].toLowerCase();
       const serviceIndex = ordinal === "1st" ? 0 : ordinal === "2nd" ? 1 : 2;
       const cndModel = isGB2822G50HCoModel(vehicle.model);

@@ -2163,11 +2163,14 @@ function isTipperModel(model){
 function getEffectiveDecisionBasis(vehicle, basis){
   const normalized = String(basis||"").toUpperCase();
   if (normalized === "TIME_ONLY") return "TIME_ONLY";
-  // Keep the CE/UE2820/39 R RMC exception KM-based even if HRS is selected.
-  if (isCE282039RmcKmModel(vehicle?.model)) return "KM";
+  // These models always use KM-based Engine Oil decisions, even if HRS is selected.
+  if (is4825Model(vehicle?.model) || isCngModel(vehicle?.model) || isCE282039RmcKmModel(vehicle?.model)) return "KM";
   return normalized === "HRS" ? "HRS" : "KM";
 }
-function isH4Model(model){ return ["1015","1115","1215","1315","1415","1615","1815","1915"].some(x=>String(model||'').toUpperCase().includes(x)); }
+function isH4Model(model){
+  // H4 engine models are identified by a four-digit model code ending in 15.
+  return /(?:^|[^0-9])\d{2}15(?=$|[^0-9])/.test(String(model||'').toUpperCase());
+}
 function isA4Model(model){ return /\d{4}N/.test(String(model||'').toUpperCase()); }
 function isH6Model(model){
   if(is4825Model(model)) return true;
@@ -2373,15 +2376,13 @@ function decideAggregate(records, vehicle, running, key, analysisDate, decisionB
   const useHours = decisionBasis === "HRS" ? true : decisionBasis === "KM" ? false : tip;
   const sale=vehicle.sale;
   if(key==='engineOil'){
-    if(isGB2822G50HCoModel(vehicle.model)){
-      const base=serviceBase(records,['ENGINE OIL'],12,false,vehicle);
-      const kmRunning=deriveRunningReadingForBasis(records, vehicle, "KM");
-      const baseKm=base ? getRelevantReadingForBasis(base, "KM") : 0;
-      const baseDate=base ? base.date : sale;
-      if (decisionBasis === "TIME_ONLY") return analysisDate >= monthsAfter(baseDate,5);
-      return kmRunning.current >= baseKm + 20000 || analysisDate >= monthsAfter(baseDate,6);
-    }
     const base=serviceBase(records,['ENGINE OIL'],12,true,vehicle,'ENGINE OIL FILTER',true);
+    // CNG models are added explicitly to isCngModel as they are identified.
+    // Their Engine Oil interval is always 40,000 KM / 18 months.
+    if(isCngModel(vehicle.model)){
+      const kmRunning=deriveRunningReadingForBasis(records, vehicle, "KM");
+      return dueNormalWithSale(kmRunning.current,base,40000,18,analysisDate,sale,kmRunning.mode,vehicle);
+    }
     if(is320HPModel(vehicle.model)){
       // First drain is based on the absence of a valid Engine Oil + Filter
       // service record. Later changes use the subsequent interval.
@@ -2392,10 +2393,15 @@ function decideAggregate(records, vehicle, running, key, analysisDate, decisionB
       return dueNormalWithSale(running.current,base,interval,18,analysisDate,sale,running.mode,vehicle);
     }
     let interval=120000;
-    if(isH4Model(vehicle.model)) interval=40000;
+    if(isH4Model(vehicle.model)) interval=base ? 80000 : 40000;
     else if(isA4Model(vehicle.model)) interval=base && base.serviceQty>=19 ? 80000 : 40000;
     else if(isH6Model(vehicle.model)) interval=80000;
-    if(useHours){ let hrs=1500; if(isA4Model(vehicle.model)||isH4Model(vehicle.model)||isH6Model(vehicle.model)) hrs=1000; return dueByHours(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),hrs,18,analysisDate,sale,vehicle); }
+    if(useHours){
+      let hrs=1500;
+      if(isH4Model(vehicle.model)) hrs=base ? 1500 : 1000;
+      else if(isA4Model(vehicle.model)) hrs=base && base.serviceQty>=19 ? 1500 : 1000;
+      return dueByHours(running.current,normalizeDecisionBase(base, decisionBasis, vehicle),hrs,18,analysisDate,sale,vehicle);
+    }
     return dueNormalWithSale(running.current,base,interval,18,analysisDate,sale,running.mode,vehicle);
   }
   if (key === 'tippingOil') {
@@ -3168,23 +3174,23 @@ function buildVehicleServiceSummary(vehicleResult) {
   };
 
   const useHours = displayBasis === "HRS";
-  const engineSpecial = isGB2822G50HCoModel(vehicle.model);
-  const engineBase = engineSpecial
-    ? serviceBase(records, ["ENGINE OIL"], 12, false, vehicle)
-    : serviceBase(records, ["ENGINE OIL"], 12, true, vehicle, "ENGINE OIL FILTER", true);
+  const engineBase = serviceBase(records, ["ENGINE OIL"], 12, true, vehicle, "ENGINE OIL FILTER", true);
 
-  if (engineSpecial) {
-    addRow("ENGINE OIL", "engineOil", engineBase, 20000, 6, 0);
-  } else {
-    let engineKmInterval = 120000;
-    if (isH4Model(vehicle.model)) engineKmInterval = 40000;
-    else if (isA4Model(vehicle.model)) engineKmInterval = engineBase && engineBase.serviceQty >= 19 ? 80000 : 40000;
-    else if (isH6Model(vehicle.model)) engineKmInterval = 80000;
-    const engineInterval = useHours
-      ? ((isA4Model(vehicle.model) || isH4Model(vehicle.model) || isH6Model(vehicle.model)) ? 1000 : 1500)
+  let engineKmInterval = 120000;
+  if (isCngModel(vehicle.model)) engineKmInterval = 40000;
+  else if (isH4Model(vehicle.model)) engineKmInterval = engineBase ? 80000 : 40000;
+  else if (isA4Model(vehicle.model)) engineKmInterval = engineBase && engineBase.serviceQty >= 19 ? 80000 : 40000;
+  else if (isH6Model(vehicle.model)) engineKmInterval = 80000;
+  const engineInterval = isCngModel(vehicle.model)
+    ? 40000
+    : useHours
+      ? (isH4Model(vehicle.model)
+          ? (engineBase ? 1500 : 1000)
+          : isA4Model(vehicle.model)
+            ? (engineBase && engineBase.serviceQty >= 19 ? 1500 : 1000)
+            : 1500)
       : engineKmInterval;
-    addRow("ENGINE OIL", "engineOil", engineBase, engineInterval, 18, useHours ? 60 : 4000);
-  }
+  addRow("ENGINE OIL", "engineOil", engineBase, engineInterval, 18, useHours ? 60 : 4000);
 
   // Build the customer-facing list from the same service-rule catalogue used by
   // the decision engine. New DECISION_RULES entries are included automatically.

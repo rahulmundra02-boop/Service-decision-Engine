@@ -3391,6 +3391,17 @@ function buildVehicleServiceSummary(vehicleResult) {
       }
     }
 
+    // Keep the summary status aligned with the same free-service and
+    // additional-service eligibility decisions used by Single and Bulk.
+    if (freeMatch && String(centralDecision?.freeService || "").toLowerCase() === name.toLowerCase() && status !== "Lapsed") {
+      status = "Due";
+    }
+    if (Array.isArray(centralDecision?.additionalServices) &&
+        centralDecision.additionalServices.some(service => String(service).toLowerCase() === name.toLowerCase()) &&
+        status !== "Lapsed") {
+      status = "Due";
+    }
+
     // Overdue or already availed services are excluded from this customer summary.
     if (status === "Lapsed") return;
     rows.push({

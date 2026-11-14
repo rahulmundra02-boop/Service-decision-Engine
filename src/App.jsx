@@ -3087,9 +3087,13 @@ function buildVehicleServiceSummary(vehicleResult) {
       : Number.POSITIVE_INFINITY;
     // When projected trigger dates are identical (or only calendar fallback
     // is available), the lower remaining meter reading is the earlier service.
-    const sortReadingRemaining = canUseReadingProjection && nextReading !== null
-      ? nextReading - current
-      : Number.POSITIVE_INFINITY;
+    const sortReadingRemaining =
+      basis !== "TIME_ONLY" &&
+      options.dateOnly !== true &&
+      nextReading !== null &&
+      Number.isFinite(current)
+        ? nextReading - current
+        : Number.POSITIVE_INFINITY;
 
     rows.push({
       name,

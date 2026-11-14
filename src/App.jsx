@@ -3087,11 +3087,10 @@ function buildVehicleServiceSummary(vehicleResult) {
       : Number.POSITIVE_INFINITY;
     // When projected trigger dates are identical (or only calendar fallback
     // is available), the lower remaining meter reading is the earlier service.
+    // Sorting-only tie-breaker: use the displayed meter target even when
+    // the decision basis is TIME_ONLY/date-only. This never changes due status.
     const sortReadingRemaining =
-      basis !== "TIME_ONLY" &&
-      options.dateOnly !== true &&
-      nextReading !== null &&
-      Number.isFinite(current)
+      nextReading !== null && Number.isFinite(current)
         ? nextReading - current
         : Number.POSITIVE_INFINITY;
 

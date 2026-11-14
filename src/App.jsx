@@ -2381,7 +2381,8 @@ function decideAggregate(records, vehicle, running, key, analysisDate, decisionB
     // Their Engine Oil interval is always 40,000 KM / 18 months.
     if(isCngModel(vehicle.model)){
       const kmRunning=deriveRunningReadingForBasis(records, vehicle, "KM");
-      return dueNormalWithSale(kmRunning.current,base,40000,18,analysisDate,sale,kmRunning.mode,vehicle);
+      const cngMode = decisionBasis === "TIME_ONLY" ? "TIME_ONLY" : kmRunning.mode;
+      return dueNormalWithSale(kmRunning.current,base,40000,18,analysisDate,sale,cngMode,vehicle);
     }
     if(is320HPModel(vehicle.model)){
       // First drain is based on the absence of a valid Engine Oil + Filter

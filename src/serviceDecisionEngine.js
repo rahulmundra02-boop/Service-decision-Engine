@@ -4,7 +4,7 @@ export const TIP_RULES={coolant:[5000,36],gearOil:[2000,18],hubGrease:[1500,12],
 export const DEF_FILTER_SHORT_INTERVAL_PART_CODES=new Set(["P5106222","P5105669","XFZ01200","P5106531","P5106533","MB404129","P5105776"]);
 
 export function resolveAggregateSchedule({key,decisionBasis="KM",base=null,records=[],isTipper=false,isCng=false,is320HP=false,isH4=false,isA4=false,isH6=false}){
- const useHours=decisionBasis==="HRS";let interval=0,months=0,dateOnly=false,resolvedBase=base;
+ let useHours=decisionBasis==="HRS";let interval=0,months=0,dateOnly=false,resolvedBase=base;
  if(key==="engineOil"){
   if(isCng){interval=40000;months=18;}
   else if(is320HP){interval=useHours?(base?2000:500):(base?120000:40000);months=18;}
@@ -19,7 +19,7 @@ export function resolveAggregateSchedule({key,decisionBasis="KM",base=null,recor
   const cfg=DECISION_RULES[key];if(!cfg)return null;
   if(key==="defFilter"&&!isTipper){
    const short=records.filter(r=>DEF_FILTER_SHORT_INTERVAL_PART_CODES.has(String(r?.partCode??r?.part_code??"").toUpperCase().replace(/[^A-Z0-9]/g,""))&&Number(r?.qty??r?.quantity??0)>0&&r?.date).sort((a,b)=>new Date(b.date)-new Date(a.date));
-   if(short.length){resolvedBase=short[0];interval=40000;months=6;}
+   if(short.length){resolvedBase=short[0];interval=40000;months=6;useHours=false;}
   }
   if(!interval){
    if(is320HP&&["gearOil","axleOil","coolant","hubGrease"].includes(key)){

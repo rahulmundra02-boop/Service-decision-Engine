@@ -3085,6 +3085,11 @@ function buildVehicleServiceSummary(vehicleResult) {
     const sortDays = triggerDays.length
       ? Math.min(...triggerDays)
       : Number.POSITIVE_INFINITY;
+    // When projected trigger dates are identical (or only calendar fallback
+    // is available), the lower remaining meter reading is the earlier service.
+    const sortReadingRemaining = canUseReadingProjection && nextReading !== null
+      ? nextReading - current
+      : Number.POSITIVE_INFINITY;
 
     rows.push({
       name,
@@ -3093,6 +3098,7 @@ function buildVehicleServiceSummary(vehicleResult) {
       upcoming: upcomingText,
       status,
       sortDays,
+      sortReadingRemaining,
       sortDate: nextDateMs !== null ? nextDateMs : Number.MAX_SAFE_INTEGER
     });
   };
@@ -3262,6 +3268,7 @@ function buildVehicleServiceSummary(vehicleResult) {
     const isBodyCheck = /BODY BUILDING CHECK ?UP/i.test(name);
     let upcoming = "Applicable";
     let sortDays = Number.POSITIVE_INFINITY;
+    let sortReadingRemaining = Number.POSITIVE_INFINITY;
     let sortDate = Number.MAX_SAFE_INTEGER;
     let status = "No Due";
 
@@ -3312,6 +3319,7 @@ function buildVehicleServiceSummary(vehicleResult) {
           : null;
         const triggers = [timeDays, targetReadingDays].filter(Number.isFinite);
         sortDays = triggers.length ? Math.min(...triggers) : timeDays;
+        if (targetUnit === unit) sortReadingRemaining = targetReading - current;
       }
     } else if (wheelMatch || isBodyCheck) {
       const wheelIndex = wheelMatch ? Math.max(0, Math.min(3, Number(wheelMatch[1]) - 1)) : -1;
@@ -3346,6 +3354,7 @@ function buildVehicleServiceSummary(vehicleResult) {
           : null;
         const triggers = [timeDays, readingDays].filter(Number.isFinite);
         sortDays = triggers.length ? Math.min(...triggers) : timeDays;
+        sortReadingRemaining = targetReading - currentKm;
       }
     }
 
@@ -3358,6 +3367,7 @@ function buildVehicleServiceSummary(vehicleResult) {
       upcoming,
       status,
       sortDays,
+      sortReadingRemaining,
       sortDate
     });
   });
@@ -3370,6 +3380,10 @@ function buildVehicleServiceSummary(vehicleResult) {
     const daysA = Number.isFinite(a.sortDays) ? a.sortDays : Number.POSITIVE_INFINITY;
     const daysB = Number.isFinite(b.sortDays) ? b.sortDays : Number.POSITIVE_INFINITY;
     if (daysA !== daysB) return daysA - daysB;
+
+    const readingA = Number.isFinite(a.sortReadingRemaining) ? a.sortReadingRemaining : Number.POSITIVE_INFINITY;
+    const readingB = Number.isFinite(b.sortReadingRemaining) ? b.sortReadingRemaining : Number.POSITIVE_INFINITY;
+    if (readingA !== readingB) return readingA - readingB;
 
     const statusDiff =
       (statusPriority[a.status] ?? 99) - (statusPriority[b.status] ?? 99);

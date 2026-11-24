@@ -8,6 +8,18 @@ const INACTIVITY_MS = 12 * 60 * 60 * 1000;
 const ADMIN_CONTACT_EMAIL = "rahul.mundra02@gmail.com";
 const ADMIN_CONTACT_MOBILE = "9461768278";
 const ADMIN_DEALER_FALLBACK = "Kandla Motors";
+function formatSessionDateTime(input) {
+  if (!input) return "Unavailable";
+  const value = input instanceof Date ? input : new Date(input);
+  if (Number.isNaN(value.getTime())) return "Unavailable";
+  const dd = String(value.getDate()).padStart(2, "0");
+  const mm = String(value.getMonth() + 1).padStart(2, "0");
+  const yyyy = String(value.getFullYear());
+  const hours = String(value.getHours()).padStart(2, "0");
+  const minutes = String(value.getMinutes()).padStart(2, "0");
+  return `${dd}-${mm}-${yyyy} ${hours}:${minutes}`;
+}
+
 
 function normalizeLoggedInUser(account) {
   if (!account) return account;
@@ -839,7 +851,7 @@ export default function AuthGate({ children }) {
                   <div className="session-conflict-details">
                     <div><strong>Previous device:</strong> {sessionConflict.deviceName || "Unknown device"}</div>
                     <div><strong>IP address:</strong> {sessionConflict.ipAddress || "Unavailable"}</div>
-                    <div><strong>Last active:</strong> {sessionConflict.lastSeenAt ? formatDisplayDateTime(sessionConflict.lastSeenAt) : "Unavailable"}</div>
+                    <div><strong>Last active:</strong> {sessionConflict.lastSeenAt ? formatSessionDateTime(sessionConflict.lastSeenAt) : "Unavailable"}</div>
                   </div>
                   <p className="auth-hint">Do you want to terminate the previous session and continue with this login?</p>
                   <div className="auth-modal-actions">

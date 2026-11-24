@@ -5931,6 +5931,7 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
   const cancelProcessingRef = useRef(false);
   const seenUploadSignaturesRef = useRef(new Set());
   const [estimateOpen, setEstimateOpen] = useState(false);
+  const [singleServiceSummaryOpen, setSingleServiceSummaryOpen] = useState(false);
 
   // Job Card browser cache is retired. Upload analysis uses the current Excel only.;
 
@@ -10271,7 +10272,7 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
                   </div>
 
                   <div className="customer-output-panel">
-                    <div className="section-title" style={{display:"flex",alignItems:"center",gap:10}}><span>Customer Output — Service To Be Completed</span><button className="excel-button no-print" style={{marginLeft:"auto"}} onClick={openEstimate}>Generate Estimate</button></div>
+                    <div className="section-title" style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span>Customer Output — Service To Be Completed</span><span style={{marginLeft:"auto",display:"inline-flex",gap:7}}><button className="excel-button no-print" style={{padding:"6px 11px",fontSize:12}} onClick={()=>setSingleServiceSummaryOpen(true)} disabled={!analysis}>Service Summary</button><button className="excel-button no-print" style={{padding:"6px 11px",fontSize:12}} onClick={openEstimate}>Generate Estimate</button></span></div>
                     <div className="due-box">
                       {analysis ? (() => {
                         const aggregateNames = BULK_SERVICE_LABELS
@@ -10560,6 +10561,72 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
             ) : null}
           </main>
 
+        {singleServiceSummaryOpen && analysis && (
+          <div className="single-service-summary-overlay no-print" role="dialog" aria-modal="true" aria-label="Vehicle Service Summary" style={{position:"fixed",inset:0,zIndex:10050,background:"rgba(15,23,42,.72)",display:"flex",alignItems:"stretch",justifyContent:"center",padding:14}}>
+            <div style={{background:"#fff",width:"min(1180px,100%)",height:"100%",borderRadius:10,display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 18px 60px rgba(0,0,0,.35)"}}>
+              <div style={{background:"#7040b8",color:"#fff",padding:"13px 18px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                <strong style={{fontSize:18}}>VEHICLE SERVICE SUMMARY</strong>
+                <span style={{fontSize:12,opacity:.9}}>As on {todayDisplay}</span>
+                <span style={{flex:1}}/>
+                <button type="button" className="excel-button no-print" style={{background:"#fff",color:"#333"}} onClick={()=>window.print()}>Print</button>
+                <button type="button" className="excel-button no-print" style={{background:"#fff",color:"#333"}} onClick={()=>setSingleServiceSummaryOpen(false)}>Close ✕</button>
+              </div>
+              <div style={{padding:18,overflow:"auto",flex:1,color:"#202124"}}>
+                {(() => {
+                  const summary = buildVehicleServiceSummary(analysis);
+                  const vehicle = analysis.vehicle || {};
+                  const targetUnit = analysis.running?.unit || getTargetUnit(vehicle);
+                  const lastRecord = analysis.running?.last || null;
+                  const lastReading = lastRecord ? getRelevantReading(lastRecord, vehicle) : 0;
+                  const lastOdometer = lastRecord && lastReading > 0
+                    ? formatNumber(lastReading) + " " + targetUnit + " | " + formatDateShort(lastRecord.date)
+                    : "N/A";
+                  const currentReading = Number(analysis.running?.current || 0) > 0
+                    ? formatNumber(analysis.running.current) + " " + targetUnit + (appliedOverride === null ? " (Approx.)" : "")
+                    : "N/A";
+                  const statusLabels = {Lapsed:"Overdue",Due:"Due","Near Due":"Approaching","No Due":"Not Due"};
+                  const statusColors = {Lapsed:"#dc2626",Due:"#d97706","Near Due":"#b58b00","No Due":"#16834a"};
+                  return <>
+                    <div style={{fontSize:13,fontWeight:800,marginBottom:9}}>CUSTOMER / VEHICLE PROFILE</div>
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",borderTop:"1px solid #c8c8c8",borderLeft:"1px solid #c8c8c8",marginBottom:22}}>
+                      {[
+                        ["Customer Name",vehicle.customerName||"-"],["Sale Date",vehicle.sale?formatDateShort(vehicle.sale):"N/A"],
+                        ["Chassis No",vehicle.vin||"-"],["Model",vehicle.model||"-"],
+                        ["Reg No",vehicle.reg||"-"],["Engine No",vehicle.engine||"-"],
+                        ["Last Recorded Reading",lastOdometer],["Current Approx. Reading",currentReading]
+                      ].map(([label,value])=><div key={label} style={{display:"grid",gridTemplateColumns:"minmax(90px,.8fr) minmax(0,1.2fr)",borderRight:"1px solid #c8c8c8",borderBottom:"1px solid #c8c8c8",minHeight:43}}>
+                        <strong style={{background:"#e9e2f4",padding:"9px 8px",fontSize:11}}>{label}</strong>
+                        <span style={{padding:"9px 8px",fontSize:12,overflowWrap:"anywhere"}}>{value}</span>
+                      </div>)}
+                    </div>
+                    <div style={{fontSize:13,fontWeight:800,marginBottom:9}}>AGGREGATE SERVICE SCHEDULE</div>
+                    <div style={{overflowX:"auto"}}>
+                      <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:720}}>
+                        <thead><tr style={{background:"#7040b8",color:"#fff"}}>{["Sr. No.","Aggregate Name","Last Service","Next Recommended Service","Status"].map(label=><th key={label} style={{padding:"11px 9px",border:"1px solid #c7b6df",textAlign:"center"}}>{label}</th>)}</tr></thead>
+                        <tbody>{summary.rows.map((row,index)=><tr key={row.key||row.name} style={{background:index%2?"#fafafa":"#fff"}}>
+                          <td style={{padding:"9px",border:"1px solid #d1d1d1",textAlign:"center"}}>{index+1}</td>
+                          <td style={{padding:"9px",border:"1px solid #d1d1d1"}}>{row.name}</td>
+                          <td style={{padding:"9px",border:"1px solid #d1d1d1"}}>{row.last}</td>
+                          <td style={{padding:"9px",border:"1px solid #d1d1d1"}}>{row.upcoming}</td>
+                          <td style={{padding:"9px",border:"1px solid #d1d1d1",textAlign:"center",fontWeight:800,color:statusColors[row.status]||"#333"}}>{statusLabels[row.status]||row.status}</td>
+                        </tr>)}
+                        {!summary.rows.length&&<tr><td colSpan={5} style={{padding:18,textAlign:"center",border:"1px solid #d1d1d1"}}>No applicable service schedule records found.</td></tr>}</tbody>
+                      </table>
+                    </div>
+                    <div style={{marginTop:18,border:"1px solid #333",borderRadius:6,padding:12,background:"#f8f8f8",fontSize:11,lineHeight:1.55}}>
+                      <strong>DISCLAIMER</strong>
+                      <ol style={{margin:"8px 0 0",paddingLeft:20}}>
+                        <li>Service is due at the prescribed odometer/hour-meter reading or time interval, whichever occurs first.</li>
+                        <li>The current reading is an estimate based on previously recorded vehicle running. Verify the actual physical odometer/hour-meter reading before confirming service requirements.</li>
+                        <li>This summary is based on the vehicle details and service history available at the time of preparation. Missing or incorrect records may affect the recommendations.</li>
+                      </ol>
+                    </div>
+                  </>;
+                })()}
+              </div>
+            </div>
+          </div>
+        )}
         {estimateOpen && (
           <div className="estimate-modal-overlay no-print">
             <div className="estimate-workspace">

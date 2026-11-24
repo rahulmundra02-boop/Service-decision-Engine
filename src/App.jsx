@@ -10669,23 +10669,23 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
                   const statusColors = {Lapsed:"#dc2626",Due:"#d97706","Near Due":"#b58b00","No Due":"#16834a"};
                   return <>
                     <div style={{fontSize:13,fontWeight:800,marginBottom:9}}>CUSTOMER / VEHICLE PROFILE</div>
-                    <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",borderTop:"1px solid #c8c8c8",borderLeft:"1px solid #c8c8c8",marginBottom:16}}>
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",borderTop:"1px solid rgb(150,150,150)",borderLeft:"1px solid rgb(150,150,150)",marginBottom:16}}>
                       {[
                         ["Customer Name",vehicle.customerName||"-"],["Sale Date",vehicle.sale?formatDateShort(vehicle.sale):"N/A"],
                         ["Chassis No",vehicle.vin||"-"],["Model",vehicle.model||"-"],
                         ["Reg No",vehicle.reg||"-"],["Engine No",vehicle.engine||"-"],
                         ["Last Recorded Reading",lastOdometer],["Current Approx. Reading",currentReading]
-                      ].map(([label,value])=><div key={label} style={{display:"grid",gridTemplateColumns:"minmax(105px,.8fr) minmax(0,1.2fr)",borderRight:"1px solid #c8c8c8",borderBottom:"1px solid #c8c8c8",minHeight:43}}>
+                      ].map(([label,value])=><div key={label} style={{display:"grid",gridTemplateColumns:"minmax(105px,.8fr) minmax(0,1.2fr)",borderRight:"1px solid rgb(150,150,150)",borderBottom:"1px solid rgb(150,150,150)",minHeight:43}}>
                         <strong style={{background:"#fff",padding:"7px 7px",fontSize:10}}>{label}</strong>
                         <span style={{padding:"7px 7px",fontSize:10,overflowWrap:"anywhere"}}>{value}</span>
                       </div>)}
                     </div>
                     <div style={{fontSize:13,fontWeight:800,marginBottom:9}}>AGGREGATE SERVICE SCHEDULE</div>
                     <div style={{overflowX:"auto"}}>
-                      <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:720}}>
-                        <thead><tr style={{background:"#7040b8",color:"#fff"}}>{["Sr. No.","Aggregate Name","Last Service","Next Recommended Service","Status"].map(label=><th key={label} style={{padding:"8px 5px",border:"1px solid #c7b6df",textAlign:"center",fontSize:10}}>{label}</th>)}</tr></thead>
-                        <colgroup><col style={{width:"6.3%"}}/><col style={{width:"20.5%"}}/><col style={{width:"22.6%"}}/><col style={{width:"31.6%"}}/><col style={{width:"19%"}}/></colgroup><tbody>{summary.rows.map((row,index)=><tr key={row.key||row.name} style={{background:index%2?"#fafafa":"#fff"}}>
-                          <td style={{padding:"7px 5px",border:"1px solid #d1d1d1",overflowWrap:"anywhere",textAlign:"center"}}>{index+1}</td>
+                      <table style={{width:"100%",tableLayout:"fixed",borderCollapse:"collapse",fontSize:10,minWidth:0,border:"1px solid rgb(150,150,150)"}}>
+                        <thead><tr style={{background:"rgb(112,48,160)",color:"#fff"}}>{["Sr. No.","Aggregate Name","Last Service","Next Recommended Service","Status"].map(label=><th key={label} style={{padding:"8px 5px",border:"1px solid rgb(150,150,150)",textAlign:"center",fontSize:10,fontWeight:700}}>{label}</th>)}</tr></thead>
+                        <colgroup><col style={{width:"5.9%"}}/><col style={{width:"19.1%"}}/><col style={{width:"21.1%"}}/><col style={{width:"29.4%"}}/><col style={{width:"17.6%"}}/></colgroup><tbody>{summary.rows.map((row,index)=><tr key={row.key||row.name} style={{background:index%2?"#f7f7f7":"#fff"}}>
+                          <td style={{padding:"7px 5px",border:"1px solid rgb(150,150,150)",overflowWrap:"anywhere",textAlign:"center"}}>{index+1}</td>
                           <td style={{padding:"9px",border:"1px solid #d1d1d1"}}>{row.name}</td>
                           <td style={{padding:"9px",border:"1px solid #d1d1d1"}}>{row.last}</td>
                           <td style={{padding:"9px",border:"1px solid #d1d1d1"}}>{row.upcoming}</td>

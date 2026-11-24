@@ -10669,38 +10669,40 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
                   const statusColors = {Lapsed:"#dc2626",Due:"#d97706","Near Due":"#b58b00","No Due":"#16834a"};
                   return <>
                     <div style={{fontSize:13,fontWeight:800,marginBottom:9}}>CUSTOMER / VEHICLE PROFILE</div>
-                    <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",borderTop:"1px solid rgb(150,150,150)",borderLeft:"1px solid rgb(150,150,150)",marginBottom:16}}>
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",borderTop:"0.5px solid rgb(150,150,150)",borderLeft:"0.5px solid rgb(150,150,150)",marginBottom:16}}>
                       {[
                         ["Customer Name",vehicle.customerName||"-"],["Sale Date",vehicle.sale?formatDateShort(vehicle.sale):"N/A"],
                         ["Chassis No",vehicle.vin||"-"],["Model",vehicle.model||"-"],
                         ["Reg No",vehicle.reg||"-"],["Engine No",vehicle.engine||"-"],
                         ["Last Recorded Reading",lastOdometer],["Current Approx. Reading",currentReading]
-                      ].map(([label,value])=><div key={label} style={{display:"grid",gridTemplateColumns:"minmax(0,.36fr) minmax(0,.64fr)",borderRight:"1px solid rgb(150,150,150)",borderBottom:"1px solid rgb(150,150,150)",minHeight:43}}>
-                        <strong style={{background:"#fff",padding:"7px 7px",fontSize:10}}>{label}</strong>
-                        <span style={{padding:"7px 7px",fontSize:10,overflowWrap:"anywhere"}}>{value}</span>
+                      ].map(([label,value])=><div key={label} style={{display:"grid",gridTemplateColumns:"minmax(0,.36fr) minmax(0,.64fr)",borderRight:"0.5px solid rgb(150,150,150)",borderBottom:"0.5px solid rgb(150,150,150)",minHeight:43}}>
+                        <strong style={{background:"#fff",padding:"9px 7px",fontSize:11}}>{label}</strong>
+                        <span style={{padding:"9px 7px",fontSize:11,overflowWrap:"anywhere"}}>{value}</span>
                       </div>)}
                     </div>
                     <div style={{fontSize:13,fontWeight:800,marginBottom:9}}>AGGREGATE SERVICE SCHEDULE</div>
                     <div style={{overflowX:"auto"}}>
-                      <table style={{width:"100%",tableLayout:"fixed",borderCollapse:"collapse",fontSize:10,minWidth:0,border:"1px solid rgb(150,150,150)"}}>
+                      <table style={{width:"100%",tableLayout:"fixed",borderCollapse:"collapse",fontSize:10,minWidth:0,border:"0.5px solid rgb(150,150,150)"}}>
                         <thead><tr style={{background:"rgb(112,48,160)",color:"#fff"}}>{["Sr. No.","Aggregate Name","Last Service","Next Recommended Service","Status"].map(label=><th key={label} style={{padding:"8px 5px",border:"1px solid rgb(150,150,150)",background:"rgb(112,48,160)",color:"#fff",textAlign:"center",fontSize:10,fontWeight:700}}>{label}</th>)}</tr></thead>
-                        <colgroup><col style={{width:"6.3%"}}/><col style={{width:"20.5%"}}/><col style={{width:"22.6%"}}/><col style={{width:"31.6%"}}/><col style={{width:"18.9%"}}/></colgroup><tbody>{summary.rows.map((row,index)=><tr key={row.key||row.name} style={{background:index%2?"#f7f7f7":"#fff"}}>
-                          <td style={{padding:"7px 5px",border:"1px solid rgb(150,150,150)",overflowWrap:"anywhere",textAlign:"center"}}>{index+1}</td>
-                          <td style={{padding:"8px 5px",border:"1px solid rgb(150,150,150)"}}>{row.name}</td>
-                          <td style={{padding:"8px 5px",border:"1px solid rgb(150,150,150)"}}>{row.last}</td>
-                          <td style={{padding:"8px 5px",border:"1px solid rgb(150,150,150)"}}>{row.upcoming}</td>
-                          <td style={{padding:"8px 5px",border:"1px solid rgb(150,150,150)",textAlign:"center",overflowWrap:"anywhere",fontWeight:800,color:statusColors[row.status]||"#333"}}>{statusLabels[row.status]||row.status}</td>
+                        <colgroup><col style={{width:"6.3%"}}/><col style={{width:"20.5%"}}/><col style={{width:"22.6%"}}/><col style={{width:"31.6%"}}/><col style={{width:"18.9%"}}/></colgroup><tbody>{summary.rows.map((row,index)=><tr key={row.key||row.name} style={{background:"#fff"}}>
+                          <td style={{padding:"7px 5px",border:"0.5px solid rgb(150,150,150)",overflowWrap:"anywhere",textAlign:"center"}}>{index+1}</td>
+                          <td style={{padding:"8px 5px",border:"0.5px solid rgb(150,150,150)"}}>{row.name}</td>
+                          <td style={{padding:"8px 5px",border:"0.5px solid rgb(150,150,150)"}}>{row.last}</td>
+                          <td style={{padding:"8px 5px",border:"0.5px solid rgb(150,150,150)"}}>{row.upcoming}</td>
+                          <td style={{padding:"8px 5px",border:"0.5px solid rgb(150,150,150)",textAlign:"center",overflowWrap:"anywhere",fontWeight:800,color:statusColors[row.status]||"#333"}}>{statusLabels[row.status]||row.status}</td>
                         </tr>)}
                         {!summary.rows.length&&<tr><td colSpan={5} style={{padding:18,textAlign:"center",border:"1px solid #d1d1d1"}}>No applicable service schedule records found.</td></tr>}</tbody>
                       </table>
                     </div>
-                    <div style={{marginTop:14,border:"1px solid #333",borderRadius:6,padding:10,background:"#f8f8f8",fontSize:9.5,lineHeight:1.45}}>
+                    <div style={{marginTop:14,border:"0.5px solid #232323",borderRadius:6,padding:10,background:"rgb(248,248,248)",fontSize:9.5,lineHeight:1.45}}>
                       <strong>DISCLAIMER</strong>
-                      <ol style={{margin:"8px 0 0",paddingLeft:20}}>
-                        <li>Service is due at the prescribed odometer/hour-meter reading or time interval, whichever occurs first.</li>
-                        <li>The current reading is an estimate based on previously recorded vehicle running. Verify the actual physical odometer/hour-meter reading before confirming service requirements.</li>
-                        <li>This summary is based on the vehicle details and service history available at the time of preparation. Missing or incorrect records may affect the recommendations.</li>
-                      </ol>
+                      <div style={{margin:"8px 0 0",paddingLeft:10}}>
+                        {[
+                          "Service is due at the prescribed odometer/hour-meter reading or time interval, whichever occurs first.",
+                          "The current reading is an estimate based on previously recorded vehicle running. Verify the actual physical odometer/hour-meter reading before confirming service requirements.",
+                          "This summary is based on the vehicle details and service history available at the time of preparation. Missing or incorrect records may affect the recommendations."
+                        ].map((item,index)=><div key={index} style={{fontSize:9.5,lineHeight:1.45,marginBottom:1}}>{index+1}. {item}</div>)}
+                      </div>
                     </div>
                   </>;
                 })()}

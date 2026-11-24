@@ -8821,6 +8821,86 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
     }
   };
 
+
+  const copyServiceSummaryScreenshot = async () => {
+    if (screenshotBusy) return;
+    const source = document.getElementById("single-service-summary-capture");
+    if (!source) {
+      setScreenshotStatus("Service Summary is not available.");
+      return;
+    }
+
+    setScreenshotBusy(true);
+    setScreenshotStatus("Preparing Service Summary screenshot...");
+    let clone = null;
+    try {
+      const sourceWidth = Math.max(1, Math.ceil(source.getBoundingClientRect().width));
+      clone = source.cloneNode(true);
+      clone.removeAttribute("id");
+      clone.querySelectorAll("[data-screenshot-exclude]").forEach(element => element.remove());
+
+      clone.style.position = "absolute";
+      clone.style.left = "-100000px";
+      clone.style.top = "0";
+      clone.style.width = sourceWidth + "px";
+      clone.style.height = "auto";
+      clone.style.maxHeight = "none";
+      clone.style.overflow = "visible";
+      clone.style.margin = "0";
+      clone.style.transform = "none";
+      clone.style.boxSizing = "border-box";
+
+      const content = clone.querySelector(".single-service-summary-content");
+      if (content) {
+        content.style.height = "auto";
+        content.style.maxHeight = "none";
+        content.style.overflow = "visible";
+        content.style.flex = "0 0 auto";
+      }
+
+      document.body.appendChild(clone);
+      await new Promise(resolve =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve))
+      );
+
+      const captureHeight = Math.max(clone.scrollHeight, clone.getBoundingClientRect().height);
+      const { default: html2canvas } = await import("html2canvas");
+      const canvas = await html2canvas(clone, {
+        backgroundColor: "#ffffff",
+        useCORS: true,
+        scale: 2,
+        width: sourceWidth,
+        height: captureHeight,
+        windowWidth: sourceWidth,
+        windowHeight: captureHeight,
+        scrollX: 0,
+        scrollY: 0
+      });
+
+      const blob = await new Promise((resolve, reject) => {
+        canvas.toBlob(value =>
+          value ? resolve(value) : reject(new Error("Unable to create PNG screenshot.")),
+          "image/png"
+        );
+      });
+
+      if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
+        throw new Error("Image clipboard is not supported. Use HTTPS and allow clipboard access.");
+      }
+
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      setScreenshotStatus("Full Service Summary copied to clipboard. Paste it with Ctrl + V.");
+      window.setTimeout(() => setScreenshotStatus(""), 4000);
+    } catch (error) {
+      console.error("Service Summary screenshot failed:", error);
+      setScreenshotStatus(error?.message || "Screenshot could not be copied. Please allow clipboard access and try again.");
+      window.setTimeout(() => setScreenshotStatus(""), 6000);
+    } finally {
+      if (clone?.parentNode) clone.parentNode.removeChild(clone);
+      setScreenshotBusy(false);
+    }
+  };
+
   const pageIsProcessing = uploadBusy || analysisBusy || screenshotBusy;
 
   return (
@@ -10563,14 +10643,16 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
 
         {singleServiceSummaryOpen && analysis && (
           <div className="single-service-summary-overlay no-print" role="dialog" aria-modal="true" aria-label="Vehicle Service Summary" style={{position:"fixed",inset:0,zIndex:10050,background:"rgba(15,23,42,.72)",display:"flex",alignItems:"stretch",justifyContent:"center",padding:14}}>
-            <div style={{background:"#fff",width:"min(1180px,100%)",height:"100%",borderRadius:10,display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 18px 60px rgba(0,0,0,.35)"}}>
+            <div id="single-service-summary-capture" style={{background:"#fff",width:"min(1180px,100%)",height:"100%",borderRadius:10,display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 18px 60px rgba(0,0,0,.35)"}}>
               <div style={{background:"#7040b8",color:"#fff",padding:"13px 18px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
                 <strong style={{fontSize:18}}>VEHICLE SERVICE SUMMARY</strong>
                 <span style={{fontSize:12,opacity:.9}}>As on {todayDisplay}</span>
                 <span style={{flex:1}}/>
+                <button type="button" className="excel-button no-print" data-screenshot-exclude="true" style={{background:"#fff",color:"#333",fontWeight:700}} onClick={copyServiceSummaryScreenshot} disabled={screenshotBusy}>{screenshotBusy ? "Preparing..." : "Screenshot"}</button>
+                {screenshotStatus && <span data-screenshot-exclude="true" style={{fontSize:11,color:"#fff",maxWidth:260}}>{screenshotStatus}</span>}
                 <button type="button" className="excel-button no-print" style={{background:"#fff",color:"#333"}} onClick={()=>setSingleServiceSummaryOpen(false)}>Close ✕</button>
               </div>
-              <div style={{padding:18,overflow:"auto",flex:1,color:"#202124"}}>
+              <div className="single-service-summary-content" style={{padding:18,overflow:"auto",flex:1,color:"#202124"}}>
                 {(() => {
                   const summary = buildVehicleServiceSummary(analysis);
                   const vehicle = analysis.vehicle || {};

@@ -10568,7 +10568,6 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
                 <strong style={{fontSize:18}}>VEHICLE SERVICE SUMMARY</strong>
                 <span style={{fontSize:12,opacity:.9}}>As on {todayDisplay}</span>
                 <span style={{flex:1}}/>
-                <button type="button" className="excel-button no-print" style={{background:"#fff",color:"#333"}} onClick={()=>window.print()}>Print</button>
                 <button type="button" className="excel-button no-print" style={{background:"#fff",color:"#333"}} onClick={()=>setSingleServiceSummaryOpen(false)}>Close ✕</button>
               </div>
               <div style={{padding:18,overflow:"auto",flex:1,color:"#202124"}}>

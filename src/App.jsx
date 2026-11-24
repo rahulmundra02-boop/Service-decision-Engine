@@ -5931,6 +5931,7 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
   const cancelProcessingRef = useRef(false);
   const seenUploadSignaturesRef = useRef(new Set());
   const [estimateOpen, setEstimateOpen] = useState(false);
+  const [singleServiceSummaryOpen, setSingleServiceSummaryOpen] = useState(false);
 
   // Job Card browser cache is retired. Upload analysis uses the current Excel only.;
 
@@ -8820,6 +8821,86 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
     }
   };
 
+  const copyServiceSummaryScreenshot = async () => {
+    if (screenshotBusy) return;
+    const source = document.getElementById("single-service-summary-capture");
+    if (!source) {
+      setScreenshotStatus("Service Summary is not available.");
+      return;
+    }
+
+    setScreenshotBusy(true);
+    setScreenshotStatus("Preparing Service Summary screenshot...");
+    let clone = null;
+    try {
+      const sourceWidth = Math.max(1, Math.ceil(source.getBoundingClientRect().width));
+      clone = source.cloneNode(true);
+      clone.removeAttribute("id");
+      clone.querySelectorAll("[data-screenshot-exclude]").forEach(element => element.remove());
+
+      clone.style.position = "absolute";
+      clone.style.left = "-100000px";
+      clone.style.top = "0";
+      clone.style.width = sourceWidth + "px";
+      clone.style.height = "auto";
+      clone.style.maxHeight = "none";
+      clone.style.overflow = "visible";
+      clone.style.margin = "0";
+      clone.style.transform = "none";
+      clone.style.boxSizing = "border-box";
+
+      const content = clone.querySelector(".single-service-summary-content");
+      if (content) {
+        content.style.height = "auto";
+        content.style.maxHeight = "none";
+        content.style.overflow = "visible";
+        content.style.flex = "0 0 auto";
+      }
+
+      document.body.appendChild(clone);
+      await new Promise(resolve =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve))
+      );
+
+      const captureHeight = Math.max(clone.scrollHeight, clone.getBoundingClientRect().height);
+      const { default: html2canvas } = await import("html2canvas");
+      const canvas = await html2canvas(clone, {
+        backgroundColor: "#ffffff",
+        useCORS: true,
+        scale: 2,
+        width: sourceWidth,
+        height: captureHeight,
+        windowWidth: sourceWidth,
+        windowHeight: captureHeight,
+        scrollX: 0,
+        scrollY: 0
+      });
+
+      const blob = await new Promise((resolve, reject) => {
+        canvas.toBlob(value =>
+          value ? resolve(value) : reject(new Error("Unable to create PNG screenshot.")),
+          "image/png"
+        );
+      });
+
+      if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
+        throw new Error("Image clipboard is not supported. Use HTTPS and allow clipboard access.");
+      }
+
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      setScreenshotStatus("Full Service Summary copied to clipboard. Paste it with Ctrl + V.");
+      window.setTimeout(() => setScreenshotStatus(""), 4000);
+    } catch (error) {
+      console.error("Service Summary screenshot failed:", error);
+      setScreenshotStatus(error?.message || "Screenshot could not be copied. Please allow clipboard access and try again.");
+      window.setTimeout(() => setScreenshotStatus(""), 6000);
+    } finally {
+      if (clone?.parentNode) clone.parentNode.removeChild(clone);
+      setScreenshotBusy(false);
+    }
+  };
+
+
   const pageIsProcessing = uploadBusy || analysisBusy || screenshotBusy;
 
   return (
@@ -10271,7 +10352,7 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
                   </div>
 
                   <div className="customer-output-panel">
-                    <div className="section-title" style={{display:"flex",alignItems:"center",gap:10}}><span>Customer Output — Service To Be Completed</span><button className="excel-button no-print" style={{marginLeft:"auto"}} onClick={openEstimate}>Generate Estimate</button></div>
+                    <div className="section-title" style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span>Customer Output — Service To Be Completed</span><span style={{marginLeft:"auto",display:"inline-flex",gap:7}}><button className="excel-button no-print" style={{padding:"6px 11px",fontSize:12}} onClick={()=>setSingleServiceSummaryOpen(true)} disabled={!analysis}>Service Summary</button><button className="excel-button no-print" style={{padding:"6px 11px",fontSize:12}} onClick={openEstimate}>Generate Estimate</button></span></div>
                     <div className="due-box">
                       {analysis ? (() => {
                         const aggregateNames = BULK_SERVICE_LABELS
@@ -10560,7 +10641,76 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
             ) : null}
           </main>
 
-        {estimateOpen && (
+                {singleServiceSummaryOpen && analysis && (
+          <div className="single-service-summary-overlay no-print" role="dialog" aria-modal="true" aria-label="Vehicle Service Summary" style={{position:"fixed",inset:0,zIndex:10050,background:"rgba(15,23,42,.72)",display:"flex",alignItems:"stretch",justifyContent:"center",padding:14}}>
+            <div style={{background:"#fff",width:"min(850px,100%)",height:"100%",borderRadius:10,display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 18px 60px rgba(0,0,0,.35)"}}>
+              <div style={{background:"#7040b8",color:"#fff",padding:"13px 18px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                <strong style={{fontSize:18}}>VEHICLE SERVICE SUMMARY</strong>
+                <span style={{fontSize:12,opacity:.9}}>As on {todayDisplay}</span>
+                <span style={{flex:1}}/>
+                <button type="button" className="excel-button no-print" data-screenshot-exclude="true" style={{background:"#fff",color:"#333",fontWeight:700}} onClick={copyServiceSummaryScreenshot} disabled={screenshotBusy}>{screenshotBusy ? "Preparing..." : "Screenshot"}</button>
+                {screenshotStatus && <span data-screenshot-exclude="true" style={{fontSize:11,color:"#fff",maxWidth:260}}>{screenshotStatus}</span>}
+                <button type="button" className="excel-button no-print" style={{background:"#fff",color:"#333"}} onClick={()=>setSingleServiceSummaryOpen(false)}>Close ✕</button>
+              </div>
+              <div id="single-service-summary-capture" className="single-service-summary-content" style={{padding:"18px 20px",overflow:"auto",flex:1,color:"#202124",background:"#fff",width:"100%"}}><div style={{fontSize:20,fontWeight:800,color:"#111",marginBottom:14}}>VEHICLE SERVICE SUMMARY</div>
+                {(() => {
+                  const summary = buildVehicleServiceSummary(analysis);
+                  const vehicle = analysis.vehicle || {};
+                  const targetUnit = analysis.running?.unit || getTargetUnit(vehicle);
+                  const lastRecord = analysis.running?.last || null;
+                  const lastReading = lastRecord ? getRelevantReading(lastRecord, vehicle) : 0;
+                  const lastOdometer = lastRecord && lastReading > 0
+                    ? formatNumber(lastReading) + " " + targetUnit + " | " + formatDateShort(lastRecord.date)
+                    : "N/A";
+                  const currentReading = Number(analysis.running?.current || 0) > 0
+                    ? formatNumber(analysis.running.current) + " " + targetUnit + (appliedOverride === null ? " (Approx.)" : "")
+                    : "N/A";
+                  const statusLabels = {Lapsed:"Overdue",Due:"Due","Near Due":"Approaching","No Due":"Not Due"};
+                  const statusColors = {Lapsed:"#dc2626",Due:"#d97706","Near Due":"#b58b00","No Due":"#16834a"};
+                  return <>
+                    <div style={{fontSize:13,fontWeight:800,marginBottom:9}}>CUSTOMER / VEHICLE PROFILE</div>
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",borderTop:"0.5px solid rgb(150,150,150)",borderLeft:"0.5px solid rgb(150,150,150)",marginBottom:16}}>
+                      {[
+                        ["Customer Name",vehicle.customerName||"-"],["Sale Date",vehicle.sale?formatDateShort(vehicle.sale):"N/A"],
+                        ["Chassis No",vehicle.vin||"-"],["Model",vehicle.model||"-"],
+                        ["Reg No",vehicle.reg||"-"],["Engine No",vehicle.engine||"-"],
+                        ["Last Recorded Reading",lastOdometer],["Current Approx. Reading",currentReading]
+                      ].map(([label,value])=><div key={label} style={{display:"grid",gridTemplateColumns:"minmax(0,.36fr) minmax(0,.64fr)",borderRight:"0.5px solid rgb(150,150,150)",borderBottom:"0.5px solid rgb(150,150,150)",minHeight:43}}>
+                        <strong style={{background:"#fff",padding:"9px 7px",fontSize:11,borderRight:"0.5px solid rgb(150,150,150)",boxSizing:"border-box"}}>{label}</strong>
+                        <span style={{padding:"9px 7px",fontSize:11,overflowWrap:"anywhere"}}>{value}</span>
+                      </div>)}
+                    </div>
+                    <div style={{fontSize:13,fontWeight:800,marginBottom:9}}>AGGREGATE SERVICE SCHEDULE</div>
+                    <div style={{overflowX:"auto"}}>
+                      <table style={{width:"100%",tableLayout:"fixed",borderCollapse:"collapse",fontSize:10,minWidth:0,border:"0.5px solid rgb(150,150,150)"}}>
+                        <thead><tr style={{background:"rgb(112,48,160)",color:"#fff"}}>{["Sr. No.","Aggregate Name","Last Service","Next Recommended Service","Status"].map(label=><th key={label} style={{padding:"8px 5px",border:"1px solid rgb(150,150,150)",background:"rgb(112,48,160)",color:"#fff",textAlign:"center",fontSize:10,fontWeight:700}}>{label}</th>)}</tr></thead>
+                        <colgroup><col style={{width:"6.3%"}}/><col style={{width:"20.5%"}}/><col style={{width:"22.6%"}}/><col style={{width:"31.6%"}}/><col style={{width:"18.9%"}}/></colgroup><tbody>{summary.rows.map((row,index)=><tr key={row.key||row.name} style={{background:"#fff"}}>
+                          <td style={{padding:"7px 5px",border:"0.5px solid rgb(150,150,150)",overflowWrap:"anywhere",textAlign:"center"}}>{index+1}</td>
+                          <td style={{padding:"8px 5px",border:"0.5px solid rgb(150,150,150)"}}>{row.name}</td>
+                          <td style={{padding:"8px 5px",border:"0.5px solid rgb(150,150,150)"}}>{row.last}</td>
+                          <td style={{padding:"8px 5px",border:"0.5px solid rgb(150,150,150)"}}>{row.upcoming}</td>
+                          <td style={{padding:"8px 5px",border:"0.5px solid rgb(150,150,150)",textAlign:"center",overflowWrap:"anywhere",fontWeight:800,color:statusColors[row.status]||"#333"}}>{statusLabels[row.status]||row.status}</td>
+                        </tr>)}
+                        {!summary.rows.length&&<tr><td colSpan={5} style={{padding:18,textAlign:"center",border:"1px solid #d1d1d1"}}>No applicable service schedule records found.</td></tr>}</tbody>
+                      </table>
+                    </div>
+                    <div style={{marginTop:14,border:"0.5px solid #232323",borderRadius:6,padding:10,background:"rgb(248,248,248)",fontSize:9.5,lineHeight:1.45}}>
+                      <strong>DISCLAIMER</strong>
+                      <div style={{margin:"8px 0 0",paddingLeft:10}}>
+                        {[
+                          "Service is due at the prescribed odometer/hour-meter reading or time interval, whichever occurs first.",
+                          "The current reading is an estimate based on previously recorded vehicle running. Verify the actual physical odometer/hour-meter reading before confirming service requirements.",
+                          "This summary is based on the vehicle details and service history available at the time of preparation. Missing or incorrect records may affect the recommendations."
+                        ].map((item,index)=><div key={index} style={{fontSize:9.5,lineHeight:1.45,marginBottom:1}}>{index+1}. {item}</div>)}
+                      </div>
+                    </div>
+                  </>;
+                })()}
+              </div>
+            </div>
+          </div>
+        )}
+{estimateOpen && (
           <div className="estimate-modal-overlay no-print">
             <div className="estimate-workspace">
               {estimateStage === "vehicle" ? (

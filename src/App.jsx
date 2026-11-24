@@ -10676,7 +10676,7 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
                         ["Reg No",vehicle.reg||"-"],["Engine No",vehicle.engine||"-"],
                         ["Last Recorded Reading",lastOdometer],["Current Approx. Reading",currentReading]
                       ].map(([label,value])=><div key={label} style={{display:"grid",gridTemplateColumns:"minmax(0,.36fr) minmax(0,.64fr)",borderRight:"0.5px solid rgb(150,150,150)",borderBottom:"0.5px solid rgb(150,150,150)",minHeight:43}}>
-                        <strong style={{background:"#fff",padding:"9px 7px",fontSize:11}}>{label}</strong>
+                        <strong style={{background:"#fff",padding:"9px 7px",fontSize:11,borderRight:"0.5px solid rgb(150,150,150)",boxSizing:"border-box"}}>{label}</strong>
                         <span style={{padding:"9px 7px",fontSize:11,overflowWrap:"anywhere"}}>{value}</span>
                       </div>)}
                     </div>

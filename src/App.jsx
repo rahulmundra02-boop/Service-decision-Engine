@@ -10675,7 +10675,7 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
                         ["Chassis No",vehicle.vin||"-"],["Model",vehicle.model||"-"],
                         ["Reg No",vehicle.reg||"-"],["Engine No",vehicle.engine||"-"],
                         ["Last Recorded Reading",lastOdometer],["Current Approx. Reading",currentReading]
-                      ].map(([label,value])=><div key={label} style={{display:"grid",gridTemplateColumns:"minmax(105px,.8fr) minmax(0,1.2fr)",borderRight:"1px solid rgb(150,150,150)",borderBottom:"1px solid rgb(150,150,150)",minHeight:43}}>
+                      ].map(([label,value])=><div key={label} style={{display:"grid",gridTemplateColumns:"minmax(0,.36fr) minmax(0,.64fr)",borderRight:"1px solid rgb(150,150,150)",borderBottom:"1px solid rgb(150,150,150)",minHeight:43}}>
                         <strong style={{background:"#fff",padding:"7px 7px",fontSize:10}}>{label}</strong>
                         <span style={{padding:"7px 7px",fontSize:10,overflowWrap:"anywhere"}}>{value}</span>
                       </div>)}
@@ -10683,13 +10683,13 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
                     <div style={{fontSize:13,fontWeight:800,marginBottom:9}}>AGGREGATE SERVICE SCHEDULE</div>
                     <div style={{overflowX:"auto"}}>
                       <table style={{width:"100%",tableLayout:"fixed",borderCollapse:"collapse",fontSize:10,minWidth:0,border:"1px solid rgb(150,150,150)"}}>
-                        <thead><tr style={{background:"rgb(112,48,160)",color:"#fff"}}>{["Sr. No.","Aggregate Name","Last Service","Next Recommended Service","Status"].map(label=><th key={label} style={{padding:"8px 5px",border:"1px solid rgb(150,150,150)",textAlign:"center",fontSize:10,fontWeight:700}}>{label}</th>)}</tr></thead>
-                        <colgroup><col style={{width:"5.9%"}}/><col style={{width:"19.1%"}}/><col style={{width:"21.1%"}}/><col style={{width:"29.4%"}}/><col style={{width:"17.6%"}}/></colgroup><tbody>{summary.rows.map((row,index)=><tr key={row.key||row.name} style={{background:index%2?"#f7f7f7":"#fff"}}>
+                        <thead><tr style={{background:"rgb(112,48,160)",color:"#fff"}}>{["Sr. No.","Aggregate Name","Last Service","Next Recommended Service","Status"].map(label=><th key={label} style={{padding:"8px 5px",border:"1px solid rgb(150,150,150)",background:"rgb(112,48,160)",color:"#fff",textAlign:"center",fontSize:10,fontWeight:700}}>{label}</th>)}</tr></thead>
+                        <colgroup><col style={{width:"6.3%"}}/><col style={{width:"20.5%"}}/><col style={{width:"22.6%"}}/><col style={{width:"31.6%"}}/><col style={{width:"18.9%"}}/></colgroup><tbody>{summary.rows.map((row,index)=><tr key={row.key||row.name} style={{background:index%2?"#f7f7f7":"#fff"}}>
                           <td style={{padding:"7px 5px",border:"1px solid rgb(150,150,150)",overflowWrap:"anywhere",textAlign:"center"}}>{index+1}</td>
-                          <td style={{padding:"9px",border:"1px solid #d1d1d1"}}>{row.name}</td>
-                          <td style={{padding:"9px",border:"1px solid #d1d1d1"}}>{row.last}</td>
-                          <td style={{padding:"9px",border:"1px solid #d1d1d1"}}>{row.upcoming}</td>
-                          <td style={{padding:"7px 5px",border:"1px solid #d1d1d1",textAlign:"center",overflowWrap:"anywhere",fontWeight:800,color:statusColors[row.status]||"#333"}}>{statusLabels[row.status]||row.status}</td>
+                          <td style={{padding:"8px 5px",border:"1px solid rgb(150,150,150)"}}>{row.name}</td>
+                          <td style={{padding:"8px 5px",border:"1px solid rgb(150,150,150)"}}>{row.last}</td>
+                          <td style={{padding:"8px 5px",border:"1px solid rgb(150,150,150)"}}>{row.upcoming}</td>
+                          <td style={{padding:"8px 5px",border:"1px solid rgb(150,150,150)",textAlign:"center",overflowWrap:"anywhere",fontWeight:800,color:statusColors[row.status]||"#333"}}>{statusLabels[row.status]||row.status}</td>
                         </tr>)}
                         {!summary.rows.length&&<tr><td colSpan={5} style={{padding:18,textAlign:"center",border:"1px solid #d1d1d1"}}>No applicable service schedule records found.</td></tr>}</tbody>
                       </table>

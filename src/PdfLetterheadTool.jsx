@@ -77,7 +77,7 @@ function placeAuthorizationMarks(page, location, signature, seal) {
   return true;
 }
 
-export default function PdfLetterheadTool({ user, onBack }) {
+export default function PdfLetterheadTool({ user, onBack, onOpenProfile }) {
   const [files, setFiles] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -184,16 +184,16 @@ export default function PdfLetterheadTool({ user, onBack }) {
         <span>{hasSignature ? "✓ Signature saved" : "Signature not configured"}</span>
         <span>{hasSeal ? "✓ Seal saved" : "Seal not configured"}</span>
       </div>
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginTop:14}}>
+        <span style={{fontSize:13,color:"#64748b"}}>Need to add or update branding?</span>
+        <button type="button" className="excel-button" onClick={onOpenProfile}>Open Profile Settings</button>
+      </div>
       {!ready&&<div style={{color:"#b45309",fontSize:13,marginTop:10}}>Add a company letterhead in Profile Settings before processing.</div>}
       {!hasSignature&&!hasSeal&&<div style={{color:"#b45309",fontSize:13,marginTop:10}}>Add a Signature or Company Seal in Profile Settings.</div>}
     </div>
-    <div className="card" style={{padding:20}}>
-      <div style={{fontWeight:800,marginBottom:8}}>3. Automatic authorized-signature detection</div>
-      <div style={{fontSize:13,color:"#475569",lineHeight:1.6}}>The system searches each page for phrases such as “Authorized Signatory &amp; Date”, “Authorized Signatory”, “Authorised Signature”, “Authorised Sign” and similar spelling variations. It places at most one signature/seal set on each page. Pages without a matching label are left unsigned.</div>
-    </div>
     {error&&<div role="alert" style={{padding:12,borderRadius:8,background:"#fef2f2",color:"#b91c1c",marginBottom:12,fontSize:13}}>{error}</div>}
     {status&&<div role="status" style={{padding:12,borderRadius:8,background:"#eff6ff",color:"#1d4ed8",marginBottom:12,fontSize:13}}>{status}</div>}
-    <div style={{display:"flex",justifyContent:"flex-end"}}><button className="excel-button green" disabled={!files.length||!ready||(!hasSignature&&!hasSeal)||busy} onClick={createPdfs}>{busy?"Processing PDFs...":`Process ${files.length||""} PDF(s) & Download`}</button></div>
+    <div style={{display:"flex",justifyContent:"flex-end"}}><button className="excel-button green" disabled={!files.length||!ready||(!hasSignature&&!hasSeal)||busy} onClick={createPdfs}>{busy?"Processing PDFs...":"Process all Files for signature"}</button></div>
     {results.length>0&&<div className="card" style={{padding:20,marginTop:16}}>
       <div style={{fontWeight:800,marginBottom:10}}>Separate PDF downloads</div>
       <div style={{display:"grid",gap:10}}>{results.map((item,i)=><div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",borderBottom:"1px solid #e2e8f0",paddingBottom:8}}>

@@ -52,7 +52,12 @@ function placeAuthorizationMarks(page, location, signature, seal) {
   const sealH = seal ? sealW * seal.height / seal.width : 0;
   const totalW = sigW + sealW + gap;
   const centerX = Math.max(totalW / 2 + 8, Math.min(page.getWidth() - totalW / 2 - 8, location.x));
-  const bottom = Math.max(8, Math.min(page.getHeight() - Math.max(sigH, sealH) - 8, location.y + 10));
+  // PDF.js text transforms use top-origin viewport coordinates.
+  // pdf-lib drawImage uses bottom-origin PDF coordinates, so invert Y.
+  // Place the mark just above the authorized-signature label.
+  const labelPdfY = page.getHeight() - location.y;
+  const desiredBottom = labelPdfY + 18;
+  const bottom = Math.max(8, Math.min(page.getHeight() - Math.max(sigH, sealH) - 8, desiredBottom));
   let x = centerX - totalW / 2;
   if (seal) {
     page.drawImage(seal, { x, y: bottom, width: sealW, height: sealH });

@@ -705,6 +705,7 @@ export default function AuthGate({ children }) {
         bulkColumnLabels: profileForm.bulkColumnLabels,
         letterhead: profileForm.letterhead || null,
         signature: profileForm.signature || null,
+        seal: profileForm.seal || null,
         signaturePlacement: profileForm.signaturePlacement || { x: 70, y: 91, width: 20 },
          theme: profileForm.theme || "blue",
       }
@@ -751,6 +752,7 @@ export default function AuthGate({ children }) {
       bulkColumnLabels:{serial:"S.No. / Due",customerName:"Customer Name",vin:"VIN",reg:"Reg. No.",saleDate:"Sale Date",model:"Model",currentReading:"Current Reading",services:"Service To Be Completed",...(p.bulkColumnLabels || {})},
       letterhead:p.letterhead || null,
       signature:p.signature || null,
+      seal:p.seal || null,
       signaturePlacement:p.signaturePlacement || { x:70, y:91, width:20 },
        theme:p.theme || "blue",
     });
@@ -1365,6 +1367,35 @@ function SignaturePad({ initialValue, onUse, onClose }) {
     </div>
   </div>;
 }
+
+function SealImagePicker({ initialValue, onChange }) {
+ const [busy,setBusy]=useState(false),[error,setError]=useState("");
+ async function handleFile(file){
+  if(!file)return;
+  if(!file.type.startsWith("image/")){setError("Please select an image file.");return;}
+  setBusy(true);setError("");
+  try{
+   const source=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file);});
+   const img=await new Promise((resolve,reject)=>{const i=new Image();i.onload=()=>resolve(i);i.onerror=reject;i.src=source;});
+   const c=document.createElement("canvas");c.width=img.naturalWidth;c.height=img.naturalHeight;
+   const ctx=c.getContext("2d",{willReadFrequently:true});ctx.drawImage(img,0,0);
+   const data=ctx.getImageData(0,0,c.width,c.height);
+   for(let p=0;p<data.data.length;p+=4){const r=data.data[p],g=data.data[p+1],b=data.data[p+2];if(r>238&&g>238&&b>238)data.data[p+3]=0;else if(r>218&&g>218&&b>218){const f=(Math.min(r,g,b)-218)/20;data.data[p+3]=Math.round(data.data[p+3]*(1-Math.min(1,f)));}}
+   ctx.putImageData(data,0,0);onChange({image:c.toDataURL("image/png")});
+  }catch{setError("Unable to process this image. Please try another file.");}finally{setBusy(false);}
+ }
+ return <div style={{display:"grid",gap:8}}>
+  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+   <label className="auth-primary" style={{display:"inline-flex",alignItems:"center",cursor:"pointer"}}>{initialValue?.image?"Change Company Seal":"Upload Company Seal"}<input type="file" accept="image/*" hidden onChange={e=>handleFile(e.target.files?.[0])}/></label>
+   {initialValue?.image&&<button type="button" className="auth-secondary" onClick={()=>onChange(null)}>Remove</button>}
+   {busy&&<span className="auth-hint">Removing white background...</span>}
+  </div>
+  {initialValue?.image&&<div style={{border:"1px solid #ddd",borderRadius:8,padding:8,background:"repeating-conic-gradient(#eee 0% 25%,#fff 0% 50%) 50% / 16px 16px"}}><img src={initialValue.image} alt="Transparent company seal" style={{maxWidth:220,maxHeight:140,objectFit:"contain"}}/></div>}
+  <div className="auth-hint">White background is made transparent automatically so the seal does not cover document text.</div>
+  {error&&<div style={{color:"#b91c1c",fontSize:12}}>{error}</div>}
+ </div>;
+}
+
 function ProfileSettingsModal({ form, setForm, onSave, onClose, loading, onChangePassword, onLogout, isAdmin, onAdmin }) {
   const singleCols=[["date","Date"],["jobCard","Job Card"],["reading","Reading"],["plant","Plant"],["parts","Part No. / Service / Qty"]];
   const bulkCols=[["customerName","Customer Name"],["vin","VIN"],["reg","Reg. No."],["saleDate","Sale Date"],["model","Model"],["currentReading","Current Reading"],["services","Service To Be Completed"]];
@@ -1446,6 +1477,10 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading, onChang
           </div>
           <div className="auth-hint" style={{marginTop:7}}>Position and size update automatically. For final changes, use <b>Save Profile & Settings</b> below.</div>
         </div>}
+      </div>
+    </div>
+
+        <div style={{borderTop:"1px solid #eee",paddingTop:12,marginTop:12}}><div style={{fontWeight:800,marginBottom:8}}>Company Stamp / Seal</div><SealImagePicker initialValue={form.seal} onChange={seal=>setForm({...form,seal})}/></div>
       </div>
     </div>
 

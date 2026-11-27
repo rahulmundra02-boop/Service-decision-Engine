@@ -11,20 +11,32 @@ function imageBytes(dataUrl) {
   return Uint8Array.from(binary, c => c.charCodeAt(0));
 }
 function findAuthorizedSignLine(items) {
-  const lines = [];
+  const rows = [];
   for (const item of (items || []).filter(x => String(x.str || "").trim())) {
     const y = Number(item.transform?.[5] || 0);
-    let line = lines.find(x => Math.abs(x.y - y) <= 4);
-    if (!line) { line = { y, items: [] }; lines.push(line); }
-    line.items.push(item);
+    let row = rows.find(x => Math.abs(x.y - y) <= 4);
+    if (!row) { row = { y, items: [] }; rows.push(row); }
+    row.items.push(item);
   }
-  for (const line of lines) {
-    line.items.sort((a, b) => Number(a.transform?.[4] || 0) - Number(b.transform?.[4] || 0));
-    const text = line.items.map(x => x.str || "").join(" ").replace(/\s+/g, " ").trim();
-    if (!AUTH_LABEL.test(text)) continue;
-    const x1 = Math.min(...line.items.map(x => Number(x.transform?.[4] || 0)));
-    const x2 = Math.max(...line.items.map(x => Number(x.transform?.[4] || 0) + Number(x.width || 0)));
-    return { x: (x1 + x2) / 2, y: line.y, text };
+
+  // A PDF line often contains two side-by-side labels on the same baseline:
+  // Customer Signatory on the left and Authorized Signatory on the right.
+  // Split each baseline into horizontal clusters so their X positions never mix.
+  for (const row of rows) {
+    const sorted = row.items.sort((a, b) => Number(a.transform?.[4] || 0) - Number(b.transform?.[4] || 0));
+    const clusters = [];
+    for (const item of sorted) {
+      const x1 = Number(item.transform?.[4] || 0);
+      const x2 = x1 + Number(item.width || 0);
+      const current = clusters[clusters.length - 1];
+      if (!current || x1 - current.x2 > 24) clusters.push({ x1, x2, items: [item] });
+      else { current.x2 = Math.max(current.x2, x2); current.items.push(item); }
+    }
+    for (const cluster of clusters) {
+      const text = cluster.items.map(x => x.str || "").join(" ").replace(/\s+/g, " ").trim();
+      if (!AUTH_LABEL.test(text)) continue;
+      return { x: (cluster.x1 + cluster.x2) / 2, y: row.y, text };
+    }
   }
   return null;
 }
@@ -52,11 +64,9 @@ function placeAuthorizationMarks(page, location, signature, seal) {
   const sealH = seal ? sealW * seal.height / seal.width : 0;
   const totalW = sigW + sealW + gap;
   const centerX = Math.max(totalW / 2 + 8, Math.min(page.getWidth() - totalW / 2 - 8, location.x));
-  // PDF.js text transforms use top-origin viewport coordinates.
-  // pdf-lib drawImage uses bottom-origin PDF coordinates, so invert Y.
-  // Place the mark just above the authorized-signature label.
-  const labelPdfY = page.getHeight() - location.y;
-  const desiredBottom = labelPdfY + 18;
+  // PDF.js text transform Y is already in PDF user-space (bottom-origin).
+  // Place the signature/seal just above the detected authorized-signature label.
+  const desiredBottom = location.y + 10;
   const bottom = Math.max(8, Math.min(page.getHeight() - Math.max(sigH, sealH) - 8, desiredBottom));
   let x = centerX - totalW / 2;
   if (seal) {

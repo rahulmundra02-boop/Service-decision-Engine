@@ -1481,8 +1481,6 @@ function ProfileSettingsModal({ form, setForm, onSave, onClose, loading, onChang
     </div>
 
         <div style={{borderTop:"1px solid #eee",paddingTop:12,marginTop:12}}><div style={{fontWeight:800,marginBottom:8}}>Company Stamp / Seal</div><SealImagePicker initialValue={form.seal} onChange={seal=>setForm({...form,seal})}/></div>
-      </div>
-    </div>
 
     <div style={{fontWeight:800,marginTop:18}}>Single Vehicle Service History Table</div>
     <div className="auth-hint">Checkbox = show/hide · Text box = custom heading · width by mouse drag.</div>

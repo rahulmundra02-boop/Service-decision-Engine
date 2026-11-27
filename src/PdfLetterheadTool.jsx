@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { PDFDocument } from "pdf-lib";
 
 const PDFJS_URL = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs";
 const PDFJS_WORKER_URL = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
@@ -87,28 +87,44 @@ export default function PdfLetterheadTool({ user, onBack }) {
       const letterhead = await output.embedJpg(branding.letterhead.image).catch(async () => output.embedPng(branding.letterhead.image));
       const signature = hasSignature ? await output.embedPng(imageBytes(branding.signature.image)) : null;
       const seal = hasSeal ? await output.embedPng(imageBytes(branding.seal.image)) : null;
-      const font = await output.embedFont(StandardFonts.Helvetica);
       for (let n = 1; n <= sourceDoc.numPages; n++) {
         setStatus(`Processing page ${n} of ${sourceDoc.numPages}...`);
         const page = await sourceDoc.getPage(n);
         const viewport = page.getViewport({ scale: 1 });
+        const renderScale = 2;
+        const renderViewport = page.getViewport({ scale: renderScale });
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.ceil(renderViewport.width);
+        canvas.height = Math.ceil(renderViewport.height);
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        await page.render({ canvasContext: context, viewport: renderViewport }).promise;
+
+        // Remove only the white page matte. Preserve text, table borders, fills,
+        // logos, lines and every other non-white PDF element as transparent PNG.
+        const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+        const data = pixels.data;
+        for (let p = 0; p < data.length; p += 4) {
+          const r = data[p], g = data[p + 1], b = data[p + 2];
+          const matte = Math.min(r, g, b);
+          const alpha = 255 - matte;
+          if (alpha <= 3) {
+            data[p + 3] = 0;
+            continue;
+          }
+          data[p] = Math.min(255, Math.round(((r - matte) * 255) / alpha));
+          data[p + 1] = Math.min(255, Math.round(((g - matte) * 255) / alpha));
+          data[p + 2] = Math.min(255, Math.round(((b - matte) * 255) / alpha));
+          data[p + 3] = Math.round(data[p + 3] * alpha / 255);
+        }
+        context.putImageData(pixels, 0, 0);
+        const transparentPage = await output.embedPng(imageBytes(canvas.toDataURL("image/png")));
         const outPage = output.addPage([viewport.width, viewport.height]);
         outPage.drawImage(letterhead, { x: 0, y: 0, width: viewport.width, height: viewport.height });
-        const content = await page.getTextContent();
-        for (const item of content.items || []) {
-          if (!item.str) continue;
-          const transform = item.transform || [];
-          const x = Number(transform[4] || 0);
-          const baseline = Number(transform[5] || 0);
-          const size = Math.max(4, Math.min(48, Math.hypot(Number(transform[0] || 0), Number(transform[1] || 0)) || Number(item.height || 10)));
-          const y = Math.max(0, Math.min(viewport.height - size, baseline - size * 0.18));
-          const text = String(item.str).replace(/[\u0000-\u001f]/g, "");
-          if (!text.trim()) continue;
-          outPage.drawText(text, { x, y, size, font, color: rgb(0.08, 0.08, 0.08), maxWidth: Math.max(10, viewport.width - x - 12), lineHeight: size * 1.15 });
-        }
+        outPage.drawImage(transparentPage, { x: 0, y: 0, width: viewport.width, height: viewport.height });
+
         if (selected.has(n - 1)) {
           let right = viewport.width - 24;
-          let bottom = 24;
+          const bottom = 24;
           if (seal) {
             const w = Math.min(88, viewport.width * 0.22);
             const h = w * (seal.height / seal.width);

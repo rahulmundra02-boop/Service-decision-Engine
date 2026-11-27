@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import "./App.css";
 import DocumentScanner from "./DocumentScanner.jsx";
+import PdfLetterheadTool from "./PdfLetterheadTool.jsx";
 import AuthGate from "./AuthGate.jsx";
 import { validateEstimateAggregateSelection } from "./estimateAggregateValidation.js";
 import { DECISION_RULES, TIP_RULES, DEF_FILTER_SHORT_INTERVAL_PART_CODES, resolveAggregateSchedule } from "./serviceDecisionEngine.js";
@@ -5902,6 +5903,7 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
       "/bulk-vehicle": "bulk",
       "/warranty-tag-print": "warranty-tags",
       "/document-scanner": "document-scanner",
+      "/pdf-letterhead": "pdf-letterhead",
       "/profile": "profile",
       "/estimate": "estimate"
     };
@@ -5974,6 +5976,11 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
         setError("");
         return;
       }
+      if (nextMode === "pdf-letterhead") {
+        setMode("pdf-letterhead");
+        setError("");
+        return;
+      }
       if (nextMode === "profile") {
         setMode("profile");
         setError("");
@@ -6008,6 +6015,7 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
       bulk: "/bulk-vehicle",
       "warranty-tags": "/warranty-tag-print",
       "document-scanner": "/document-scanner",
+      "pdf-letterhead": "/pdf-letterhead",
       profile: "/profile",
       estimate: "/estimate"
     };
@@ -10194,6 +10202,7 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
               <div className={`excel-tab ${mode === "bulk" ? "active" : ""}`} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("bulk"); setError(""); setAnalysis(null); }}> <span className="nav-icon">📊</span>Bulk Vehicle</div>
               <div className={`excel-tab ${mode === "warranty-tags" ? "active" : ""}`} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("warranty-tags"); setError(""); }}> <span className="nav-icon">🏷️</span>Warranty Tag Print</div>
               <div className={`excel-tab ${mode === "document-scanner" ? "active" : ""}`} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("document-scanner"); setError(""); }}> <span className="nav-icon">📷</span>Document Scanner</div>
+              <div className={`excel-tab ${mode === "pdf-letterhead" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("pdf-letterhead"); setError(""); }}> <span className="nav-icon">📄</span>PDF Letterhead</div>
               <div className={`excel-tab ${mode === "profile" ? "active" : ""}`} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("profile"); setError(""); }}> <span className="nav-icon">👤</span>Profile{hasPendingAccountRequests && <span className="pending-alert-dot" title="Pending account requests" aria-label="Pending account requests" />}</div>
             </div>
             {mode !== "warranty-tags" && mode !== "document-scanner" && mode !== "profile" && (
@@ -10326,6 +10335,8 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
               <WarrantyTagPanel user={user} onBack={() => setMode("home")} />
             ) : mode === "document-scanner" ? (
               <DocumentScanner onBack={() => setMode("home")} />
+            ) : mode === "pdf-letterhead" ? (
+              <PdfLetterheadTool user={user} onBack={() => setMode("home")} />
             ) : mode === "profile" ? (
               <ProfileSection user={user} hasPendingAccountRequests={hasPendingAccountRequests} onOpenProfile={onOpenProfile} onOpenAdmin={onOpenAdmin} onChangePassword={onChangePassword} onLogout={onLogout} />
             ) : mode === "single" ? (

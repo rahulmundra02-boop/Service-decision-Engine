@@ -3,7 +3,7 @@ import { PDFDocument } from "pdf-lib";
 
 const PDFJS_URL = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs";
 const PDFJS_WORKER_URL = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
-const AUTH_LABEL = /authori[sz]ed\\s+(?:signatory|signature|sign)\\b/i;
+const AUTH_LABEL = /authori[sz]ed\s+(?:signatory|signature|sign)\b/i;
 
 function imageBytes(dataUrl) {
   const base64 = String(dataUrl || "").split(",")[1] || "";
@@ -20,7 +20,7 @@ function findAuthorizedSignLine(items) {
   }
   for (const line of lines) {
     line.items.sort((a, b) => Number(a.transform?.[4] || 0) - Number(b.transform?.[4] || 0));
-    const text = line.items.map(x => x.str || "").join(" ").replace(/\\s+/g, " ").trim();
+    const text = line.items.map(x => x.str || "").join(" ").replace(/\s+/g, " ").trim();
     if (!AUTH_LABEL.test(text)) continue;
     const x1 = Math.min(...line.items.map(x => Number(x.transform?.[4] || 0)));
     const x2 = Math.max(...line.items.map(x => Number(x.transform?.[4] || 0) + Number(x.width || 0)));

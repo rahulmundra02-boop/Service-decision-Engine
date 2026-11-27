@@ -10336,7 +10336,7 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
             ) : mode === "document-scanner" ? (
               <DocumentScanner onBack={() => setMode("home")} />
             ) : mode === "pdf-letterhead" ? (
-              <PdfLetterheadTool user={user} onBack={() => setMode("home")} />
+              <PdfLetterheadTool user={user} onBack={() => setMode("home")} onOpenProfile={onOpenProfile} />
             ) : mode === "profile" ? (
               <ProfileSection user={user} hasPendingAccountRequests={hasPendingAccountRequests} onOpenProfile={onOpenProfile} onOpenAdmin={onOpenAdmin} onChangePassword={onChangePassword} onLogout={onLogout} />
             ) : mode === "single" ? (

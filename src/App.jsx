@@ -10205,7 +10205,7 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
               <div className={`excel-tab ${mode === "pdf-letterhead" ? "active" : ""}`} onClick={() => { setEstimateOpen(false); setMode("pdf-letterhead"); setError(""); }}> <span className="nav-icon">📄</span>PDF Letterhead</div>
               <div className={`excel-tab ${mode === "profile" ? "active" : ""}`} onClick={() => { if ((mode === "single" || mode === "bulk") && (analysis || uploadedFiles.length || uploadParsedRecords.length || excelData.trim())) clearCurrentDataRef.current?.(); setEstimateOpen(false); setMode("profile"); setError(""); }}> <span className="nav-icon">👤</span>Profile{hasPendingAccountRequests && <span className="pending-alert-dot" title="Pending account requests" aria-label="Pending account requests" />}</div>
             </div>
-            {mode !== "warranty-tags" && mode !== "document-scanner" && mode !== "profile" && (
+            {mode !== "warranty-tags" && mode !== "document-scanner" && mode !== "pdf-letterhead" && mode !== "profile" && (
             <div className="excel-toolbar">
               {mode !== "home" && <>
                 <button className="excel-button green" onClick={() => document.getElementById("excel-file-input")?.click()} disabled={uploadBusy||analysisBusy}>Upload Excel</button>
@@ -10291,7 +10291,7 @@ function ServiceDecisionApp({ user, hasPendingAccountRequests = false, onOpenPro
 
 
           <div className="mobile-work-actions no-print">
-            {mode !== "home" && mode !== "warranty-tags" && mode !== "document-scanner" && mode !== "profile" && (
+            {mode !== "home" && mode !== "warranty-tags" && mode !== "document-scanner" && mode !== "pdf-letterhead" && mode !== "profile" && (
               <>
                 <button className="mobile-work-action" onClick={() => document.getElementById("excel-file-input")?.click()} disabled={uploadBusy}>Upload Excel</button>
                 <button className="mobile-work-action" onClick={clear}>Clear</button>

@@ -1380,7 +1380,14 @@ function SealImagePicker({ initialValue, onChange }) {
    const c=document.createElement("canvas");c.width=img.naturalWidth;c.height=img.naturalHeight;
    const ctx=c.getContext("2d",{willReadFrequently:true});ctx.drawImage(img,0,0);
    const data=ctx.getImageData(0,0,c.width,c.height);
-   for(let p=0;p<data.data.length;p+=4){const r=data.data[p],g=data.data[p+1],b=data.data[p+2];if(r>238&&g>238&&b>238)data.data[p+3]=0;else if(r>218&&g>218&&b>218){const f=(Math.min(r,g,b)-218)/20;data.data[p+3]=Math.round(data.data[p+3]*(1-Math.min(1,f)));}}
+   for(let p=0;p<data.data.length;p+=4){
+    const r=data.data[p],g=data.data[p+1],b=data.data[p+2],matte=Math.min(r,g,b),alpha=255-matte;
+    if(alpha<=3){data.data[p+3]=0;continue;}
+    data.data[p]=Math.min(255,Math.round(((r-matte)*255)/alpha));
+    data.data[p+1]=Math.min(255,Math.round(((g-matte)*255)/alpha));
+    data.data[p+2]=Math.min(255,Math.round(((b-matte)*255)/alpha));
+    data.data[p+3]=Math.round(data.data[p+3]*alpha/255);
+   }
    ctx.putImageData(data,0,0);onChange({image:c.toDataURL("image/png")});
   }catch{setError("Unable to process this image. Please try another file.");}finally{setBusy(false);}
  }
